@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-- **Rust toolchain** — install via [rustup](https://rustup.rs/)
+- **Flox** — the dev environment (Rust 1.95 toolchain, `task`, `infer`) is defined in the repo's [flox manifest](.flox/env/manifest.toml). Install [flox](https://flox.dev), then run `flox activate` from the repo root.
 - **Linux system dependencies** — on Debian/Ubuntu:
 
   ```bash
@@ -23,12 +23,14 @@
 ## Running locally
 
 ```bash
-# Install the Tauri CLI
-cargo install tauri-cli --locked
+# Enter the dev environment (Rust 1.95 toolchain, task, infer)
+flox activate
 
 # Start the dev server (opens a native window)
-cargo tauri dev
+task dev
 ```
+
+The flox manifest doesn't include `cargo` or the Tauri CLI yet — add them once from the repo root with `flox install cargo cargo-tauri`.
 
 ## Building
 
@@ -36,7 +38,7 @@ cargo tauri dev
 cargo tauri build
 ```
 
-The bundled app will be written to `src-tauri/target/release/bundle/`.
+The bundled app will be written to `src-tauri/target/release/bundle/`. `task build` runs a plain `cargo build` (debug); use `cargo tauri build` for the release bundle.
 
 ## How it works
 

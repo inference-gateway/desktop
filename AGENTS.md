@@ -9,6 +9,8 @@
 ├── AGENTS.md                     # This file — contributor & agent guide
 ├── CLAUDE.md → AGENTS.md         # Symlink for Claude Code compatibility
 ├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
+├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, infer)
+├── Taskfile.yml                  # Task runner: common build/test/dev commands
 ├── .agents/skills/               # Agent skill definitions
 ├── .claude/skills → ../.agents/skills  # Symlink for Claude Code
 ├── src/                          # Static frontend (HTML/CSS/JS)
@@ -30,15 +32,15 @@ The repository is a **scaffold for agent-driven development** on `inference-gate
 
 ## Build / Test / Dev Commands
 
-This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool and package manager).
+This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool and package manager). The dev environment — a pinned Rust 1.95 toolchain plus `task` and `infer` — is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`. Cargo commands run from `src-tauri/`; the [Taskfile](Taskfile.yml) wraps them at the repo root.
 
-| Command            | Description                     |
-|--------------------|---------------------------------|
-| `cargo build`      | Build the project               |
-| `cargo test`       | Run all tests                   |
-| `cargo clippy`     | Lint and format check           |
-| `cargo check`      | Typecheck (no codegen)         |
-| `cargo tauri dev`  | Start dev server with hot-reload |
+| Task            | Description                                                          |
+|-----------------|----------------------------------------------------------------------|
+| `task build`    | Build the project (`cargo build`)                                  |
+| `task test`     | Run all tests (`cargo test`)                                       |
+| `task clippy`   | Lint and format check (`cargo fmt --check`, `cargo clippy -- -D warnings`) |
+| `task check`    | Typecheck, no codegen (`cargo check`)                              |
+| `task dev`      | Start dev server with hot-reload (`cargo tauri dev`)               |
 
 ## Coding Style
 
@@ -124,12 +126,12 @@ Use `gh project item-add` to add the issue to the board (idempotent — returns 
 git clone git@github.com:inference-gateway/desktop.git
 cd desktop
 
-# Install Rust (if not present)
-# curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Enter the flox dev environment (Rust 1.95 toolchain, task, infer)
+flox activate
 
 # Activate git hooks
 git config core.hooksPath .githooks
 
-# Run checks
-cargo check
+# Run checks (or the cargo equivalents from src-tauri/)
+task check
 ```

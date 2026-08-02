@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  GREETING: Hello, world!
+
+tasks:
+  default:
+    desc: Print a greeting message
+    cmds:
+      - echo "{{.GREETING}}"
+    silent: true
+
+  build:
+    desc: Build the project
+    dir: src-tauri
+    cmds:
+      - cargo build
+
+  test:
+    desc: Run all tests
+    dir: src-tauri
+    cmds:
+      - cargo test
+
+  clippy:
+    desc: Lint and format check
+    dir: src-tauri
+    cmds:
+      - cargo fmt --check
+      - cargo clippy -- -D warnings
+
+  check:
+    desc: Typecheck (no codegen)
+    dir: src-tauri
+    cmds:
+      - cargo check
+
+  dev:
+    desc: Start dev server with hot-reload
+    dir: src-tauri
+    cmds:
+      - cargo tauri dev

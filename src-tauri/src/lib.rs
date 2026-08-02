@@ -8,12 +8,18 @@ use tauri::ipc::Channel;
 #[serde(tag = "kind")]
 enum ProgressEvent {
     Checking,
-    Downloading { received: u64, total: u64 },
+    Downloading {
+        received: u64,
+        total: u64,
+    },
     Verifying,
     Installing,
     Initializing,
     Ready,
-    Error { message: String },
+    #[allow(dead_code)]
+    Error {
+        message: String,
+    },
 }
 
 /// Map the running platform to the CLI release asset name.
@@ -67,11 +73,13 @@ fn download(
         .map_err(|e| format!("Failed to download {}: {}", url, e))?;
 
     let total: u64 = resp
-        .header("Content-Length")
+        .headers()
+        .get("Content-Length")
+        .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let mut reader = resp.into_reader();
+    let mut reader = resp.into_body().into_reader();
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut buf = [0u8; 8192];
     let mut received = 0u64;
@@ -125,23 +133,28 @@ fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> 
     let available = std::process::Command::new("gh")
         .arg("--version")
         .output()
-        .map_or(false, |o| o.status.success());
+        .is_ok_and(|o| o.status.success());
     if !available {
         return Ok(false);
     }
     let authed = std::process::Command::new("gh")
         .args(["auth", "status"])
         .output()
-        .map_or(false, |o| o.status.success());
+        .is_ok_and(|o| o.status.success());
     if !authed {
         return Ok(false);
     }
     let status = std::process::Command::new("gh")
         .args([
-            "release", "download", "latest",
-            "--repo", "inference-gateway/cli",
-            "--pattern", asset,
-            "--output", dest.to_str().unwrap_or(""),
+            "release",
+            "download",
+            "latest",
+            "--repo",
+            "inference-gateway/cli",
+            "--pattern",
+            asset,
+            "--output",
+            dest.to_str().unwrap_or(""),
             "--clobber",
         ])
         .status()
@@ -175,8 +188,13 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
         }
     }
 
-    let asset = asset_name()
-        .ok_or_else(|| format!("Unsupported platform: {}-{}", std::env::consts::OS, std::env::consts::ARCH))?;
+    let asset = asset_name().ok_or_else(|| {
+        format!(
+            "Unsupported platform: {}-{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
 
     let release_url = "https://github.com/inference-gateway/cli/releases/latest/download";
 
@@ -185,7 +203,10 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
 
     let temp_path = bin_dir.join(format!("{}.tmp", binary_name()));
 
-    let _ = on_event.send(ProgressEvent::Downloading { received: 0, total: 0 });
+    let _ = on_event.send(ProgressEvent::Downloading {
+        received: 0,
+        total: 0,
+    });
     if !try_gh_download(asset, &temp_path)? {
         download(&format!("{}/{}", release_url, asset), &temp_path, &on_event)?;
     }
@@ -204,6 +225,7 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
                 .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
             let mut text = String::new();
             checksums_resp
+                .into_body()
                 .into_reader()
                 .read_to_string(&mut text)
                 .map_err(|e| e.to_string())?;
@@ -249,8 +271,7 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
         }
 
         let mut config = String::new();
-        let _ = std::fs::File::open(&cfg_path)
-            .and_then(|mut f| f.read_to_string(&mut config));
+        let _ = std::fs::File::open(&cfg_path).and_then(|mut f| f.read_to_string(&mut config));
         let mut needs_write = false;
         if !config.contains("gateway.run:") {
             config.push_str("\ngateway.run: true\n");
@@ -274,15 +295,41 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "kind")]
 enum AgentEvent {
-    SessionId { session_id: String },
-    AssistantMessage { content: String, reasoning_content: Option<String> },
-    ToolCall { name: String, args_summary: String },
-    ApprovalRequest { tool_name: String, tool_args: String, tool_call_id: String },
-    Info { message: String },
-    Warning { message: String },
-    AgentError { message: String },
-    RawLine { line: String },
-    Done { exit_code: i32, stderr: String },
+    // SessionId and Cancelled are part of the frontend event contract but not yet emitted.
+    #[allow(dead_code)]
+    SessionId {
+        session_id: String,
+    },
+    AssistantMessage {
+        content: String,
+        reasoning_content: Option<String>,
+    },
+    ToolCall {
+        name: String,
+        args_summary: String,
+    },
+    ApprovalRequest {
+        tool_name: String,
+        tool_args: String,
+        tool_call_id: String,
+    },
+    Info {
+        message: String,
+    },
+    Warning {
+        message: String,
+    },
+    AgentError {
+        message: String,
+    },
+    RawLine {
+        line: String,
+    },
+    Done {
+        exit_code: i32,
+        stderr: String,
+    },
+    #[allow(dead_code)]
     Cancelled,
 }
 
@@ -295,7 +342,11 @@ struct AppState {
 fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<AgentEvent> {
     let val: serde_json::Value = match serde_json::from_str(line) {
         Ok(v) => v,
-        Err(_) => return Some(AgentEvent::RawLine { line: line.to_string() }),
+        Err(_) => {
+            return Some(AgentEvent::RawLine {
+                line: line.to_string(),
+            })
+        }
     };
 
     if let Some(typ) = val.get("type").and_then(|v| v.as_str()) {
@@ -307,51 +358,107 @@ fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<Agent
                         *session_id = Some(sid.to_string());
                     }
                 }
-                Some(AgentEvent::Info { message: msg.to_string() })
+                Some(AgentEvent::Info {
+                    message: msg.to_string(),
+                })
             }
-            "warning" => Some(AgentEvent::Warning { message: msg.to_string() }),
+            "warning" => Some(AgentEvent::Warning {
+                message: msg.to_string(),
+            }),
             "approval_request" => {
-                let tool_name = val.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let tool_args = val.get("tool_args").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let tool_call_id = val.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                Some(AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id })
+                let tool_name = val
+                    .get("tool_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_args = val
+                    .get("tool_args")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_call_id = val
+                    .get("tool_call_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                Some(AgentEvent::ApprovalRequest {
+                    tool_name,
+                    tool_args,
+                    tool_call_id,
+                })
             }
-            "agent_error" => Some(AgentEvent::AgentError { message: msg.to_string() }),
-            _ => Some(AgentEvent::RawLine { line: line.to_string() }),
+            "agent_error" => Some(AgentEvent::AgentError {
+                message: msg.to_string(),
+            }),
+            _ => Some(AgentEvent::RawLine {
+                line: line.to_string(),
+            }),
         }
     } else if let Some(role) = val.get("role").and_then(|v| v.as_str()) {
         if role == "assistant" {
-            let content = val.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let reasoning_content = val.get("reasoning_content").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let content = val
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reasoning_content = val
+                .get("reasoning_content")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             if let Some(tool_calls) = val.get("tool_calls").and_then(|v| v.as_array()) {
                 if !content.is_empty() || reasoning_content.is_some() {
-                    return Some(AgentEvent::AssistantMessage { content, reasoning_content });
+                    return Some(AgentEvent::AssistantMessage {
+                        content,
+                        reasoning_content,
+                    });
                 }
                 if let Some(tc) = tool_calls.first() {
-                    let name = tc.get("function").and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("tool");
-                    let args = tc.get("function").and_then(|f| f.get("arguments")).and_then(|v| v.as_str()).unwrap_or("{}");
-                    return Some(AgentEvent::ToolCall { name: name.to_string(), args_summary: args.to_string() });
+                    let name = tc
+                        .get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("tool");
+                    let args = tc
+                        .get("function")
+                        .and_then(|f| f.get("arguments"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
+                    return Some(AgentEvent::ToolCall {
+                        name: name.to_string(),
+                        args_summary: args.to_string(),
+                    });
                 }
                 return None;
             }
 
             if let Some(tools) = val.get("tools").and_then(|v| v.as_str()) {
                 if !content.is_empty() || reasoning_content.is_some() {
-                    return Some(AgentEvent::AssistantMessage { content, reasoning_content });
+                    return Some(AgentEvent::AssistantMessage {
+                        content,
+                        reasoning_content,
+                    });
                 }
-                return Some(AgentEvent::ToolCall { name: "tool".to_string(), args_summary: tools.to_string() });
+                return Some(AgentEvent::ToolCall {
+                    name: "tool".to_string(),
+                    args_summary: tools.to_string(),
+                });
             }
 
             if !content.is_empty() || reasoning_content.is_some() {
-                return Some(AgentEvent::AssistantMessage { content, reasoning_content });
+                return Some(AgentEvent::AssistantMessage {
+                    content,
+                    reasoning_content,
+                });
             }
         }
         None
     } else if val.get("session_stats").is_some() {
         None
     } else {
-        Some(AgentEvent::RawLine { line: line.to_string() })
+        Some(AgentEvent::RawLine {
+            line: line.to_string(),
+        })
     }
 }
 
@@ -384,7 +491,7 @@ async fn send_message(
 
     {
         let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
-        *guard = Some(child.try_clone().map_err(|e| e.to_string())?);
+        *guard = Some(child);
     }
     {
         let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
@@ -421,24 +528,28 @@ async fn send_message(
     let stderr_handle: std::thread::JoinHandle<String> = std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stderr);
         let mut all = String::new();
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                all.push_str(&l);
-                all.push('\n');
-            }
+        for l in reader.lines().map_while(Result::ok) {
+            all.push_str(&l);
+            all.push('\n');
         }
         all
     });
 
-    let _ = tokio::task::spawn_blocking(move || stdout_handle.join()).await
+    let _ = tokio::task::spawn_blocking(move || stdout_handle.join())
+        .await
         .map_err(|e| format!("Join error: {}", e))?;
 
-    let status = child.wait().map_err(|e| format!("Failed to wait for process: {}", e))?;
-
-    {
+    let status = {
         let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
-        *guard = None;
-    }
+        match guard.take() {
+            Some(mut child) => Some(
+                child
+                    .wait()
+                    .map_err(|e| format!("Failed to wait for process: {}", e))?,
+            ),
+            None => None,
+        }
+    };
     {
         let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
         *guard = None;
@@ -447,22 +558,27 @@ async fn send_message(
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
     let had_error_val = *had_error.lock().unwrap();
-    if !status.success() && !had_error_val {
-        let code = status.code().unwrap_or(-1);
+    let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
+    if !status.as_ref().is_some_and(|s| s.success()) && !had_error_val {
         let msg = if stderr_text.is_empty() {
-            format!("Process exited with code {}", code)
+            format!("Process exited with code {}", exit_code)
         } else {
-            format!("Process exited with code {}: {}", code, stderr_text.trim())
+            format!(
+                "Process exited with code {}: {}",
+                exit_code,
+                stderr_text.trim()
+            )
         };
         let _ = on_event.send(AgentEvent::AgentError { message: msg });
     }
 
     let _ = on_event.send(AgentEvent::Done {
-        exit_code: status.code().unwrap_or(-1),
+        exit_code,
         stderr: stderr_text,
     });
 
-    Ok(new_session_id.lock().unwrap().clone())
+    let new_session = new_session_id.lock().unwrap().clone();
+    Ok(new_session)
 }
 
 #[tauri::command]
@@ -478,8 +594,13 @@ async fn send_approval(
         "tool_call_id": tool_call_id,
         "approved": approved,
     });
-    let line = format!("{}\n", serde_json::to_string(&response).map_err(|e| e.to_string())?);
-    stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&response).map_err(|e| e.to_string())?
+    );
+    stdin
+        .write_all(line.as_bytes())
+        .map_err(|e| e.to_string())?;
     stdin.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -522,11 +643,26 @@ mod tests {
     #[test]
     fn test_asset_name_mapping() {
         assert_eq!(asset_name_for("linux", "x86_64"), Some("infer-linux-amd64"));
-        assert_eq!(asset_name_for("linux", "aarch64"), Some("infer-linux-arm64"));
-        assert_eq!(asset_name_for("macos", "x86_64"), Some("infer-darwin-amd64"));
-        assert_eq!(asset_name_for("macos", "aarch64"), Some("infer-darwin-arm64"));
-        assert_eq!(asset_name_for("windows", "x86_64"), Some("infer-windows-amd64"));
-        assert_eq!(asset_name_for("windows", "aarch64"), Some("infer-windows-arm64"));
+        assert_eq!(
+            asset_name_for("linux", "aarch64"),
+            Some("infer-linux-arm64")
+        );
+        assert_eq!(
+            asset_name_for("macos", "x86_64"),
+            Some("infer-darwin-amd64")
+        );
+        assert_eq!(
+            asset_name_for("macos", "aarch64"),
+            Some("infer-darwin-arm64")
+        );
+        assert_eq!(
+            asset_name_for("windows", "x86_64"),
+            Some("infer-windows-amd64")
+        );
+        assert_eq!(
+            asset_name_for("windows", "aarch64"),
+            Some("infer-windows-arm64")
+        );
 
         assert_eq!(asset_name_for("linux", "i686"), None);
         assert_eq!(asset_name_for("freebsd", "x86_64"), None);
@@ -561,7 +697,8 @@ mod tests {
 
     #[test]
     fn test_checksum_mismatch_detected() {
-        let text = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  infer-linux-amd64\n";
+        let text =
+            "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  infer-linux-amd64\n";
         let found = find_checksum(text, "infer-linux-amd64").unwrap();
         let hello_hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
         assert_ne!(found, hello_hash, "mismatch should be detected");
@@ -574,7 +711,9 @@ mod tests {
         let line = r#"{"role":"assistant","content":"Hello! How can I help you?","reasoning_content":"Thinking..."}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into())));
+        assert!(
+            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into()))
+        );
         assert!(sid.is_none());
     }
 
@@ -583,7 +722,9 @@ mod tests {
         let line = r#"{"role":"assistant","content":"Just a simple answer."}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Just a simple answer." && reasoning_content.is_none()));
+        assert!(
+            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Just a simple answer." && reasoning_content.is_none())
+        );
     }
 
     #[test]
@@ -591,7 +732,9 @@ mod tests {
         let line = r#"{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "read_file" && args_summary == "{\"path\":\"/tmp/test\"}"));
+        assert!(
+            matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "read_file" && args_summary == "{\"path\":\"/tmp/test\"}")
+        );
     }
 
     #[test]
@@ -599,7 +742,9 @@ mod tests {
         let line = r#"{"role":"assistant","content":"Let me check that file.","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::AssistantMessage { content, .. } if content == "Let me check that file."));
+        assert!(
+            matches!(event, AgentEvent::AssistantMessage { content, .. } if content == "Let me check that file.")
+        );
     }
 
     #[test]
@@ -607,7 +752,9 @@ mod tests {
         let line = r#"{"role":"assistant","content":"","tools":"read_file(\"/tmp/test\")"}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "tool" && args_summary == "read_file(\"/tmp/test\")"));
+        assert!(
+            matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "tool" && args_summary == "read_file(\"/tmp/test\")")
+        );
     }
 
     #[test]
@@ -615,7 +762,9 @@ mod tests {
         let line = r#"{"type":"agent_error","message":"Gateway unreachable"}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::AgentError { message } if message == "Gateway unreachable"));
+        assert!(
+            matches!(event, AgentEvent::AgentError { message } if message == "Gateway unreachable")
+        );
     }
 
     #[test]
@@ -641,12 +790,15 @@ mod tests {
         let line = r#"{"type":"warning","message":"Rate limit approaching"}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::Warning { message } if message == "Rate limit approaching"));
+        assert!(
+            matches!(event, AgentEvent::Warning { message } if message == "Rate limit approaching")
+        );
     }
 
     #[test]
     fn test_parse_session_stats_skipped() {
-        let line = r#"{"session_stats":{"total_tokens":150,"prompt_tokens":50,"completion_tokens":100}}"#;
+        let line =
+            r#"{"session_stats":{"total_tokens":150,"prompt_tokens":50,"completion_tokens":100}}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid);
         assert!(event.is_none());
@@ -657,7 +809,9 @@ mod tests {
         let line = r#"this is not valid json at all"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::RawLine { line: l } if l == "this is not valid json at all"));
+        assert!(
+            matches!(event, AgentEvent::RawLine { line: l } if l == "this is not valid json at all")
+        );
     }
 
     #[test]
@@ -688,16 +842,24 @@ mod tests {
             .lines()
             .filter_map(|line| {
                 let l = line.trim();
-                if l.is_empty() { None } else { parse_agent_line(l, &mut sid) }
+                if l.is_empty() {
+                    None
+                } else {
+                    parse_agent_line(l, &mut sid)
+                }
             })
             .collect();
 
         assert_eq!(events.len(), 4);
         assert!(matches!(events[0], AgentEvent::Info { .. }));
         assert_eq!(sid, Some("session-42".into()));
-        assert!(matches!(events[1], AgentEvent::AssistantMessage { content, .. } if content == "I'll look that up for you."));
-        assert!(matches!(events[2], AgentEvent::ToolCall { name, .. } if name == "search"));
-        assert!(matches!(events[3], AgentEvent::AgentError { message } if message == "API key not found"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "I'll look that up for you.")
+        );
+        assert!(matches!(&events[2], AgentEvent::ToolCall { name, .. } if name == "search"));
+        assert!(
+            matches!(&events[3], AgentEvent::AgentError { message } if message == "API key not found")
+        );
     }
 
     #[test]
@@ -705,15 +867,17 @@ mod tests {
         let line = r#"{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
-            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1"));
+        assert!(
+            matches!(event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
+        );
     }
 
     #[test]
     fn test_approval_round_trip() {
         let mut child = std::process::Command::new("sh")
             .arg("-c")
-            .arg("printf '{\"type\":\"approval_request\",\"tool_name\":\"test\",\"tool_args\":\"{\\\"key\\\":\\\"val\\\"}\",\"tool_call_id\":\"call-1\"}\\n'; read line; printf '%s\\n' \"$line\"")
+            .arg("printf '%s\\n' '{\"type\":\"approval_request\",\"tool_name\":\"test\",\"tool_args\":\"{\\\"key\\\":\\\"val\\\"}\",\"tool_call_id\":\"call-1\"}'; read line; printf '%s\\n' \"$line\"")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -728,8 +892,10 @@ mod tests {
         let request_line = lines.next().unwrap().unwrap();
         let mut sid = None;
         let event = parse_agent_line(&request_line, &mut sid).unwrap();
-        assert!(matches!(&event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
-            if tool_name == "test" && tool_args == "{\"key\":\"val\"}" && tool_call_id == "call-1"));
+        assert!(
+            matches!(&event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "test" && tool_args == "{\"key\":\"val\"}" && tool_call_id == "call-1")
+        );
 
         let response = serde_json::json!({
             "type": "approval_response",
