@@ -711,7 +711,6 @@ mod tests {
 
     #[test]
     fn test_approval_round_trip() {
-        // Spawn a child that writes an approval request, reads a response, and echoes it back
         let mut child = std::process::Command::new("sh")
             .arg("-c")
             .arg("printf '{\"type\":\"approval_request\",\"tool_name\":\"test\",\"tool_args\":\"{\\\"key\\\":\\\"val\\\"}\",\"tool_call_id\":\"call-1\"}\\n'; read line; printf '%s\\n' \"$line\"")
@@ -724,7 +723,6 @@ mod tests {
         let mut child_stdin = child.stdin.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
 
-        // Read the approval request from stdout
         let reader = std::io::BufReader::new(child_stdout);
         let mut lines = reader.lines();
         let request_line = lines.next().unwrap().unwrap();
@@ -733,7 +731,6 @@ mod tests {
         assert!(matches!(&event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
             if tool_name == "test" && tool_args == "{\"key\":\"val\"}" && tool_call_id == "call-1"));
 
-        // Write an approval response (deny path)
         let response = serde_json::json!({
             "type": "approval_response",
             "tool_call_id": "call-1",
@@ -744,7 +741,6 @@ mod tests {
         child_stdin.flush().unwrap();
         drop(child_stdin);
 
-        // Read the echoed response back
         let echoed = lines.next().unwrap().unwrap();
         let echoed_val: serde_json::Value = serde_json::from_str(&echoed).unwrap();
         assert_eq!(echoed_val["type"], "approval_response");

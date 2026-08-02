@@ -164,10 +164,8 @@ function addApprovalPrompt(toolName, toolArgs, toolCallId) {
   transcript.appendChild(div);
   transcript.scrollTop = transcript.scrollHeight;
 
-  // Store in pending queue
   pendingApprovals.push(toolCallId);
 
-  // Wire up buttons
   div.querySelector(".approve-btn").addEventListener("click", () => sendApproval(toolCallId, true));
   div.querySelector(".deny-btn").addEventListener("click", () => sendApproval(toolCallId, false));
 }
@@ -176,7 +174,6 @@ async function sendApproval(toolCallId, approved) {
   try {
     const { invoke } = window.__TAURI__.core;
     await invoke("send_approval", { toolCallId, approved });
-    // Mark as resolved in the UI
     const prompt = document.getElementById(`approval-${toolCallId}`);
     if (prompt) {
       prompt.classList.add(approved ? "approved" : "denied");
