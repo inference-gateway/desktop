@@ -257,15 +257,18 @@ body {
 
 #prompt-input {
   flex: 1;
-  padding: 0.6rem 0.75rem;
+  padding: 0.7rem 0.9rem;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.4;
-  resize: vertical;
+  resize: none;
+  min-height: 2.75rem;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 #prompt-input::placeholder {
@@ -325,6 +328,7 @@ textarea:focus-visible,
 #prompt-input:focus-visible {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* ---- Chat bubbles ---- */
