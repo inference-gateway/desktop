@@ -16,6 +16,20 @@ html, body {
   height: 100%;
 }
 
+#status-bar {
+  padding: 0.5rem 1rem;
+  background: #e8f4fd;
+  border-bottom: 1px solid #b6d4fe;
+  font-size: 0.875rem;
+  color: #0c5460;
+}
+
+#status-bar.error {
+  background: #f8d7da;
+  border-bottom-color: #f5c6cb;
+  color: #721c24;
+}
+
 #chat-transcript {
   flex: 1;
   overflow-y: auto;
