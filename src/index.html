@@ -8,16 +8,45 @@
 </head>
 <body>
   <div id="app">
-    <div id="status-bar" role="status" aria-live="polite"></div>
-    <div id="chat-transcript" role="log" aria-label="Chat transcript"></div>
-    <div id="input-area">
-      <select id="model-select" disabled>
-        <option value="" disabled selected>Waiting for gateway...</option>
-      </select>
-      <button id="retry-btn" style="display:none">Retry</button>
-      <textarea id="prompt-input" rows="3" placeholder="Type your message..." disabled></textarea>
-      <button id="send-btn" disabled>Send</button>
-      <button id="cancel-btn" style="display:none">Cancel</button>
+    <header id="top-bar">
+      <span id="app-title">Inference Gateway</span>
+      <div id="status-bar" role="status" aria-live="polite"></div>
+      <div id="model-controls">
+        <select id="model-select" disabled>
+          <option value="" disabled selected>Waiting for gateway...</option>
+        </select>
+        <button id="refresh-btn" title="Restart CLI" aria-label="Restart CLI">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
+      <button id="settings-btn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </header>
+    <div id="main">
+      <aside id="sidebar">
+        <button id="new-chat-btn">+ New chat</button>
+        <div id="chat-list" role="list"></div>
+      </aside>
+      <div id="content">
+        <div id="chat-transcript" role="log" aria-label="Chat transcript"></div>
+        <div id="input-area">
+          <textarea id="prompt-input" rows="3" placeholder="Type your message..." disabled></textarea>
+          <button id="send-btn" disabled>Send</button>
+          <button id="cancel-btn" style="display:none">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="settings-overlay" hidden>
+    <div id="settings-panel" role="dialog" aria-label="Settings">
+      <h2>API Keys</h2>
+      <p class="settings-hint">Stored in ~/.infer/auth.json and passed to the agent as environment variables.</p>
+      <div id="settings-fields"></div>
+      <div id="settings-actions">
+        <button id="settings-cancel">Cancel</button>
+        <button id="settings-save">Save</button>
+      </div>
     </div>
   </div>
   <script src="main.js"></script>

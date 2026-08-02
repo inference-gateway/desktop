@@ -6,12 +6,34 @@ const promptInput = document.getElementById("prompt-input");
 const sendBtn = document.getElementById("send-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const modelSelect = document.getElementById("model-select");
-const retryBtn = document.getElementById("retry-btn");
+const refreshBtn = document.getElementById("refresh-btn");
+const chatList = document.getElementById("chat-list");
+const newChatBtn = document.getElementById("new-chat-btn");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsFields = document.getElementById("settings-fields");
+const settingsSave = document.getElementById("settings-save");
+const settingsCancel = document.getElementById("settings-cancel");
 
 const STORAGE_KEY = "selectedModel";
 const MAX_RETRIES = 10;
 
-let sessionId = null;
+const PROVIDERS = [
+  { label: "OpenAI", env: "OPENAI_API_KEY" },
+  { label: "Anthropic", env: "ANTHROPIC_API_KEY" },
+  { label: "DeepSeek", env: "DEEPSEEK_API_KEY" },
+  { label: "Google", env: "GOOGLE_API_KEY" },
+  { label: "Groq", env: "GROQ_API_KEY" },
+  { label: "Mistral", env: "MISTRAL_API_KEY" },
+  { label: "Cohere", env: "COHERE_API_KEY" },
+  { label: "Cloudflare", env: "CLOUDFLARE_API_KEY" },
+  { label: "NVIDIA", env: "NVIDIA_API_KEY" },
+  { label: "Moonshot", env: "MOONSHOT_API_KEY" },
+  { label: "MiniMax", env: "MINIMAX_API_KEY" },
+  { label: "Ollama Cloud", env: "OLLAMA_CLOUD_API_KEY" },
+];
+
+let activeSessionId = null;
 let running = false;
 let currentAssistantBubble = null;
 let rawLines = [];
@@ -21,6 +43,7 @@ function setInputsEnabled(enabled) {
   promptInput.disabled = !enabled;
   sendBtn.disabled = !enabled;
   modelSelect.disabled = !enabled;
+  newChatBtn.disabled = !enabled;
   if (enabled) {
     cancelBtn.style.display = "none";
   }
@@ -190,7 +213,181 @@ async function sendApproval(toolCallId, approved) {
   }
 }
 
-(async () => {
+async function fetchModelsWithRetry(attempt = 0) {
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const models = await invoke("list_models");
+    populateModels(models);
+  } catch (err) {
+    if (attempt < MAX_RETRIES) {
+      setTimeout(() => fetchModelsWithRetry(attempt + 1), 1500);
+    }
+  }
+}
+
+function populateModels(models) {
+  modelSelect.innerHTML = "";
+  if (!models || models.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No models available";
+    opt.disabled = true;
+    opt.selected = true;
+    modelSelect.appendChild(opt);
+    return;
+  }
+  const saved = localStorage.getItem(STORAGE_KEY);
+  for (const id of models) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = id;
+    if (id === saved) opt.selected = true;
+    modelSelect.appendChild(opt);
+  }
+  modelSelect.disabled = running;
+}
+
+async function startGatewayThenModels() {
+  setStatus("Starting gateway...");
+  try {
+    await window.__TAURI__.core.invoke("start_gateway");
+  } catch (err) {
+    console.error("start_gateway failed:", err);
+  }
+  setStatus("Ready");
+  fetchModelsWithRetry();
+}
+
+async function refreshChatList() {
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const json = await invoke("list_conversations");
+    const data = JSON.parse(json);
+    renderChatList(data.conversations || []);
+  } catch (err) {
+    console.error("Failed to load conversations:", err);
+  }
+}
+
+function renderChatList(conversations) {
+  chatList.innerHTML = "";
+  for (const c of conversations) {
+    const item = document.createElement("div");
+    item.className = "chat-item";
+    item.dataset.id = c.id;
+    item.textContent = c.title || "(untitled)";
+    item.title = c.title || c.id;
+    item.addEventListener("click", () => openConversation(c.id));
+    chatList.appendChild(item);
+  }
+  highlightActive();
+}
+
+function highlightActive() {
+  for (const item of chatList.children) {
+    item.classList.toggle("active", item.dataset.id === activeSessionId);
+  }
+}
+
+async function openConversation(id) {
+  if (running) return;
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const ndjson = await invoke("get_conversation", { sessionId: id });
+    activeSessionId = id;
+    renderTranscript(ndjson);
+    highlightActive();
+  } catch (err) {
+    addError(`Failed to load conversation: ${err}`);
+  }
+}
+
+function renderTranscript(ndjson) {
+  transcript.innerHTML = "";
+  currentAssistantBubble = null;
+  rawLines = [];
+  for (const line of ndjson.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    const content = entry.content || "";
+    if (entry.role === "user") {
+      addUserBubble(content);
+    } else if (entry.role === "assistant") {
+      if (content) appendAssistantContent(content);
+      currentAssistantBubble = null;
+    } else if (entry.role === "tool") {
+      addToolCall(content.split("\n")[0], "");
+    }
+  }
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function startNewChat() {
+  if (running) return;
+  activeSessionId = null;
+  transcript.innerHTML = "";
+  currentAssistantBubble = null;
+  rawLines = [];
+  highlightActive();
+  promptInput.focus();
+}
+
+let settingsBuilt = false;
+function buildSettingsFields() {
+  if (settingsBuilt) return;
+  for (const p of PROVIDERS) {
+    const row = document.createElement("label");
+    row.className = "settings-field";
+    const span = document.createElement("span");
+    span.textContent = p.label;
+    const input = document.createElement("input");
+    input.type = "password";
+    input.autocomplete = "off";
+    input.dataset.env = p.env;
+    input.placeholder = p.env;
+    row.appendChild(span);
+    row.appendChild(input);
+    settingsFields.appendChild(row);
+  }
+  settingsBuilt = true;
+}
+
+async function openSettings() {
+  buildSettingsFields();
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const auth = await invoke("get_auth");
+    for (const input of settingsFields.querySelectorAll("input")) {
+      input.value = (auth && auth[input.dataset.env]) || "";
+    }
+  } catch (err) {
+    console.error("Failed to load auth:", err);
+  }
+  settingsOverlay.hidden = false;
+}
+
+async function saveSettings() {
+  const keys = {};
+  for (const input of settingsFields.querySelectorAll("input")) {
+    keys[input.dataset.env] = input.value.trim();
+  }
+  try {
+    const { invoke } = window.__TAURI__.core;
+    await invoke("set_auth", { keys });
+    settingsOverlay.hidden = true;
+    startGatewayThenModels();
+  } catch (err) {
+    addError(`Failed to save settings: ${err}`);
+  }
+}
+
+async function initBackend() {
   try {
     const { invoke, Channel } = window.__TAURI__.core;
 
@@ -220,7 +417,8 @@ async function sendApproval(toolCallId, approved) {
         case "Ready":
           setStatus("Ready");
           setInputsEnabled(true);
-          fetchModelsWithRetry();
+          startGatewayThenModels();
+          refreshChatList();
           break;
         case "Error":
           setError(`Error: ${event.message}`);
@@ -232,7 +430,9 @@ async function sendApproval(toolCallId, approved) {
   } catch (err) {
     setError(`Setup failed: ${err}`);
   }
-})();
+}
+
+initBackend();
 
 sendBtn.addEventListener("click", async () => {
   const text = promptInput.value.trim();
@@ -258,7 +458,7 @@ sendBtn.addEventListener("click", async () => {
     agentChannel.onmessage = (event) => {
       switch (event.kind) {
         case "SessionId":
-          sessionId = event.session_id;
+          activeSessionId = event.session_id;
           break;
         case "AssistantMessage":
           if (event.content) {
@@ -312,13 +512,14 @@ sendBtn.addEventListener("click", async () => {
     const newSessionId = await invoke("send_message", {
       prompt: text,
       model: model,
-      sessionId: sessionId,
+      sessionId: activeSessionId,
       onEvent: agentChannel,
     });
 
     if (newSessionId) {
-      sessionId = newSessionId;
+      activeSessionId = newSessionId;
     }
+    refreshChatList();
   } catch (err) {
     addError(`Error: ${err}`);
     setRunning(false);
@@ -342,4 +543,35 @@ promptInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     sendBtn.click();
   }
+});
+
+newChatBtn.addEventListener("click", startNewChat);
+
+refreshBtn.addEventListener("click", async () => {
+  if (running) {
+    try {
+      await window.__TAURI__.core.invoke("cancel_agent");
+    } catch (err) {
+      console.error("Cancel failed:", err);
+    }
+  }
+  setStatus("Restarting CLI...");
+  setInputsEnabled(false);
+  initBackend();
+});
+
+modelSelect.addEventListener("change", () => {
+  localStorage.setItem(STORAGE_KEY, modelSelect.value);
+});
+
+settingsBtn.addEventListener("click", openSettings);
+settingsCancel.addEventListener("click", () => {
+  settingsOverlay.hidden = true;
+});
+settingsSave.addEventListener("click", saveSettings);
+settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsOverlay) settingsOverlay.hidden = true;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !settingsOverlay.hidden) settingsOverlay.hidden = true;
 });

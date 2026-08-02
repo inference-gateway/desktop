@@ -128,7 +128,6 @@ fn find_checksum(checksums_text: &str, asset_name: &str) -> Option<String> {
 
 /// Try to download a release asset using `gh` CLI (authenticated).
 /// Returns `Ok(true)` if downloaded, `Ok(false)` to fall back to ureq.
-/// ponytail: no progress streaming from gh, add if gh output parsing is needed
 fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> {
     let available = std::process::Command::new("gh")
         .arg("--version")
@@ -336,6 +335,7 @@ enum AgentEvent {
 struct AppState {
     running_child: Mutex<Option<std::process::Child>>,
     child_stdin: Mutex<Option<std::process::ChildStdin>>,
+    gateway_child: Mutex<Option<std::process::Child>>,
 }
 
 /// Parse a single NDJSON line from infer agent stdout into an AgentEvent.
@@ -479,6 +479,7 @@ async fn send_message(
         .arg("-m")
         .arg(&model)
         .arg(&prompt)
+        .envs(auth_env())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -620,20 +621,303 @@ async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
+fn gateway_url() -> String {
+    let default = "http://localhost:8080".to_string();
+    let cfg = match std::fs::read_to_string(config_path()) {
+        Ok(c) => c,
+        Err(_) => return default,
+    };
+    let mut in_gateway = false;
+    for line in cfg.lines() {
+        if !line.starts_with([' ', '\t']) {
+            in_gateway = line.trim_start().starts_with("gateway:");
+            continue;
+        }
+        if in_gateway {
+            if let Some(rest) = line.trim().strip_prefix("url:") {
+                let v = rest.trim().trim_matches(['"', '\'']);
+                if !v.is_empty() {
+                    return v.to_string();
+                }
+            }
+        }
+    }
+    default
+}
+
+/// Run `infer <args>` to completion and return stdout, erroring on non-zero exit.
+fn run_infer(args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new(infer_bin_path())
+        .args(args)
+        .env("HOME", home_dir().to_str().unwrap_or(""))
+        .output()
+        .map_err(|e| format!("Failed to run infer: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "infer {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[tauri::command]
+async fn list_conversations() -> Result<String, String> {
+    run_infer(&["conversations", "list", "--format", "json"])
+}
+
+#[tauri::command]
+async fn get_conversation(session_id: String) -> Result<String, String> {
+    run_infer(&["conversations", "show", &session_id, "--format", "json"])
+}
+
+#[tauri::command]
+async fn list_models() -> Result<Vec<String>, String> {
+    let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("Gateway unreachable at {}: {}", url, e))?;
+    let mut text = String::new();
+    resp.into_body()
+        .into_reader()
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    let body: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let models = body
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or("Unexpected /v1/models response shape")?
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+    Ok(models)
+}
+
+/// App-owned provider key store at ~/.infer/auth.json (Codex-style).
+/// infer does not read this file; the desktop injects its values as env vars
+/// when spawning `infer`.
+fn auth_path() -> PathBuf {
+    home_dir().join(".infer").join("auth.json")
+}
+
+fn read_auth() -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(auth_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+/// Non-empty (KEY, value) pairs to inject as environment variables.
+fn auth_env() -> Vec<(String, String)> {
+    read_auth()
+        .into_iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+        .filter(|(_, v)| !v.is_empty())
+        .collect()
+}
+
+#[tauri::command]
+async fn get_auth() -> Result<serde_json::Value, String> {
+    Ok(serde_json::Value::Object(read_auth()))
+}
+
+#[tauri::command]
+async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(), String> {
+    let path = auth_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let map: serde_json::Map<String, serde_json::Value> = keys
+        .into_iter()
+        .filter(|(_, v)| !v.trim().is_empty())
+        .map(|(k, v)| (k, serde_json::Value::String(v)))
+        .collect();
+    let json =
+        serde_json::to_string_pretty(&serde_json::Value::Object(map)).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&path, perms).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// --- Gateway lifecycle (desktop-owned) ---
+// The desktop downloads and runs the inference-gateway binary itself so /v1/models
+// stays served. Once it's up, `infer agent` detects it (its own isBinaryRunning
+// health check) and won't start a competing gateway.
+
+fn gateway_bin_path() -> PathBuf {
+    let name = if cfg!(target_os = "windows") {
+        "inference-gateway.exe"
+    } else {
+        "inference-gateway"
+    };
+    home_dir().join(".infer").join("bin").join(name)
+}
+
+/// Release asset name for the gateway binary, matching goreleaser's naming.
+fn gateway_asset_name() -> Option<String> {
+    let os = match std::env::consts::OS {
+        "macos" => "Darwin",
+        "linux" => "Linux",
+        "windows" => "Windows",
+        _ => return None,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        "arm" => "armv7",
+        _ => return None,
+    };
+    let ext = if cfg!(target_os = "windows") {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+    Some(format!("inference-gateway_{}_{}.{}", os, arch, ext))
+}
+
+fn gateway_reachable() -> bool {
+    let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
+    ureq::get(&url).call().is_ok()
+}
+
+/// Download and extract the gateway binary if it isn't already present.
+fn ensure_gateway_binary() -> Result<PathBuf, String> {
+    let bin = gateway_bin_path();
+    if bin.exists() {
+        return Ok(bin);
+    }
+    if cfg!(target_os = "windows") {
+        return Err("Automatic gateway download is not supported on Windows yet".into());
+    }
+
+    let asset = gateway_asset_name().ok_or_else(|| {
+        format!(
+            "Unsupported platform for gateway binary: {}-{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+    let bin_dir = home_dir().join(".infer").join("bin");
+    std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+
+    let url = format!(
+        "https://github.com/inference-gateway/inference-gateway/releases/latest/download/{}",
+        asset
+    );
+    let archive = bin_dir.join(&asset);
+
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("Failed to download gateway: {}", e))?;
+    let mut reader = resp.into_body().into_reader();
+    let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
+    std::io::copy(&mut reader, &mut file).map_err(|e| e.to_string())?;
+    drop(file);
+
+    let status = std::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(&archive)
+        .arg("-C")
+        .arg(&bin_dir)
+        .arg("inference-gateway")
+        .status()
+        .map_err(|e| format!("Failed to extract gateway: {}", e))?;
+    let _ = std::fs::remove_file(&archive);
+
+    if !status.success() || !bin.exists() {
+        return Err("Failed to extract gateway binary from release archive".into());
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&bin)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&bin, perms).map_err(|e| e.to_string())?;
+    }
+    Ok(bin)
+}
+
+#[tauri::command]
+async fn start_gateway(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let we_own_one = state
+        .gateway_child
+        .lock()
+        .map_err(|e| e.to_string())?
+        .is_some();
+
+    // Leave an externally-run gateway alone; only manage our own. Restarting our
+    // own picks up newly-saved keys.
+    if !we_own_one && gateway_reachable() {
+        return Ok(());
+    }
+
+    {
+        let mut guard = state.gateway_child.lock().map_err(|e| e.to_string())?;
+        if let Some(mut old) = guard.take() {
+            let _ = old.kill();
+            let _ = old.wait();
+        }
+    }
+
+    let bin = ensure_gateway_binary()?;
+    let child = std::process::Command::new(&bin)
+        .envs(auth_env())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start gateway: {}", e))?;
+
+    *state.gateway_child.lock().map_err(|e| e.to_string())? = Some(child);
+    Ok(())
+}
+
 pub fn run() {
+    use tauri::Manager;
+
     tauri::Builder::default()
         .manage(AppState {
             running_child: Mutex::new(None),
             child_stdin: Mutex::new(None),
+            gateway_child: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             check_and_install_cli,
             send_message,
             send_approval,
             cancel_agent,
+            list_conversations,
+            get_conversation,
+            list_models,
+            get_auth,
+            set_auth,
+            start_gateway,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                if let Ok(mut guard) = app_handle.state::<AppState>().gateway_child.lock() {
+                    if let Some(mut child) = guard.take() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                }
+            }
+        });
 }
 
 #[cfg(test)]
