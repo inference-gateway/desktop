@@ -45,6 +45,7 @@ This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool a
 - **Language**: Rust. Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and standard style via `rustfmt`.
 - **Formatting**: `cargo fmt` — no debates.
 - **Simplicity**: Prefer the standard library over external dependencies. Favor boring, explicit code over clever abstractions.
+- **Dependencies**: When adding a dependency, look up the latest stable version first (`cargo search <name>` / `cargo info <name>`) and use it — never pin an older version copied from another project or tutorial.
 - **YAGNI**: Don't add code until it's needed. Delete dead code when you find it.
 - **Error handling**: Handle errors at trust boundaries. Don't swallow errors silently.
 - **`ponytail:` comments**: Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling and upgrade path (e.g. `ponytail: O(n²) — fine for <100 items`).
