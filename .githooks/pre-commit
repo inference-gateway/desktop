@@ -12,6 +12,10 @@ echo "==> Running pre-commit checks..."
 
 # Run typecheck if cargo is available
 if command -v cargo >/dev/null 2>&1; then
+    echo "--> Formatting (cargo fmt --check)..."
+    cargo fmt --check
+    echo "--> Lint (cargo clippy)..."
+    cargo clippy -- -D warnings
     echo "--> Typecheck (cargo check)..."
     cargo check
 fi
