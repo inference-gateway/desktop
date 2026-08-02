@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use std::io::{BufRead, Read};
+use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -277,6 +277,7 @@ enum AgentEvent {
     SessionId { session_id: String },
     AssistantMessage { content: String, reasoning_content: Option<String> },
     ToolCall { name: String, args_summary: String },
+    ApprovalRequest { tool_name: String, tool_args: String, tool_call_id: String },
     Info { message: String },
     Warning { message: String },
     AgentError { message: String },
@@ -287,6 +288,7 @@ enum AgentEvent {
 
 struct AppState {
     running_child: Mutex<Option<std::process::Child>>,
+    child_stdin: Mutex<Option<std::process::ChildStdin>>,
 }
 
 /// Parse a single NDJSON line from infer agent stdout into an AgentEvent.
@@ -308,6 +310,12 @@ fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<Agent
                 Some(AgentEvent::Info { message: msg.to_string() })
             }
             "warning" => Some(AgentEvent::Warning { message: msg.to_string() }),
+            "approval_request" => {
+                let tool_name = val.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let tool_args = val.get("tool_args").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let tool_call_id = val.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                Some(AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id })
+            }
             "agent_error" => Some(AgentEvent::AgentError { message: msg.to_string() }),
             _ => Some(AgentEvent::RawLine { line: line.to_string() }),
         }
@@ -364,6 +372,7 @@ async fn send_message(
         .arg("-m")
         .arg(&model)
         .arg(&prompt)
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -371,10 +380,15 @@ async fn send_message(
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
+    let child_stdin = child.stdin.take().unwrap();
 
     {
         let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
         *guard = Some(child.try_clone().map_err(|e| e.to_string())?);
+    }
+    {
+        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
+        *guard = Some(child_stdin);
     }
 
     let on_event_clone = on_event.clone();
@@ -425,6 +439,10 @@ async fn send_message(
         let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
         *guard = None;
     }
+    {
+        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
 
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
@@ -448,7 +466,31 @@ async fn send_message(
 }
 
 #[tauri::command]
+async fn send_approval(
+    tool_call_id: String,
+    approved: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
+    let stdin = guard.as_mut().ok_or("No running agent")?;
+    let response = serde_json::json!({
+        "type": "approval_response",
+        "tool_call_id": tool_call_id,
+        "approved": approved,
+    });
+    let line = format!("{}\n", serde_json::to_string(&response).map_err(|e| e.to_string())?);
+    stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    // Drop stdin first to unblock the child
+    {
+        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
     let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
     if let Some(mut child) = guard.take() {
         let _ = child.kill();
@@ -461,10 +503,12 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             running_child: Mutex::new(None),
+            child_stdin: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             check_and_install_cli,
             send_message,
+            send_approval,
             cancel_agent,
         ])
         .run(tauri::generate_context!())
@@ -654,5 +698,56 @@ mod tests {
         assert!(matches!(events[1], AgentEvent::AssistantMessage { content, .. } if content == "I'll look that up for you."));
         assert!(matches!(events[2], AgentEvent::ToolCall { name, .. } if name == "search"));
         assert!(matches!(events[3], AgentEvent::AgentError { message } if message == "API key not found"));
+    }
+
+    #[test]
+    fn test_parse_approval_request() {
+        let line = r#"{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1"));
+    }
+
+    #[test]
+    fn test_approval_round_trip() {
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("printf '{\"type\":\"approval_request\",\"tool_name\":\"test\",\"tool_args\":\"{\\\"key\\\":\\\"val\\\"}\",\"tool_call_id\":\"call-1\"}\\n'; read line; printf '%s\\n' \"$line\"")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut child_stdin = child.stdin.take().unwrap();
+        let child_stdout = child.stdout.take().unwrap();
+
+        let reader = std::io::BufReader::new(child_stdout);
+        let mut lines = reader.lines();
+        let request_line = lines.next().unwrap().unwrap();
+        let mut sid = None;
+        let event = parse_agent_line(&request_line, &mut sid).unwrap();
+        assert!(matches!(&event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "test" && tool_args == "{\"key\":\"val\"}" && tool_call_id == "call-1"));
+
+        let response = serde_json::json!({
+            "type": "approval_response",
+            "tool_call_id": "call-1",
+            "approved": false,
+        });
+        let response_line = format!("{}\n", serde_json::to_string(&response).unwrap());
+        child_stdin.write_all(response_line.as_bytes()).unwrap();
+        child_stdin.flush().unwrap();
+        drop(child_stdin);
+
+        let echoed = lines.next().unwrap().unwrap();
+        let echoed_val: serde_json::Value = serde_json::from_str(&echoed).unwrap();
+        assert_eq!(echoed_val["type"], "approval_response");
+        assert_eq!(echoed_val["tool_call_id"], "call-1");
+        assert_eq!(echoed_val["approved"], false);
+
+        let status = child.wait().unwrap();
+        assert!(status.success());
     }
 }
