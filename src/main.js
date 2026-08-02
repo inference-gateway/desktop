@@ -15,6 +15,7 @@ let sessionId = null;
 let running = false;
 let currentAssistantBubble = null;
 let rawLines = [];
+let pendingApprovals = [];
 
 function setInputsEnabled(enabled) {
   promptInput.disabled = !enabled;
@@ -147,6 +148,51 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function addApprovalPrompt(toolName, toolArgs, toolCallId) {
+  const div = document.createElement("div");
+  div.className = "approval-prompt";
+  div.id = `approval-${toolCallId}`;
+  div.innerHTML = `
+    <div class="approval-header">Tool requires approval</div>
+    <div class="approval-tool"><span class="tool-name">${escapeHtml(toolName)}</span></div>
+    <pre class="approval-args">${escapeHtml(toolArgs)}</pre>
+    <div class="approval-buttons">
+      <button class="approve-btn" data-call-id="${escapeHtml(toolCallId)}">Approve</button>
+      <button class="deny-btn" data-call-id="${escapeHtml(toolCallId)}">Deny</button>
+    </div>
+  `;
+  transcript.appendChild(div);
+  transcript.scrollTop = transcript.scrollHeight;
+
+  // Store in pending queue
+  pendingApprovals.push(toolCallId);
+
+  // Wire up buttons
+  div.querySelector(".approve-btn").addEventListener("click", () => sendApproval(toolCallId, true));
+  div.querySelector(".deny-btn").addEventListener("click", () => sendApproval(toolCallId, false));
+}
+
+async function sendApproval(toolCallId, approved) {
+  try {
+    const { invoke } = window.__TAURI__.core;
+    await invoke("send_approval", { toolCallId, approved });
+    // Mark as resolved in the UI
+    const prompt = document.getElementById(`approval-${toolCallId}`);
+    if (prompt) {
+      prompt.classList.add(approved ? "approved" : "denied");
+      const btns = prompt.querySelector(".approval-buttons");
+      if (btns) btns.style.display = "none";
+      const label = document.createElement("div");
+      label.className = "approval-result";
+      label.textContent = approved ? "Approved" : "Denied";
+      prompt.appendChild(label);
+    }
+    pendingApprovals = pendingApprovals.filter(id => id !== toolCallId);
+  } catch (err) {
+    addError(`Approval failed: ${err}`);
+  }
+}
+
 (async () => {
   try {
     const { invoke, Channel } = window.__TAURI__.core;
@@ -231,6 +277,10 @@ sendBtn.addEventListener("click", async () => {
           break;
         case "ToolCall":
           addToolCall(event.name, event.args_summary);
+          break;
+        case "ApprovalRequest":
+          addApprovalPrompt(event.tool_name, event.tool_args, event.tool_call_id);
+          setStatus("Awaiting approval...");
           break;
         case "Info":
           addInfo(event.message);
