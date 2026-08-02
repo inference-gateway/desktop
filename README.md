@@ -12,7 +12,7 @@
 
 Like Codex or Co-Work, but provider-agnostic. Bring your own API keys, pick your model, and work across providers from a single native window - no silos, no vendor lock-in.
 
-Built with [Tauri](https://tauri.app) and powered by [Inference Gateway](https://inference-gateway.github.io).
+Built with [Tauri](https://tauri.app) and powered by [Inference Gateway](https://docs.inference-gateway.com/).
 
 ## How it works
 
