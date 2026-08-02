@@ -52,6 +52,7 @@ This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool a
 - **Error handling**: Handle errors at trust boundaries. Don't swallow errors silently.
 - **`ponytail:` comments**: Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling and upgrade path (e.g. `ponytail: O(n²) — fine for <100 items`).
 - **No inline comments in function bodies**: The code should be self-documenting. Inline `//` comments inside function bodies are not allowed — use them only at the module level or as `ponytail:` debt markers.
+- **User-facing text uses regular dashes**: Use `-` (regular dash) instead of `—` (em dash) in README.md, CONTRIBUTING.md, and any other user-facing documentation. Em dashes are reserved for internal/agent-facing files like this one.
 
 ## Commit Conventions
 

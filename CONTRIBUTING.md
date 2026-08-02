@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- **Flox** — the dev environment (Rust 1.95 toolchain, `task`, `infer`) is defined in the [flox manifest](.flox/env/manifest.toml). Install [flox](https://flox.dev), then run `flox activate` from the repo root.
-- **Linux system dependencies** — on Debian/Ubuntu:
+- **Flox** - the dev environment (Rust 1.95 toolchain, `task`, `infer`) is defined in the [flox manifest](.flox/env/manifest.toml). Install [flox](https://flox.dev), then run `flox activate` from the repo root.
+- **Linux system dependencies** - on Debian/Ubuntu:
 
   ```bash
   sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -19,7 +19,7 @@ flox activate
 task dev
 ```
 
-The flox manifest doesn't include `cargo` or the Tauri CLI yet — add them once from the repo root with `flox install cargo cargo-tauri`.
+The flox manifest doesn't include `cargo` or the Tauri CLI yet - add them once from the repo root with `flox install cargo cargo-tauri`.
 
 ## Building
 

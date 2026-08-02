@@ -1,7 +1,7 @@
 <h1 align="center">Inference Gateway Desktop</h1>
 
 <p align="center">
-  A desktop AI client that works with any model provider — OpenAI, Anthropic, Google, local models, and everything in between.
+  A desktop AI client that works with any model provider - OpenAI, Anthropic, Google, local models, and everything in between.
 </p>
 
 <p align="center">
@@ -10,13 +10,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
 </p>
 
-Like Codex or Co-Work, but provider-agnostic. Bring your own API keys, pick your model, and work across providers from a single native window — no silos, no vendor lock-in.
+Like Codex or Co-Work, but provider-agnostic. Bring your own API keys, pick your model, and work across providers from a single native window - no silos, no vendor lock-in.
 
 Built with [Tauri](https://tauri.app) and powered by [Inference Gateway](https://inference-gateway.github.io).
 
 ## How it works
 
-On first run, the app downloads the `infer` CLI binary and installs it to `~/.infer/bin/infer`. The CLI manages the gateway server and routes requests to whatever provider you configure — OpenAI, Anthropic, Google, local Ollama models, or any OpenAI-compatible endpoint.
+On first run, the app downloads the `infer` CLI binary and installs it to `~/.infer/bin/infer`. The CLI manages the gateway server and routes requests to whatever provider you configure - OpenAI, Anthropic, Google, local Ollama models, or any OpenAI-compatible endpoint.
 
 The gateway binary lands at `~/.infer/bin/inference-gateway`, config lives under `~/.infer/`, and agent file tools are scoped to your home directory.
 
