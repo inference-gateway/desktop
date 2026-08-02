@@ -93,6 +93,13 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+#app-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
 #app-title {
   font-weight: 650;
   font-size: 0.95rem;
