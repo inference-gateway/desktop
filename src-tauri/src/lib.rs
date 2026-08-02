@@ -42,7 +42,6 @@ fn binary_name() -> &'static str {
 }
 
 fn home_dir() -> PathBuf {
-    // ponytail: $HOME on unix, USERPROFILE on windows — std::env::var is enough
     #[cfg(unix)]
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
     #[cfg(windows)]
@@ -112,7 +111,6 @@ fn find_checksum(checksums_text: &str, asset_name: &str) -> Option<String> {
         if line.is_empty() {
             continue;
         }
-        // Format: "<sha256>  <filename>"
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 && parts[1] == asset_name {
             return Some(parts[0].to_string());
@@ -127,7 +125,6 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
 
     let bin_path = infer_bin_path();
 
-    // Already installed and executable? Skip.
     if bin_path.exists() {
         #[cfg(unix)]
         {
@@ -140,7 +137,6 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
         }
         #[cfg(not(unix))]
         {
-            // On Windows, existence is enough — no executable bit.
             let _ = on_event.send(ProgressEvent::Ready);
             return Ok(());
         }
@@ -151,17 +147,14 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
 
     let release_url = "https://github.com/inference-gateway/cli/releases/latest/download";
 
-    // Ensure ~/.infer/bin exists
     let bin_dir = home_dir().join(".infer").join("bin");
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
 
-    // Download to a temp path so interrupted downloads don't leave a half-written binary
     let temp_path = bin_dir.join(format!("{}.tmp", binary_name()));
 
     let _ = on_event.send(ProgressEvent::Downloading { received: 0, total: 0 });
     download(&format!("{}/{}", release_url, asset), &temp_path, &on_event)?;
 
-    // Download and verify checksum
     let _ = on_event.send(ProgressEvent::Verifying);
     let checksums_url = format!("{}/checksums.txt", release_url);
     let checksums_resp = ureq::get(&checksums_url)
@@ -178,7 +171,6 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
     let actual_hash = sha256_digest(&temp_path)?;
 
     if actual_hash != expected_hash {
-        // Remove the partial file
         let _ = std::fs::remove_file(&temp_path);
         return Err(format!(
             "Checksum mismatch for {}: expected {}, got {}",
@@ -186,11 +178,9 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
         ));
     }
 
-    // Rename into place
     let _ = on_event.send(ProgressEvent::Installing);
     std::fs::rename(&temp_path, &bin_path).map_err(|e| e.to_string())?;
 
-    // Mark executable on unix
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -201,7 +191,6 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
         std::fs::set_permissions(&bin_path, perms).map_err(|e| e.to_string())?;
     }
 
-    // Run `infer init --userspace` if config is absent
     let cfg_path = config_path();
     if !cfg_path.exists() {
         let _ = on_event.send(ProgressEvent::Initializing);
@@ -214,7 +203,6 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
             return Err("infer init --userspace failed".into());
         }
 
-        // Ensure gateway settings are written explicitly
         let mut config = String::new();
         let _ = std::fs::File::open(&cfg_path)
             .and_then(|mut f| f.read_to_string(&mut config));
@@ -249,7 +237,6 @@ mod tests {
 
     #[test]
     fn test_asset_name_mapping() {
-        // Known platforms
         assert_eq!(asset_name_for("linux", "x86_64"), Some("infer-linux-amd64"));
         assert_eq!(asset_name_for("linux", "aarch64"), Some("infer-linux-arm64"));
         assert_eq!(asset_name_for("macos", "x86_64"), Some("infer-darwin-amd64"));
@@ -257,7 +244,6 @@ mod tests {
         assert_eq!(asset_name_for("windows", "x86_64"), Some("infer-windows-amd64"));
         assert_eq!(asset_name_for("windows", "aarch64"), Some("infer-windows-arm64"));
 
-        // Unsupported
         assert_eq!(asset_name_for("linux", "i686"), None);
         assert_eq!(asset_name_for("freebsd", "x86_64"), None);
     }
@@ -291,10 +277,8 @@ mod tests {
 
     #[test]
     fn test_checksum_mismatch_detected() {
-        // Simulate: we compute a hash for "hello" but the checksum says "world"
         let text = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  infer-linux-amd64\n";
         let found = find_checksum(text, "infer-linux-amd64").unwrap();
-        // SHA256 of "hello"
         let hello_hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
         assert_ne!(found, hello_hash, "mismatch should be detected");
     }

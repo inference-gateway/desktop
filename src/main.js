@@ -23,7 +23,6 @@ function setError(text) {
   statusBar.className = "error";
 }
 
-// On startup, check and install the CLI binary
 (async () => {
   try {
     const { invoke, Channel } = window.__TAURI__.core;
