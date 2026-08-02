@@ -6,6 +6,10 @@ const promptInput = document.getElementById("prompt-input");
 const sendBtn = document.getElementById("send-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 const modelSelect = document.getElementById("model-select");
+const retryBtn = document.getElementById("retry-btn");
+
+const STORAGE_KEY = "selectedModel";
+const MAX_RETRIES = 10;
 
 let sessionId = null;
 let running = false;
@@ -173,6 +177,7 @@ function escapeHtml(str) {
         case "Ready":
           setStatus("Ready");
           setInputsEnabled(true);
+          fetchModelsWithRetry();
           break;
         case "Error":
           setError(`Error: ${event.message}`);

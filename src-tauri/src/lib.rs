@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 
-// ponytail: single-file backend, no abstractions until a second command needs them
-
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "kind")]
 enum ProgressEvent {
@@ -632,12 +630,11 @@ mod tests {
         let line = "";
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid);
-        assert!(event.is_some()); // empty string is not valid JSON, so it becomes RawLine
+        assert!(event.is_some());
     }
 
     #[test]
     fn test_parse_ndjson_fixture() {
-        // Simulate a full NDJSON stream: info with session_id, assistant message, tool call, agent_error
         let fixture = r#"{"type":"info","message":"Session started","session_id":"session-42","timestamp":"2024-01-01T00:00:00Z"}
 {"role":"assistant","content":"I'll look that up for you.","reasoning_content":"Searching..."}
 {"role":"assistant","content":"","tool_calls":[{"function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]}
