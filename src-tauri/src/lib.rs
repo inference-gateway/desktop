@@ -119,6 +119,40 @@ fn find_checksum(checksums_text: &str, asset_name: &str) -> Option<String> {
     None
 }
 
+/// Try to download a release asset using `gh` CLI (authenticated).
+/// Returns `Ok(true)` if downloaded, `Ok(false)` to fall back to ureq.
+/// ponytail: no progress streaming from gh, add if gh output parsing is needed
+fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> {
+    let available = std::process::Command::new("gh")
+        .arg("--version")
+        .output()
+        .map_or(false, |o| o.status.success());
+    if !available {
+        return Ok(false);
+    }
+    let authed = std::process::Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .map_or(false, |o| o.status.success());
+    if !authed {
+        return Ok(false);
+    }
+    let status = std::process::Command::new("gh")
+        .args([
+            "release", "download", "latest",
+            "--repo", "inference-gateway/cli",
+            "--pattern", asset,
+            "--output", dest.to_str().unwrap_or(""),
+            "--clobber",
+        ])
+        .status()
+        .map_err(|e| format!("gh release download failed: {}", e))?;
+    if !status.success() {
+        return Err("gh release download exited with non-zero status".into());
+    }
+    Ok(true)
+}
+
 #[tauri::command]
 async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
@@ -153,18 +187,30 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
     let temp_path = bin_dir.join(format!("{}.tmp", binary_name()));
 
     let _ = on_event.send(ProgressEvent::Downloading { received: 0, total: 0 });
-    download(&format!("{}/{}", release_url, asset), &temp_path, &on_event)?;
+    if !try_gh_download(asset, &temp_path)? {
+        download(&format!("{}/{}", release_url, asset), &temp_path, &on_event)?;
+    }
 
     let _ = on_event.send(ProgressEvent::Verifying);
     let checksums_url = format!("{}/checksums.txt", release_url);
-    let checksums_resp = ureq::get(&checksums_url)
-        .call()
-        .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
-    let mut checksums_text = String::new();
-    checksums_resp
-        .into_reader()
-        .read_to_string(&mut checksums_text)
-        .map_err(|e| e.to_string())?;
+    let checksums_text = {
+        let checksums_temp = bin_dir.join("checksums.txt.tmp");
+        if try_gh_download("checksums.txt", &checksums_temp)? {
+            let text = std::fs::read_to_string(&checksums_temp).map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_file(&checksums_temp);
+            text
+        } else {
+            let checksums_resp = ureq::get(&checksums_url)
+                .call()
+                .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
+            let mut text = String::new();
+            checksums_resp
+                .into_reader()
+                .read_to_string(&mut text)
+                .map_err(|e| e.to_string())?;
+            text
+        }
+    };
 
     let expected_hash = find_checksum(&checksums_text, asset)
         .ok_or_else(|| format!("Checksum not found for {}", asset))?;
