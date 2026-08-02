@@ -1,0 +1,14 @@
+schema-version = "1.14.0"
+
+[install]
+claude-code.pkg-path = "claude-code"
+claude-code.version = "2.1.201"
+codex.pkg-path = "codex"
+codex.version = "0.142.3"
+infer.flake = "github:inference-gateway/cli/v0.158.0"
+rustc.pkg-path = "rustc"
+rustc.version = "1.95.0"
+rustfmt.pkg-path = "rustfmt"
+rustfmt.version = "1.95.0"
+clippy.pkg-path = "clippy"
+clippy.version = "1.95.0"
