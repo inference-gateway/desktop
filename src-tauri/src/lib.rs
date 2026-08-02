@@ -555,7 +555,6 @@ mod tests {
         let line = r#"{"role":"assistant","content":"Let me check that file.","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        // Content takes priority when present alongside tool_calls
         assert!(matches!(event, AgentEvent::AssistantMessage { content, .. } if content == "Let me check that file."));
     }
 
@@ -590,7 +589,7 @@ mod tests {
         let mut sid = Some("existing-id".into());
         let event = parse_agent_line(line, &mut sid).unwrap();
         assert!(matches!(event, AgentEvent::Info { message } if message == "Model loaded"));
-        assert_eq!(sid, Some("existing-id".into())); // unchanged
+        assert_eq!(sid, Some("existing-id".into()));
     }
 
     #[test]
