@@ -1,0 +1,40 @@
+#!/bin/sh
+# Pre-commit hook: run typecheck and tests before each commit.
+# Activate with: git config core.hooksPath .githooks
+#
+# This hook is inert until the above git config is run.
+
+set -e
+
+echo "==> Running pre-commit checks..."
+
+# Run typecheck if a tool is available
+if command -v tsc >/dev/null 2>&1 && [ -f tsconfig.json ]; then
+    echo "--> Typecheck (tsc --noEmit)..."
+    tsc --noEmit
+elif command -v pyright >/dev/null 2>&1 && [ -f pyproject.toml ]; then
+    echo "--> Typecheck (pyright)..."
+    pyright
+elif command -v go >/dev/null 2>&1 && [ -f go.mod ]; then
+    echo "--> Typecheck (go vet)..."
+    go vet ./...
+fi
+
+# Run tests if a tool is available
+if command -v task >/dev/null 2>&1 && [ -f Taskfile.yml ]; then
+    echo "--> Tests (task test)..."
+    task test
+elif command -v go >/dev/null 2>&1 && [ -f go.mod ]; then
+    echo "--> Tests (go test)..."
+    go test ./...
+elif [ -f package.json ]; then
+    if command -v npm >/dev/null 2>&1; then
+        echo "--> Tests (npm test)..."
+        npm test
+    elif command -v pnpm >/dev/null 2>&1; then
+        echo "--> Tests (pnpm test)..."
+        pnpm test
+    fi
+fi
+
+echo "==> All checks passed."
