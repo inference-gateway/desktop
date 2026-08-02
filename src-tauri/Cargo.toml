@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-ureq = "2"
+ureq = "3"
 sha2 = "0.10"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
