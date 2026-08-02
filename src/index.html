@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inference Gateway Desktop</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div id="chat-transcript" role="log" aria-label="Chat transcript"></div>
+    <div id="input-area">
+      <select id="model-select" disabled>
+        <option value="">Select a model...</option>
+      </select>
+      <textarea id="prompt-input" rows="3" placeholder="Type your message..."></textarea>
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>

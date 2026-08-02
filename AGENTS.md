@@ -10,7 +10,20 @@
 ├── CLAUDE.md → AGENTS.md         # Symlink for Claude Code compatibility
 ├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
 ├── .agents/skills/               # Agent skill definitions
-└── .claude/skills → ../.agents/skills  # Symlink for Claude Code
+├── .claude/skills → ../.agents/skills  # Symlink for Claude Code
+├── src/                          # Static frontend (HTML/CSS/JS)
+│   ├── index.html
+│   ├── main.js
+│   └── style.css
+└── src-tauri/                    # Tauri v2 backend
+    ├── Cargo.toml
+    ├── build.rs
+    ├── tauri.conf.json
+    ├── capabilities/
+    │   └── default.json
+    └── src/
+        ├── lib.rs
+        └── main.rs
 ```
 
 The repository is a **scaffold for agent-driven development** on `inference-gateway/desktop`. It is intentionally minimal — the CI workflow (`tasks.yml`) is the primary entry point for automated work.

@@ -1,0 +1,16 @@
+[package]
+name = "inference-gateway-desktop"
+version = "0.1.0"
+description = "Inference Gateway Desktop Client"
+authors = ["inference-gateway"]
+edition = "2021"
+
+[lib]
+name = "inference_gateway_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
