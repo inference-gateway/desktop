@@ -1,9 +1,8 @@
 use sha2::{Digest, Sha256};
-use std::io::Read;
+use std::io::{BufRead, Read};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
-
-// ponytail: single-file backend, no abstractions until a second command needs them
 
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "kind")]
@@ -270,60 +269,204 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
     Ok(())
 }
 
-/// Read `gateway.url` from `~/.infer/config.yaml`, falling back to `http://localhost:8080`.
-/// ponytail: line scan over YAML, fine for flat key-value config; switch to serde_yaml if nesting grows
-fn get_gateway_url() -> String {
-    let cfg_path = config_path();
-    if let Ok(content) = std::fs::read_to_string(&cfg_path) {
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some(value) = line.strip_prefix("gateway.url:") {
-                let url = value.trim().trim_matches('"').trim_matches('\'');
-                if !url.is_empty() {
-                    return url.to_string();
+// --- Agent streaming types ---
+
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "kind")]
+enum AgentEvent {
+    SessionId { session_id: String },
+    AssistantMessage { content: String, reasoning_content: Option<String> },
+    ToolCall { name: String, args_summary: String },
+    Info { message: String },
+    Warning { message: String },
+    AgentError { message: String },
+    RawLine { line: String },
+    Done { exit_code: i32, stderr: String },
+    Cancelled,
+}
+
+struct AppState {
+    running_child: Mutex<Option<std::process::Child>>,
+}
+
+/// Parse a single NDJSON line from infer agent stdout into an AgentEvent.
+fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<AgentEvent> {
+    let val: serde_json::Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(_) => return Some(AgentEvent::RawLine { line: line.to_string() }),
+    };
+
+    if let Some(typ) = val.get("type").and_then(|v| v.as_str()) {
+        let msg = val.get("message").and_then(|v| v.as_str()).unwrap_or("");
+        match typ {
+            "info" => {
+                if let Some(sid) = val.get("session_id").and_then(|v| v.as_str()) {
+                    if !sid.is_empty() && session_id.is_none() {
+                        *session_id = Some(sid.to_string());
+                    }
                 }
+                Some(AgentEvent::Info { message: msg.to_string() })
+            }
+            "warning" => Some(AgentEvent::Warning { message: msg.to_string() }),
+            "agent_error" => Some(AgentEvent::AgentError { message: msg.to_string() }),
+            _ => Some(AgentEvent::RawLine { line: line.to_string() }),
+        }
+    } else if let Some(role) = val.get("role").and_then(|v| v.as_str()) {
+        if role == "assistant" {
+            let content = val.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let reasoning_content = val.get("reasoning_content").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            if let Some(tool_calls) = val.get("tool_calls").and_then(|v| v.as_array()) {
+                if !content.is_empty() || reasoning_content.is_some() {
+                    return Some(AgentEvent::AssistantMessage { content, reasoning_content });
+                }
+                if let Some(tc) = tool_calls.first() {
+                    let name = tc.get("function").and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("tool");
+                    let args = tc.get("function").and_then(|f| f.get("arguments")).and_then(|v| v.as_str()).unwrap_or("{}");
+                    return Some(AgentEvent::ToolCall { name: name.to_string(), args_summary: args.to_string() });
+                }
+                return None;
+            }
+
+            if let Some(tools) = val.get("tools").and_then(|v| v.as_str()) {
+                if !content.is_empty() || reasoning_content.is_some() {
+                    return Some(AgentEvent::AssistantMessage { content, reasoning_content });
+                }
+                return Some(AgentEvent::ToolCall { name: "tool".to_string(), args_summary: tools.to_string() });
+            }
+
+            if !content.is_empty() || reasoning_content.is_some() {
+                return Some(AgentEvent::AssistantMessage { content, reasoning_content });
             }
         }
+        None
+    } else if val.get("session_stats").is_some() {
+        None
+    } else {
+        Some(AgentEvent::RawLine { line: line.to_string() })
     }
-    "http://localhost:8080".to_string()
 }
 
 #[tauri::command]
-async fn fetch_models() -> Result<Vec<String>, String> {
-    let base = get_gateway_url();
-    let url = format!("{}/v1/models", base.trim_end_matches('/'));
+async fn send_message(
+    prompt: String,
+    model: String,
+    session_id: Option<String>,
+    on_event: Channel<AgentEvent>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let bin_path = infer_bin_path();
 
-    let resp = ureq::get(&url)
-        .call()
-        .map_err(|e| format!("Gateway unreachable at {}: {}", url, e))?;
+    let mut child = std::process::Command::new(&bin_path)
+        .arg("agent")
+        .arg("--session-id")
+        .arg(session_id.as_deref().unwrap_or(""))
+        .arg("-m")
+        .arg(&model)
+        .arg(&prompt)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn infer agent: {}", e))?;
 
-    if resp.status() != 200 {
-        return Err(format!("Gateway returned HTTP {} from {}", resp.status(), url));
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    {
+        let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
+        *guard = Some(child.try_clone().map_err(|e| e.to_string())?);
     }
 
-    let body: serde_json::Value = resp
-        .into_json()
-        .map_err(|e| format!("Failed to parse gateway response: {}", e))?;
+    let on_event_clone = on_event.clone();
+    let new_session_id = Arc::new(Mutex::new(session_id.clone()));
+    let had_error = Arc::new(Mutex::new(false));
 
-    let models: Vec<String> = body["data"]
-        .as_array()
-        .ok_or_else(|| "Gateway response missing 'data' array".to_string())?
-        .iter()
-        .filter_map(|m| m["id"].as_str().map(String::from))
-        .collect();
+    let new_session_id_clone = Arc::clone(&new_session_id);
+    let had_error_clone = Arc::clone(&had_error);
 
-    if models.is_empty() {
-        return Err("Gateway returned no models".to_string());
+    let stdout_handle: std::thread::JoinHandle<()> = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let mut sid = new_session_id_clone.lock().unwrap();
+            if let Some(event) = parse_agent_line(&line, &mut sid) {
+                if matches!(event, AgentEvent::AgentError { .. }) {
+                    *had_error_clone.lock().unwrap() = true;
+                }
+                let _ = on_event_clone.send(event);
+            }
+        }
+    });
+
+    let stderr_handle: std::thread::JoinHandle<String> = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        let mut all = String::new();
+        for line in reader.lines() {
+            if let Ok(l) = line {
+                all.push_str(&l);
+                all.push('\n');
+            }
+        }
+        all
+    });
+
+    let _ = tokio::task::spawn_blocking(move || stdout_handle.join()).await
+        .map_err(|e| format!("Join error: {}", e))?;
+
+    let status = child.wait().map_err(|e| format!("Failed to wait for process: {}", e))?;
+
+    {
+        let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
+        *guard = None;
     }
 
-    let mut models = models;
-    models.sort();
-    Ok(models)
+    let stderr_text = stderr_handle.join().unwrap_or_default();
+
+    let had_error_val = *had_error.lock().unwrap();
+    if !status.success() && !had_error_val {
+        let code = status.code().unwrap_or(-1);
+        let msg = if stderr_text.is_empty() {
+            format!("Process exited with code {}", code)
+        } else {
+            format!("Process exited with code {}: {}", code, stderr_text.trim())
+        };
+        let _ = on_event.send(AgentEvent::AgentError { message: msg });
+    }
+
+    let _ = on_event.send(AgentEvent::Done {
+        exit_code: status.code().unwrap_or(-1),
+        stderr: stderr_text,
+    });
+
+    Ok(new_session_id.lock().unwrap().clone())
+}
+
+#[tauri::command]
+async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
 }
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![check_and_install_cli, fetch_models])
+        .manage(AppState {
+            running_child: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![
+            check_and_install_cli,
+            send_message,
+            cancel_agent,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -378,5 +521,138 @@ mod tests {
         let found = find_checksum(text, "infer-linux-amd64").unwrap();
         let hello_hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
         assert_ne!(found, hello_hash, "mismatch should be detected");
+    }
+
+    // --- NDJSON parser tests ---
+
+    #[test]
+    fn test_parse_assistant_message() {
+        let line = r#"{"role":"assistant","content":"Hello! How can I help you?","reasoning_content":"Thinking..."}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into())));
+        assert!(sid.is_none());
+    }
+
+    #[test]
+    fn test_parse_assistant_message_no_reasoning() {
+        let line = r#"{"role":"assistant","content":"Just a simple answer."}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Just a simple answer." && reasoning_content.is_none()));
+    }
+
+    #[test]
+    fn test_parse_tool_call() {
+        let line = r#"{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "read_file" && args_summary == "{\"path\":\"/tmp/test\"}"));
+    }
+
+    #[test]
+    fn test_parse_tool_call_with_content() {
+        let line = r#"{"role":"assistant","content":"Let me check that file.","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::AssistantMessage { content, .. } if content == "Let me check that file."));
+    }
+
+    #[test]
+    fn test_parse_tools_string() {
+        let line = r#"{"role":"assistant","content":"","tools":"read_file(\"/tmp/test\")"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "tool" && args_summary == "read_file(\"/tmp/test\")"));
+    }
+
+    #[test]
+    fn test_parse_agent_error() {
+        let line = r#"{"type":"agent_error","message":"Gateway unreachable"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::AgentError { message } if message == "Gateway unreachable"));
+    }
+
+    #[test]
+    fn test_parse_info_with_session_id() {
+        let line = r#"{"type":"info","message":"Session started","session_id":"abc-123","timestamp":"2024-01-01T00:00:00Z"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::Info { message } if message == "Session started"));
+        assert_eq!(sid, Some("abc-123".into()));
+    }
+
+    #[test]
+    fn test_parse_info_without_session_id() {
+        let line = r#"{"type":"info","message":"Model loaded"}"#;
+        let mut sid = Some("existing-id".into());
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::Info { message } if message == "Model loaded"));
+        assert_eq!(sid, Some("existing-id".into()));
+    }
+
+    #[test]
+    fn test_parse_warning() {
+        let line = r#"{"type":"warning","message":"Rate limit approaching"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::Warning { message } if message == "Rate limit approaching"));
+    }
+
+    #[test]
+    fn test_parse_session_stats_skipped() {
+        let line = r#"{"session_stats":{"total_tokens":150,"prompt_tokens":50,"completion_tokens":100}}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid);
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_raw_line() {
+        let line = r#"this is not valid json at all"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::RawLine { line: l } if l == "this is not valid json at all"));
+    }
+
+    #[test]
+    fn test_parse_unknown_type_is_raw() {
+        let line = r#"{"type":"unknown","data":"something"}"#;
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid).unwrap();
+        assert!(matches!(event, AgentEvent::RawLine { .. }));
+    }
+
+    #[test]
+    fn test_parse_empty_line_returns_none() {
+        let line = "";
+        let mut sid = None;
+        let event = parse_agent_line(line, &mut sid);
+        assert!(event.is_some());
+    }
+
+    #[test]
+    fn test_parse_ndjson_fixture() {
+        let fixture = r#"{"type":"info","message":"Session started","session_id":"session-42","timestamp":"2024-01-01T00:00:00Z"}
+{"role":"assistant","content":"I'll look that up for you.","reasoning_content":"Searching..."}
+{"role":"assistant","content":"","tool_calls":[{"function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]}
+{"type":"agent_error","message":"API key not found"}"#;
+
+        let mut sid = None;
+        let events: Vec<AgentEvent> = fixture
+            .lines()
+            .filter_map(|line| {
+                let l = line.trim();
+                if l.is_empty() { None } else { parse_agent_line(l, &mut sid) }
+            })
+            .collect();
+
+        assert_eq!(events.len(), 4);
+        assert!(matches!(events[0], AgentEvent::Info { .. }));
+        assert_eq!(sid, Some("session-42".into()));
+        assert!(matches!(events[1], AgentEvent::AssistantMessage { content, .. } if content == "I'll look that up for you."));
+        assert!(matches!(events[2], AgentEvent::ToolCall { name, .. } if name == "search"));
+        assert!(matches!(events[3], AgentEvent::AgentError { message } if message == "API key not found"));
     }
 }

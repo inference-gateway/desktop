@@ -76,38 +76,147 @@ html, body {
   cursor: not-allowed;
 }
 
-#retry-btn {
-  padding: 0.5rem 0.75rem;
+#cancel-btn {
+  padding: 0.5rem 1rem;
   background: #dc3545;
   color: #fff;
   border: none;
   border-radius: 4px;
-  font-size: 0.875rem;
+  font-size: 1rem;
   cursor: pointer;
-  white-space: nowrap;
 }
 
-#retry-btn:hover {
+#cancel-btn:hover {
   background: #c82333;
 }
 
-.message {
-  margin-bottom: 0.75rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
+/* Chat bubbles */
+.bubble {
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  max-width: 80%;
+  word-wrap: break-word;
 }
 
-.message-body {
-  flex: 1;
+.user-bubble {
+  background: #007bff;
+  color: #fff;
+  align-self: flex-end;
+  margin-left: auto;
 }
 
-.model-badge {
-  font-size: 0.75rem;
+.assistant-bubble {
+  background: #f1f1f1;
+  color: #333;
+  align-self: flex-start;
+}
+
+.assistant-bubble p {
+  margin: 0.25rem 0;
+}
+
+.assistant-bubble p:first-child {
+  margin-top: 0;
+}
+
+.assistant-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-bubble .reasoning {
+  font-style: italic;
+  color: #666;
+  font-size: 0.875rem;
+  border-left: 2px solid #ccc;
+  padding-left: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Tool calls */
+.tool-call {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.875rem;
+}
+
+.tool-name {
+  font-weight: bold;
+  color: #2e7d32;
+}
+
+.tool-args {
+  color: #555;
+}
+
+/* Info / Warning / Error lines */
+.info-line {
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #0c5460;
+  font-size: 0.875rem;
+}
+
+.warning-line {
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #856404;
+  background: #fff3cd;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.error-line {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  color: #721c24;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+.cancelled-line {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  color: #6c757d;
+  background: #e2e3e5;
+  border: 1px solid #d6d8db;
+  border-radius: 4px;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Raw output collapsible */
+.raw-output {
+  margin-top: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.raw-summary {
+  padding: 0.25rem 0.5rem;
+  background: #f8f9fa;
+  cursor: pointer;
+  user-select: none;
+  color: #666;
+}
+
+.raw-summary:hover {
   background: #e9ecef;
-  color: #495057;
-  padding: 0.125rem 0.5rem;
-  border-radius: 3px;
-  white-space: nowrap;
-  flex-shrink: 0;
+}
+
+.raw-body {
+  padding: 0.5rem;
+  margin: 0;
+  background: #fcfcfc;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #eee;
 }
