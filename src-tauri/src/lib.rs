@@ -270,9 +270,60 @@ async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), S
     Ok(())
 }
 
+/// Read `gateway.url` from `~/.infer/config.yaml`, falling back to `http://localhost:8080`.
+/// ponytail: line scan over YAML, fine for flat key-value config; switch to serde_yaml if nesting grows
+fn get_gateway_url() -> String {
+    let cfg_path = config_path();
+    if let Ok(content) = std::fs::read_to_string(&cfg_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(value) = line.strip_prefix("gateway.url:") {
+                let url = value.trim().trim_matches('"').trim_matches('\'');
+                if !url.is_empty() {
+                    return url.to_string();
+                }
+            }
+        }
+    }
+    "http://localhost:8080".to_string()
+}
+
+#[tauri::command]
+async fn fetch_models() -> Result<Vec<String>, String> {
+    let base = get_gateway_url();
+    let url = format!("{}/v1/models", base.trim_end_matches('/'));
+
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("Gateway unreachable at {}: {}", url, e))?;
+
+    if resp.status() != 200 {
+        return Err(format!("Gateway returned HTTP {} from {}", resp.status(), url));
+    }
+
+    let body: serde_json::Value = resp
+        .into_json()
+        .map_err(|e| format!("Failed to parse gateway response: {}", e))?;
+
+    let models: Vec<String> = body["data"]
+        .as_array()
+        .ok_or_else(|| "Gateway response missing 'data' array".to_string())?
+        .iter()
+        .filter_map(|m| m["id"].as_str().map(String::from))
+        .collect();
+
+    if models.is_empty() {
+        return Err("Gateway returned no models".to_string());
+    }
+
+    let mut models = models;
+    models.sort();
+    Ok(models)
+}
+
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![check_and_install_cli])
+        .invoke_handler(tauri::generate_handler![check_and_install_cli, fetch_models])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

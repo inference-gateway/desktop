@@ -75,3 +75,39 @@ html, body {
   background: #999;
   cursor: not-allowed;
 }
+
+#retry-btn {
+  padding: 0.5rem 0.75rem;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#retry-btn:hover {
+  background: #c82333;
+}
+
+.message {
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.message-body {
+  flex: 1;
+}
+
+.model-badge {
+  font-size: 0.75rem;
+  background: #e9ecef;
+  color: #495057;
+  padding: 0.125rem 0.5rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

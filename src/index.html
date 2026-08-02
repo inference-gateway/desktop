@@ -12,8 +12,9 @@
     <div id="chat-transcript" role="log" aria-label="Chat transcript"></div>
     <div id="input-area">
       <select id="model-select" disabled>
-        <option value="">Select a model...</option>
+        <option value="" disabled selected>Waiting for gateway...</option>
       </select>
+      <button id="retry-btn" style="display:none">Retry</button>
       <textarea id="prompt-input" rows="3" placeholder="Type your message..." disabled></textarea>
       <button id="send-btn" disabled>Send</button>
     </div>
