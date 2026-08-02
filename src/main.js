@@ -83,7 +83,6 @@ async function fetchModelsWithRetry() {
         setError(`Gateway not reachable: ${err}`);
         return;
       }
-      // Backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
       const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
       setStatus(`Waiting for gateway (attempt ${retryCount}/${MAX_RETRIES})...`);
       await new Promise(r => setTimeout(r, delay));
@@ -178,7 +177,6 @@ promptInput.addEventListener("keydown", (e) => {
         case "Ready":
           setStatus("Ready");
           setInputsEnabled(true);
-          // Start fetching models after CLI is ready
           fetchModelsWithRetry();
           break;
         case "Error":
