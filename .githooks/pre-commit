@@ -1,0 +1,23 @@
+#!/bin/sh
+# Pre-commit hook: run typecheck and tests before each commit.
+# Activate with: git config core.hooksPath .githooks
+#
+# This hook is inert until the above git config is run.
+
+set -e
+
+echo "==> Running pre-commit checks..."
+
+# Run typecheck if cargo is available
+if command -v cargo >/dev/null 2>&1; then
+    echo "--> Typecheck (cargo check)..."
+    cargo check
+fi
+
+# Run tests if cargo is available
+if command -v cargo >/dev/null 2>&1; then
+    echo "--> Tests (cargo test)..."
+    cargo test
+fi
+
+echo "==> All checks passed."
