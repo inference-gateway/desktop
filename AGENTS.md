@@ -97,6 +97,16 @@ This repository uses `inference-gateway/infer-action` for AI-assisted developmen
 
 Trigger phrase for the agent: `@opentask`
 
+### Project Board Management
+
+When working on a GitHub issue that belongs to a project board, keep the board's status in sync:
+
+1. **Start of work**: Move the issue from **Todo** to **In Progress** before making any changes.
+2. **Completion**: When the work is done (PR opened, changes committed, or comment posted), move the issue to **QA**.
+3. **Never Done**: Issues are never moved to **Done** — that transition is reserved for human review after QA sign-off.
+
+Use `gh project item-add` to add the issue to the board (idempotent — returns the existing item if already present) and `gh project item-edit` to update its status field. Detect board membership from the issue's `projectItems` field (`gh issue view <number> --json projectItems`) rather than scanning the board.
+
 ### Available Agents
 
 - **documentation-agent**: Handles documentation generation and updates.
