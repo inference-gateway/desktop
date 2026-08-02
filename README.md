@@ -37,3 +37,37 @@ cargo tauri build
 ```
 
 The bundled app will be written to `src-tauri/target/release/bundle/`.
+
+## How it works
+
+### CLI binary management
+
+On first run, the app downloads the `infer` CLI binary from the
+[inference-gateway/cli](https://github.com/inference-gateway/cli) releases
+and installs it to `~/.infer/bin/infer`. The download is verified against
+the release `checksums.txt` before the file is made executable; a partial
+or tampered download is discarded.
+
+The CLI is always spawned with its working directory set to `$HOME`. This
+means:
+
+- The gateway binary (`inference-gateway`) is placed at
+  `~/.infer/bin/inference-gateway` by the CLI's own `gateway_manager.go`,
+  which resolves `filepath.Join(".infer", "bin")` relative to its working
+  directory — no download code needed on our side.
+- The config layer lives under `~/.infer/`.
+- Agent file tools are scoped to the home directory.
+
+A workspace picker that lets the user point a session at a project
+directory is a good follow-up.
+
+### Supported platforms
+
+| Platform | Asset name |
+| --- | --- |
+| Linux amd64 | `infer-linux-amd64` |
+| Linux arm64 | `infer-linux-arm64` |
+| macOS amd64 | `infer-darwin-amd64` |
+| macOS arm64 | `infer-darwin-arm64` |
+| Windows amd64 | `infer-windows-amd64` |
+| Windows arm64 | `infer-windows-arm64` |

@@ -8,13 +8,14 @@
 </head>
 <body>
   <div id="app">
+    <div id="status-bar" role="status" aria-live="polite"></div>
     <div id="chat-transcript" role="log" aria-label="Chat transcript"></div>
     <div id="input-area">
       <select id="model-select" disabled>
         <option value="">Select a model...</option>
       </select>
-      <textarea id="prompt-input" rows="3" placeholder="Type your message..."></textarea>
-      <button id="send-btn">Send</button>
+      <textarea id="prompt-input" rows="3" placeholder="Type your message..." disabled></textarea>
+      <button id="send-btn" disabled>Send</button>
     </div>
   </div>
   <script src="main.js"></script>

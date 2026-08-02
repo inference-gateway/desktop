@@ -48,6 +48,7 @@ This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool a
 - **YAGNI**: Don't add code until it's needed. Delete dead code when you find it.
 - **Error handling**: Handle errors at trust boundaries. Don't swallow errors silently.
 - **`ponytail:` comments**: Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling and upgrade path (e.g. `ponytail: O(n²) — fine for <100 items`).
+- **No inline comments in function bodies**: The code should be self-documenting. Inline `//` comments inside function bodies are not allowed — use them only at the module level or as `ponytail:` debt markers.
 
 ## Commit Conventions
 
