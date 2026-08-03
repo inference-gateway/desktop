@@ -157,7 +157,7 @@ library the CLI embeds. Each child serves itself a scenario gateway on an
 ephemeral port — real infer binary, real tools, real approval flow, canned LLM
 turns, zero tokens. Keep `list_models()`'s canned list (`openai/gpt-4o`,
 `anthropic/claude-sonnet-4-5`, `openai/gpt-image-2`) in sync with the
-`mockgateway` constants.
+`tokenless` gateway constants.
 
 Scenarios are matched by regex against the first user message; this repo owns
 its scenarios in `e2e/scenarios.yaml`, handed to the children via
