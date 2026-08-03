@@ -116,6 +116,35 @@ body {
   color: var(--error-fg);
 }
 
+#version-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+#update-btn {
+  flex-shrink: 0;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+#update-btn:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+#update-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 #model-controls {
   display: flex;
   align-items: center;
@@ -680,6 +709,16 @@ details.tool-call.failed .tool-name {
   margin-bottom: 0.25rem;
 }
 
+#settings-panel h2:not(:first-child) {
+  margin-top: 1.25rem;
+}
+
+.version-row {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
 .settings-hint {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -728,11 +767,22 @@ details.tool-call.failed .tool-name {
   background: var(--accent-hover);
 }
 
-#settings-cancel {
+#settings-cancel,
+#check-updates-btn {
   padding: 0.5rem 1rem;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+
+#check-updates-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+#check-updates-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

@@ -164,13 +164,18 @@ fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> 
     Ok(true)
 }
 
+/// Install the CLI if it is missing. `force` reinstalls over an existing binary,
+/// which is how an update is applied.
 #[tauri::command]
-async fn check_and_install_cli(on_event: Channel<ProgressEvent>) -> Result<(), String> {
+async fn check_and_install_cli(
+    on_event: Channel<ProgressEvent>,
+    force: bool,
+) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
 
     let bin_path = infer_bin_path();
 
-    if bin_path.exists() {
+    if bin_path.exists() && !force {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -792,9 +797,11 @@ fn gateway_reachable() -> bool {
 }
 
 /// Download and extract the gateway binary if it isn't already present.
-fn ensure_gateway_binary() -> Result<PathBuf, String> {
+/// `force` re-downloads over an existing binary; the caller must have stopped it
+/// first, otherwise the extraction hits ETXTBSY.
+fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
     let bin = gateway_bin_path();
-    if bin.exists() {
+    if bin.exists() && !force {
         return Ok(bin);
     }
     if cfg!(target_os = "windows") {
@@ -816,6 +823,7 @@ fn ensure_gateway_binary() -> Result<PathBuf, String> {
         asset
     );
     let archive = bin_dir.join(&asset);
+    let _ = std::fs::remove_file(&bin);
 
     let resp = ureq::get(&url)
         .call()
@@ -851,16 +859,16 @@ fn ensure_gateway_binary() -> Result<PathBuf, String> {
     Ok(bin)
 }
 
+/// Start (or restart) the gateway. `force` re-downloads the binary first, so an
+/// update lands on the next spawn.
 #[tauri::command]
-async fn start_gateway(state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn start_gateway(state: tauri::State<'_, AppState>, force: bool) -> Result<(), String> {
     let we_own_one = state
         .gateway_child
         .lock()
         .map_err(|e| e.to_string())?
         .is_some();
 
-    // Leave an externally-run gateway alone; only manage our own. Restarting our
-    // own picks up newly-saved keys.
     if !we_own_one && gateway_reachable() {
         return Ok(());
     }
@@ -873,7 +881,7 @@ async fn start_gateway(state: tauri::State<'_, AppState>) -> Result<(), String> 
         }
     }
 
-    let bin = ensure_gateway_binary()?;
+    let bin = ensure_gateway_binary(force)?;
     let child = std::process::Command::new(&bin)
         .envs(auth_env())
         .stdout(std::process::Stdio::null())
@@ -883,6 +891,114 @@ async fn start_gateway(state: tauri::State<'_, AppState>) -> Result<(), String> 
 
     *state.gateway_child.lock().map_err(|e| e.to_string())? = Some(child);
     Ok(())
+}
+
+// --- Update checks ---
+// GitHub allows 60 API requests/hour unauthenticated, 5000 through an authenticated
+// `gh`. The frontend caches results for 6h, so neither ceiling is anywhere near.
+
+#[derive(Clone, serde::Serialize)]
+struct UpdateInfo {
+    name: String,
+    current: String,
+    latest: String,
+    outdated: bool,
+}
+
+/// Last whitespace token of the first line, minus a leading `v`. Covers
+/// `infer v0.158.0`, `infer version v0.158.0` and the gateway's bare `0.44.0`.
+fn parse_version(output: &str) -> Option<String> {
+    let token = output.lines().next()?.split_whitespace().next_back()?;
+    let version = token.trim_start_matches('v');
+    if version.is_empty() {
+        return None;
+    }
+    Some(version.to_string())
+}
+
+fn installed_version(bin: &std::path::Path, arg: &str) -> Option<String> {
+    let out = std::process::Command::new(bin).arg(arg).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Latest release tag for a repo, via `gh` when it is available and authenticated,
+/// falling back to the public GitHub API.
+fn latest_tag(repo: &str) -> Option<String> {
+    let gh = std::process::Command::new("gh")
+        .args([
+            "release",
+            "list",
+            "--repo",
+            repo,
+            "--limit",
+            "1",
+            "--json",
+            "tagName",
+            "-q",
+            ".[0].tagName",
+        ])
+        .output();
+    if let Ok(out) = gh {
+        if out.status.success() {
+            if let Some(tag) = parse_version(&String::from_utf8_lossy(&out.stdout)) {
+                return Some(tag);
+            }
+        }
+    }
+
+    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+    let resp = ureq::get(&url)
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(10)))
+        .build()
+        .call()
+        .ok()?;
+    let mut text = String::new();
+    resp.into_body()
+        .into_reader()
+        .read_to_string(&mut text)
+        .ok()?;
+    let body: serde_json::Value = serde_json::from_str(&text).ok()?;
+    parse_version(body.get("tag_name")?.as_str()?)
+}
+
+/// A component is outdated when both versions are known and differ. Locally built
+/// (`dev`) binaries and failed lookups never report an update.
+fn is_outdated(current: &str, latest: &str) -> bool {
+    current != "dev" && !latest.is_empty() && current != latest
+}
+
+#[tauri::command]
+async fn check_updates() -> Result<Vec<UpdateInfo>, String> {
+    tokio::task::spawn_blocking(|| {
+        let components = [
+            ("CLI", infer_bin_path(), "inference-gateway/cli", "version"),
+            (
+                "Gateway",
+                gateway_bin_path(),
+                "inference-gateway/inference-gateway",
+                "--version",
+            ),
+        ];
+        components
+            .into_iter()
+            .filter_map(|(name, bin, repo, arg)| {
+                let current = installed_version(&bin, arg)?;
+                let latest = latest_tag(repo).unwrap_or_default();
+                Some(UpdateInfo {
+                    outdated: is_outdated(&current, &latest),
+                    name: name.to_string(),
+                    current,
+                    latest,
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub fn run() {
@@ -905,6 +1021,7 @@ pub fn run() {
             get_auth,
             set_auth,
             start_gateway,
+            check_updates,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -963,6 +1080,33 @@ mod tests {
             ("windows", "aarch64") => Some("infer-windows-arm64"),
             _ => None,
         }
+    }
+
+    #[test]
+    fn test_parse_version() {
+        assert_eq!(parse_version("infer v0.158.0\n"), Some("0.158.0".into()));
+        assert_eq!(
+            parse_version("infer version v0.158.0\n"),
+            Some("0.158.0".into())
+        );
+        assert_eq!(parse_version("0.44.0\n"), Some("0.44.0".into()));
+        assert_eq!(parse_version("v0.44.0\n"), Some("0.44.0".into()));
+        assert_eq!(parse_version("dev\n"), Some("dev".into()));
+        assert_eq!(
+            parse_version("infer v0.158.0\nextra line\n"),
+            Some("0.158.0".into())
+        );
+        assert_eq!(parse_version(""), None);
+        assert_eq!(parse_version("  \n"), None);
+        assert_eq!(parse_version("v\n"), None);
+    }
+
+    #[test]
+    fn test_is_outdated() {
+        assert!(is_outdated("0.158.0", "0.158.1"));
+        assert!(!is_outdated("0.158.1", "0.158.1"));
+        assert!(!is_outdated("dev", "0.158.1"));
+        assert!(!is_outdated("0.158.0", ""));
     }
 
     #[test]
