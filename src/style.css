@@ -228,14 +228,52 @@ body {
 }
 
 .chat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
   font-size: 0.83rem;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+.chat-item-title {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chat-item-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.15rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.chat-item:hover .chat-item-delete,
+.chat-item-delete:focus-visible {
+  opacity: 1;
+}
+
+.chat-item-delete:hover {
+  color: var(--danger);
+  background: var(--surface-2);
+}
+
+.chat-item-delete.confirm,
+.chat-item-delete.confirm:hover {
+  color: #fff;
+  background: var(--danger);
 }
 
 .chat-item:hover {

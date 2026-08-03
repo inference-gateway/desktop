@@ -697,6 +697,11 @@ async fn get_conversation(session_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn delete_conversation(session_id: String) -> Result<String, String> {
+    run_infer(&["conversations", "delete", &session_id])
+}
+
+#[tauri::command]
 async fn list_models() -> Result<Vec<String>, String> {
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let resp = ureq::get(&url)
@@ -1035,6 +1040,7 @@ pub fn run() {
             cancel_agent,
             list_conversations,
             get_conversation,
+            delete_conversation,
             list_models,
             get_auth,
             set_auth,

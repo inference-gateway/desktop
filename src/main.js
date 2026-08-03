@@ -369,18 +369,58 @@ async function refreshChatList() {
   }
 }
 
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
 function renderChatList(conversations) {
   chatList.innerHTML = "";
   for (const c of conversations) {
     const item = document.createElement("div");
     item.className = "chat-item";
     item.dataset.id = c.id;
-    item.textContent = c.title || "(untitled)";
     item.title = c.title || c.id;
     item.addEventListener("click", () => openConversation(c.id));
+
+    const label = document.createElement("span");
+    label.className = "chat-item-title";
+    label.textContent = c.title || "(untitled)";
+    item.appendChild(label);
+
+    const del = document.createElement("button");
+    del.className = "chat-item-delete";
+    del.title = "Delete conversation";
+    del.setAttribute("aria-label", "Delete conversation");
+    del.innerHTML = TRASH_ICON;
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!del.classList.contains("confirm")) {
+        del.classList.add("confirm");
+        del.title = "Click again to delete";
+        return;
+      }
+      deleteConversation(c.id);
+    });
+    del.addEventListener("mouseleave", () => {
+      del.classList.remove("confirm");
+      del.title = "Delete conversation";
+    });
+    item.appendChild(del);
+
     chatList.appendChild(item);
   }
   highlightActive();
+}
+
+async function deleteConversation(id) {
+  if (running) return;
+  try {
+    const { invoke } = window.__TAURI__.core;
+    await invoke("delete_conversation", { sessionId: id });
+    if (id === activeSessionId) startNewChat();
+    refreshChatList();
+  } catch (err) {
+    addError(`Failed to delete conversation: ${err}`);
+  }
 }
 
 function highlightActive() {
