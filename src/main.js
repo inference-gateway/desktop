@@ -549,7 +549,10 @@ function renderUpdates(updates) {
 }
 
 // GitHub allows 60 API requests/hour unauthenticated, so a cached result is
-// reused across restarts and the automatic check runs at most every 6 hours.
+// reused within a session and the automatic re-check runs at most every 6
+// hours. The cache is invalidated on every app launch so a new version is
+// detected at startup; the stale data is kept as a fallback for when the
+// check itself fails (offline, rate-limited).
 async function checkForUpdates(force = false) {
   const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
   if (!force && cached && Date.now() - cached.checkedAt < UPDATE_INTERVAL_MS) {
@@ -622,6 +625,14 @@ async function initBackend(force = false) {
   } catch (err) {
     setError(`Setup failed: ${err}`);
   }
+}
+
+const staleUpdateCache = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
+if (staleUpdateCache) {
+  localStorage.setItem(
+    UPDATE_CACHE_KEY,
+    JSON.stringify({ ...staleUpdateCache, checkedAt: 0 })
+  );
 }
 
 initBackend();
