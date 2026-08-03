@@ -493,6 +493,19 @@ details.tool-call pre {
   word-break: break-word;
 }
 
+#chat-transcript details.tool-call.running summary::after {
+  content: "…";
+  color: var(--text-muted);
+  margin-left: 0.4rem;
+  animation: tool-running 1s ease-in-out infinite;
+}
+
+@keyframes tool-running {
+  50% {
+    opacity: 0.2;
+  }
+}
+
 #chat-transcript details.tool-call.failed {
   background: var(--error-bg);
   border-color: var(--error-border);

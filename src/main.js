@@ -44,6 +44,7 @@ let running = false;
 let currentAssistantBubble = null;
 let rawLines = [];
 let pendingApprovals = [];
+const pendingToolCalls = new Map();
 
 function setInputsEnabled(enabled) {
   promptInput.disabled = !enabled;
@@ -143,27 +144,61 @@ function addToolCall(name, argsSummary, output, failed) {
   details.append(summary, pre);
   transcript.appendChild(details);
   transcript.scrollTop = transcript.scrollHeight;
+  return details;
 }
 
 // ponytail: infer writes tool results as "Result of tool call: {json}" or a
 // plain "Tool execution failed: ..." line; anything unparseable is shown raw.
-function addToolResult(content) {
+function parseToolResult(content) {
   const brace = content.indexOf("{");
-  if (brace !== -1) {
-    try {
-      const result = JSON.parse(content.slice(brace));
-      const data = result.data;
-      const output = data?.output ?? (data ? JSON.stringify(data, null, 2) : "");
-      addToolCall(
-        result.tool_name || "tool",
-        JSON.stringify(result.arguments ?? {}),
-        output,
-        result.success === false,
-      );
-      return;
-    } catch {}
+  if (brace === -1) return null;
+  try {
+    const result = JSON.parse(content.slice(brace));
+    const data = result.data;
+    const output = data?.output ?? (data ? JSON.stringify(data, null, 2) : "");
+    return {
+      name: result.tool_name || "tool",
+      args: JSON.stringify(result.arguments ?? {}),
+      output,
+      failed: result.success === false,
+    };
+  } catch {
+    return null;
   }
-  addToolCall("tool", content, "", /fail|error/i.test(content));
+}
+
+function addToolResult(content) {
+  const r = parseToolResult(content);
+  if (r) {
+    addToolCall(r.name, r.args, r.output, r.failed);
+  } else {
+    addToolCall("tool", content, "", /fail|error/i.test(content));
+  }
+}
+
+function resolveToolCall(id, content) {
+  const details = pendingToolCalls.get(id);
+  pendingToolCalls.delete(id);
+  if (!details || !document.body.contains(details)) {
+    addToolResult(content);
+    return;
+  }
+  const r = parseToolResult(content);
+  const output = r ? r.output : content;
+  const failed = r ? r.failed : /fail|error/i.test(content);
+  details.classList.remove("running");
+  if (failed) details.classList.add("failed");
+  const argsSummary = details.querySelector(".tool-args")?.textContent ?? "";
+  details.querySelector("pre").textContent = [prettyJson(argsSummary), output]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function finishPendingToolCalls() {
+  for (const details of pendingToolCalls.values()) {
+    details.classList.remove("running");
+  }
+  pendingToolCalls.clear();
 }
 
 function addInfo(message) {
@@ -585,9 +620,17 @@ sendBtn.addEventListener("click", async () => {
           if (event.content) {
             appendAssistantContent(event.content);
           }
+          if (event.tool_calls?.length) {
+            for (const tc of event.tool_calls) {
+              const details = addToolCall(tc.name, tc.args);
+              details.classList.add("running");
+              if (tc.id) pendingToolCalls.set(tc.id, details);
+            }
+            currentAssistantBubble = null;
+          }
           break;
-        case "ToolCall":
-          addToolCall(event.name, event.args_summary);
+        case "ToolResult":
+          resolveToolCall(event.tool_call_id, event.content);
           break;
         case "ApprovalRequest":
           addApprovalPrompt(event.tool_name, event.tool_args, event.tool_call_id);
@@ -607,6 +650,7 @@ sendBtn.addEventListener("click", async () => {
           break;
         case "Done":
           setRunning(false);
+          finishPendingToolCalls();
           if (event.exit_code === 0) {
             setStatus("Done");
           } else {
@@ -617,6 +661,7 @@ sendBtn.addEventListener("click", async () => {
         case "Cancelled":
           addCancelled();
           setRunning(false);
+          finishPendingToolCalls();
           setStatus("Cancelled");
           currentAssistantBubble = null;
           break;
@@ -637,6 +682,7 @@ sendBtn.addEventListener("click", async () => {
   } catch (err) {
     addError(`Error: ${err}`);
     setRunning(false);
+    finishPendingToolCalls();
     setStatus("Error");
     currentAssistantBubble = null;
   }

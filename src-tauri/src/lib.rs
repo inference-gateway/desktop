@@ -299,7 +299,6 @@ async fn check_and_install_cli(
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "kind")]
 enum AgentEvent {
-    // SessionId and Cancelled are part of the frontend event contract but not yet emitted.
     #[allow(dead_code)]
     SessionId {
         session_id: String,
@@ -307,10 +306,11 @@ enum AgentEvent {
     AssistantMessage {
         content: String,
         reasoning_content: Option<String>,
+        tool_calls: Vec<ToolCallInfo>,
     },
-    ToolCall {
-        name: String,
-        args_summary: String,
+    ToolResult {
+        content: String,
+        tool_call_id: String,
     },
     ApprovalRequest {
         tool_name: String,
@@ -335,6 +335,13 @@ enum AgentEvent {
     },
     #[allow(dead_code)]
     Cancelled,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct ToolCallInfo {
+    id: String,
+    name: String,
+    args: String,
 }
 
 struct AppState {
@@ -409,53 +416,64 @@ fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<Agent
             let reasoning_content = val
                 .get("reasoning_content")
                 .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
+            let tool_calls: Vec<ToolCallInfo> = val
+                .get("tool_calls")
+                .and_then(|v| v.as_array())
+                .map(|calls| {
+                    calls
+                        .iter()
+                        .map(|tc| ToolCallInfo {
+                            id: tc
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            name: tc
+                                .get("function")
+                                .and_then(|f| f.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("tool")
+                                .to_string(),
+                            args: tc
+                                .get("function")
+                                .and_then(|f| f.get("arguments"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("{}")
+                                .to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
-            if let Some(tool_calls) = val.get("tool_calls").and_then(|v| v.as_array()) {
-                if !content.is_empty() || reasoning_content.is_some() {
-                    return Some(AgentEvent::AssistantMessage {
-                        content,
-                        reasoning_content,
-                    });
-                }
-                if let Some(tc) = tool_calls.first() {
-                    let name = tc
-                        .get("function")
-                        .and_then(|f| f.get("name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("tool");
-                    let args = tc
-                        .get("function")
-                        .and_then(|f| f.get("arguments"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("{}");
-                    return Some(AgentEvent::ToolCall {
-                        name: name.to_string(),
-                        args_summary: args.to_string(),
-                    });
-                }
+            if content.is_empty() && reasoning_content.is_none() && tool_calls.is_empty() {
                 return None;
             }
-
-            if let Some(tools) = val.get("tools").and_then(|v| v.as_str()) {
-                if !content.is_empty() || reasoning_content.is_some() {
-                    return Some(AgentEvent::AssistantMessage {
-                        content,
-                        reasoning_content,
-                    });
-                }
-                return Some(AgentEvent::ToolCall {
-                    name: "tool".to_string(),
-                    args_summary: tools.to_string(),
-                });
+            return Some(AgentEvent::AssistantMessage {
+                content,
+                reasoning_content,
+                tool_calls,
+            });
+        }
+        if role == "tool" {
+            let content = val
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if content.is_empty() {
+                return None;
             }
-
-            if !content.is_empty() || reasoning_content.is_some() {
-                return Some(AgentEvent::AssistantMessage {
-                    content,
-                    reasoning_content,
-                });
-            }
+            let tool_call_id = val
+                .get("tool_call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Some(AgentEvent::ToolResult {
+                content,
+                tool_call_id,
+            });
         }
         None
     } else if val.get("session_stats").is_some() {
@@ -1140,7 +1158,7 @@ mod tests {
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
         assert!(
-            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into()))
+            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content, .. } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into()))
         );
         assert!(sid.is_none());
     }
@@ -1151,37 +1169,60 @@ mod tests {
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
         assert!(
-            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content } if content == "Just a simple answer." && reasoning_content.is_none())
+            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content, .. } if content == "Just a simple answer." && reasoning_content.is_none())
         );
     }
 
     #[test]
     fn test_parse_tool_call() {
-        let line = r#"{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
+        let line = r#"{"role":"assistant","content":"","tool_calls":[{"id":"call-1","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(
-            matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "read_file" && args_summary == "{\"path\":\"/tmp/test\"}")
-        );
+        match event {
+            AgentEvent::AssistantMessage {
+                content,
+                tool_calls,
+                ..
+            } => {
+                assert_eq!(content, "");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "call-1");
+                assert_eq!(tool_calls[0].name, "read_file");
+                assert_eq!(tool_calls[0].args, "{\"path\":\"/tmp/test\"}");
+            }
+            _ => panic!("expected AssistantMessage"),
+        }
     }
 
     #[test]
     fn test_parse_tool_call_with_content() {
-        let line = r#"{"role":"assistant","content":"Let me check that file.","tool_calls":[{"function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
+        let line = r#"{"role":"assistant","content":"Let me check that file.","reasoning_content":"","tool_calls":[{"id":"call-1","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}},{"id":"call-2","function":{"name":"list_dir","arguments":"{\"path\":\"/tmp\"}"}}]}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(
-            matches!(event, AgentEvent::AssistantMessage { content, .. } if content == "Let me check that file.")
-        );
+        match event {
+            AgentEvent::AssistantMessage {
+                content,
+                reasoning_content,
+                tool_calls,
+            } => {
+                assert_eq!(content, "Let me check that file.");
+                assert!(reasoning_content.is_none());
+                assert_eq!(tool_calls.len(), 2);
+                assert_eq!(tool_calls[0].name, "read_file");
+                assert_eq!(tool_calls[1].id, "call-2");
+                assert_eq!(tool_calls[1].name, "list_dir");
+            }
+            _ => panic!("expected AssistantMessage"),
+        }
     }
 
     #[test]
-    fn test_parse_tools_string() {
-        let line = r#"{"role":"assistant","content":"","tools":"read_file(\"/tmp/test\")"}"#;
+    fn test_parse_tool_result() {
+        let line = r#"{"role":"tool","content":"Result of tool call: {\"tool_name\":\"read_file\",\"success\":true}","tool_call_id":"call-1"}"#;
         let mut sid = None;
         let event = parse_agent_line(line, &mut sid).unwrap();
         assert!(
-            matches!(event, AgentEvent::ToolCall { name, args_summary } if name == "tool" && args_summary == "read_file(\"/tmp/test\")")
+            matches!(event, AgentEvent::ToolResult { content, tool_call_id } if content.starts_with("Result of tool call:") && tool_call_id == "call-1")
         );
     }
 
@@ -1261,8 +1302,8 @@ mod tests {
     #[test]
     fn test_parse_ndjson_fixture() {
         let fixture = r#"{"type":"info","message":"Session started","session_id":"session-42","timestamp":"2024-01-01T00:00:00Z"}
-{"role":"assistant","content":"I'll look that up for you.","reasoning_content":"Searching..."}
-{"role":"assistant","content":"","tool_calls":[{"function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]}
+{"role":"assistant","content":"I'll look that up for you.","reasoning_content":"Searching...","tool_calls":[{"id":"call-1","function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]}
+{"role":"tool","content":"Result of tool call: {\"tool_name\":\"search\",\"success\":true}","tool_call_id":"call-1"}
 {"type":"agent_error","message":"API key not found"}"#;
 
         let mut sid = None;
@@ -1282,9 +1323,11 @@ mod tests {
         assert!(matches!(events[0], AgentEvent::Info { .. }));
         assert_eq!(sid, Some("session-42".into()));
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "I'll look that up for you.")
+            matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. } if content == "I'll look that up for you." && tool_calls.len() == 1 && tool_calls[0].name == "search")
         );
-        assert!(matches!(&events[2], AgentEvent::ToolCall { name, .. } if name == "search"));
+        assert!(
+            matches!(&events[2], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
+        );
         assert!(
             matches!(&events[3], AgentEvent::AgentError { message } if message == "API key not found")
         );
