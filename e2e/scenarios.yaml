@@ -1,0 +1,35 @@
+# Desktop-owned mock scenario library, served to spawned `infer` children via
+# INFER_GATEWAY_MOCK_SCENARIOS (see github.com/inference-gateway/tokenless).
+# A scenario is selected by regex against the FIRST user message; turns are
+# served by position. Keep prompts distinct from the CLI's embedded library.
+
+fallback:
+  content: "Done."
+
+scenarios:
+  - name: write-approved
+    match: '(?i)create a file named approved\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "approved.txt", content: "hello from e2e" } }
+      - content: "The file was written."
+
+  - name: write-denied
+    match: '(?i)create a file named denied\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
+      - content: "Understood."
+
+  # Multiple tools in one session: two parallel reads auto-execute (read tools
+  # need no approval), then a Write goes through the approval card. Paths are
+  # relative to the app cwd (src-tauri/).
+  - name: multi-tool
+    match: '(?i)inspect the project and write a summary'
+    turns:
+      - tool_calls:
+          - { name: Read, args: { file_path: "Cargo.toml" } }
+          - { name: Read, args: { file_path: "tauri.conf.json" } }
+      - tool_calls:
+          - { name: Write, args: { file_path: "summary.txt", content: "two files inspected" } }
+      - content: "Summary written."

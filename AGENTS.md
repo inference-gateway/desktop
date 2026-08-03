@@ -44,32 +44,132 @@ This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool a
 
 ## Verifying the UI
 
-There is **no e2e harness**. CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`,
-and `cargo test`; every test in `src-tauri/src/lib.rs` is a pure function (line
-parsing, checksum lookup, version parsing). Nothing loads a page. There is no
-`package.json`, no Playwright, no WebdriverIO, no `tauri-driver`.
+**`task e2e` is the way to test features.** It runs the YAML-defined tests in
+`e2e/tests/` against a fresh mock-mode build of the app, driving the real UI
+through the macOS accessibility tree — launch, type, click, approve, assert on
+disk — with zero tokens. Add a test by copying a YAML in `e2e/tests/`; add a
+mock scenario (canned LLM turns, incl. tool calls) in `e2e/scenarios.yaml`.
+`task e2e -- tests/foo.yaml` runs one file; `--no-build` skips the app build;
+`INFER_BIN=<path>` points the app at a specific infer build. Failures leave a
+window screenshot and the app log in `e2e/artifacts/`. Runs leave their test
+conversations in the user-level infer history (harmless; delete from the
+sidebar if they bother you). macOS-only; CI (ubuntu) runs only fmt/clippy/test —
+no `package.json`, no Playwright, no WebdriverIO, no `tauri-driver`.
 
-To check a frontend change, an agent launches the app and reads a screenshot:
+The sections below document the raw AX primitives the harness is built on —
+use them when a test fails and you need to poke the tree by hand.
+
+### Launch and screenshot
 
 ```bash
 # 1. Launch in the background, then poll the log until it prints "Running target/debug/..."
 flox activate -- cargo tauri dev > /tmp/tauri-dev.log 2>&1 &
 
-# 2. Get the window rect (x, y, w, h)
-osascript -e 'tell application "System Events" to tell (first process whose name contains "inference-gateway-desktop") to get {position, size} of front window'
+# 2. Capture BY WINDOW ID, not screen rect — `screencapture -R` grabs whatever
+#    Space is currently visible, including the user's other windows. Find the id:
+swift - <<'EOF'
+import CoreGraphics
+let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as! [[String: Any]]
+for w in info where (w["kCGWindowOwnerName"] as? String ?? "").contains("inference-gateway") {
+    if let b = w["kCGWindowBounds"] as? [String: Int], b["Height"]! > 100 { print(w["kCGWindowNumber"]!) }
+}
+EOF
 
-# 3. Capture just that rect — never the full screen, it catches the user's other windows
-screencapture -x -R 206,93,1100,80 /tmp/header.png
+# 3. Capture just that window
+screencapture -x -l <window-id> /tmp/app.png
 ```
 
 Frontend files are not hot-reloaded — `cargo tauri dev` watches `src-tauri/` only.
 After editing `src/`, kill the process and relaunch.
 
-What this **cannot** do, so plan verification around it:
+### Clicking and typing work — via AX element actions only
 
-- **No clicking or typing.** `osascript ... click at {x,y}` fails with `-25208`
-  unless the invoking process holds Accessibility permission. Anything behind a
-  click (the settings modal, a button press) has to be verified by the human.
+`keystroke` and `click at {x,y}` do NOT work here, but not for permission reasons:
+they target the *frontmost* app, and the dev build is a bare unbundled binary
+(no bundle identifier), so macOS cooperative activation refuses to focus it and
+the keystrokes land in the invoking terminal instead. The fix is to skip focus
+entirely: WKWebView exposes a complete AX tree (text area, every button, the
+transcript), and System Events **AX element actions** are delivered to the element
+regardless of which app is frontmost. Requires the terminal to hold Accessibility
+permission (check: `AXIsProcessTrusted` — keystroke landing in the terminal
+proves it's granted).
+
+```applescript
+tell application "System Events" to tell (first process whose name contains "inference-gateway-desktop")
+	set root to UI element 1 of scroll area 1 of group 1 of group 1 of window 1
+	set value of text area 1 of root to "Create a file named test.txt with content hello using the Write tool"
+	click button "Send" of root
+end tell
+```
+
+Buttons (`Send`, `Approve`, `Deny`, `+ New chat`, `Delete conversation`, …) are
+clickable the same way. Setting AXValue on the textarea propagates to the DOM —
+Send reads the real value.
+
+Two verified quirks:
+
+- **AXValue only sticks on a fresh instance after one AX click inside the
+  webview.** After hot rebuilds the set silently no-ops (read back "" every
+  time). Recipe that always works: kill + relaunch, then `click button
+  "+ New chat"` first, then set the value — and read it back to confirm before
+  clicking Send.
+- **`entire contents of window 1` is flaky** (intermittently returns nothing or
+  errors -1700 when filtered). For finding a button, walk `UI elements`
+  recursively with a handler instead:
+
+```applescript
+on findButton(el, btnName, depth)
+	tell application "System Events"
+		if depth > 8 then return missing value
+		try
+			if role of el is "AXButton" and name of el is btnName then return el
+		end try
+		try
+			repeat with c in (UI elements of el)
+				set r to my findButton(c, btnName, depth + 1)
+				if r is not missing value then return r
+			end repeat
+		end try
+		return missing value
+	end tell
+end findButton
+```
+
+### e2e with a real model
+
+Always suggest **`deepseek/deepseek-v4-flash`** — the cheapest model available
+through the gateway. Full approval-flow check: send a Write-triggering prompt,
+wait for the "Tool requires approval" card, AX-click **Approve**, assert the file
+exists on disk (the agent's cwd is `src-tauri/` in dev — relative tool paths land
+there), then delete it. Repeat with **Deny** and assert the file was not written.
+
+### e2e without tokens: DESKTOP_MOCK=true
+
+```bash
+DESKTOP_MOCK=true flox activate -- cargo tauri dev
+```
+
+`DESKTOP_MOCK=true` (see `mock_mode()` in `src-tauri/src/lib.rs`) makes the
+desktop skip its own gateway, serve a canned model list, and spawn `infer agent`
+children with `INFER_GATEWAY_MOCK=true` — the mock mode of the
+[`inference-gateway/tokenless`](https://github.com/inference-gateway/tokenless)
+library the CLI embeds. Each child serves itself a scenario gateway on an
+ephemeral port — real infer binary, real tools, real approval flow, canned LLM
+turns, zero tokens. Keep `list_models()`'s canned list (`openai/gpt-4o`,
+`anthropic/claude-sonnet-4-5`, `openai/gpt-image-2`) in sync with the
+`mockgateway` constants.
+
+Scenarios are matched by regex against the first user message; this repo owns
+its scenarios in `e2e/scenarios.yaml`, handed to the children via
+`INFER_GATEWAY_MOCK_SCENARIOS` (the `task e2e` harness sets it automatically;
+set it yourself for a manual `cargo tauri dev` session). Two more env
+overrides matter here: `INFER_BIN=<path>` makes the desktop spawn a specific
+infer build, and scenario tool paths resolve against the app's cwd. Prefer
+mock mode for UI work; use a real model only when the change touches actual
+agent behavior.
+
+### Still impossible on macOS, plan around it
+
 - **No console.** `console.error` output is unreachable — it is WKWebView, not
   Chrome, so the `claude-in-chrome` tools and CDP do not apply.
 - **No DOM assertions, no `localStorage` reads.** WebKit keeps local storage in
@@ -77,8 +177,8 @@ What this **cannot** do, so plan verification around it:
   is empty on disk.
 
 So verify the data path in the shell (run the same commands the backend runs, add
-a Rust unit test for the parsing) and use the screenshot only to confirm the
-rendering. Say plainly which parts stayed unverified.
+a Rust unit test for the parsing) and use the AX tree + screenshots for the UI.
+Say plainly which parts stayed unverified.
 
 `tauri-driver` + WebdriverIO is the official e2e route, but it is **Linux and
 Windows only** — WKWebView exposes no WebDriver, so it cannot run on macOS. It

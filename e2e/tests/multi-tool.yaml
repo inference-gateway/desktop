@@ -1,0 +1,13 @@
+# Multiple tools in one conversation: two Read tool calls run in parallel
+# without approval, then a Write requires the approval card. Exercises tool
+# chips rendering, mixed auto/approval execution, and the multi-turn mock.
+name: multi-tool flow - reads auto-run, write needs approval
+cleanup:
+  - summary.txt
+steps:
+  - new_chat
+  - send: "inspect the project and write a summary"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: "summary.txt", timeout: 15 }
+  - wait_for: { text: "Summary written.", timeout: 15 }

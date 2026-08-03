@@ -1,0 +1,13 @@
+# Approving a Write tool call executes it: the approval card appears, Approve
+# runs the real Write tool (cwd src-tauri/), and the scenario's closing text
+# lands in the transcript.
+name: approval flow - approve executes the tool
+cleanup:
+  - approved.txt
+steps:
+  - new_chat
+  - send: "create a file named approved.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: "approved.txt", timeout: 15 }
+  - wait_for: { text: "The file was written.", timeout: 15 }
