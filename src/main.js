@@ -93,12 +93,71 @@ function appendAssistantContent(text) {
   transcript.scrollTop = transcript.scrollHeight;
 }
 
-function addToolCall(name, argsSummary) {
-  const div = document.createElement("div");
-  div.className = "tool-call";
-  div.innerHTML = `<span class="tool-name">${escapeHtml(name)}</span> <span class="tool-args">${escapeHtml(argsSummary)}</span>`;
-  transcript.appendChild(div);
+function addReasoning(text) {
+  const bubble = getOrCreateAssistantBubble();
+  let details = bubble.previousElementSibling;
+  if (!details || !details.classList.contains("reasoning")) {
+    details = document.createElement("details");
+    details.className = "reasoning";
+    const summary = document.createElement("summary");
+    summary.textContent = "Thought process";
+    details.appendChild(summary);
+    transcript.insertBefore(details, bubble);
+  }
+  const p = document.createElement("p");
+  p.textContent = text;
+  details.appendChild(p);
   transcript.scrollTop = transcript.scrollHeight;
+}
+
+function prettyJson(str) {
+  try {
+    return JSON.stringify(JSON.parse(str), null, 2);
+  } catch {
+    return str;
+  }
+}
+
+function addToolCall(name, argsSummary, output, failed) {
+  const details = document.createElement("details");
+  details.className = failed ? "tool-call failed" : "tool-call";
+
+  const summary = document.createElement("summary");
+  const nameEl = document.createElement("span");
+  nameEl.className = "tool-name";
+  nameEl.textContent = name;
+  const argsEl = document.createElement("span");
+  argsEl.className = "tool-args";
+  argsEl.textContent = argsSummary;
+  summary.append(nameEl, argsEl);
+
+  const pre = document.createElement("pre");
+  pre.textContent = [prettyJson(argsSummary), output].filter(Boolean).join("\n\n");
+
+  details.append(summary, pre);
+  transcript.appendChild(details);
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+// ponytail: infer writes tool results as "Result of tool call: {json}" or a
+// plain "Tool execution failed: ..." line; anything unparseable is shown raw.
+function addToolResult(content) {
+  const brace = content.indexOf("{");
+  if (brace !== -1) {
+    try {
+      const result = JSON.parse(content.slice(brace));
+      const data = result.data;
+      const output = data?.output ?? (data ? JSON.stringify(data, null, 2) : "");
+      addToolCall(
+        result.tool_name || "tool",
+        JSON.stringify(result.arguments ?? {}),
+        output,
+        result.success === false,
+      );
+      return;
+    } catch {}
+  }
+  addToolCall("tool", content, "", /fail|error/i.test(content));
 }
 
 function addInfo(message) {
@@ -319,10 +378,11 @@ function renderTranscript(ndjson) {
     if (entry.role === "user") {
       addUserBubble(content);
     } else if (entry.role === "assistant") {
+      if (entry.reasoning_content) addReasoning(entry.reasoning_content);
       if (content) appendAssistantContent(content);
       currentAssistantBubble = null;
     } else if (entry.role === "tool") {
-      addToolCall(content.split("\n")[0], "");
+      addToolResult(content);
     }
   }
   transcript.scrollTop = transcript.scrollHeight;
@@ -461,15 +521,11 @@ sendBtn.addEventListener("click", async () => {
           activeSessionId = event.session_id;
           break;
         case "AssistantMessage":
+          if (event.reasoning_content) {
+            addReasoning(event.reasoning_content);
+          }
           if (event.content) {
             appendAssistantContent(event.content);
-          }
-          if (event.reasoning_content) {
-            const bubble = getOrCreateAssistantBubble();
-            const p = document.createElement("p");
-            p.className = "reasoning";
-            p.textContent = event.reasoning_content;
-            bubble.appendChild(p);
           }
           break;
         case "ToolCall":

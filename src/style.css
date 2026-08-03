@@ -238,6 +238,13 @@ body {
   padding: 1.25rem;
 }
 
+/* In this scrolling flex column, closed <details> have ~0 min-content height,
+   so flex-shrink collapses them to hairlines to absorb overflow. Pin every
+   child to its natural height and let the column scroll instead. */
+#chat-transcript > * {
+  flex-shrink: 0;
+}
+
 #chat-transcript:empty::before {
   content: "Start a conversation";
   margin: auto;
@@ -367,26 +374,108 @@ textarea:focus-visible,
   margin-bottom: 0;
 }
 
-.assistant-bubble .reasoning {
-  font-style: italic;
-  color: var(--text-muted);
+.assistant-bubble:empty {
+  display: none;
+}
+
+/* ---- Collapsibles (reasoning + tool calls), collapsed by default ---- */
+#chat-transcript details {
+  align-self: flex-start;
+  max-width: min(72ch, 82%);
+  min-width: 0;
   font-size: 0.85rem;
-  border-left: 2px solid var(--border-strong);
-  padding-left: 0.5rem;
-  margin-top: 0.5rem;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* ponytail: no `display` override on <summary> - WebKit drops the box entirely. */
+#chat-transcript summary {
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#chat-transcript summary::-webkit-details-marker {
+  display: none;
+}
+
+#chat-transcript summary::before {
+  content: "";
+  display: inline-block;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-right: 0.5rem;
+  vertical-align: 0.1em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+#chat-transcript details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+#chat-transcript summary:hover {
+  color: var(--text);
+}
+
+#chat-transcript details[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+details.reasoning p {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+details.reasoning p + p {
+  padding-top: 0;
 }
 
 /* ---- Tool calls ---- */
-.tool-call {
-  align-self: flex-start;
-  max-width: min(72ch, 82%);
-  padding: 0.5rem 0.75rem;
+#chat-transcript details.tool-call {
   background: var(--tool-bg);
-  border: 1px solid var(--tool-border);
-  border-radius: var(--radius-sm);
+  border-color: var(--tool-border);
+  border-left: 3px solid var(--tool-fg);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.82rem;
+}
+
+details.tool-call pre {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  max-height: 20rem;
+  overflow: auto;
+  background: var(--tool-bg);
+  color: var(--text);
+  line-height: 1.45;
+  white-space: pre-wrap;
   word-break: break-word;
+}
+
+#chat-transcript details.tool-call.failed {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  border-left-color: var(--danger);
+}
+
+details.tool-call.failed pre {
+  background: var(--error-bg);
+}
+
+details.tool-call.failed .tool-name {
+  color: var(--error-fg);
 }
 
 .tool-name {
@@ -396,6 +485,7 @@ textarea:focus-visible,
 
 .tool-args {
   color: var(--text-muted);
+  margin-left: 0.4rem;
 }
 
 /* ---- Info / Warning / Error / Cancelled lines ---- */
