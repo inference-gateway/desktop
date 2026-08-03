@@ -54,8 +54,32 @@ fn home_dir() -> PathBuf {
     PathBuf::from(home)
 }
 
+/// Path of the infer binary to spawn. INFER_BIN overrides the installed one
+/// so test harnesses can point at a specific build without touching
+/// ~/.infer/bin.
 fn infer_bin_path() -> PathBuf {
-    home_dir().join(".infer").join("bin").join(binary_name())
+    match std::env::var("INFER_BIN") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ => home_dir().join(".infer").join("bin").join(binary_name()),
+    }
+}
+
+/// Token-free e2e testing: DESKTOP_MOCK=true skips the desktop-owned gateway,
+/// serves a canned model list, and spawns infer children with
+/// INFER_GATEWAY_MOCK=true - the CLI's own mock mode, where infer serves its
+/// embedded scenario gateway (see cli/internal/mockgateway).
+fn mock_mode() -> bool {
+    std::env::var("DESKTOP_MOCK").is_ok_and(|v| v == "true" || v == "1")
+}
+
+/// Extra env vars for spawned infer processes: provider keys, plus the CLI
+/// mock switch when the desktop runs in mock mode.
+fn infer_env() -> Vec<(String, String)> {
+    let mut env = auth_env();
+    if mock_mode() {
+        env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
+    }
+    env
 }
 
 fn config_path() -> PathBuf {
@@ -704,6 +728,13 @@ async fn delete_conversation(session_id: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn list_models() -> Result<Vec<String>, String> {
+    if mock_mode() {
+        return Ok(vec![
+            "openai/gpt-4o".into(),
+            "anthropic/claude-sonnet-4-5".into(),
+            "openai/gpt-image-2".into(),
+        ]);
+    }
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let resp = ureq::get(&url)
         .call()
@@ -887,6 +918,9 @@ fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
 /// update lands on the next spawn.
 #[tauri::command]
 async fn start_gateway(state: tauri::State<'_, AppState>, force: bool) -> Result<(), String> {
+    if mock_mode() {
+        return Ok(());
+    }
     let we_own_one = state
         .gateway_child
         .lock()
@@ -1338,6 +1372,18 @@ mod tests {
         assert!(
             matches!(&events[3], AgentEvent::AgentError { message } if message == "API key not found")
         );
+    }
+
+    #[test]
+    fn test_mock_mode_parses_env() {
+        std::env::remove_var("DESKTOP_MOCK");
+        assert!(!mock_mode());
+        std::env::set_var("DESKTOP_MOCK", "true");
+        assert!(mock_mode());
+        assert!(infer_env().contains(&("INFER_GATEWAY_MOCK".to_string(), "true".to_string())));
+        std::env::set_var("DESKTOP_MOCK", "false");
+        assert!(!mock_mode());
+        std::env::remove_var("DESKTOP_MOCK");
     }
 
     #[test]
