@@ -11,6 +11,8 @@
     <header id="top-bar">
       <img id="app-logo" src="logo.png" alt="" width="24" height="24">
       <span id="app-title">Inference Gateway</span>
+      <span id="version-badge" title="Installed versions"></span>
+      <button id="update-btn" hidden>Update available - restart to update</button>
       <div id="status-bar" role="status" aria-live="polite"></div>
       <div id="model-controls">
         <select id="model-select" disabled>
@@ -44,6 +46,10 @@
       <h2>API Keys</h2>
       <p class="settings-hint">Stored in ~/.infer/auth.json and passed to the agent as environment variables.</p>
       <div id="settings-fields"></div>
+      <h2>Updates</h2>
+      <p class="settings-hint">Checked automatically every 6 hours.</p>
+      <div id="version-list"></div>
+      <button id="check-updates-btn">Check for updates</button>
       <div id="settings-actions">
         <button id="settings-cancel">Cancel</button>
         <button id="settings-save">Save</button>

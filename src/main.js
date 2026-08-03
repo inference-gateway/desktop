@@ -14,8 +14,14 @@ const settingsOverlay = document.getElementById("settings-overlay");
 const settingsFields = document.getElementById("settings-fields");
 const settingsSave = document.getElementById("settings-save");
 const settingsCancel = document.getElementById("settings-cancel");
+const updateBtn = document.getElementById("update-btn");
+const versionBadge = document.getElementById("version-badge");
+const versionList = document.getElementById("version-list");
+const checkUpdatesBtn = document.getElementById("check-updates-btn");
 
 const STORAGE_KEY = "selectedModel";
+const UPDATE_CACHE_KEY = "updateCheck";
+const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
 
 const PROVIDERS = [
@@ -306,10 +312,10 @@ function populateModels(models) {
   modelSelect.disabled = running;
 }
 
-async function startGatewayThenModels() {
+async function startGatewayThenModels(force = false) {
   setStatus("Starting gateway...");
   try {
-    await window.__TAURI__.core.invoke("start_gateway");
+    await window.__TAURI__.core.invoke("start_gateway", { force });
   } catch (err) {
     console.error("start_gateway failed:", err);
   }
@@ -429,6 +435,7 @@ async function openSettings() {
   } catch (err) {
     console.error("Failed to load auth:", err);
   }
+  checkForUpdates();
   settingsOverlay.hidden = false;
 }
 
@@ -447,7 +454,57 @@ async function saveSettings() {
   }
 }
 
-async function initBackend() {
+function renderUpdates(updates) {
+  versionBadge.textContent = updates.map((u) => `${u.name} ${u.current}`).join(" · ");
+  const outdated = updates.filter((u) => u.outdated);
+  updateBtn.hidden = outdated.length === 0;
+  if (outdated.length > 0) {
+    updateBtn.textContent = `${outdated
+      .map((u) => `${u.name} ${u.latest}`)
+      .join(", ")} available - restart to update`;
+  }
+  versionList.innerHTML = "";
+  for (const u of updates) {
+    const row = document.createElement("div");
+    row.className = "version-row";
+    const latest = u.latest ? (u.outdated ? `→ ${u.latest}` : "up to date") : "unknown";
+    row.textContent = `${u.name} ${u.current} ${latest}`;
+    versionList.appendChild(row);
+  }
+}
+
+// GitHub allows 60 API requests/hour unauthenticated, so a cached result is
+// reused across restarts and the automatic check runs at most every 6 hours.
+async function checkForUpdates(force = false) {
+  const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
+  if (!force && cached && Date.now() - cached.checkedAt < UPDATE_INTERVAL_MS) {
+    renderUpdates(cached.updates);
+    return;
+  }
+  try {
+    const updates = await window.__TAURI__.core.invoke("check_updates");
+    localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ checkedAt: Date.now(), updates }));
+    renderUpdates(updates);
+  } catch (err) {
+    console.error("check_updates failed:", err);
+    if (cached) renderUpdates(cached.updates);
+  }
+}
+
+async function restartBackend(force) {
+  if (running) {
+    try {
+      await window.__TAURI__.core.invoke("cancel_agent");
+    } catch (err) {
+      console.error("Cancel failed:", err);
+    }
+  }
+  setStatus(force ? "Updating..." : "Restarting CLI...");
+  setInputsEnabled(false);
+  await initBackend(force);
+}
+
+async function initBackend(force = false) {
   try {
     const { invoke, Channel } = window.__TAURI__.core;
 
@@ -477,7 +534,7 @@ async function initBackend() {
         case "Ready":
           setStatus("Ready");
           setInputsEnabled(true);
-          startGatewayThenModels();
+          startGatewayThenModels(force).then(() => checkForUpdates(force));
           refreshChatList();
           break;
         case "Error":
@@ -486,13 +543,14 @@ async function initBackend() {
       }
     };
 
-    await invoke("check_and_install_cli", { onEvent: channel });
+    await invoke("check_and_install_cli", { onEvent: channel, force });
   } catch (err) {
     setError(`Setup failed: ${err}`);
   }
 }
 
 initBackend();
+setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
 
 sendBtn.addEventListener("click", async () => {
   const text = promptInput.value.trim();
@@ -603,17 +661,20 @@ promptInput.addEventListener("keydown", (e) => {
 
 newChatBtn.addEventListener("click", startNewChat);
 
-refreshBtn.addEventListener("click", async () => {
-  if (running) {
-    try {
-      await window.__TAURI__.core.invoke("cancel_agent");
-    } catch (err) {
-      console.error("Cancel failed:", err);
-    }
-  }
-  setStatus("Restarting CLI...");
-  setInputsEnabled(false);
-  initBackend();
+refreshBtn.addEventListener("click", () => restartBackend(false));
+
+updateBtn.addEventListener("click", async () => {
+  updateBtn.disabled = true;
+  await restartBackend(true);
+  updateBtn.disabled = false;
+});
+
+checkUpdatesBtn.addEventListener("click", async () => {
+  checkUpdatesBtn.disabled = true;
+  checkUpdatesBtn.textContent = "Checking...";
+  await checkForUpdates(true);
+  checkUpdatesBtn.disabled = false;
+  checkUpdatesBtn.textContent = "Check for updates";
 });
 
 modelSelect.addEventListener("change", () => {
