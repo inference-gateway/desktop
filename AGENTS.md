@@ -42,6 +42,48 @@ This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool a
 | `task check`    | Typecheck, no codegen (`cargo check`)                              |
 | `task dev`      | Start dev server with hot-reload (`cargo tauri dev`)               |
 
+## Verifying the UI
+
+There is **no e2e harness**. CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`,
+and `cargo test`; every test in `src-tauri/src/lib.rs` is a pure function (line
+parsing, checksum lookup, version parsing). Nothing loads a page. There is no
+`package.json`, no Playwright, no WebdriverIO, no `tauri-driver`.
+
+To check a frontend change, an agent launches the app and reads a screenshot:
+
+```bash
+# 1. Launch in the background, then poll the log until it prints "Running target/debug/..."
+flox activate -- cargo tauri dev > /tmp/tauri-dev.log 2>&1 &
+
+# 2. Get the window rect (x, y, w, h)
+osascript -e 'tell application "System Events" to tell (first process whose name contains "inference-gateway-desktop") to get {position, size} of front window'
+
+# 3. Capture just that rect — never the full screen, it catches the user's other windows
+screencapture -x -R 206,93,1100,80 /tmp/header.png
+```
+
+Frontend files are not hot-reloaded — `cargo tauri dev` watches `src-tauri/` only.
+After editing `src/`, kill the process and relaunch.
+
+What this **cannot** do, so plan verification around it:
+
+- **No clicking or typing.** `osascript ... click at {x,y}` fails with `-25208`
+  unless the invoking process holds Accessibility permission. Anything behind a
+  click (the settings modal, a button press) has to be verified by the human.
+- **No console.** `console.error` output is unreachable — it is WKWebView, not
+  Chrome, so the `claude-in-chrome` tools and CDP do not apply.
+- **No DOM assertions, no `localStorage` reads.** WebKit keeps local storage in
+  memory; `~/Library/WebKit/inference-gateway-desktop/WebsiteData/LocalStorage/`
+  is empty on disk.
+
+So verify the data path in the shell (run the same commands the backend runs, add
+a Rust unit test for the parsing) and use the screenshot only to confirm the
+rendering. Say plainly which parts stayed unverified.
+
+`tauri-driver` + WebdriverIO is the official e2e route, but it is **Linux and
+Windows only** — WKWebView exposes no WebDriver, so it cannot run on macOS. It
+would run on the existing `ubuntu-24.04` CI runner.
+
 ## Coding Style
 
 - **Language**: Rust. Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and standard style via `rustfmt`.
