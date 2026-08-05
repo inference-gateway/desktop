@@ -6,7 +6,7 @@ on:
       model:
         description: Model to use (provider/model, e.g. llamacpp/phi-4)
         required: false
-        default: ollama_cloud/deepseek-v4-flash
+        default: ollama_cloud/deepseek-v4-flash:preview
       prompt:
         description: Task for the agent (workflow_dispatch only)
         required: false
@@ -17,6 +17,18 @@ on:
         default: "true"
       system_prompt:
         description: Override the direct-prompt system prompt (workflow_dispatch only)
+        required: false
+        default: ""
+      vision-model:
+        description: Vision model for image analysis (workflow_dispatch only)
+        required: false
+        default: ""
+      image-model:
+        description: Image generation model (workflow_dispatch only)
+        required: false
+        default: ""
+      agents:
+        description: A2A agents to spin up (comma-separated, workflow_dispatch only)
         required: false
         default: ""
   issues:
@@ -36,7 +48,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  infer:
+  opentask:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -53,22 +65,21 @@ jobs:
       - uses: arduino/setup-task@v3.0.0
         with:
           version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: inference-gateway/infer-action@v0.42.2
+      - uses: inference-gateway/infer-action@v0.45.0
         with:
+          debug: true
           github-token: ${{ steps.app-token.outputs.token }}
           github-app-slug: ${{ steps.app-token.outputs.app-slug }}
           trigger-phrase: "@opentask"
-          model: ${{ inputs.model || vars.DEFAULT_MODEL || 'ollama_cloud/deepseek-v4-flash' }}
-          llamacpp-api-url: ${{ secrets.LLAMACPP_API_URL }}
-          llamacpp-api-key: ${{ secrets.LLAMACPP_API_KEY }}
+          model: ${{ inputs.model || vars.DEFAULT_MODEL || 'ollama_cloud/deepseek-v4-flash:preview' }}
           direct-prompt: ${{ inputs.prompt }}
           system-prompt-direct: ${{ inputs.system_prompt }}
           enable-git-operations: "${{ inputs.enable_git || 'true' }}"
-          debug: "false"
-          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?"
+          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?"
           custom-instructions: |
             When working on a GitHub issue that belongs to a project board, keep the board's status in
             sync as you go. This is best-effort: on any error (no board, no Status field, missing
@@ -96,8 +107,9 @@ jobs:
           plugins: |
             DietrichGebert/ponytail
             ayghri/i-have-adhd
-          agents: |
-            documentation-agent
+          agents: ${{ inputs.agents || 'documentation-agent,browser-agent' }}
+          llamacpp-api-url: ${{ secrets.LLAMACPP_API_URL }}
+          llamacpp-api-key: ${{ secrets.LLAMACPP_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
