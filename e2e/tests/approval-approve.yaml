@@ -1,6 +1,3 @@
-# Approving a Write tool call executes it: the approval card appears, Approve
-# runs the real Write tool (cwd src-tauri/), and the scenario's closing text
-# lands in the transcript.
 name: approval flow - approve executes the tool
 cleanup:
   - approved.txt

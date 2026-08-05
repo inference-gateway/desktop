@@ -1,5 +1,3 @@
-# Denying a Write tool call blocks it: the file must not appear on disk and
-# the transcript shows the rejection.
 name: approval flow - deny blocks the tool
 cleanup:
   - denied.txt
