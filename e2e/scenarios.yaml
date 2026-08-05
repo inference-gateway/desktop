@@ -1,0 +1,27 @@
+fallback:
+  content: "Done."
+
+scenarios:
+  - name: write-approved
+    match: '(?i)create a file named approved\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "approved.txt", content: "hello from e2e" } }
+      - content: "The file was written."
+
+  - name: write-denied
+    match: '(?i)create a file named denied\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
+      - content: "Understood."
+
+  - name: multi-tool
+    match: '(?i)inspect the project and write a summary'
+    turns:
+      - tool_calls:
+          - { name: Read, args: { file_path: "Cargo.toml" } }
+          - { name: Read, args: { file_path: "tauri.conf.json" } }
+      - tool_calls:
+          - { name: Write, args: { file_path: "summary.txt", content: "two files inspected" } }
+      - content: "Summary written."

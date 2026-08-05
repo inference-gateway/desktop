@@ -42,3 +42,14 @@ tasks:
     dir: src-tauri
     cmds:
       - cargo tauri dev
+
+  e2e:
+    desc: Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/)
+    dir: e2e
+    preconditions:
+      - sh: '[ "$(uname)" = "Darwin" ]'
+        msg: 'e2e harness is macOS-only (drives the app via the accessibility tree)'
+    cmds:
+      # debug profile on purpose: the pinned Rust 1.95 toolchain miscompiles
+      # this crate in release mode on macOS (SIGSEGV in str::replace)
+      - cargo run -- {{.CLI_ARGS}}

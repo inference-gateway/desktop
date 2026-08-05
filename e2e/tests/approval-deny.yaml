@@ -1,0 +1,10 @@
+name: approval flow - deny blocks the tool
+cleanup:
+  - denied.txt
+steps:
+  - new_chat
+  - send: "create a file named denied.txt"
+  - wait_for: { button: "Deny", timeout: 30 }
+  - click: { button: "Deny" }
+  - wait_for: { text: "Understood.", timeout: 15 }
+  - assert_absent: { file: denied.txt }
