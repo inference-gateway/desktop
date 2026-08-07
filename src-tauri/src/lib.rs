@@ -428,9 +428,7 @@ impl AgentParser {
                     message: "Session started".into(),
                 })
             }
-            "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => {
-                None
-            }
+            "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
             "TEXT_MESSAGE_START" => {
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
                 self.msg_content = val
