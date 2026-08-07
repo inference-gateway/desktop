@@ -147,8 +147,8 @@ function addToolCall(name, argsSummary, output, failed) {
   return details;
 }
 
-// ponytail: infer writes tool results as "Result of tool call: {json}" or a
-// plain "Tool execution failed: ..." line; anything unparseable is shown raw.
+// ponytail: AG-UI TOOL_CALL_RESULT.content is raw JSON; anything
+// unparseable is shown raw.
 function parseToolResult(content) {
   const brace = content.indexOf("{");
   if (brace === -1) return null;
