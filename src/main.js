@@ -42,7 +42,6 @@ const PROVIDERS = [
 let activeSessionId = null;
 let running = false;
 let currentAssistantBubble = null;
-let rawLines = [];
 let pendingApprovals = [];
 const pendingToolCalls = new Map();
 
@@ -147,8 +146,8 @@ function addToolCall(name, argsSummary, output, failed) {
   return details;
 }
 
-// ponytail: infer writes tool results as "Result of tool call: {json}" or a
-// plain "Tool execution failed: ..." line; anything unparseable is shown raw.
+// ponytail: AG-UI TOOL_CALL_RESULT.content is raw JSON; anything
+// unparseable is shown raw.
 function parseToolResult(content) {
   const brace = content.indexOf("{");
   if (brace === -1) return null;
@@ -201,14 +200,6 @@ function finishPendingToolCalls() {
   pendingToolCalls.clear();
 }
 
-function addInfo(message) {
-  const div = document.createElement("div");
-  div.className = "info-line";
-  div.textContent = message;
-  transcript.appendChild(div);
-  transcript.scrollTop = transcript.scrollHeight;
-}
-
 function addWarning(message) {
   const div = document.createElement("div");
   div.className = "warning-line";
@@ -222,38 +213,6 @@ function addError(message) {
   div.className = "error-line";
   div.textContent = message;
   transcript.appendChild(div);
-  transcript.scrollTop = transcript.scrollHeight;
-}
-
-function addRawLine(line) {
-  rawLines.push(line);
-  updateRawOutput();
-}
-
-function updateRawOutput() {
-  let container = document.getElementById("raw-output");
-  if (!container && rawLines.length > 0) {
-    container = document.createElement("div");
-    container.id = "raw-output";
-    container.className = "raw-output";
-    const summary = document.createElement("div");
-    summary.className = "raw-summary";
-    summary.textContent = `Raw output (${rawLines.length} lines)`;
-    summary.addEventListener("click", () => {
-      const body = container.querySelector(".raw-body");
-      body.style.display = body.style.display === "none" ? "" : "none";
-    });
-    container.appendChild(summary);
-    const body = document.createElement("pre");
-    body.className = "raw-body";
-    body.style.display = "none";
-    container.appendChild(body);
-    transcript.appendChild(container);
-  }
-  if (container) {
-    const body = container.querySelector(".raw-body");
-    body.textContent = rawLines.join("\n");
-  }
   transcript.scrollTop = transcript.scrollHeight;
 }
 
@@ -445,7 +404,6 @@ async function openConversation(id) {
 function renderTranscript(ndjson) {
   transcript.innerHTML = "";
   currentAssistantBubble = null;
-  rawLines = [];
   for (const line of ndjson.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -474,7 +432,6 @@ function startNewChat() {
   activeSessionId = null;
   transcript.innerHTML = "";
   currentAssistantBubble = null;
-  rawLines = [];
   highlightActive();
   promptInput.focus();
 }
@@ -650,7 +607,6 @@ sendBtn.addEventListener("click", async () => {
 
   setRunning(true);
   setStatus("Running...");
-  rawLines = [];
 
   addUserBubble(text);
   promptInput.value = "";
@@ -687,17 +643,11 @@ sendBtn.addEventListener("click", async () => {
           addApprovalPrompt(event.tool_name, event.tool_args, event.tool_call_id);
           setStatus("Awaiting approval...");
           break;
-        case "Info":
-          addInfo(event.message);
-          break;
         case "Warning":
           addWarning(event.message);
           break;
         case "AgentError":
           addError(event.message);
-          break;
-        case "RawLine":
-          addRawLine(event.line);
           break;
         case "Done":
           setRunning(false);

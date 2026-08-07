@@ -344,9 +344,6 @@ enum AgentEvent {
     Info {
         message: String,
     },
-    Warning {
-        message: String,
-    },
     AgentError {
         message: String,
     },
@@ -374,137 +371,210 @@ struct AppState {
     gateway_child: Mutex<Option<std::process::Child>>,
 }
 
-/// Parse a single NDJSON line from infer agent stdout into an AgentEvent.
-fn parse_agent_line(line: &str, session_id: &mut Option<String>) -> Option<AgentEvent> {
-    let val: serde_json::Value = match serde_json::from_str(line) {
-        Ok(v) => v,
-        Err(_) => {
-            return Some(AgentEvent::RawLine {
-                line: line.to_string(),
-            })
-        }
-    };
+/// Folds AG-UI event-stream lines into complete AgentEvents, accumulating
+/// message/tool-call triads internally.
+struct AgentParser {
+    session_id: Option<String>,
+    msg_content: String,
+    msg_from_user: bool,
+    tc_id: String,
+    tc_name: String,
+    tc_args: String,
+}
 
-    if let Some(typ) = val.get("type").and_then(|v| v.as_str()) {
-        let msg = val.get("message").and_then(|v| v.as_str()).unwrap_or("");
-        match typ {
-            "info" => {
-                if let Some(sid) = val.get("session_id").and_then(|v| v.as_str()) {
-                    if !sid.is_empty() && session_id.is_none() {
-                        *session_id = Some(sid.to_string());
-                    }
-                }
-                Some(AgentEvent::Info {
-                    message: msg.to_string(),
+impl AgentParser {
+    fn new(session_id: Option<String>) -> Self {
+        Self {
+            session_id,
+            msg_content: String::new(),
+            msg_from_user: false,
+            tc_id: String::new(),
+            tc_name: String::new(),
+            tc_args: String::new(),
+        }
+    }
+
+    /// Take the accumulated session_id out.
+    fn take_session_id(&mut self) -> Option<String> {
+        self.session_id.take()
+    }
+
+    fn parse_line(&mut self, line: &str) -> Option<AgentEvent> {
+        let val: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => {
+                return Some(AgentEvent::RawLine {
+                    line: line.to_string(),
                 })
             }
-            "warning" => Some(AgentEvent::Warning {
-                message: msg.to_string(),
-            }),
-            "approval_request" => {
-                let tool_name = val
-                    .get("tool_name")
+        };
+
+        let event_type = match val.get("type").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => {
+                return Some(AgentEvent::RawLine {
+                    line: line.to_string(),
+                })
+            }
+        };
+
+        match event_type {
+            "RUN_STARTED" => {
+                let sid = val.get("threadId").and_then(|v| v.as_str()).unwrap_or("");
+                if !sid.is_empty() && self.session_id.is_none() {
+                    self.session_id = Some(sid.to_string());
+                }
+                Some(AgentEvent::Info {
+                    message: "Session started".into(),
+                })
+            }
+            "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
+            "TEXT_MESSAGE_START" => {
+                self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
+                self.msg_content = val
+                    .get("delta")
+                    .or_else(|| val.get("content"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let tool_args = val
-                    .get("tool_args")
+                None
+            }
+            "TEXT_MESSAGE_CONTENT" => {
+                if let Some(c) = val
+                    .get("delta")
+                    .or_else(|| val.get("content"))
+                    .and_then(|v| v.as_str())
+                {
+                    self.msg_content.push_str(c);
+                }
+                None
+            }
+            "TEXT_MESSAGE_END" => {
+                if std::mem::take(&mut self.msg_from_user) {
+                    self.msg_content.clear();
+                    return None;
+                }
+                self.finish_message()
+            }
+            "TOOL_CALL_START" => {
+                self.tc_id = val
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                self.tc_name = val
+                    .get("toolCallName")
+                    .or_else(|| val.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                self.tc_args = String::new();
+                None
+            }
+            "TOOL_CALL_ARGS" => {
+                if let Some(args) = val
+                    .get("delta")
+                    .or_else(|| val.get("args"))
+                    .and_then(|v| v.as_str())
+                {
+                    self.tc_args.push_str(args);
+                }
+                None
+            }
+            "TOOL_CALL_END" => {
+                if self.tc_id.is_empty() {
+                    return None;
+                }
+                Some(AgentEvent::AssistantMessage {
+                    content: String::new(),
+                    reasoning_content: None,
+                    tool_calls: vec![ToolCallInfo {
+                        id: std::mem::take(&mut self.tc_id),
+                        name: std::mem::take(&mut self.tc_name),
+                        args: std::mem::take(&mut self.tc_args),
+                    }],
+                })
+            }
+            "TOOL_CALL_RESULT" => {
+                let content = val
+                    .get("content")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let tool_call_id = val
-                    .get("tool_call_id")
+                    .get("toolCallId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                Some(AgentEvent::ApprovalRequest {
-                    tool_name,
-                    tool_args,
+                if content.is_empty() {
+                    return None;
+                }
+                Some(AgentEvent::ToolResult {
+                    content,
                     tool_call_id,
                 })
             }
-            "agent_error" => Some(AgentEvent::AgentError {
-                message: msg.to_string(),
-            }),
+            "CUSTOM" => {
+                if val.get("name").and_then(|v| v.as_str()) == Some("approval_request") {
+                    if let Some(data) = val.get("value") {
+                        let tool_name = data
+                            .get("tool_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let tool_args = data
+                            .get("tool_args")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let tool_call_id = data
+                            .get("tool_call_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Some(AgentEvent::ApprovalRequest {
+                            tool_name,
+                            tool_args,
+                            tool_call_id,
+                        });
+                    }
+                }
+                Some(AgentEvent::RawLine {
+                    line: line.to_string(),
+                })
+            }
+            "RUN_FINISHED" => {
+                self.flush_message();
+                None
+            }
+            "RUN_ERROR" => {
+                self.flush_message();
+                let message = val
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                Some(AgentEvent::AgentError { message })
+            }
             _ => Some(AgentEvent::RawLine {
                 line: line.to_string(),
             }),
         }
-    } else if let Some(role) = val.get("role").and_then(|v| v.as_str()) {
-        if role == "assistant" {
-            let content = val
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let reasoning_content = val
-                .get("reasoning_content")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            let tool_calls: Vec<ToolCallInfo> = val
-                .get("tool_calls")
-                .and_then(|v| v.as_array())
-                .map(|calls| {
-                    calls
-                        .iter()
-                        .map(|tc| ToolCallInfo {
-                            id: tc
-                                .get("id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            name: tc
-                                .get("function")
-                                .and_then(|f| f.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("tool")
-                                .to_string(),
-                            args: tc
-                                .get("function")
-                                .and_then(|f| f.get("arguments"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("{}")
-                                .to_string(),
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+    }
 
-            if content.is_empty() && reasoning_content.is_none() && tool_calls.is_empty() {
-                return None;
-            }
-            return Some(AgentEvent::AssistantMessage {
-                content,
-                reasoning_content,
-                tool_calls,
-            });
+    fn flush_message(&mut self) {
+        self.msg_content.clear();
+        self.msg_from_user = false;
+    }
+
+    fn finish_message(&mut self) -> Option<AgentEvent> {
+        if self.msg_content.is_empty() {
+            return None;
         }
-        if role == "tool" {
-            let content = val
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if content.is_empty() {
-                return None;
-            }
-            let tool_call_id = val
-                .get("tool_call_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            return Some(AgentEvent::ToolResult {
-                content,
-                tool_call_id,
-            });
-        }
-        None
-    } else if val.get("session_stats").is_some() {
-        None
-    } else {
-        Some(AgentEvent::RawLine {
-            line: line.to_string(),
+        Some(AgentEvent::AssistantMessage {
+            content: std::mem::take(&mut self.msg_content),
+            reasoning_content: None,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -521,6 +591,8 @@ async fn send_message(
 
     let mut child = std::process::Command::new(&bin_path)
         .arg("agent")
+        .arg("--output-format")
+        .arg("ag-ui")
         .arg("--session-id")
         .arg(session_id.as_deref().unwrap_or(""))
         .arg("--require-approval")
@@ -548,14 +620,14 @@ async fn send_message(
     }
 
     let on_event_clone = on_event.clone();
-    let new_session_id = Arc::new(Mutex::new(session_id.clone()));
     let had_error = Arc::new(Mutex::new(false));
-
-    let new_session_id_clone = Arc::clone(&new_session_id);
     let had_error_clone = Arc::clone(&had_error);
+    let parser = Arc::new(Mutex::new(AgentParser::new(session_id)));
+    let parser_clone = Arc::clone(&parser);
 
     let stdout_handle: std::thread::JoinHandle<()> = std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stdout);
+        let mut p = parser_clone.lock().unwrap();
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
@@ -564,8 +636,7 @@ async fn send_message(
             if line.trim().is_empty() {
                 continue;
             }
-            let mut sid = new_session_id_clone.lock().unwrap();
-            if let Some(event) = parse_agent_line(&line, &mut sid) {
+            if let Some(event) = p.parse_line(&line) {
                 if matches!(event, AgentEvent::AgentError { .. }) {
                     *had_error_clone.lock().unwrap() = true;
                 }
@@ -626,7 +697,7 @@ async fn send_message(
         stderr: stderr_text,
     });
 
-    let new_session = new_session_id.lock().unwrap().clone();
+    let new_session = parser.lock().unwrap().take_session_id();
     Ok(new_session)
 }
 
@@ -656,7 +727,6 @@ async fn send_approval(
 
 #[tauri::command]
 async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // Drop stdin first to unblock the child
     {
         let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
         *guard = None;
@@ -1191,35 +1261,167 @@ mod tests {
         assert_ne!(found, hello_hash, "mismatch should be detected");
     }
 
-    // --- NDJSON parser tests ---
+    // --- AG-UI parser tests ---
+
+    /// Helper: feed lines to an AgentParser and collect emitted events.
+    fn parse_all(lines: &[&str]) -> (Vec<AgentEvent>, Option<String>) {
+        let mut p = AgentParser::new(None);
+        let events: Vec<AgentEvent> = lines
+            .iter()
+            .filter_map(|l| p.parse_line(l.trim()))
+            .collect();
+        let sid = p.take_session_id();
+        (events, sid)
+    }
 
     #[test]
-    fn test_parse_assistant_message() {
-        let line = r#"{"role":"assistant","content":"Hello! How can I help you?","reasoning_content":"Thinking..."}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(
-            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content, .. } if content == "Hello! How can I help you?" && reasoning_content == Some("Thinking...".into()))
-        );
+    fn test_parse_run_started() {
+        let (events, sid) =
+            parse_all(&[r#"{"type":"RUN_STARTED","threadId":"session-42","runId":"run-1"}"#]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert_eq!(sid, Some("session-42".into()));
+    }
+
+    #[test]
+    fn test_parse_run_started_no_session_id() {
+        let (events, sid) = parse_all(&[r#"{"type":"RUN_STARTED","threadId":"","runId":"run-1"}"#]);
+        assert_eq!(events.len(), 1);
         assert!(sid.is_none());
     }
 
     #[test]
-    fn test_parse_assistant_message_no_reasoning() {
-        let line = r#"{"role":"assistant","content":"Just a simple answer."}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
+    fn test_parse_text_message() {
+        let lines = &[
+            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"Hello! How can I help you?","contentType":"text"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 1);
         assert!(
-            matches!(event, AgentEvent::AssistantMessage { content, reasoning_content, .. } if content == "Just a simple answer." && reasoning_content.is_none())
+            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello! How can I help you?")
         );
     }
 
     #[test]
-    fn test_parse_tool_call() {
-        let line = r#"{"role":"assistant","content":"","tool_calls":[{"id":"call-1","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}}]}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        match event {
+    fn test_parse_text_message_multiple_content_parts() {
+        let lines = &[
+            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","content":"Hello.","contentType":"text"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","content":" I am an AI.","contentType":"text"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello. I am an AI.")
+        );
+    }
+
+    #[test]
+    fn test_parse_text_message_no_content_returns_none() {
+        let lines = &[
+            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_agui_real_turn_skips_user_echo_and_reads_delta() {
+        let lines = &[
+            r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"u1","role":"user"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"u1","delta":"what is up?"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"u1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a1","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a1","delta":"All good!"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a1"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(
+            events.len(),
+            2,
+            "expected Info + one AssistantMessage (user echo skipped)"
+        );
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "All good!"),
+            "assistant reply must render from `delta`; the user echo must be skipped"
+        );
+    }
+
+    #[test]
+    fn test_parse_agui_resumed_turn_renders_reply_after_snapshot() {
+        let lines = &[
+            r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-2"}"#,
+            r#"{"type":"MESSAGES_SNAPSHOT","messages":[{"role":"user","content":"earlier"},{"role":"assistant","content":"earlier reply"}]}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"u2","role":"user"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"u2","delta":"and now?"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"u2"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a2","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a2","delta":"Here is more."}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a2"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-2"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(
+            events.len(),
+            2,
+            "expected Info + one AssistantMessage on resume (snapshot dropped, user echo skipped)"
+        );
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
+            "resumed reply must render from `delta`"
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_call_triad() {
+        let lines = &[
+            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
+            r#"{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-1","toolCallName":"Bash"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-1","delta":"{\"command\":\"ls\"}"}"#,
+            r#"{"type":"TOOL_CALL_END","messageId":"msg-1","toolCallId":"call-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::AssistantMessage {
+                content,
+                tool_calls,
+                ..
+            } => {
+                assert_eq!(content, "");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "call-1");
+                assert_eq!(tool_calls[0].name, "Bash");
+                assert_eq!(tool_calls[0].args, "{\"command\":\"ls\"}");
+            }
+            _ => panic!("expected AssistantMessage"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_call_with_text() {
+        let lines = &[
+            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1","content":"Let me check that file."}"#,
+            r#"{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-1","name":"read_file"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-1","args":"{\"path\":\"/tmp/test\"}"}"#,
+            r#"{"type":"TOOL_CALL_END","messageId":"msg-1","toolCallId":"call-1"}"#,
+            r#"{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-2","name":"list_dir"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-2","args":"{\"path\":\"/tmp\"}"}"#,
+            r#"{"type":"TOOL_CALL_END","messageId":"msg-1","toolCallId":"call-2"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 3);
+        match &events[0] {
             AgentEvent::AssistantMessage {
                 content,
                 tool_calls,
@@ -1229,125 +1431,130 @@ mod tests {
                 assert_eq!(tool_calls.len(), 1);
                 assert_eq!(tool_calls[0].id, "call-1");
                 assert_eq!(tool_calls[0].name, "read_file");
-                assert_eq!(tool_calls[0].args, "{\"path\":\"/tmp/test\"}");
             }
-            _ => panic!("expected AssistantMessage"),
+            _ => panic!("expected AssistantMessage for first tool call"),
         }
-    }
-
-    #[test]
-    fn test_parse_tool_call_with_content() {
-        let line = r#"{"role":"assistant","content":"Let me check that file.","reasoning_content":"","tool_calls":[{"id":"call-1","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}},{"id":"call-2","function":{"name":"list_dir","arguments":"{\"path\":\"/tmp\"}"}}]}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        match event {
+        match &events[1] {
             AgentEvent::AssistantMessage {
                 content,
-                reasoning_content,
                 tool_calls,
+                ..
             } => {
-                assert_eq!(content, "Let me check that file.");
-                assert!(reasoning_content.is_none());
-                assert_eq!(tool_calls.len(), 2);
-                assert_eq!(tool_calls[0].name, "read_file");
-                assert_eq!(tool_calls[1].id, "call-2");
-                assert_eq!(tool_calls[1].name, "list_dir");
+                assert_eq!(content, "");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "call-2");
+                assert_eq!(tool_calls[0].name, "list_dir");
             }
-            _ => panic!("expected AssistantMessage"),
+            _ => panic!("expected AssistantMessage for second tool call"),
         }
-    }
-
-    #[test]
-    fn test_parse_tool_result() {
-        let line = r#"{"role":"tool","content":"Result of tool call: {\"tool_name\":\"read_file\",\"success\":true}","tool_call_id":"call-1"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
         assert!(
-            matches!(event, AgentEvent::ToolResult { content, tool_call_id } if content.starts_with("Result of tool call:") && tool_call_id == "call-1")
+            matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content == "Let me check that file." && tool_calls.is_empty())
         );
     }
 
     #[test]
-    fn test_parse_agent_error() {
-        let line = r#"{"type":"agent_error","message":"Gateway unreachable"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
+    fn test_parse_tool_call_result() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"TOOL_CALL_RESULT","toolCallId":"call-1","content":"{\"tool_name\":\"read_file\",\"success\":true}"}"#,
+        ]);
+        assert_eq!(events.len(), 1);
         assert!(
-            matches!(event, AgentEvent::AgentError { message } if message == "Gateway unreachable")
+            matches!(&events[0], AgentEvent::ToolResult { content, tool_call_id }
+            if content == "{\"tool_name\":\"read_file\",\"success\":true}" && tool_call_id == "call-1")
         );
     }
 
     #[test]
-    fn test_parse_info_with_session_id() {
-        let line = r#"{"type":"info","message":"Session started","session_id":"abc-123","timestamp":"2024-01-01T00:00:00Z"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::Info { message } if message == "Session started"));
-        assert_eq!(sid, Some("abc-123".into()));
+    fn test_parse_tool_call_result_empty_returns_none() {
+        let (events, _) =
+            parse_all(&[r#"{"type":"TOOL_CALL_RESULT","toolCallId":"call-1","content":""}"#]);
+        assert_eq!(events.len(), 0);
     }
 
     #[test]
-    fn test_parse_info_without_session_id() {
-        let line = r#"{"type":"info","message":"Model loaded"}"#;
-        let mut sid = Some("existing-id".into());
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::Info { message } if message == "Model loaded"));
-        assert_eq!(sid, Some("existing-id".into()));
-    }
-
-    #[test]
-    fn test_parse_warning() {
-        let line = r#"{"type":"warning","message":"Rate limit approaching"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
+    fn test_parse_run_error() {
+        let (events, _) = parse_all(&[r#"{"type":"RUN_ERROR","message":"Gateway unreachable"}"#]);
+        assert_eq!(events.len(), 1);
         assert!(
-            matches!(event, AgentEvent::Warning { message } if message == "Rate limit approaching")
+            matches!(&events[0], AgentEvent::AgentError { message } if message == "Gateway unreachable")
         );
     }
 
     #[test]
-    fn test_parse_session_stats_skipped() {
-        let line =
-            r#"{"session_stats":{"total_tokens":150,"prompt_tokens":50,"completion_tokens":100}}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid);
-        assert!(event.is_none());
+    fn test_parse_run_finished_returns_none() {
+        let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_state_snapshot_skipped() {
+        let (events, _) =
+            parse_all(&[r#"{"type":"STATE_SNAPSHOT","todos":[{"id":"1","content":"test"}]}"#]);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_messages_snapshot_skipped() {
+        let (events, _) = parse_all(&[r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#]);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_custom_approval_request() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"approval_request","value":{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
+        );
+    }
+
+    #[test]
+    fn test_parse_custom_unknown_type_is_raw() {
+        let (events, _) =
+            parse_all(&[r#"{"type":"CUSTOM","name":"other_event","value":{"key":"val"}}"#]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
 
     #[test]
     fn test_parse_raw_line() {
-        let line = r#"this is not valid json at all"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
+        let (events, _) = parse_all(&["this is not valid json at all"]);
+        assert_eq!(events.len(), 1);
         assert!(
-            matches!(event, AgentEvent::RawLine { line: l } if l == "this is not valid json at all")
+            matches!(&events[0], AgentEvent::RawLine { line: l } if l == "this is not valid json at all")
         );
     }
 
     #[test]
     fn test_parse_unknown_type_is_raw() {
-        let line = r#"{"type":"unknown","data":"something"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(matches!(event, AgentEvent::RawLine { .. }));
+        let (events, _) = parse_all(&[r#"{"type":"UNKNOWN_EVENT","data":"something"}"#]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
 
     #[test]
-    fn test_parse_empty_line_returns_none() {
-        let line = "";
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid);
-        assert!(event.is_some());
+    fn test_parse_empty_line_returns_raw() {
+        let (events, _) = parse_all(&[""]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
 
     #[test]
-    fn test_parse_ndjson_fixture() {
-        let fixture = r#"{"type":"info","message":"Session started","session_id":"session-42","timestamp":"2024-01-01T00:00:00Z"}
-{"role":"assistant","content":"I'll look that up for you.","reasoning_content":"Searching...","tool_calls":[{"id":"call-1","function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]}
-{"role":"tool","content":"Result of tool call: {\"tool_name\":\"search\",\"success\":true}","tool_call_id":"call-1"}
-{"type":"agent_error","message":"API key not found"}"#;
+    fn test_parse_agui_fixture() {
+        let fixture = r#"{"type":"RUN_STARTED","threadId":"session-42","runId":"run-1"}
+{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1","content":"I'll look that up for you."}
+{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-1","name":"search"}
+{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-1","args":"{\"q\":\"test\"}"}
+{"type":"TOOL_CALL_END","messageId":"msg-1","toolCallId":"call-1"}
+{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}
+{"type":"TOOL_CALL_RESULT","toolCallId":"call-1","content":"{\"tool_name\":\"search\",\"success\":true}"}
+{"type":"RUN_ERROR","message":"API key not found"}"#;
 
-        let mut sid = None;
+        let mut p = AgentParser::new(None);
         let events: Vec<AgentEvent> = fixture
             .lines()
             .filter_map(|line| {
@@ -1355,23 +1562,28 @@ mod tests {
                 if l.is_empty() {
                     None
                 } else {
-                    parse_agent_line(l, &mut sid)
+                    p.parse_line(l)
                 }
             })
             .collect();
 
-        assert_eq!(events.len(), 4);
-        assert!(matches!(events[0], AgentEvent::Info { .. }));
-        assert_eq!(sid, Some("session-42".into()));
+        assert_eq!(events.len(), 5);
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. } if content == "I'll look that up for you." && tool_calls.len() == 1 && tool_calls[0].name == "search")
+            matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content.is_empty() && tool_calls.len() == 1 && tool_calls[0].name == "search")
         );
         assert!(
-            matches!(&events[2], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
+            matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content == "I'll look that up for you." && tool_calls.is_empty())
         );
         assert!(
-            matches!(&events[3], AgentEvent::AgentError { message } if message == "API key not found")
+            matches!(&events[3], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
         );
+        assert!(
+            matches!(&events[4], AgentEvent::AgentError { message } if message == "API key not found")
+        );
+        assert_eq!(p.take_session_id(), Some("session-42".into()));
     }
 
     #[test]
@@ -1384,60 +1596,5 @@ mod tests {
         std::env::set_var("DESKTOP_MOCK", "false");
         assert!(!mock_mode());
         std::env::remove_var("DESKTOP_MOCK");
-    }
-
-    #[test]
-    fn test_parse_approval_request() {
-        let line = r#"{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}"#;
-        let mut sid = None;
-        let event = parse_agent_line(line, &mut sid).unwrap();
-        assert!(
-            matches!(event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
-            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
-        );
-    }
-
-    #[test]
-    fn test_approval_round_trip() {
-        let mut child = std::process::Command::new("sh")
-            .arg("-c")
-            .arg("printf '%s\\n' '{\"type\":\"approval_request\",\"tool_name\":\"test\",\"tool_args\":\"{\\\"key\\\":\\\"val\\\"}\",\"tool_call_id\":\"call-1\"}'; read line; printf '%s\\n' \"$line\"")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
-
-        let mut child_stdin = child.stdin.take().unwrap();
-        let child_stdout = child.stdout.take().unwrap();
-
-        let reader = std::io::BufReader::new(child_stdout);
-        let mut lines = reader.lines();
-        let request_line = lines.next().unwrap().unwrap();
-        let mut sid = None;
-        let event = parse_agent_line(&request_line, &mut sid).unwrap();
-        assert!(
-            matches!(&event, AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
-            if tool_name == "test" && tool_args == "{\"key\":\"val\"}" && tool_call_id == "call-1")
-        );
-
-        let response = serde_json::json!({
-            "type": "approval_response",
-            "tool_call_id": "call-1",
-            "approved": false,
-        });
-        let response_line = format!("{}\n", serde_json::to_string(&response).unwrap());
-        child_stdin.write_all(response_line.as_bytes()).unwrap();
-        child_stdin.flush().unwrap();
-        drop(child_stdin);
-
-        let echoed = lines.next().unwrap().unwrap();
-        let echoed_val: serde_json::Value = serde_json::from_str(&echoed).unwrap();
-        assert_eq!(echoed_val["type"], "approval_response");
-        assert_eq!(echoed_val["tool_call_id"], "call-1");
-        assert_eq!(echoed_val["approved"], false);
-
-        let status = child.wait().unwrap();
-        assert!(status.success());
     }
 }

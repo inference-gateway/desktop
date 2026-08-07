@@ -30,6 +30,16 @@
 
 The repository is a **scaffold for agent-driven development** on `inference-gateway/desktop`. It is intentionally minimal — the CI workflow (`tasks.yml`) is the primary entry point for automated work.
 
+## Before You Start
+
+Activate the pre-commit hook before making any changes:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo test` on every commit. Skipping it is how broken tests land on CI — install it once per clone.
+
 ## Build / Test / Dev Commands
 
 This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool and package manager). The dev environment — a pinned Rust 1.95 toolchain plus `task` and `infer` — is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`. Cargo commands run from `src-tauri/`; the [Taskfile](Taskfile.yml) wraps them at the repo root.
@@ -155,9 +165,11 @@ children with `INFER_GATEWAY_MOCK=true` — the mock mode of the
 [`inference-gateway/tokenless`](https://github.com/inference-gateway/tokenless)
 library the CLI embeds. Each child serves itself a scenario gateway on an
 ephemeral port — real infer binary, real tools, real approval flow, canned LLM
-turns, zero tokens. Keep `list_models()`'s canned list (`openai/gpt-4o`,
-`anthropic/claude-sonnet-4-5`, `openai/gpt-image-2`) in sync with the
-`tokenless` gateway constants.
+turns, zero tokens. The e2e children advertise the models declared in the
+top-level `models:` block of `e2e/scenarios.yaml` (a `tokenless` feature), so
+`infer agent -m <model>` validates against them — keep that block in sync with
+`list_models()`'s canned list (`openai/gpt-4o`, `anthropic/claude-sonnet-4-5`,
+`openai/gpt-image-2`), which is what the mock-mode dropdown shows.
 
 Scenarios are matched by regex against the first user message; this repo owns
 its scenarios in `e2e/scenarios.yaml`, handed to the children via
