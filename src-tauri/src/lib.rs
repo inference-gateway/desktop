@@ -344,9 +344,6 @@ enum AgentEvent {
     Info {
         message: String,
     },
-    Warning {
-        message: String,
-    },
     AgentError {
         message: String,
     },
