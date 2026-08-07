@@ -1252,14 +1252,7 @@ mod tests {
         let mut p = AgentParser::new(None);
         let events: Vec<AgentEvent> = lines
             .iter()
-            .filter_map(|l| {
-                let trimmed = l.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    p.parse_line(trimmed)
-                }
-            })
+            .filter_map(|l| p.parse_line(l.trim()))
             .collect();
         let sid = p.take_session_id();
         (events, sid)
