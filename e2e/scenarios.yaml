@@ -1,3 +1,20 @@
+models:
+  - id: openai/gpt-4o
+    object: model
+    owned_by: openai
+    served_by: openai
+    modalities: { input: [text, image], output: [text] }
+  - id: anthropic/claude-sonnet-4-5
+    object: model
+    owned_by: anthropic
+    served_by: anthropic
+    modalities: { input: [text, image], output: [text] }
+  - id: openai/gpt-image-2
+    object: model
+    owned_by: openai
+    served_by: openai
+    modalities: { input: [text, image], output: [image] }
+
 fallback:
   content: "Done."
 

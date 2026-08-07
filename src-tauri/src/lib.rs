@@ -376,7 +376,7 @@ struct AppState {
 struct AgentParser {
     session_id: Option<String>,
     msg_content: String,
-    msg_tool_calls: Vec<ToolCallInfo>,
+    msg_from_user: bool,
     tc_id: String,
     tc_name: String,
     tc_args: String,
@@ -387,7 +387,7 @@ impl AgentParser {
         Self {
             session_id,
             msg_content: String::new(),
-            msg_tool_calls: Vec::new(),
+            msg_from_user: false,
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
@@ -429,24 +429,35 @@ impl AgentParser {
                 })
             }
             "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => {
-                // Handled by get_conversation / not yet rendered
                 None
             }
             "TEXT_MESSAGE_START" => {
+                self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
                 self.msg_content = val
-                    .get("content")
+                    .get("delta")
+                    .or_else(|| val.get("content"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 None
             }
             "TEXT_MESSAGE_CONTENT" => {
-                if let Some(c) = val.get("content").and_then(|v| v.as_str()) {
+                if let Some(c) = val
+                    .get("delta")
+                    .or_else(|| val.get("content"))
+                    .and_then(|v| v.as_str())
+                {
                     self.msg_content.push_str(c);
                 }
                 None
             }
-            "TEXT_MESSAGE_END" => self.finish_message(),
+            "TEXT_MESSAGE_END" => {
+                if std::mem::take(&mut self.msg_from_user) {
+                    self.msg_content.clear();
+                    return None;
+                }
+                self.finish_message()
+            }
             "TOOL_CALL_START" => {
                 self.tc_id = val
                     .get("toolCallId")
@@ -454,7 +465,8 @@ impl AgentParser {
                     .unwrap_or("")
                     .to_string();
                 self.tc_name = val
-                    .get("name")
+                    .get("toolCallName")
+                    .or_else(|| val.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
@@ -462,20 +474,28 @@ impl AgentParser {
                 None
             }
             "TOOL_CALL_ARGS" => {
-                if let Some(args) = val.get("args").and_then(|v| v.as_str()) {
-                    self.tc_args = args.to_string();
+                if let Some(args) = val
+                    .get("delta")
+                    .or_else(|| val.get("args"))
+                    .and_then(|v| v.as_str())
+                {
+                    self.tc_args.push_str(args);
                 }
                 None
             }
             "TOOL_CALL_END" => {
-                if !self.tc_id.is_empty() {
-                    self.msg_tool_calls.push(ToolCallInfo {
+                if self.tc_id.is_empty() {
+                    return None;
+                }
+                Some(AgentEvent::AssistantMessage {
+                    content: String::new(),
+                    reasoning_content: None,
+                    tool_calls: vec![ToolCallInfo {
                         id: std::mem::take(&mut self.tc_id),
                         name: std::mem::take(&mut self.tc_name),
                         args: std::mem::take(&mut self.tc_args),
-                    });
-                }
-                None
+                    }],
+                })
             }
             "TOOL_CALL_RESULT" => {
                 let content = val
@@ -497,8 +517,8 @@ impl AgentParser {
                 })
             }
             "CUSTOM" => {
-                if let Some(data) = val.get("data") {
-                    if data.get("type").and_then(|v| v.as_str()) == Some("approval_request") {
+                if val.get("name").and_then(|v| v.as_str()) == Some("approval_request") {
+                    if let Some(data) = val.get("value") {
                         let tool_name = data
                             .get("tool_name")
                             .and_then(|v| v.as_str())
@@ -526,7 +546,6 @@ impl AgentParser {
                 })
             }
             "RUN_FINISHED" => {
-                // Done event is sent by the caller after process exit
                 self.flush_message();
                 None
             }
@@ -547,17 +566,17 @@ impl AgentParser {
 
     fn flush_message(&mut self) {
         self.msg_content.clear();
-        self.msg_tool_calls.clear();
+        self.msg_from_user = false;
     }
 
     fn finish_message(&mut self) -> Option<AgentEvent> {
-        if self.msg_content.is_empty() && self.msg_tool_calls.is_empty() {
+        if self.msg_content.is_empty() {
             return None;
         }
         Some(AgentEvent::AssistantMessage {
             content: std::mem::take(&mut self.msg_content),
             reasoning_content: None,
-            tool_calls: std::mem::take(&mut self.msg_tool_calls),
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -710,7 +729,6 @@ async fn send_approval(
 
 #[tauri::command]
 async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    // Drop stdin first to unblock the child
     {
         let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
         *guard = None;
@@ -1278,7 +1296,7 @@ mod tests {
     fn test_parse_text_message() {
         let lines = &[
             r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
-            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","content":"Hello! How can I help you?","contentType":"text"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"Hello! How can I help you?","contentType":"text"}"#,
             r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
         ];
         let (events, _) = parse_all(lines);
@@ -1314,11 +1332,62 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_agui_real_turn_skips_user_echo_and_reads_delta() {
+        let lines = &[
+            r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"u1","role":"user"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"u1","delta":"what is up?"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"u1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a1","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a1","delta":"All good!"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a1"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(
+            events.len(),
+            2,
+            "expected Info + one AssistantMessage (user echo skipped)"
+        );
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "All good!"),
+            "assistant reply must render from `delta`; the user echo must be skipped"
+        );
+    }
+
+    #[test]
+    fn test_parse_agui_resumed_turn_renders_reply_after_snapshot() {
+        let lines = &[
+            r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-2"}"#,
+            r#"{"type":"MESSAGES_SNAPSHOT","messages":[{"role":"user","content":"earlier"},{"role":"assistant","content":"earlier reply"}]}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"u2","role":"user"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"u2","delta":"and now?"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"u2"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a2","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a2","delta":"Here is more."}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a2"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-2"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(
+            events.len(),
+            2,
+            "expected Info + one AssistantMessage on resume (snapshot dropped, user echo skipped)"
+        );
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
+            "resumed reply must render from `delta`"
+        );
+    }
+
+    #[test]
     fn test_parse_tool_call_triad() {
         let lines = &[
             r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
-            r#"{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-1","name":"read_file"}"#,
-            r#"{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-1","args":"{\"path\":\"/tmp/test\"}"}"#,
+            r#"{"type":"TOOL_CALL_START","messageId":"msg-1","toolCallId":"call-1","toolCallName":"Bash"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","messageId":"msg-1","toolCallId":"call-1","delta":"{\"command\":\"ls\"}"}"#,
             r#"{"type":"TOOL_CALL_END","messageId":"msg-1","toolCallId":"call-1"}"#,
             r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
         ];
@@ -1333,8 +1402,8 @@ mod tests {
                 assert_eq!(content, "");
                 assert_eq!(tool_calls.len(), 1);
                 assert_eq!(tool_calls[0].id, "call-1");
-                assert_eq!(tool_calls[0].name, "read_file");
-                assert_eq!(tool_calls[0].args, "{\"path\":\"/tmp/test\"}");
+                assert_eq!(tool_calls[0].name, "Bash");
+                assert_eq!(tool_calls[0].args, "{\"command\":\"ls\"}");
             }
             _ => panic!("expected AssistantMessage"),
         }
@@ -1353,21 +1422,37 @@ mod tests {
             r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
         ];
         let (events, _) = parse_all(lines);
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 3);
         match &events[0] {
             AgentEvent::AssistantMessage {
                 content,
                 tool_calls,
                 ..
             } => {
-                assert_eq!(content, "Let me check that file.");
-                assert_eq!(tool_calls.len(), 2);
+                assert_eq!(content, "");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "call-1");
                 assert_eq!(tool_calls[0].name, "read_file");
-                assert_eq!(tool_calls[1].id, "call-2");
-                assert_eq!(tool_calls[1].name, "list_dir");
             }
-            _ => panic!("expected AssistantMessage"),
+            _ => panic!("expected AssistantMessage for first tool call"),
         }
+        match &events[1] {
+            AgentEvent::AssistantMessage {
+                content,
+                tool_calls,
+                ..
+            } => {
+                assert_eq!(content, "");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_calls[0].id, "call-2");
+                assert_eq!(tool_calls[0].name, "list_dir");
+            }
+            _ => panic!("expected AssistantMessage for second tool call"),
+        }
+        assert!(
+            matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content == "Let me check that file." && tool_calls.is_empty())
+        );
     }
 
     #[test]
@@ -1401,7 +1486,6 @@ mod tests {
     #[test]
     fn test_parse_run_finished_returns_none() {
         let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
-        // RUN_FINISHED emits nothing (Done sent by caller)
         assert_eq!(events.len(), 0);
     }
 
@@ -1421,7 +1505,7 @@ mod tests {
     #[test]
     fn test_parse_custom_approval_request() {
         let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","data":{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}}"#,
+            r#"{"type":"CUSTOM","name":"approval_request","value":{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}}"#,
         ]);
         assert_eq!(events.len(), 1);
         assert!(
@@ -1433,7 +1517,7 @@ mod tests {
     #[test]
     fn test_parse_custom_unknown_type_is_raw() {
         let (events, _) =
-            parse_all(&[r#"{"type":"CUSTOM","data":{"type":"other_event","key":"val"}}"#]);
+            parse_all(&[r#"{"type":"CUSTOM","name":"other_event","value":{"key":"val"}}"#]);
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
@@ -1457,7 +1541,6 @@ mod tests {
     #[test]
     fn test_parse_empty_line_returns_raw() {
         let (events, _) = parse_all(&[""]);
-        // Empty string parsed as JSON fails → RawLine
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
@@ -1486,21 +1569,21 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(events.len(), 4);
-        // 0: RUN_STARTED → Info
+        assert_eq!(events.len(), 5);
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
-        // 1: folded text+tool call → AssistantMessage
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. }
-            if content == "I'll look that up for you." && tool_calls.len() == 1 && tool_calls[0].name == "search")
+            if content.is_empty() && tool_calls.len() == 1 && tool_calls[0].name == "search")
         );
-        // 2: TOOL_CALL_RESULT → ToolResult
         assert!(
-            matches!(&events[2], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
+            matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content == "I'll look that up for you." && tool_calls.is_empty())
         );
-        // 3: RUN_ERROR → AgentError
         assert!(
-            matches!(&events[3], AgentEvent::AgentError { message } if message == "API key not found")
+            matches!(&events[3], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
+        );
+        assert!(
+            matches!(&events[4], AgentEvent::AgentError { message } if message == "API key not found")
         );
         assert_eq!(p.take_session_id(), Some("session-42".into()));
     }

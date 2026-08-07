@@ -568,13 +568,7 @@ details.tool-call.failed .tool-name {
   margin-left: 0.4rem;
 }
 
-/* ---- Info / Warning / Error / Cancelled lines ---- */
-.info-line {
-  align-self: center;
-  color: var(--info-fg);
-  font-size: 0.8rem;
-}
-
+/* ---- Warning / Error / Cancelled lines ---- */
 .warning-line {
   align-self: flex-start;
   padding: 0.35rem 0.6rem;
@@ -604,39 +598,6 @@ details.tool-call.failed .tool-name {
   font-size: 0.85rem;
 }
 
-/* ---- Raw output collapsible ---- */
-.raw-output {
-  align-self: stretch;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.8rem;
-  overflow: hidden;
-}
-
-.raw-summary {
-  padding: 0.35rem 0.6rem;
-  background: var(--surface-2);
-  color: var(--text-muted);
-  cursor: pointer;
-  user-select: none;
-}
-
-.raw-summary:hover {
-  background: var(--border);
-}
-
-.raw-body {
-  padding: 0.6rem;
-  margin: 0;
-  background: var(--surface);
-  color: var(--text);
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
 
 /* ---- Approval prompts ---- */
 .approval-prompt {
