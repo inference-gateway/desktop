@@ -30,6 +30,16 @@
 
 The repository is a **scaffold for agent-driven development** on `inference-gateway/desktop`. It is intentionally minimal — the CI workflow (`tasks.yml`) is the primary entry point for automated work.
 
+## Before You Start
+
+Activate the pre-commit hook before making any changes:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo test` on every commit. Skipping it is how broken tests land on CI — install it once per clone.
+
 ## Build / Test / Dev Commands
 
 This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool and package manager). The dev environment — a pinned Rust 1.95 toolchain plus `task` and `infer` — is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`. Cargo commands run from `src-tauri/`; the [Taskfile](Taskfile.yml) wraps them at the repo root.
