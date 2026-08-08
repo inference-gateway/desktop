@@ -434,8 +434,6 @@ function renderChatList(conversations) {
     chatList.appendChild(item);
   }
   highlightActive();
-  // ponytail: reset last-clicked index after re-render so the next shift+click
-  // does not select stale positions. Keep existing selection if any.
   lastClickedIndex = -1;
 }
 
