@@ -901,7 +901,8 @@ details.tool-call.failed .tool-name {
 }
 
 #settings-cancel,
-#check-updates-btn {
+#check-updates-btn,
+#install-update-btn {
   padding: 0.5rem 1rem;
   background: var(--surface);
   color: var(--text);
@@ -910,12 +911,21 @@ details.tool-call.failed .tool-name {
   cursor: pointer;
 }
 
-#check-updates-btn {
+#check-updates-btn,
+#install-update-btn {
   padding: 0.35rem 0.7rem;
   font-size: 0.8rem;
 }
 
-#check-updates-btn:disabled {
+#install-update-btn {
+  margin-left: 0.5rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
+
+#check-updates-btn:disabled,
+#install-update-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

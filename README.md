@@ -20,6 +20,12 @@ On first run, the app downloads the `infer` CLI binary and installs it to `~/.in
 
 The gateway binary lands at `~/.infer/bin/inference-gateway`, config lives under `~/.infer/`, and agent file tools are scoped to your home directory.
 
+### Updating
+
+The app updates itself. When a newer release is available the top bar shows an update button (the same one is in Settings under Updates); clicking it reinstalls the `infer` CLI and gateway binaries, then downloads the new app bundle, verifies its signature and relaunches. Checks run at startup and every 6 hours.
+
+Releases are not signed with an Apple Developer or Windows code-signing certificate, so the friction is confined to the **first install**: macOS marks the downloaded `.dmg` as quarantined, so open the app once with right-click -> Open and confirm, and Windows SmartScreen asks for "More info" -> "Run anyway". Updates applied by the app itself are downloaded by the app rather than a browser, so they are not quarantined and do not repeat those prompts.
+
 ### Supported platforms
 
 | Platform | Asset name |
