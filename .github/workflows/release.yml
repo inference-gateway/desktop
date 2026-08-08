@@ -40,7 +40,7 @@ jobs:
         working-directory: src-tauri
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.artifact_name }}
           path: src-tauri/target/release/${{ matrix.binary_name }}
@@ -101,7 +101,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/semantic-release"
           echo "$RUNNER_TEMP/semantic-release/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.1
         with:
           path: artifacts
 
