@@ -13,13 +13,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            binary_name: inference_gateway_desktop
+            binary_name: inference-gateway-desktop
             artifact_name: binary-linux
           - os: macos-latest
-            binary_name: inference_gateway_desktop
+            binary_name: inference-gateway-desktop
             artifact_name: binary-macos
           - os: windows-latest
-            binary_name: inference_gateway_desktop.exe
+            binary_name: inference-gateway-desktop.exe
             artifact_name: binary-windows
     runs-on: ${{ matrix.os }}
     permissions:
@@ -121,8 +121,8 @@ jobs:
           fi
 
           mkdir -p assets
-          cp artifacts/binary-linux/inference_gateway_desktop assets/inference-gateway-desktop-linux-amd64
-          cp artifacts/binary-macos/inference_gateway_desktop assets/inference-gateway-desktop-macos-amd64
-          cp artifacts/binary-windows/inference_gateway_desktop.exe assets/inference-gateway-desktop-windows-amd64.exe
+          cp artifacts/binary-linux/inference-gateway-desktop assets/inference-gateway-desktop-linux-amd64
+          cp artifacts/binary-macos/inference-gateway-desktop assets/inference-gateway-desktop-macos-amd64
+          cp artifacts/binary-windows/inference-gateway-desktop.exe assets/inference-gateway-desktop-windows-amd64.exe
 
           semantic-release
