@@ -86,6 +86,23 @@ fn config_path() -> PathBuf {
     home_dir().join(".infer").join("config.yaml")
 }
 
+/// Pure core of `agent_cwd`, split out so the fallback is testable.
+fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> PathBuf {
+    match current {
+        Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
+        _ => home,
+    }
+}
+
+/// Working directory for spawned infer processes. Finder-launched `.app`
+/// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
+/// storage lands at `/.infer` and panics. Fall back to the home dir there,
+/// while keeping the real cwd in dev (where e2e expects tool paths under
+/// src-tauri/).
+fn agent_cwd() -> PathBuf {
+    resolve_agent_cwd(std::env::current_dir().ok(), home_dir())
+}
+
 /// Download a file from `url` to `dest`, sending progress through the channel.
 fn download(
     url: &str,
@@ -600,6 +617,7 @@ async fn send_message(
         .arg(&model)
         .arg(&prompt)
         .envs(infer_env())
+        .current_dir(agent_cwd())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1596,5 +1614,19 @@ mod tests {
         std::env::set_var("DESKTOP_MOCK", "false");
         assert!(!mock_mode());
         std::env::remove_var("DESKTOP_MOCK");
+    }
+
+    #[test]
+    fn test_resolve_agent_cwd_falls_back_to_home_at_root() {
+        let home = PathBuf::from("/Users/x");
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/")), home.clone()),
+            home
+        );
+        assert_eq!(resolve_agent_cwd(None, home.clone()), home);
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/tmp/work")), home.clone()),
+            PathBuf::from("/tmp/work")
+        );
     }
 }
