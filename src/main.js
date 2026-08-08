@@ -39,6 +39,8 @@ const PROVIDERS = [
   { label: "Ollama Cloud", env: "OLLAMA_CLOUD_API_KEY" },
 ];
 
+const md = window.markdownit({ linkify: true });
+
 let activeSessionId = null;
 let running = false;
 let currentAssistantBubble = null;
@@ -91,15 +93,34 @@ function getOrCreateAssistantBubble() {
   return currentAssistantBubble;
 }
 
+// ponytail: each AssistantMessage event renders as its own markdown doc (one
+// <p> per chunk). Ceiling: a code fence split across two stream events renders
+// wrong — accumulate full text before parsing only if that shows up.
 function appendAssistantContent(text) {
+  hideTyping();
   const bubble = getOrCreateAssistantBubble();
   const p = document.createElement("p");
-  p.textContent = text;
+  p.innerHTML = md.render(text);
   bubble.appendChild(p);
   transcript.scrollTop = transcript.scrollHeight;
 }
 
+function showTyping() {
+  if (document.getElementById("typing-indicator")) return;
+  const div = document.createElement("div");
+  div.className = "bubble assistant-bubble typing";
+  div.id = "typing-indicator";
+  div.innerHTML = "<span></span><span></span><span></span>";
+  transcript.appendChild(div);
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function hideTyping() {
+  document.getElementById("typing-indicator")?.remove();
+}
+
 function addReasoning(text) {
+  hideTyping();
   const bubble = getOrCreateAssistantBubble();
   let details = bubble.previousElementSibling;
   if (!details || !details.classList.contains("reasoning")) {
@@ -125,6 +146,7 @@ function prettyJson(str) {
 }
 
 function addToolCall(name, argsSummary, output, failed) {
+  hideTyping();
   const details = document.createElement("details");
   details.className = failed ? "tool-call failed" : "tool-call";
 
@@ -201,6 +223,7 @@ function finishPendingToolCalls() {
 }
 
 function addWarning(message) {
+  hideTyping();
   const div = document.createElement("div");
   div.className = "warning-line";
   div.textContent = message;
@@ -209,6 +232,7 @@ function addWarning(message) {
 }
 
 function addError(message) {
+  hideTyping();
   const div = document.createElement("div");
   div.className = "error-line";
   div.textContent = message;
@@ -217,6 +241,7 @@ function addError(message) {
 }
 
 function addCancelled() {
+  hideTyping();
   const div = document.createElement("div");
   div.className = "cancelled-line";
   div.textContent = "Cancelled";
@@ -231,6 +256,7 @@ function escapeHtml(str) {
 }
 
 function addApprovalPrompt(toolName, toolArgs, toolCallId) {
+  hideTyping();
   const div = document.createElement("div");
   div.className = "approval-prompt";
   div.id = `approval-${toolCallId}`;
@@ -609,6 +635,7 @@ sendBtn.addEventListener("click", async () => {
   setStatus("Running...");
 
   addUserBubble(text);
+  showTyping();
   promptInput.value = "";
 
   try {
@@ -650,6 +677,7 @@ sendBtn.addEventListener("click", async () => {
           addError(event.message);
           break;
         case "Done":
+          hideTyping();
           setRunning(false);
           finishPendingToolCalls();
           if (event.exit_code === 0) {
@@ -681,6 +709,7 @@ sendBtn.addEventListener("click", async () => {
     }
     refreshChatList();
   } catch (err) {
+    hideTyping();
     addError(`Error: ${err}`);
     setRunning(false);
     finishPendingToolCalls();

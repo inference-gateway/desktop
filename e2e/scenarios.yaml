@@ -42,3 +42,25 @@ scenarios:
       - tool_calls:
           - { name: Write, args: { file_path: "summary.txt", content: "two files inspected" } }
       - content: "Summary written."
+
+  - name: markdown-showcase
+    match: '(?i)show me some markdown'
+    turns:
+      - content: |
+          # Markdown Showcase
+
+          Here is some **bold text** and *italics* and `inline code`.
+
+          - First bullet point
+          - Second bullet point
+          - Third bullet point
+
+          A fenced code block:
+
+          ```rust
+          fn main() {
+              println!("hello, markdown");
+          }
+          ```
+
+          And a [link to the gateway](https://github.com/inference-gateway).
