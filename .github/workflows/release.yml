@@ -7,7 +7,50 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/create-github-app-token@v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.INFERENCE_GATEWAY_MAINTAINER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.INFERENCE_GATEWAY_MAINTAINER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install semantic-release and plugins
+        run: |
+          mkdir -p "$RUNNER_TEMP/semantic-release"
+          cp .github/semantic-release/package.json "$RUNNER_TEMP/semantic-release/"
+          npm install --prefix "$RUNNER_TEMP/semantic-release"
+          echo "$RUNNER_TEMP/semantic-release/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Compute next version
+        id: next
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          semantic-release --dry-run 2>&1 | tee dry-run.log
+          version="$(grep -oE 'next release version is [0-9]+\.[0-9]+\.[0-9]+' dry-run.log | tail -1 | awk '{print $NF}' || true)"
+          if [ -z "$version" ]; then
+            echo "::error::no next version in the semantic-release dry run - either there are no releasable commits, or the version is not a plain X.Y.Z"
+            exit 1
+          fi
+          echo "Next version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build:
+    needs:
+      - version
     strategy:
       fail-fast: false
       matrix:
@@ -39,8 +82,30 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
+      # tauri.conf.json carries a placeholder version and an empty updater
+      # pubkey; the bundle has to be stamped before it is built, because the
+      # self-updater compares the baked-in version against latest.json.
+      - name: Stamp version and updater public key
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PUBKEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+          PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$PUBKEY" ] || [ -z "$PRIVATE_KEY" ]; then
+            echo "::error::Updater signing keys are not configured. Generate a pair with 'cargo tauri signer generate', then set the TAURI_SIGNING_PUBLIC_KEY repository variable and the TAURI_SIGNING_PRIVATE_KEY secret (see CONTRIBUTING.md)."
+            exit 1
+          fi
+          jq --arg v "$VERSION" --arg k "$PUBKEY" \
+            '.version = $v | .plugins.updater.pubkey = $k' \
+            src-tauri/tauri.conf.json > tauri.conf.stamped.json
+          mv tauri.conf.stamped.json src-tauri/tauri.conf.json
+
       - name: Build Tauri bundles
         uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: src-tauri
           args: ${{ matrix.args }}
@@ -53,7 +118,9 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
+    needs:
+      - version
+      - build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -89,22 +156,7 @@ jobs:
       - name: Install semantic-release and plugins
         run: |
           mkdir -p "$RUNNER_TEMP/semantic-release"
-          cat > "$RUNNER_TEMP/semantic-release/package.json" <<'EOF'
-          {
-            "private": true,
-            "devDependencies": {
-              "semantic-release": "25.0.9",
-              "@semantic-release/commit-analyzer": "13.0.1",
-              "@semantic-release/release-notes-generator": "14.1.1",
-              "@semantic-release/github": "12.0.9",
-              "@semantic-release/changelog": "7.0.0",
-              "conventional-changelog-conventionalcommits": "10.2.1"
-            },
-            "overrides": {
-              "conventional-changelog-writer": "9.2.0"
-            }
-          }
-          EOF
+          cp .github/semantic-release/package.json "$RUNNER_TEMP/semantic-release/"
           npm install --prefix "$RUNNER_TEMP/semantic-release"
           echo "$RUNNER_TEMP/semantic-release/node_modules/.bin" >> "$GITHUB_PATH"
 
@@ -122,3 +174,47 @@ jobs:
           GIT_COMMITTER_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
           GIT_COMMITTER_EMAIL: ${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com
         run: semantic-release
+
+      # semantic-release owns the GitHub release, so tauri-action never gets to
+      # write latest.json - the updater manifest is assembled here from the
+      # signatures produced by the build matrix and attached to the same tag.
+      - name: Publish updater manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          platforms='{}'
+          while IFS= read -r sig; do
+            asset="$(basename "${sig%.sig}" | tr ' ' '.')"
+            case "$asset" in
+              *.app.tar.gz) keys="darwin-aarch64 darwin-x86_64" ;;
+              *.AppImage) keys="linux-x86_64" ;;
+              *-setup.exe) keys="windows-x86_64" ;;
+              *) echo "Skipping unmapped updater artifact $asset"; continue ;;
+            esac
+            url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$asset"
+            for key in $keys; do
+              platforms="$(jq --arg k "$key" --arg s "$(cat "$sig")" --arg u "$url" \
+                '.[$k] = {signature: $s, url: $u}' <<<"$platforms")"
+            done
+          done < <(find artifacts -name '*.sig' | sort)
+
+          if [ "$(jq 'length' <<<"$platforms")" -ne 4 ]; then
+            echo "::error::latest.json needs all four platform keys, got $(jq -c 'keys' <<<"$platforms")"
+            exit 1
+          fi
+
+          jq -n --arg v "$VERSION" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson p "$platforms" \
+            '{version: $v, pub_date: $d, platforms: $p}' > latest.json
+          cat latest.json
+
+          gh release view "$tag" --json assets --jq '[.assets[].name]' > published.json
+          if ! jq -n -e 'input as $published | input | all(.platforms[].url | sub(".*/"; ""); IN($published[]))' \
+              published.json latest.json > /dev/null; then
+            echo "::error::latest.json references assets that are not attached to $tag"
+            exit 1
+          fi
+
+          gh release upload "$tag" latest.json --clobber

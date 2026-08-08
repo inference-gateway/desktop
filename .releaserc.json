@@ -37,6 +37,7 @@
     ["@semantic-release/github", {
       "assets": [
         {"path": "artifacts/**/*.dmg", "label": "macOS (Universal) .dmg"},
+        {"path": "artifacts/**/*.app.tar.gz", "label": "macOS updater bundle"},
         {"path": "artifacts/**/*.AppImage", "label": "Linux AppImage"},
         {"path": "artifacts/**/*.deb", "label": "Linux .deb"},
         {"path": "artifacts/**/*.rpm", "label": "Linux .rpm"},

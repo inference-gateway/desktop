@@ -29,6 +29,24 @@ cargo tauri build
 
 The bundled app goes to `src-tauri/target/release/bundle/`. `task build` runs a plain `cargo build` (debug); use `cargo tauri build` for the release bundle.
 
+`bundle.createUpdaterArtifacts` is on, so `cargo tauri build` needs the updater signing key in `TAURI_SIGNING_PRIVATE_KEY` (see below). `cargo tauri dev` and `cargo test` do not.
+
+## Updater signing keys (maintainers)
+
+Releases are signed with a minisign key pair that is independent of Apple/Windows code signing. It is generated once:
+
+```bash
+cargo tauri signer generate -w ~/.tauri/desktop.key
+```
+
+Then, in the repository settings:
+
+- `TAURI_SIGNING_PRIVATE_KEY` (secret) - contents of `~/.tauri/desktop.key`.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (secret) - the password chosen above, if any.
+- `TAURI_SIGNING_PUBLIC_KEY` (variable) - contents of `~/.tauri/desktop.key.pub`.
+
+`release.yml` stamps the public key and the semantic-release version into `tauri.conf.json` before building, and fails early if either key is missing. Rotating the key means every already-installed app keeps trusting the old one, so a rotation needs a manual re-download.
+
 ## Project guide
 
 See [AGENTS.md](AGENTS.md) for coding style, commit conventions, PR conventions, git hooks, and agent workflows.
