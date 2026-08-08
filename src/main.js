@@ -18,6 +18,7 @@ const updateBtn = document.getElementById("update-btn");
 const versionBadge = document.getElementById("version-badge");
 const versionList = document.getElementById("version-list");
 const checkUpdatesBtn = document.getElementById("check-updates-btn");
+const installUpdateBtn = document.getElementById("install-update-btn");
 
 const STORAGE_KEY = "selectedModel";
 const UPDATE_CACHE_KEY = "updateCheck";
@@ -45,6 +46,7 @@ let activeSessionId = null;
 let running = false;
 let currentAssistantBubble = null;
 let pendingApprovals = [];
+let desktopOutdated = false;
 const pendingToolCalls = new Map();
 
 function setInputsEnabled(enabled) {
@@ -515,7 +517,9 @@ async function saveSettings() {
 function renderUpdates(updates) {
   versionBadge.textContent = updates.map((u) => `${u.name} ${u.current}`).join(" · ");
   const outdated = updates.filter((u) => u.outdated);
+  desktopOutdated = outdated.some((u) => u.name === "Desktop");
   updateBtn.hidden = outdated.length === 0;
+  installUpdateBtn.hidden = outdated.length === 0;
   if (outdated.length > 0) {
     updateBtn.textContent = `${outdated
       .map((u) => `${u.name} ${u.latest}`)
@@ -550,6 +554,25 @@ async function checkForUpdates(force = false) {
     console.error("check_updates failed:", err);
     if (cached) renderUpdates(cached.updates);
   }
+}
+
+// The CLI and gateway update in place and are respawned by restartBackend; the
+// desktop app swaps its own bundle and relaunches the process, so it goes last
+// and nothing after install_desktop_update runs when it succeeds.
+async function applyUpdates() {
+  updateBtn.disabled = true;
+  installUpdateBtn.disabled = true;
+  await restartBackend(true);
+  if (desktopOutdated) {
+    setStatus("Updating app...");
+    try {
+      await window.__TAURI__.core.invoke("install_desktop_update");
+    } catch (err) {
+      addError(`App update failed: ${err}`);
+    }
+  }
+  updateBtn.disabled = false;
+  installUpdateBtn.disabled = false;
 }
 
 async function restartBackend(force) {
@@ -739,10 +762,11 @@ newChatBtn.addEventListener("click", startNewChat);
 
 refreshBtn.addEventListener("click", () => restartBackend(false));
 
-updateBtn.addEventListener("click", async () => {
-  updateBtn.disabled = true;
-  await restartBackend(true);
-  updateBtn.disabled = false;
+updateBtn.addEventListener("click", applyUpdates);
+
+installUpdateBtn.addEventListener("click", async () => {
+  settingsOverlay.hidden = true;
+  await applyUpdates();
 });
 
 checkUpdatesBtn.addEventListener("click", async () => {
