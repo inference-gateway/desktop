@@ -2001,8 +2001,6 @@ mod tests {
 
     #[test]
     fn test_mock_mode_parses_env() {
-        // ponytail: env set/remove became unsafe in ed 2024; four single-call blocks
-        // keep the safety scope minimal - no reason to group them.
         unsafe { std::env::remove_var("DESKTOP_MOCK") };
         assert!(!mock_mode());
         unsafe { std::env::set_var("DESKTOP_MOCK", "true") };
