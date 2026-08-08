@@ -449,12 +449,6 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-#prompt-input:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
 /* ---- Chat bubbles ---- */
 .bubble {
   padding: 0.7rem 1rem;
