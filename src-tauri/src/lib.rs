@@ -1210,6 +1210,324 @@ async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
     app.restart();
 }
 
+// --- Speech-to-text (desktop-owned whisper.cpp) ---
+// The desktop owns its own STT: it resolves a whisper.cpp binary (PATH first,
+// like the CLI's whisper-cli/whisper-cpp candidates; download fallback on the
+// platforms that have a prebuilt asset) and downloads the GGML model from
+// HuggingFace into ~/.infer/models/whisper. Audio is captured in the WebView and
+// handed here as WAV bytes; whisper turns it into text. No ffmpeg, no CGO.
+
+const WHISPER_MODEL_FILE: &str = "ggml-tiny.bin";
+const WHISPER_MODEL_URL: &str =
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
+const STT_BINARIES_BASE: &str =
+    "https://github.com/inference-gateway/stt-binaries/releases/download/v0.1.0";
+
+fn whisper_model_path() -> PathBuf {
+    home_dir()
+        .join(".infer")
+        .join("models")
+        .join("whisper")
+        .join(WHISPER_MODEL_FILE)
+}
+
+/// Prebuilt whisper-cli asset for this platform, or `None` where none is
+/// published (macOS: install via `brew install whisper-cpp`).
+fn stt_bin_asset() -> Option<String> {
+    stt_bin_asset_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn stt_bin_asset_for(os: &str, arch: &str) -> Option<String> {
+    let arch = match arch {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => return None,
+    };
+    match os {
+        "linux" => Some(format!("whisper-cli-linux-{}", arch)),
+        _ => None,
+    }
+}
+
+fn is_executable_file(p: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(p)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        p.is_file()
+    }
+}
+
+/// First matching executable named `name` on PATH.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if is_executable_file(&candidate) {
+            return Some(candidate);
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{}.exe", name));
+            if is_executable_file(&exe) {
+                return Some(exe);
+            }
+        }
+    }
+    None
+}
+
+/// Resolve the whisper binary: WHISPER_BIN override, then whisper-cli/whisper-cpp
+/// on PATH, then the desktop-downloaded copy in ~/.infer/bin. `None` drives the
+/// greyed-out mic in the UI.
+fn whisper_bin_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("WHISPER_BIN") {
+        let pb = PathBuf::from(p);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
+    for name in ["whisper-cli", "whisper-cpp"] {
+        if let Some(p) = find_on_path(name) {
+            return Some(p);
+        }
+    }
+    let owned = home_dir().join(".infer").join("bin").join("whisper-cli");
+    is_executable_file(&owned).then_some(owned)
+}
+
+/// Ensure the GGML model exists, downloading it once (atomic temp -> rename).
+/// Not checksum-verified: HuggingFace's resolve/ layout has no per-file digest,
+/// matching the CLI.
+fn ensure_whisper_model(on_progress: impl FnMut(u64, u64)) -> Result<PathBuf, String> {
+    let dest = whisper_model_path();
+    if dest.exists() {
+        return Ok(dest);
+    }
+    let dir = dest.parent().ok_or("bad model path")?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let tmp = dir.join(format!("{}.partial", WHISPER_MODEL_FILE));
+    let resp = ureq::get(WHISPER_MODEL_URL)
+        .call()
+        .map_err(|e| format!("Failed to download model: {}", e))?;
+    let total: u64 = resp
+        .headers()
+        .get("Content-Length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let mut reader = resp.into_body().into_reader();
+    let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 8192];
+    let mut received = 0u64;
+    let mut cb = on_progress;
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        received += n as u64;
+        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        cb(received, total);
+    }
+    std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+    Ok(dest)
+}
+
+/// Download and checksum-verify the prebuilt whisper-cli into ~/.infer/bin.
+/// Copies check_and_install_cli's verify-then-rename-then-chmod flow.
+fn download_whisper_binary(on_event: &Channel<ProgressEvent>) -> Result<PathBuf, String> {
+    let asset = stt_bin_asset().ok_or_else(|| {
+        format!(
+            "No prebuilt whisper-cli for {}-{}. Install it: brew install whisper-cpp",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+
+    let bin_dir = home_dir().join(".infer").join("bin");
+    std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
+    let dest = bin_dir.join("whisper-cli");
+    let tmp = bin_dir.join("whisper-cli.tmp");
+
+    let _ = on_event.send(ProgressEvent::Downloading {
+        received: 0,
+        total: 0,
+    });
+    download(&format!("{}/{}", STT_BINARIES_BASE, asset), &tmp, on_event)?;
+
+    let _ = on_event.send(ProgressEvent::Verifying);
+    let checksums_resp = ureq::get(&format!("{}/checksums.txt", STT_BINARIES_BASE))
+        .call()
+        .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
+    let mut checksums_text = String::new();
+    checksums_resp
+        .into_body()
+        .into_reader()
+        .read_to_string(&mut checksums_text)
+        .map_err(|e| e.to_string())?;
+
+    let expected = find_checksum(&checksums_text, &asset)
+        .ok_or_else(|| format!("Checksum not found for {}", asset))?;
+    let actual = sha256_digest(&tmp)?;
+    if actual != expected {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!(
+            "Checksum mismatch for {}: expected {}, got {}",
+            asset, expected, actual
+        ));
+    }
+
+    std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&dest, perms).map_err(|e| e.to_string())?;
+    }
+    Ok(dest)
+}
+
+/// Strip whisper's bracketed non-speech markers ([BLANK_AUDIO], (music), ...)
+/// and collapse whitespace. A no-speech clip therefore yields "".
+// ponytail: manual bracket strip — add the regex crate only if markers get complex.
+fn clean_transcript(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut sq = 0i32;
+    let mut rp = 0i32;
+    for c in raw.chars() {
+        match c {
+            '[' => sq += 1,
+            ']' if sq > 0 => sq -= 1,
+            '(' => rp += 1,
+            ')' if rp > 0 => rp -= 1,
+            _ if sq == 0 && rp == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn next_tmp_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+fn run_whisper(
+    bin: &std::path::Path,
+    model: &std::path::Path,
+    wav: &std::path::Path,
+) -> Result<String, String> {
+    let output = std::process::Command::new(bin)
+        .arg("-m")
+        .arg(model)
+        .arg("-f")
+        .arg(wav)
+        .arg("-nt")
+        .arg("-np")
+        .output()
+        .map_err(|e| format!("Failed to run whisper: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "whisper failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(clean_transcript(&String::from_utf8_lossy(&output.stdout)))
+}
+
+#[derive(Clone, serde::Serialize)]
+struct SttStatus {
+    binary: bool,
+    model: bool,
+    downloadable: bool,
+    hint: String,
+}
+
+/// Whether STT is usable and, if not, why — so the frontend can grey the mic and
+/// show the right tooltip.
+#[tauri::command]
+async fn stt_status() -> Result<SttStatus, String> {
+    if mock_mode() {
+        return Ok(SttStatus {
+            binary: true,
+            model: true,
+            downloadable: false,
+            hint: String::new(),
+        });
+    }
+    let binary = whisper_bin_path().is_some();
+    let downloadable = stt_bin_asset().is_some();
+    let hint = if !binary && !downloadable {
+        "Install whisper-cpp (brew install whisper-cpp) to enable voice input".into()
+    } else {
+        String::new()
+    };
+    Ok(SttStatus {
+        binary,
+        model: whisper_model_path().exists(),
+        downloadable,
+        hint,
+    })
+}
+
+/// Ensure the whisper binary (download where a prebuilt exists) and model are
+/// present, streaming progress through the same channel as the CLI install UI.
+#[tauri::command]
+async fn prepare_stt(on_event: Channel<ProgressEvent>) -> Result<(), String> {
+    if mock_mode() {
+        let _ = on_event.send(ProgressEvent::Ready);
+        return Ok(());
+    }
+    tokio::task::spawn_blocking(move || {
+        let _ = on_event.send(ProgressEvent::Checking);
+        if whisper_bin_path().is_none() {
+            let _ = on_event.send(ProgressEvent::Installing);
+            download_whisper_binary(&on_event)?;
+        }
+        ensure_whisper_model(|received, total| {
+            let _ = on_event.send(ProgressEvent::Downloading { received, total });
+        })?;
+        let _ = on_event.send(ProgressEvent::Ready);
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Transcribe WAV bytes (16kHz mono, produced by the WebView) to text.
+#[tauri::command]
+async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
+    if mock_mode() {
+        return Ok("this is a mock transcription".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        let bin = whisper_bin_path()
+            .ok_or("whisper-cli not found. Install it: brew install whisper-cpp")?;
+        let model = ensure_whisper_model(|_, _| {})?;
+        let tmp = std::env::temp_dir().join(format!(
+            "infer-stt-{}-{}.wav",
+            std::process::id(),
+            next_tmp_id()
+        ));
+        std::fs::write(&tmp, &wav).map_err(|e| e.to_string())?;
+        let result = run_whisper(&bin, &model, &tmp);
+        let _ = std::fs::remove_file(&tmp);
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1232,6 +1550,9 @@ pub fn run() {
             start_gateway,
             check_updates,
             install_desktop_update,
+            stt_status,
+            prepare_stt,
+            transcribe_audio,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -1708,6 +2029,31 @@ mod tests {
             assert!(release.download_url(target).is_ok(), "no url for {target}");
             assert!(release.signature(target).is_ok(), "no sig for {target}");
         }
+    }
+
+    #[test]
+    fn test_clean_transcript_strips_markers() {
+        assert_eq!(clean_transcript(" [BLANK_AUDIO] "), "");
+        assert_eq!(clean_transcript("(music) hello  world\n"), "hello world");
+        assert_eq!(
+            clean_transcript("  Create a file  named test.txt  "),
+            "Create a file named test.txt"
+        );
+        assert_eq!(clean_transcript("hi (typing) there [noise]"), "hi there");
+    }
+
+    #[test]
+    fn test_stt_bin_asset_mapping() {
+        assert_eq!(
+            stt_bin_asset_for("linux", "x86_64").as_deref(),
+            Some("whisper-cli-linux-amd64")
+        );
+        assert_eq!(
+            stt_bin_asset_for("linux", "aarch64").as_deref(),
+            Some("whisper-cli-linux-arm64")
+        );
+        assert_eq!(stt_bin_asset_for("macos", "aarch64"), None);
+        assert_eq!(stt_bin_asset_for("linux", "riscv64"), None);
     }
 
     #[test]

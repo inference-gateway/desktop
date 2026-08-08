@@ -19,6 +19,7 @@ const versionBadge = document.getElementById("version-badge");
 const versionList = document.getElementById("version-list");
 const checkUpdatesBtn = document.getElementById("check-updates-btn");
 const installUpdateBtn = document.getElementById("install-update-btn");
+const micBtn = document.getElementById("mic-btn");
 
 const STORAGE_KEY = "selectedModel";
 const UPDATE_CACHE_KEY = "updateCheck";
@@ -57,6 +58,7 @@ function setInputsEnabled(enabled) {
   if (enabled) {
     cancelBtn.style.display = "none";
   }
+  updateMicAvailability();
 }
 
 function setRunning(val) {
@@ -658,8 +660,10 @@ sendBtn.addEventListener("click", async () => {
   setStatus("Running...");
 
   addUserBubble(text);
-  showTyping();
+  autoGrow();
   promptInput.value = "";
+
+  showTyping();
 
   try {
     const { invoke, Channel } = window.__TAURI__.core;
@@ -751,12 +755,262 @@ cancelBtn.addEventListener("click", async () => {
   }
 });
 
+function autoGrow() {
+  promptInput.style.height = "auto";
+  promptInput.style.height = `${promptInput.scrollHeight}px`;
+}
+
+promptInput.addEventListener("input", autoGrow);
+
 promptInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendBtn.click();
   }
 });
+
+// --- Voice-to-text (mic) ---
+// Capture in the WebView, resample to 16kHz mono WAV, hand to the Rust
+// transcribe_audio command (whisper.cpp). Mic is greyed when whisper is
+// unavailable, permission is denied, or the agent is running.
+
+const MAX_REC_MS = 30000;
+let sttBinary = false;
+let sttModel = false;
+let sttDownloadable = false;
+let sttHint = "";
+let micPermission = "prompt";
+let recording = false;
+let mediaStream = null;
+let audioCtx = null;
+let recNode = null;
+let recChunks = [];
+let recSampleRate = 48000;
+let recTimer = null;
+
+function updateMicAvailability() {
+  if (!micBtn) return;
+  if (recording) {
+    micBtn.disabled = false;
+    return;
+  }
+  const denied = micPermission === "denied";
+  const ready = sttBinary && sttModel;
+  const canPrepare = sttBinary || sttDownloadable;
+  micBtn.disabled = running || denied || !(ready || canPrepare);
+  micBtn.title = running
+    ? "Wait for the current message to finish"
+    : denied
+      ? "Microphone access denied - enable it in System Settings"
+      : !canPrepare
+        ? sttHint || "Voice input unavailable"
+        : "Voice input";
+}
+
+async function refreshSttStatus() {
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const s = await invoke("stt_status");
+    sttBinary = s.binary;
+    sttModel = s.model;
+    sttDownloadable = s.downloadable;
+    sttHint = s.hint;
+  } catch (err) {
+    sttBinary = sttModel = false;
+  }
+  updateMicAvailability();
+}
+
+async function refreshMicPermission() {
+  if (!navigator.permissions?.query) return;
+  try {
+    const st = await navigator.permissions.query({ name: "microphone" });
+    micPermission = st.state;
+    st.onchange = () => {
+      micPermission = st.state;
+      updateMicAvailability();
+    };
+  } catch (err) {
+    // WebKit may not expose the microphone permission - fall back to prompt-on-use
+  }
+  updateMicAvailability();
+}
+
+async function ensureStt() {
+  const { invoke, Channel } = window.__TAURI__.core;
+  const ch = new Channel();
+  ch.onmessage = (e) => {
+    switch (e.kind) {
+      case "Checking":
+        setStatus("Preparing voice input...");
+        break;
+      case "Installing":
+        setStatus("Installing whisper...");
+        break;
+      case "Downloading":
+        setStatus(
+          e.total > 0
+            ? `Downloading voice model... ${Math.round((e.received / e.total) * 100)}%`
+            : "Downloading voice model..."
+        );
+        break;
+      case "Verifying":
+        setStatus("Verifying...");
+        break;
+    }
+  };
+  await invoke("prepare_stt", { onEvent: ch });
+}
+
+function mergeChunks(chunks) {
+  let len = 0;
+  for (const c of chunks) len += c.length;
+  const out = new Float32Array(len);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
+function downsample(samples, from, to) {
+  if (to >= from) return samples;
+  const ratio = from / to;
+  const outLen = Math.floor(samples.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const idx = i * ratio;
+    const lo = Math.floor(idx);
+    const hi = Math.min(lo + 1, samples.length - 1);
+    const frac = idx - lo;
+    out[i] = samples[lo] * (1 - frac) + samples[hi] * frac;
+  }
+  return out;
+}
+
+function encodeWav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (off, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++, off += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Uint8Array(buffer);
+}
+
+async function startRecording() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    micPermission = "denied";
+    updateMicAvailability();
+    setError("Microphone access denied");
+    return;
+  }
+  micPermission = "granted";
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  recSampleRate = audioCtx.sampleRate;
+  recChunks = [];
+  const source = audioCtx.createMediaStreamSource(mediaStream);
+  // ponytail: ScriptProcessorNode is deprecated but ~15 lines vs an AudioWorklet file; upgrade if it stalls
+  recNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  recNode.onaudioprocess = (e) => {
+    recChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  source.connect(recNode);
+  recNode.connect(audioCtx.destination);
+  recording = true;
+  micBtn.classList.add("recording");
+  micBtn.title = "Stop recording";
+  setStatus("Recording... click the mic to stop");
+  recTimer = setTimeout(stopRecording, MAX_REC_MS);
+}
+
+async function stopRecording() {
+  if (!recording) return;
+  recording = false;
+  clearTimeout(recTimer);
+  micBtn.classList.remove("recording");
+  if (recNode) {
+    recNode.disconnect();
+    recNode.onaudioprocess = null;
+  }
+  if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop());
+  const ctxRate = recSampleRate;
+  if (audioCtx) {
+    await audioCtx.close();
+    audioCtx = null;
+  }
+  updateMicAvailability();
+
+  const samples = mergeChunks(recChunks);
+  recChunks = [];
+  if (samples.length === 0) {
+    setStatus("No audio captured");
+    return;
+  }
+  const wav = encodeWav(downsample(samples, ctxRate, 16000), 16000);
+
+  setStatus("Transcribing...");
+  micBtn.disabled = true;
+  try {
+    const { invoke } = window.__TAURI__.core;
+    const text = await invoke("transcribe_audio", { wav: Array.from(wav) });
+    if (text && text.trim()) {
+      promptInput.value = promptInput.value
+        ? promptInput.value.trimEnd() + " " + text.trim()
+        : text.trim();
+      autoGrow();
+      promptInput.focus();
+      setStatus("Ready");
+    } else {
+      setStatus("No speech detected");
+    }
+  } catch (err) {
+    setError(`Transcription failed: ${err}`);
+  } finally {
+    updateMicAvailability();
+  }
+}
+
+micBtn.addEventListener("click", async () => {
+  if (recording) return stopRecording();
+  if (running) return;
+  if (!(sttBinary && sttModel)) {
+    micBtn.disabled = true;
+    try {
+      await ensureStt();
+      await refreshSttStatus();
+    } catch (err) {
+      setError(`Voice setup failed: ${err}`);
+      await refreshSttStatus();
+      return;
+    }
+    if (!(sttBinary && sttModel)) return;
+  }
+  await startRecording();
+});
+
+refreshSttStatus();
+refreshMicPermission();
 
 newChatBtn.addEventListener("click", startNewChat);
 
