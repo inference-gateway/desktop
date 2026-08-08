@@ -69,14 +69,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
-
-      - uses: inference-gateway/infer-action@v0.46.1
+      - uses: inference-gateway/infer-action@v0.46.2
         with:
           debug: true
+          review-inline: "true"
           github-token: ${{ steps.app-token.outputs.token }}
           github-app-slug: ${{ steps.app-token.outputs.app-slug }}
           trigger-phrase: "@opentask"
