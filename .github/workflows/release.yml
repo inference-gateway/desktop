@@ -87,10 +87,11 @@ jobs:
           {
             "private": true,
             "devDependencies": {
-              "semantic-release": "25.0.8",
+              "semantic-release": "25.0.9",
               "@semantic-release/commit-analyzer": "13.0.1",
               "@semantic-release/release-notes-generator": "14.1.1",
               "@semantic-release/github": "12.0.9",
+              "@semantic-release/changelog": "7.0.0",
               "conventional-changelog-conventionalcommits": "10.2.1"
             },
             "overrides": {
@@ -124,48 +125,4 @@ jobs:
           cp artifacts/binary-macos/inference_gateway_desktop assets/inference-gateway-desktop-macos-amd64
           cp artifacts/binary-windows/inference_gateway_desktop.exe assets/inference-gateway-desktop-windows-amd64.exe
 
-          cat > .releaserc.json <<'CONFIG'
-          {
-            "branches": ["main"],
-            "plugins": [
-              ["@semantic-release/commit-analyzer", {
-                "preset": "conventionalcommits",
-                "releaseRules": [
-                  {"type": "chore", "release": "patch"},
-                  {"type": "docs", "release": "patch"},
-                  {"type": "refactor", "release": "patch"},
-                  {"type": "style", "release": "patch"},
-                  {"type": "test", "release": "patch"},
-                  {"type": "build", "release": "patch"},
-                  {"type": "ci", "release": "patch"},
-                  {"type": "perf", "release": "patch"}
-                ]
-              }],
-              ["@semantic-release/release-notes-generator", {
-                "preset": "conventionalcommits",
-                "presetConfig": {
-                  "types": [
-                    {"type": "feat", "section": "Features", "hidden": false},
-                    {"type": "fix", "section": "Bug Fixes", "hidden": false},
-                    {"type": "perf", "section": "Performance Improvements", "hidden": false},
-                    {"type": "docs", "section": "Documentation", "hidden": false},
-                    {"type": "refactor", "section": "Code Refactoring", "hidden": false},
-                    {"type": "style", "section": "Styles", "hidden": false},
-                    {"type": "test", "section": "Tests", "hidden": false},
-                    {"type": "build", "section": "Build System", "hidden": false},
-                    {"type": "ci", "section": "Continuous Integration", "hidden": false},
-                    {"type": "chore", "section": "Chores", "hidden": false}
-                  ]
-                }
-              }],
-              ["@semantic-release/github", {
-                "assets": [
-                  {"path": "assets/inference-gateway-desktop-linux-amd64", "label": "Linux amd64 binary"},
-                  {"path": "assets/inference-gateway-desktop-macos-amd64", "label": "macOS amd64 binary"},
-                  {"path": "assets/inference-gateway-desktop-windows-amd64.exe", "label": "Windows amd64 binary"}
-                ]
-              }]
-            ]
-          }
-          CONFIG
           semantic-release
