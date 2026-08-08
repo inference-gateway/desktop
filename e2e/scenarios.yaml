@@ -64,3 +64,13 @@ scenarios:
           ```
 
           And a [link to the gateway](https://github.com/inference-gateway).
+
+  - name: image-generation
+    match: '(?i)generate an image'
+    turns:
+      - content: |
+          # Generated Image
+
+          Here is your generated image:
+
+          ![Generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==)

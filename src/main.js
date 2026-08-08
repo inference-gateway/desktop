@@ -93,6 +93,16 @@ function getOrCreateAssistantBubble() {
   return currentAssistantBubble;
 }
 
+// ponytail: markdown-it already handles ![alt](url), so we just normalize bare
+// image URLs/data URIs to markdown image syntax before rendering. The onerror
+// handler replaces broken images with a fallback message.
+function normalizeImageUrls(text) {
+  return text.replace(
+    /(?<!\]\()(data:image\/[a-z]+(?:;[a-z0-9-]+)*;base64,[A-Za-z0-9+/=]+|https?:\/\/[^\s)]+\.(?:png|jpg|jpeg|gif|webp|svg|avif|bmp)(?:\?[^\s)]*)?)/gi,
+    (url) => `![](${url})`
+  );
+}
+
 // ponytail: each AssistantMessage event renders as its own markdown doc (one
 // <p> per chunk). Ceiling: a code fence split across two stream events renders
 // wrong — accumulate full text before parsing only if that shows up.
@@ -100,7 +110,13 @@ function appendAssistantContent(text) {
   hideTyping();
   const bubble = getOrCreateAssistantBubble();
   const p = document.createElement("p");
-  p.innerHTML = md.render(text);
+  p.innerHTML = md.render(normalizeImageUrls(text));
+  // Replace broken images with a fallback message.
+  for (const img of p.querySelectorAll("img")) {
+    img.onerror = () => {
+      img.outerHTML = '<span class="image-error">Image failed to load</span>';
+    };
+  }
   bubble.appendChild(p);
   transcript.scrollTop = transcript.scrollHeight;
 }
