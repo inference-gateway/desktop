@@ -138,6 +138,35 @@ function hideTyping() {
   document.getElementById("typing-indicator")?.remove();
 }
 
+function isImageTool(name) {
+  return /^Image(Generation|Edit|Variation)$/.test(name || "");
+}
+
+function showImageSkeleton() {
+  const div = document.createElement("div");
+  div.className = "image-skeleton";
+  transcript.appendChild(div);
+  transcript.scrollTop = transcript.scrollHeight;
+  return div;
+}
+
+// ponytail: infer's ImageGeneration result carries the saved absolute path
+// (data.path); WKWebView can't load a bare file path, so serve it through
+// Tauri's asset protocol. Deduped by filename so ImageGeneration + ImageDecode
+// (which re-reports the same file as data.source) don't render it twice.
+function renderResultImage(r) {
+  const p = r && r.imagePath;
+  if (!p || !/\.infer\/tmp\/[\w.-]+\.(?:png|jpe?g|gif|webp|avif)$/i.test(p)) return;
+  const file = p.split("/").pop();
+  if (transcript.querySelector(`img[data-infer="${CSS.escape(file)}"]`)) return;
+  const img = document.createElement("img");
+  img.className = "generated-image";
+  img.dataset.infer = file;
+  img.src = window.__TAURI__.core.convertFileSrc(p);
+  transcript.appendChild(img);
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
 function addReasoning(text) {
   hideTyping();
   const bubble = getOrCreateAssistantBubble();
@@ -201,6 +230,7 @@ function parseToolResult(content) {
       args: JSON.stringify(result.arguments ?? {}),
       output,
       failed: result.success === false,
+      imagePath: data?.path || data?.source || null,
     };
   } catch {
     return null;
@@ -211,6 +241,7 @@ function addToolResult(content) {
   const r = parseToolResult(content);
   if (r) {
     addToolCall(r.name, r.args, r.output, r.failed);
+    renderResultImage(r);
   } else {
     addToolCall("tool", content, "", /fail|error/i.test(content));
   }
@@ -219,11 +250,13 @@ function addToolResult(content) {
 function resolveToolCall(id, content) {
   const details = pendingToolCalls.get(id);
   pendingToolCalls.delete(id);
+  details?._skeleton?.remove();
   if (!details || !document.body.contains(details)) {
     addToolResult(content);
     return;
   }
   const r = parseToolResult(content);
+  renderResultImage(r);
   const output = r ? r.output : content;
   const failed = r ? r.failed : /fail|error/i.test(content);
   details.classList.remove("running");
@@ -237,6 +270,7 @@ function resolveToolCall(id, content) {
 function finishPendingToolCalls() {
   for (const details of pendingToolCalls.values()) {
     details.classList.remove("running");
+    details._skeleton?.remove();
   }
   pendingToolCalls.clear();
 }
@@ -700,6 +734,7 @@ sendBtn.addEventListener("click", async () => {
             for (const tc of event.tool_calls) {
               const details = addToolCall(tc.name, tc.args);
               details.classList.add("running");
+              if (isImageTool(tc.name)) details._skeleton = showImageSkeleton();
               if (tc.id) pendingToolCalls.set(tc.id, details);
             }
             currentAssistantBubble = null;

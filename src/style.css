@@ -610,6 +610,37 @@ textarea:focus-visible,
   }
 }
 
+/* ---- Image generation skeleton ---- */
+.image-skeleton {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  margin: 0.5rem 0;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--border) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.generated-image {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: var(--radius-sm);
+}
+
 /* ---- Collapsibles (reasoning + tool calls), collapsed by default ---- */
 #chat-transcript details {
   align-self: flex-start;

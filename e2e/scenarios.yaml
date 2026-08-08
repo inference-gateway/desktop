@@ -74,3 +74,10 @@ scenarios:
           Here is your generated image:
 
           ![Generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==)
+
+  - name: image-tool
+    match: '(?i)generate a tiny cat'
+    turns:
+      - tool_calls:
+          - { name: ImageGeneration, args: { prompt: "a tiny cat in a big white room" } }
+      - content: "Here is your generated cat image."
