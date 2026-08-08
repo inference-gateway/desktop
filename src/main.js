@@ -420,17 +420,19 @@ function renderChatList(conversations) {
     item.dataset.id = c.id;
     item.title = c.title || c.id;
     item.addEventListener("click", (e) => {
+      const curIdx = Array.prototype.indexOf.call(chatList.children, item);
       if (e.shiftKey) {
-        const items = chatList.children;
-        const curIdx = Array.prototype.indexOf.call(items, item);
+        if (lastClickedIndex < 0) lastClickedIndex = curIdx;
         const start = Math.min(lastClickedIndex, curIdx);
         const end = Math.max(lastClickedIndex, curIdx);
+        const items = chatList.children;
         for (let i = start; i <= end; i++) {
           const id = items[i].dataset.id;
           selectedChats.add(id);
           items[i].classList.add("selected");
           items[i].setAttribute("aria-selected", "true");
         }
+        lastClickedIndex = curIdx;
         updateBulkBar();
         return;
       }
@@ -447,10 +449,8 @@ function renderChatList(conversations) {
         updateBulkBar();
         return;
       }
-      if (selectedChats.size > 0) {
-        clearSelection();
-        updateBulkBar();
-      }
+      if (selectedChats.size > 0) clearSelection();
+      lastClickedIndex = curIdx;
       openConversation(c.id);
     });
 
@@ -529,9 +529,9 @@ function updateBulkBar() {
     btn.id = "bulk-delete-btn";
     btn.addEventListener("click", () => {
       const ids = Array.from(selectedChats);
-      if (!confirm(`Delete ${n} conversations?`)) return;
+      if (!confirm(`Delete ${ids.length} conversations?`)) return;
       clearSelection();
-      Promise.all(ids.map(id => deleteConversation(id).catch(() => {}))).then(refreshChatList);
+      Promise.all(ids.map(id => deleteConversation(id)));
     });
     bar.appendChild(btn);
     chatList.parentElement.insertBefore(bar, chatList.nextSibling);
@@ -585,7 +585,6 @@ function startNewChat() {
   transcript.innerHTML = "";
   currentAssistantBubble = null;
   clearSelection();
-  updateBulkBar();
   highlightActive();
   promptInput.focus();
 }
