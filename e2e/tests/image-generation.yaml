@@ -1,0 +1,6 @@
+name: image generation renders in chat transcript
+steps:
+  - new_chat
+  - send: "generate an image of a cat"
+  - wait_for: { text: "Generated Image", timeout: 30 }
+  - wait_for: { text: "Here is your generated image", timeout: 15 }

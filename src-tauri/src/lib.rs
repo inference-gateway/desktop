@@ -1005,7 +1005,10 @@ fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
 }
 
 /// Start (or restart) the gateway. `force` re-downloads the binary first, so an
-/// update lands on the next spawn.
+/// update lands on the next spawn. Images are enabled here via `ENABLE_IMAGES=true`
+/// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
+/// and the upstream response-header timeout is raised from its 10s default so
+/// non-streaming image generation (which OpenAI answers in 20-60s) doesn't 502.
 #[tauri::command]
 async fn start_gateway(state: tauri::State<'_, AppState>, force: bool) -> Result<(), String> {
     if mock_mode() {
@@ -1032,6 +1035,8 @@ async fn start_gateway(state: tauri::State<'_, AppState>, force: bool) -> Result
     let bin = ensure_gateway_binary(force)?;
     let child = std::process::Command::new(&bin)
         .envs(auth_env())
+        .env("ENABLE_IMAGES", "true")
+        .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
