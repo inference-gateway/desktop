@@ -6,7 +6,7 @@
 mod driver;
 mod spec;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use driver::AppDriver;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};

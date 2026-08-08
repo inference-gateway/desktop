@@ -2,8 +2,8 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::ipc::Channel;
 use tauri::Manager;
+use tauri::ipc::Channel;
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Clone, serde::Serialize)]
@@ -424,7 +424,7 @@ impl AgentParser {
             Err(_) => {
                 return Some(AgentEvent::RawLine {
                     line: line.to_string(),
-                })
+                });
             }
         };
 
@@ -433,7 +433,7 @@ impl AgentParser {
             None => {
                 return Some(AgentEvent::RawLine {
                     line: line.to_string(),
-                })
+                });
             }
         };
 
@@ -534,29 +534,29 @@ impl AgentParser {
                 })
             }
             "CUSTOM" => {
-                if val.get("name").and_then(|v| v.as_str()) == Some("approval_request") {
-                    if let Some(data) = val.get("value") {
-                        let tool_name = data
-                            .get("tool_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let tool_args = data
-                            .get("tool_args")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let tool_call_id = data
-                            .get("tool_call_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        return Some(AgentEvent::ApprovalRequest {
-                            tool_name,
-                            tool_args,
-                            tool_call_id,
-                        });
-                    }
+                if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
+                    && let Some(data) = val.get("value")
+                {
+                    let tool_name = data
+                        .get("tool_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let tool_args = data
+                        .get("tool_args")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let tool_call_id = data
+                        .get("tool_call_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    return Some(AgentEvent::ApprovalRequest {
+                        tool_name,
+                        tool_args,
+                        tool_call_id,
+                    });
                 }
                 Some(AgentEvent::RawLine {
                     line: line.to_string(),
@@ -772,12 +772,10 @@ fn gateway_url() -> String {
             in_gateway = line.trim_start().starts_with("gateway:");
             continue;
         }
-        if in_gateway {
-            if let Some(rest) = line.trim().strip_prefix("url:") {
-                let v = rest.trim().trim_matches(['"', '\'']);
-                if !v.is_empty() {
-                    return v.to_string();
-                }
+        if in_gateway && let Some(rest) = line.trim().strip_prefix("url:") {
+            let v = rest.trim().trim_matches(['"', '\'']);
+            if !v.is_empty() {
+                return v.to_string();
             }
         }
     }
@@ -1094,12 +1092,11 @@ fn latest_tag(repo: &str) -> Option<String> {
             ".[0].tagName",
         ])
         .output();
-    if let Ok(out) = gh {
-        if out.status.success() {
-            if let Some(tag) = parse_version(&String::from_utf8_lossy(&out.stdout)) {
-                return Some(tag);
-            }
-        }
+    if let Ok(out) = gh
+        && out.status.success()
+        && let Some(tag) = parse_version(&String::from_utf8_lossy(&out.stdout))
+    {
+        return Some(tag);
     }
 
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
@@ -1576,13 +1573,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                if let Ok(mut guard) = app_handle.state::<AppState>().gateway_child.lock() {
-                    if let Some(mut child) = guard.take() {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                    }
-                }
+            if let tauri::RunEvent::ExitRequested { .. } = event
+                && let Ok(mut guard) = app_handle.state::<AppState>().gateway_child.lock()
+                && let Some(mut child) = guard.take()
+            {
+                let _ = child.kill();
+                let _ = child.wait();
             }
         });
 }
@@ -1980,11 +1976,7 @@ mod tests {
             .lines()
             .filter_map(|line| {
                 let l = line.trim();
-                if l.is_empty() {
-                    None
-                } else {
-                    p.parse_line(l)
-                }
+                if l.is_empty() { None } else { p.parse_line(l) }
             })
             .collect();
 
@@ -2009,14 +2001,16 @@ mod tests {
 
     #[test]
     fn test_mock_mode_parses_env() {
-        std::env::remove_var("DESKTOP_MOCK");
+        // ponytail: env set/remove became unsafe in ed 2024; four single-call blocks
+        // keep the safety scope minimal - no reason to group them.
+        unsafe { std::env::remove_var("DESKTOP_MOCK") };
         assert!(!mock_mode());
-        std::env::set_var("DESKTOP_MOCK", "true");
+        unsafe { std::env::set_var("DESKTOP_MOCK", "true") };
         assert!(mock_mode());
         assert!(infer_env().contains(&("INFER_GATEWAY_MOCK".to_string(), "true".to_string())));
-        std::env::set_var("DESKTOP_MOCK", "false");
+        unsafe { std::env::set_var("DESKTOP_MOCK", "false") };
         assert!(!mock_mode());
-        std::env::remove_var("DESKTOP_MOCK");
+        unsafe { std::env::remove_var("DESKTOP_MOCK") };
     }
 
     /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a

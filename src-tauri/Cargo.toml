@@ -3,7 +3,7 @@ name = "inference-gateway-desktop"
 version = "0.1.0"
 description = "Inference Gateway Desktop Client"
 authors = ["inference-gateway"]
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "inference_gateway_desktop_lib"

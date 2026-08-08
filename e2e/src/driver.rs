@@ -3,7 +3,7 @@
 //! screencapture, and swift. The AX recipe and its quirks are documented in
 //! AGENTS.md ("Verifying the UI").
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
