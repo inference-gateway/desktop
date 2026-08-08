@@ -249,7 +249,7 @@ function addToolResult(content) {
 function resolveToolCall(id, content) {
   const details = pendingToolCalls.get(id);
   pendingToolCalls.delete(id);
-  details?._skeleton?.remove(); // ponytail: only set on image tool calls, no-op otherwise
+  details?._skeleton?.remove();
   if (!details || !document.body.contains(details)) {
     addToolResult(content);
     return;
@@ -269,7 +269,7 @@ function resolveToolCall(id, content) {
 function finishPendingToolCalls() {
   for (const details of pendingToolCalls.values()) {
     details.classList.remove("running");
-    details._skeleton?.remove(); // ponytail: only set on image tool calls, no-op otherwise
+    details._skeleton?.remove();
   }
   pendingToolCalls.clear();
 }
