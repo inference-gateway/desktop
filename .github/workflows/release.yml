@@ -7,7 +7,47 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            binary_name: inference_gateway_desktop
+            artifact_name: binary-linux
+          - os: macos-latest
+            binary_name: inference_gateway_desktop
+            artifact_name: binary-macos
+          - os: windows-latest
+            binary_name: inference_gateway_desktop.exe
+            artifact_name: binary-windows
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build release binary
+        run: cargo build --release
+        working-directory: src-tauri
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: src-tauri/target/release/${{ matrix.binary_name }}
+          if-no-files-found: error
+
   release:
+    needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -40,15 +80,6 @@ jobs:
           persist-credentials: false
           token: ${{ steps.app-token.outputs.token }}
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - name: Build release binary
-        run: cargo build --release
-        working-directory: src-tauri
-
       - name: Install semantic-release and plugins
         run: |
           mkdir -p "$RUNNER_TEMP/semantic-release"
@@ -70,6 +101,10 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/semantic-release"
           echo "$RUNNER_TEMP/semantic-release/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: Create a release if needed
         env:
           CI: true
@@ -83,6 +118,11 @@ jobs:
           if ! gh release view v0.1.0 >/dev/null 2>&1; then
             gh release create v0.1.0 --title "Initial Release" --notes "Initial Release" --target main
           fi
+
+          mkdir -p assets
+          cp artifacts/binary-linux/inference_gateway_desktop assets/inference-gateway-desktop-linux-amd64
+          cp artifacts/binary-macos/inference_gateway_desktop assets/inference-gateway-desktop-macos-amd64
+          cp artifacts/binary-windows/inference_gateway_desktop.exe assets/inference-gateway-desktop-windows-amd64.exe
 
           cat > .releaserc.json <<'CONFIG'
           {
@@ -119,7 +159,11 @@ jobs:
                 }
               }],
               ["@semantic-release/github", {
-                "assets": [{"path": "src-tauri/target/release/inference_gateway_desktop", "label": "inference-gateway-desktop-linux-amd64"}]
+                "assets": [
+                  {"path": "assets/inference-gateway-desktop-linux-amd64", "label": "Linux amd64 binary"},
+                  {"path": "assets/inference-gateway-desktop-macos-amd64", "label": "macOS amd64 binary"},
+                  {"path": "assets/inference-gateway-desktop-windows-amd64.exe", "label": "Windows amd64 binary"}
+                ]
               }]
             ]
           }
