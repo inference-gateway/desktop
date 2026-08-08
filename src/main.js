@@ -930,7 +930,6 @@ async function startRecording() {
   recSampleRate = audioCtx.sampleRate;
   recChunks = [];
   const source = audioCtx.createMediaStreamSource(mediaStream);
-  // ponytail: ScriptProcessorNode is deprecated but ~15 lines vs an AudioWorklet file; upgrade if it stalls
   recNode = audioCtx.createScriptProcessor(4096, 1, 1);
   recNode.onaudioprocess = (e) => {
     recChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
