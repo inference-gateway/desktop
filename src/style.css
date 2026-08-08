@@ -319,71 +319,121 @@ body {
   font-size: 0.95rem;
 }
 
-/* ---- Input area ---- */
+/* ---- Composer (input area) ---- */
 #input-area {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
+  padding: 0.6rem 1rem 1rem;
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+#composer {
+  display: flex;
   align-items: flex-end;
+  gap: 0.35rem;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0.35rem 0.4rem 0.35rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 1.6rem;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 #prompt-input {
   flex: 1;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg);
+  box-sizing: border-box;
+  padding: 0.44rem 0;
+  border: none;
+  background: transparent;
   color: var(--text);
   font-family: inherit;
   font-size: 0.95rem;
   line-height: 1.4;
   resize: none;
-  min-height: 2.75rem;
+  min-height: 2.2rem;
   max-height: 40vh;
   overflow-y: auto;
+}
+
+#prompt-input:focus-visible {
+  outline: none;
 }
 
 #prompt-input::placeholder {
   color: var(--text-muted);
 }
 
-#send-btn {
-  padding: 0.6rem 1.1rem;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
-  font-weight: 550;
-  cursor: pointer;
+#composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
 }
 
-#send-btn:hover {
+#mic-btn,
+#send-btn,
+#cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+#mic-btn {
+  background: none;
+  color: var(--text-muted);
+}
+
+#mic-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+#mic-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#mic-btn.recording {
+  color: #fff;
+  background: var(--danger);
+  animation: mic-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
+#send-btn {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+#send-btn:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
 #send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
-}
-
-#cancel-btn {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.85rem;
-  cursor: pointer;
 }
 
 #cancel-btn {
   background: var(--danger);
   color: #fff;
-  border-color: transparent;
-  font-size: 0.95rem;
 }
 
 #cancel-btn:hover {
