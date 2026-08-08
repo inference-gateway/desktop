@@ -489,6 +489,26 @@ textarea:focus-visible,
   display: none;
 }
 
+/* ---- Images inside assistant bubbles ---- */
+.assistant-bubble img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.assistant-bubble .image-error {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-sm);
+  color: var(--error-fg);
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
 /* ---- Rendered markdown inside assistant bubbles ---- */
 .assistant-bubble h1,
 .assistant-bubble h2,
