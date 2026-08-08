@@ -111,7 +111,6 @@ function appendAssistantContent(text) {
   const bubble = getOrCreateAssistantBubble();
   const p = document.createElement("p");
   p.innerHTML = md.render(normalizeImageUrls(text));
-  // Replace broken images with a fallback message.
   for (const img of p.querySelectorAll("img")) {
     img.onerror = () => {
       img.outerHTML = '<span class="image-error">Image failed to load</span>';
