@@ -13,14 +13,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            binary_name: inference-gateway-desktop
-            artifact_name: binary-linux
+            args: ""
+            artifact_name: bundle-linux
           - os: macos-latest
-            binary_name: inference-gateway-desktop
-            artifact_name: binary-macos
+            args: "--target universal-apple-darwin"
+            artifact_name: bundle-macos
           - os: windows-latest
-            binary_name: inference-gateway-desktop.exe
-            artifact_name: binary-windows
+            args: ""
+            artifact_name: bundle-windows
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -31,19 +31,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Add macOS universal targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Build release binary
-        run: cargo build --release
-        working-directory: src-tauri
+      - name: Build Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: src-tauri
+          args: ${{ matrix.args }}
 
-      - name: Upload binary artifact
+      - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.artifact_name }}
-          path: src-tauri/target/release/${{ matrix.binary_name }}
+          path: src-tauri/target/**/release/bundle/**
           if-no-files-found: error
 
   release:
@@ -115,14 +121,4 @@ jobs:
           GIT_AUTHOR_EMAIL: ${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
           GIT_COMMITTER_EMAIL: ${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com
-        run: |
-          if ! gh release view v0.1.0 >/dev/null 2>&1; then
-            gh release create v0.1.0 --title "Initial Release" --notes "Initial Release" --target main
-          fi
-
-          mkdir -p assets
-          cp artifacts/binary-linux/inference-gateway-desktop assets/inference-gateway-desktop-linux-amd64
-          cp artifacts/binary-macos/inference-gateway-desktop assets/inference-gateway-desktop-macos-amd64
-          cp artifacts/binary-windows/inference-gateway-desktop.exe assets/inference-gateway-desktop-windows-amd64.exe
-
-          semantic-release
+        run: semantic-release

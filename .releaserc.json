@@ -36,9 +36,12 @@
     }],
     ["@semantic-release/github", {
       "assets": [
-        {"path": "assets/inference-gateway-desktop-linux-amd64", "label": "Linux amd64 binary"},
-        {"path": "assets/inference-gateway-desktop-macos-amd64", "label": "macOS amd64 binary"},
-        {"path": "assets/inference-gateway-desktop-windows-amd64.exe", "label": "Windows amd64 binary"}
+        {"path": "artifacts/**/*.dmg", "label": "macOS (Universal) .dmg"},
+        {"path": "artifacts/**/*.AppImage", "label": "Linux AppImage"},
+        {"path": "artifacts/**/*.deb", "label": "Linux .deb"},
+        {"path": "artifacts/**/*.rpm", "label": "Linux .rpm"},
+        {"path": "artifacts/**/*.msi", "label": "Windows .msi"},
+        {"path": "artifacts/**/*-setup.exe", "label": "Windows installer (.exe)"}
       ]
     }]
   ]
