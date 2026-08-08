@@ -138,10 +138,6 @@ function hideTyping() {
   document.getElementById("typing-indicator")?.remove();
 }
 
-function isImageTool(name) {
-  return /^Image(Generation|Edit|Variation)$/.test(name || "");
-}
-
 function showImageSkeleton() {
   const div = document.createElement("div");
   div.className = "image-skeleton";
@@ -156,7 +152,10 @@ function showImageSkeleton() {
 // (which re-reports the same file as data.source) don't render it twice.
 function renderResultImage(r) {
   const p = r && r.imagePath;
-  if (!p || !/\.infer\/tmp\/[\w.-]+\.(?:png|jpe?g|gif|webp|avif)$/i.test(p)) return;
+  if (!p || !/\.infer\/tmp\/[\w.-]+\.(?:png|gif|webp|avif|jpe?g)$/i.test(p)) {
+    console.warn("renderResultImage: path did not match safe pattern:", p);
+    return;
+  }
   const file = p.split("/").pop();
   if (transcript.querySelector(`img[data-infer="${CSS.escape(file)}"]`)) return;
   const img = document.createElement("img");
@@ -250,7 +249,7 @@ function addToolResult(content) {
 function resolveToolCall(id, content) {
   const details = pendingToolCalls.get(id);
   pendingToolCalls.delete(id);
-  details?._skeleton?.remove();
+  details?._skeleton?.remove(); // ponytail: only set on image tool calls, no-op otherwise
   if (!details || !document.body.contains(details)) {
     addToolResult(content);
     return;
@@ -270,7 +269,7 @@ function resolveToolCall(id, content) {
 function finishPendingToolCalls() {
   for (const details of pendingToolCalls.values()) {
     details.classList.remove("running");
-    details._skeleton?.remove();
+    details._skeleton?.remove(); // ponytail: only set on image tool calls, no-op otherwise
   }
   pendingToolCalls.clear();
 }
@@ -734,7 +733,7 @@ sendBtn.addEventListener("click", async () => {
             for (const tc of event.tool_calls) {
               const details = addToolCall(tc.name, tc.args);
               details.classList.add("running");
-              if (isImageTool(tc.name)) details._skeleton = showImageSkeleton();
+              if (/^Image(Generation|Edit|Variation)$/.test(tc.name)) details._skeleton = showImageSkeleton();
               if (tc.id) pendingToolCalls.set(tc.id, details);
             }
             currentAssistantBubble = null;
