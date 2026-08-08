@@ -660,8 +660,8 @@ sendBtn.addEventListener("click", async () => {
   setStatus("Running...");
 
   addUserBubble(text);
-  autoGrow();
   promptInput.value = "";
+  autoGrow();
 
   showTyping();
 

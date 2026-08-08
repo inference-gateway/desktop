@@ -1301,6 +1301,29 @@ fn whisper_bin_path() -> Option<PathBuf> {
     is_executable_file(&owned).then_some(owned)
 }
 
+/// Stream `reader` into `tmp`, reporting (received, total) progress. Leaves `tmp`
+/// on error for the caller to remove.
+fn stream_to_file(
+    mut reader: impl Read,
+    tmp: &std::path::Path,
+    total: u64,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<(), String> {
+    let mut file = std::fs::File::create(tmp).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 8192];
+    let mut received = 0u64;
+    loop {
+        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        received += n as u64;
+        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        on_progress(received, total);
+    }
+    Ok(())
+}
+
 /// Ensure the GGML model exists, downloading it once (atomic temp -> rename).
 /// Not checksum-verified: HuggingFace's resolve/ layout has no per-file digest,
 /// matching the CLI.
@@ -1321,19 +1344,10 @@ fn ensure_whisper_model(on_progress: impl FnMut(u64, u64)) -> Result<PathBuf, St
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    let mut reader = resp.into_body().into_reader();
-    let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-    let mut buf = [0u8; 8192];
-    let mut received = 0u64;
-    let mut cb = on_progress;
-    loop {
-        let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        received += n as u64;
-        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-        cb(received, total);
+    let reader = resp.into_body().into_reader();
+    if let Err(e) = stream_to_file(reader, &tmp, total, on_progress) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
     std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
     Ok(dest)
