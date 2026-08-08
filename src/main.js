@@ -50,6 +50,9 @@ let pendingApprovals = [];
 let desktopOutdated = false;
 const pendingToolCalls = new Map();
 
+let selectedChats = new Set();
+let lastClickedIndex = -1;
+
 function setInputsEnabled(enabled) {
   promptInput.disabled = !enabled;
   sendBtn.disabled = !enabled;
@@ -368,7 +371,40 @@ function renderChatList(conversations) {
     item.className = "chat-item";
     item.dataset.id = c.id;
     item.title = c.title || c.id;
-    item.addEventListener("click", () => openConversation(c.id));
+    item.addEventListener("click", (e) => {
+      if (e.shiftKey) {
+        const items = chatList.children;
+        const curIdx = Array.prototype.indexOf.call(items, item);
+        const start = Math.min(lastClickedIndex, curIdx);
+        const end = Math.max(lastClickedIndex, curIdx);
+        for (let i = start; i <= end; i++) {
+          const id = items[i].dataset.id;
+          selectedChats.add(id);
+          items[i].classList.add("selected");
+          items[i].setAttribute("aria-selected", "true");
+        }
+        updateBulkBar();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        if (selectedChats.has(c.id)) {
+          selectedChats.delete(c.id);
+          item.classList.remove("selected");
+          item.removeAttribute("aria-selected");
+        } else {
+          selectedChats.add(c.id);
+          item.classList.add("selected");
+          item.setAttribute("aria-selected", "true");
+        }
+        updateBulkBar();
+        return;
+      }
+      if (selectedChats.size > 0) {
+        clearSelection();
+        updateBulkBar();
+      }
+      openConversation(c.id);
+    });
 
     const label = document.createElement("span");
     label.className = "chat-item-title";
@@ -398,6 +434,9 @@ function renderChatList(conversations) {
     chatList.appendChild(item);
   }
   highlightActive();
+  // ponytail: reset last-clicked index after re-render so the next shift+click
+  // does not select stale positions. Keep existing selection if any.
+  lastClickedIndex = -1;
 }
 
 async function deleteConversation(id) {
@@ -406,7 +445,7 @@ async function deleteConversation(id) {
     const { invoke } = window.__TAURI__.core;
     await invoke("delete_conversation", { sessionId: id });
     if (id === activeSessionId) startNewChat();
-    refreshChatList();
+    await refreshChatList();
   } catch (err) {
     addError(`Failed to delete conversation: ${err}`);
   }
@@ -416,6 +455,43 @@ function highlightActive() {
   for (const item of chatList.children) {
     item.classList.toggle("active", item.dataset.id === activeSessionId);
   }
+}
+
+function clearSelection() {
+  selectedChats.clear();
+  lastClickedIndex = -1;
+  for (const item of chatList.children) {
+    item.classList.remove("selected");
+    item.removeAttribute("aria-selected");
+  }
+  const bar = document.getElementById("bulk-delete-bar");
+  if (bar) bar.hidden = true;
+}
+
+function updateBulkBar() {
+  let bar = document.getElementById("bulk-delete-bar");
+  const n = selectedChats.size;
+  if (n === 0) {
+    if (bar) bar.hidden = true;
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "bulk-delete-bar";
+    bar.className = "bulk-delete-bar";
+    const btn = document.createElement("button");
+    btn.id = "bulk-delete-btn";
+    btn.addEventListener("click", () => {
+      const ids = Array.from(selectedChats);
+      if (!confirm(`Delete ${n} conversations?`)) return;
+      clearSelection();
+      Promise.all(ids.map(id => deleteConversation(id).catch(() => {}))).then(refreshChatList);
+    });
+    bar.appendChild(btn);
+    chatList.parentElement.insertBefore(bar, chatList.nextSibling);
+  }
+  bar.hidden = false;
+  bar.querySelector("button").textContent = `Delete ${n} selected`;
 }
 
 async function openConversation(id) {
@@ -462,6 +538,8 @@ function startNewChat() {
   activeSessionId = null;
   transcript.innerHTML = "";
   currentAssistantBubble = null;
+  clearSelection();
+  updateBulkBar();
   highlightActive();
   promptInput.focus();
 }

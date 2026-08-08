@@ -288,6 +288,34 @@ body {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.chat-item.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.bulk-delete-bar {
+  flex-shrink: 0;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.bulk-delete-bar button {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.bulk-delete-bar button:hover {
+  background: var(--danger-hover);
+}
+
 /* ---- Content column ---- */
 #content {
   flex: 1;
