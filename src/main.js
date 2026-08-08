@@ -528,16 +528,28 @@ function updateBulkBar() {
     const btn = document.createElement("button");
     btn.id = "bulk-delete-btn";
     btn.addEventListener("click", () => {
+      if (btn.dataset.armed !== "1") {
+        btn.dataset.armed = "1";
+        btn.textContent = `Click again to delete ${selectedChats.size}`;
+        return;
+      }
       const ids = Array.from(selectedChats);
-      if (!confirm(`Delete ${ids.length} conversations?`)) return;
       clearSelection();
       Promise.all(ids.map(id => deleteConversation(id)));
+    });
+    btn.addEventListener("mouseleave", () => {
+      if (btn.dataset.armed === "1") {
+        btn.dataset.armed = "";
+        btn.textContent = `Delete ${selectedChats.size} selected`;
+      }
     });
     bar.appendChild(btn);
     chatList.parentElement.insertBefore(bar, chatList.nextSibling);
   }
   bar.hidden = false;
-  bar.querySelector("button").textContent = `Delete ${n} selected`;
+  const b = bar.querySelector("button");
+  b.dataset.armed = "";
+  b.textContent = `Delete ${n} selected`;
 }
 
 async function openConversation(id) {
