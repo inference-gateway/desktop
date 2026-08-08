@@ -489,6 +489,26 @@ textarea:focus-visible,
   display: none;
 }
 
+/* ---- Images inside assistant bubbles ---- */
+.assistant-bubble img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 0.5rem 0;
+}
+
+.assistant-bubble .image-error {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-sm);
+  color: var(--error-fg);
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
 /* ---- Rendered markdown inside assistant bubbles ---- */
 .assistant-bubble h1,
 .assistant-bubble h2,
@@ -588,6 +608,37 @@ textarea:focus-visible,
     opacity: 1;
     transform: translateY(-0.2rem);
   }
+}
+
+/* ---- Image generation skeleton ---- */
+.image-skeleton {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  margin: 0.5rem 0;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--border) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.generated-image {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: var(--radius-sm);
 }
 
 /* ---- Collapsibles (reasoning + tool calls), collapsed by default ---- */
