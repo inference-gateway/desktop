@@ -899,6 +899,81 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
     Ok(())
 }
 
+// --- A2A Agent configuration ---
+// Simple JSON-based agent registry managed by the desktop. Each entry is
+// a URL plus a status hint surfaced in the settings UI.
+// ponytail: no live health-check pings — runs in-band with the settings
+// view, so a slow endpoint blocks the whole list. Add async reachability
+// probes if the list grows past ~20 agents.
+
+fn a2a_agents_path() -> PathBuf {
+    home_dir().join(".infer").join("a2a-agents.json")
+}
+
+fn read_a2a_agents() -> Result<Vec<serde_json::Value>, String> {
+    let path = a2a_agents_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&data).map_err(|e| e.to_string())
+}
+
+fn write_a2a_agents(agents: &[serde_json::Value]) -> Result<(), String> {
+    let path = a2a_agents_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(agents).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+#[derive(Clone, serde::Serialize)]
+struct A2aAgent {
+    url: String,
+    status: String,
+}
+
+#[tauri::command]
+async fn list_a2a_agents() -> Result<Vec<A2aAgent>, String> {
+    let agents = read_a2a_agents()?;
+    Ok(agents
+        .into_iter()
+        .filter_map(|v| {
+            let url = v.get("url")?.as_str()?.to_string();
+            let status = v
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("configured")
+                .to_string();
+            Some(A2aAgent { url, status })
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn add_a2a_agent(url: String) -> Result<(), String> {
+    let mut agents = read_a2a_agents()?;
+    // Avoid duplicates
+    if agents
+        .iter()
+        .any(|a| a.get("url").and_then(|u| u.as_str()) == Some(&url))
+    {
+        return Ok(());
+    }
+    agents.push(serde_json::json!({ "url": url, "status": "configured" }));
+    write_a2a_agents(&agents)
+}
+
+#[tauri::command]
+async fn remove_a2a_agent(url: String) -> Result<(), String> {
+    let agents: Vec<serde_json::Value> = read_a2a_agents()?
+        .into_iter()
+        .filter(|a| a.get("url").and_then(|u| u.as_str()) != Some(&url))
+        .collect();
+    write_a2a_agents(&agents)
+}
+
 // --- Gateway lifecycle (desktop-owned) ---
 // The desktop downloads and runs the inference-gateway binary itself so /v1/models
 // stays served. Once it's up, `infer agent` detects it (its own isBinaryRunning
@@ -1570,6 +1645,9 @@ pub fn run() {
             stt_status,
             prepare_stt,
             transcribe_audio,
+            list_a2a_agents,
+            add_a2a_agent,
+            remove_a2a_agent,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
