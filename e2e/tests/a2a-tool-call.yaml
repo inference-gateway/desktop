@@ -1,0 +1,7 @@
+name: a2a query renders a visible tool card
+steps:
+  - new_chat
+  - send: "What agents do you have available?"
+  # The A2A_QueryAgent card must appear in the transcript (not just the final text).
+  - wait_for: { text: "A2A_QueryAgent", timeout: 40 }
+  - wait_for: { text: "The documentation-agent is available via A2A.", timeout: 20 }
