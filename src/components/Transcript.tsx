@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { renderMarkdown } from "@/lib/markdown";
@@ -132,6 +132,33 @@ function TypingBubble() {
   );
 }
 
+function ImageDownload({ filename, src }: { filename: string; src: string }) {
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const handle = () => {
+    if (status !== "idle") return;
+    setStatus("saving");
+    api.saveImage(filename).then(() => setStatus("saved")).catch(() => setStatus("error"));
+  };
+  const keyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handle(); }
+  };
+  return (
+    <div className="group relative my-2 inline-block max-w-full">
+      <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
+      <button
+        onClick={handle}
+        onKeyDown={keyDown}
+        tabIndex={0}
+        aria-label="Download image"
+        disabled={status === "saving"}
+        className="absolute right-1 top-1 rounded-md bg-black/60 px-2 py-1 text-[0.75rem] text-white opacity-0 transition-opacity hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100"
+      >
+        {status === "saving" ? "Saving…" : status === "saved" ? "✓ Saved" : status === "error" ? "✗ Error" : "Download"}
+      </button>
+    </div>
+  );
+}
+
 function Item({ item, approve }: { item: TranscriptItem; approve: (callId: string, approved: boolean) => void }) {
   switch (item.kind) {
     case "user":
@@ -145,32 +172,7 @@ function Item({ item, approve }: { item: TranscriptItem; approve: (callId: strin
     case "approval":
       return <ApprovalCard item={item} approve={approve} />;
     case "image":
-      return (
-        <div className="group relative my-2 inline-block max-w-full">
-          <img
-            className="block h-auto w-full rounded-md"
-            data-infer={item.filename}
-            src={item.src}
-            alt=""
-          />
-          <button
-            onClick={() => {
-              api.saveImage(item.filename).catch(() => {});
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                api.saveImage(item.filename).catch(() => {});
-              }
-            }}
-            tabIndex={0}
-            aria-label="Download image"
-            className="absolute right-1 top-1 rounded-md bg-black/60 px-2 py-1 text-[0.75rem] text-white opacity-0 transition-opacity hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100"
-          >
-            Download
-          </button>
-        </div>
-      );
+      return <ImageDownload filename={item.filename} src={item.src} />;
     case "error":
       return (
         <div className="max-w-[min(72ch,82%)] self-start rounded-md border border-err-border bg-err-bg px-3 py-2 text-err">
