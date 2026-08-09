@@ -83,8 +83,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, items, seq, typing: false };
     }
     case "setApproval":
+      // A decision resumes the agent, so the working dots come back on.
       return {
         ...state,
+        typing: true,
         items: state.items.map((it) =>
           it.kind === "approval" && it.callId === action.callId ? { ...it, status: action.status } : it
         ),
@@ -145,11 +147,9 @@ function applyAssistant(
   let items = state.items;
   let currentAssistantId = state.currentAssistantId;
   let currentReasoningId = state.currentReasoningId;
-  let typing = state.typing;
 
   if (event.reasoning_content) {
     const text = event.reasoning_content;
-    typing = false;
     if (currentReasoningId) {
       items = items.map((it) =>
         it.kind === "reasoning" && it.id === currentReasoningId
@@ -165,7 +165,6 @@ function applyAssistant(
 
   if (event.content) {
     const text = event.content;
-    typing = false;
     currentReasoningId = null;
     if (currentAssistantId) {
       items = items.map((it) =>
@@ -179,7 +178,6 @@ function applyAssistant(
   }
 
   if (event.tool_calls.length) {
-    typing = false;
     const added: TranscriptItem[] = event.tool_calls.map((tc) => ({
       kind: "tool",
       id: String(seq++),
@@ -195,7 +193,7 @@ function applyAssistant(
     currentReasoningId = null;
   }
 
-  return { ...state, items, seq, typing, currentAssistantId, currentReasoningId };
+  return { ...state, items, seq, currentAssistantId, currentReasoningId };
 }
 
 function applyToolResult(state: ChatState, callId: string, content: string): ChatState {

@@ -1,0 +1,6 @@
+name: reasoning renders a collapsible Thought process block
+steps:
+  - new_chat
+  - send: "think out loud about the meaning of life"
+  - wait_for: { text: "Thought process", timeout: 30 }
+  - wait_for: { text: "The answer is 42, plainly.", timeout: 20 }

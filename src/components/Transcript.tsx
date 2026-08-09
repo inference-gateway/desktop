@@ -21,12 +21,14 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
     });
   }, [chunks]);
   if (chunks.length === 0) return null;
+  // Chunks are streamed content deltas; join before rendering so markdown
+  // parses as one document instead of fragmenting per token.
   return (
-    <div ref={ref} className={cn(BUBBLE, "md self-start rounded-bl-[4px] bg-assistant text-assistant-foreground")}>
-      {chunks.map((c, i) => (
-        <div key={i} dangerouslySetInnerHTML={{ __html: renderMarkdown(c) }} />
-      ))}
-    </div>
+    <div
+      ref={ref}
+      className={cn(BUBBLE, "md self-start rounded-bl-[4px] bg-assistant text-assistant-foreground")}
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(chunks.join("")) }}
+    />
   );
 }
 
@@ -35,11 +37,7 @@ function ReasoningBlock({ paragraphs }: { paragraphs: string[] }) {
     <details className="disclosure max-w-[min(72ch,82%)] self-start overflow-hidden rounded-md border border-border bg-secondary text-[0.85rem] text-muted-foreground">
       <summary className="px-[0.65rem] py-[0.35rem] hover:text-foreground">Thought process</summary>
       <div className="border-t border-border">
-        {paragraphs.map((p, i) => (
-          <p key={i} className="whitespace-pre-wrap px-[0.65rem] py-2 italic leading-[1.5]">
-            {p}
-          </p>
-        ))}
+        <p className="whitespace-pre-wrap px-[0.65rem] py-2 italic leading-[1.5]">{paragraphs.join("")}</p>
       </div>
     </details>
   );

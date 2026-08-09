@@ -92,3 +92,9 @@ scenarios:
           - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
       - content: "Parallel file written."
 
+  - name: reasoning-demo
+    match: '(?i)think out loud'
+    turns:
+      - reasoning: "Let me work through this step by step. First I weigh the options, then the trade-offs. Therefore the answer is 42."
+        content: "The answer is 42, plainly."
+

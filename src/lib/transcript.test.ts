@@ -24,7 +24,43 @@ test("assistant content chunks accumulate into one bubble, then reset on tool ca
   const assistant = s.items.filter((i) => i.kind === "assistant");
   expect(assistant).toHaveLength(1);
   expect(assistant[0]).toMatchObject({ chunks: ["Hel", "lo"] });
+  // Dots persist while the agent streams; only a terminal event stops them.
+  expect(s.typing).toBe(true);
+});
+
+test("streamed reasoning deltas accumulate into one block and keep the dots on", () => {
+  const s = run([
+    { type: "userSend", text: "think" },
+    ev({ kind: "AssistantMessage", content: "", reasoning_content: "Let me ", tool_calls: [] }),
+    ev({ kind: "AssistantMessage", content: "", reasoning_content: "think.", tool_calls: [] }),
+  ]);
+  const reasoning = s.items.filter((i) => i.kind === "reasoning");
+  expect(reasoning).toHaveLength(1);
+  if (reasoning[0]?.kind === "reasoning") {
+    expect(reasoning[0].paragraphs).toEqual(["Let me ", "think."]);
+  }
+  expect(s.typing).toBe(true);
+});
+
+test("dots persist through reasoning then content and only stop on Done", () => {
+  let s = run([
+    { type: "userSend", text: "go" },
+    ev({ kind: "AssistantMessage", content: "", reasoning_content: "reasoning", tool_calls: [] }),
+    ev({ kind: "AssistantMessage", content: "answer", reasoning_content: null, tool_calls: [] }),
+  ]);
+  expect(s.typing).toBe(true);
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
   expect(s.typing).toBe(false);
+});
+
+test("approval decision turns the working dots back on", () => {
+  let s = run([
+    { type: "userSend", text: "write" },
+    ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c1" }),
+  ]);
+  expect(s.typing).toBe(false);
+  s = chatReducer(s, { type: "setApproval", callId: "c1", status: "approved" });
+  expect(s.typing).toBe(true);
 });
 
 test("a running tool call resolves by tool_call_id", () => {
