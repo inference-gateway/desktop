@@ -6,9 +6,17 @@
 
 set -e
 
-cd "$(git rev-parse --show-toplevel)/src-tauri"
+ROOT="$(git rev-parse --show-toplevel)"
 
 echo "==> Running pre-commit checks..."
+
+# The Rust build embeds frontendDist (../dist), so build the frontend first.
+if command -v bun >/dev/null 2>&1; then
+    echo "--> Frontend (bun run build)..."
+    (cd "$ROOT" && bun install --frozen-lockfile >/dev/null 2>&1 && bun run build >/dev/null)
+fi
+
+cd "$ROOT/src-tauri"
 
 # Run typecheck if cargo is available
 if command -v cargo >/dev/null 2>&1; then

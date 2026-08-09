@@ -4,3 +4,9 @@ src-tauri/gen/
 .infer/
 e2e/target/
 e2e/artifacts/
+
+# Frontend (Bun + Vite)
+node_modules/
+dist/*
+!dist/.gitkeep
+*.local
