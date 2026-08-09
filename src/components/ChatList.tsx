@@ -4,11 +4,14 @@ import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 
 function ChatItem({ index }: { index: number }) {
-  const { conversations, selected, sessionId, onChatClick, deleteConversation } = useDesktop();
+  const { conversations, selected, sessionId, onChatClick, deleteConversation, isRunning, isAwaitingApproval } =
+    useDesktop();
   const conv = conversations[index];
   const [confirm, setConfirm] = useState(false);
   const isSelected = selected.has(conv.id);
   const isActive = conv.id === sessionId;
+  const running = isRunning(conv.id);
+  const awaiting = isAwaitingApproval(conv.id);
 
   return (
     <div
@@ -22,6 +25,16 @@ function ChatItem({ index }: { index: number }) {
         isSelected && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)] ring-1 ring-primary/25"
       )}
     >
+      {running && (
+        <span
+          aria-label={awaiting ? "Awaiting approval" : "Running"}
+          title={awaiting ? "Awaiting approval" : "Running"}
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            awaiting ? "bg-amber-500" : "animate-pulse bg-emerald-500"
+          )}
+        />
+      )}
       <span className="min-w-0 flex-1 truncate">{conv.title || "(untitled)"}</span>
       <button
         aria-label="Delete conversation"
