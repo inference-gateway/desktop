@@ -234,6 +234,23 @@ impl AppDriver {
         }
     }
 
+    /// Send a single keystroke to the focused element by AX key code.
+    /// Used by e2e tests that need to exercise keyboard shortcuts (ArrowUp/Down).
+    pub fn keypress(&self, key: &str) -> Result<()> {
+        let code = match key {
+            "up" => "126",
+            "down" => "125",
+            _ => bail!("unsupported keypress key: {key:?}"),
+        };
+        let script = format!(
+            "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\ndelay 0.2\nkeystroke (key code {code})\nreturn \"ok\"\nend tell",
+            root = ax_root(),
+        );
+        osascript(&script)
+            .map(|_| ())
+            .map_err(|e| anyhow!("keypress {:?}: {}", key, e))
+    }
+
     /// Capture the app's main window (by window id - a screen-rect capture
     /// grabs whatever Space is visible) into artifacts/<name>.png.
     pub fn screenshot(&self, name: &str) -> Result<PathBuf> {

@@ -906,6 +906,35 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
     Ok(())
 }
 
+/// Read ~/.infer/history (line-delimited prompt history shared with the CLI).
+/// Returns an empty vec when the file does not exist yet.
+#[tauri::command]
+fn read_history() -> Result<Vec<String>, String> {
+    let path = home_dir().join(".infer").join("history");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(content.lines().map(|l| l.to_string()).collect())
+}
+
+/// Append a line to ~/.infer/history (creates the file if missing).
+#[tauri::command]
+fn append_history(line: String) -> Result<(), String> {
+    let path = home_dir().join(".infer").join("history");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    writeln!(file, "{}", line).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // --- A2A Agent configuration ---
 // A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
 // than reimplement the CLI's agent knowledge — it auto-fills oci/run/model/env
@@ -1687,6 +1716,8 @@ pub fn run() {
             add_a2a_agent,
             remove_a2a_agent,
             set_a2a_agent_model,
+            read_history,
+            append_history,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

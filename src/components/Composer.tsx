@@ -3,12 +3,52 @@ import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
+import { useRef } from "react";
 
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
 
 export function Composer() {
-  const { composerRef, enabled, running, send, cancel, setStatus, setError } = useDesktop();
+  const { composerRef, enabled, running, send, cancel, setStatus, setError, history } = useDesktop();
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
+  const cursorRef = useRef(-1);
+  const draftRef = useRef("");
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      cursorRef.current = -1;
+      draftRef.current = "";
+      send();
+      return;
+    }
+    if (e.key === "ArrowUp" && history.length > 0) {
+      e.preventDefault();
+      if (cursorRef.current === -1) {
+        draftRef.current = el.value;
+        cursorRef.current = history.length - 1;
+      } else if (cursorRef.current > 0) {
+        cursorRef.current--;
+      } else {
+        return;
+      }
+      el.value = history[cursorRef.current];
+      autoGrow(el);
+      return;
+    }
+    if (e.key === "ArrowDown" && history.length > 0 && cursorRef.current !== -1) {
+      e.preventDefault();
+      if (cursorRef.current < history.length - 1) {
+        cursorRef.current++;
+        el.value = history[cursorRef.current];
+      } else {
+        cursorRef.current = -1;
+        el.value = draftRef.current;
+      }
+      autoGrow(el);
+      return;
+    }
+  };
 
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
@@ -23,12 +63,7 @@ export function Composer() {
           placeholder="Message the agent..."
           disabled={!enabled}
           onInput={(e) => autoGrow(e.currentTarget)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
+          onKeyDown={onKeyDown}
           className="max-h-[40vh] min-h-[2.2rem] flex-1 resize-none overflow-y-auto bg-transparent py-[0.44rem] text-[0.95rem] leading-[1.4] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
         />
         <div id="composer-actions" className="flex items-center gap-1">

@@ -22,6 +22,7 @@ pub struct Test {
 pub enum Step {
     Bare(BareStep),
     Send { send: String },
+    Keypress { keypress: String },
     WaitFor { wait_for: WaitTarget },
     Click { click: ClickTarget },
     AssertAbsent { assert_absent: FileTarget },

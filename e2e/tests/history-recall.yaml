@@ -1,0 +1,10 @@
+name: prompt history recall with arrow keys
+steps:
+  - new_chat
+  - send: "create a file named history-test.txt"
+  - wait_for: { text: "Done.", timeout: 30 }
+  # macOS-only: ArrowUp via AX keystroke should recall the prompt into the
+  # textarea. Only works on macOS where AX keystroke targets the focused
+  # textarea element. On CI (ubuntu) the YAML is only parsed for syntax
+  # validation.
+  - keypress: "up"
