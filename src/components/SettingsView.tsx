@@ -152,6 +152,7 @@ export function SettingsView() {
 }
 
 function AgentsTab() {
+  const { models } = useDesktop();
   const [agents, setAgents] = useState<A2aAgent[]>([]);
   const [catalog, setCatalog] = useState<CatalogAgent[]>([]);
   const [catalogError, setCatalogError] = useState(false);
@@ -178,19 +179,28 @@ function AgentsTab() {
       .finally(() => setLoadingCatalog(false));
   }, []);
 
-  const configuredNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents]);
+  const configured = useMemo(() => new Map(agents.map((a) => [a.name, a])), [agents]);
   const catalogNames = useMemo(() => new Set(catalog.map((c) => c.name)), [catalog]);
   const remoteAgents = useMemo(() => agents.filter((a) => !catalogNames.has(a.name)), [agents, catalogNames]);
 
-  // ponytail: enabling registers the catalog's default URL (often :8080). Running several
-  // locally needs distinct ports — desktop-managed container launch is the upgrade path.
+  // ponytail: register by name only — the CLI (agent_defaults.go) assigns each known agent a
+  // collision-free host port; passing a URL would override that onto the gateway's own :8080.
   const toggleLocal = async (c: CatalogAgent) => {
     try {
-      if (configuredNames.has(c.name)) await api.removeA2aAgent(c.name);
-      else await api.addA2aAgent(c.name, c.url);
+      if (configured.has(c.name)) await api.removeA2aAgent(c.name);
+      else await api.addA2aAgent(c.name, "");
       await loadAgents();
     } catch (e) {
       console.error("Failed to toggle A2A agent:", e);
+    }
+  };
+
+  const setModel = async (name: string, model: string) => {
+    try {
+      await api.setA2aAgentModel(name, model);
+      await loadAgents();
+    } catch (e) {
+      console.error("Failed to set agent model:", e);
     }
   };
 
@@ -234,37 +244,54 @@ function AgentsTab() {
       ) : (
         <div className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
           {catalog.map((c) => {
-            const on = configuredNames.has(c.name);
+            const agent = configured.get(c.name);
+            const on = !!agent;
             return (
-              <label
+              <div
                 key={c.name}
                 className={cn(
-                  "flex cursor-pointer flex-col gap-1 rounded-md border bg-card p-3",
+                  "flex flex-col gap-1 rounded-md border bg-card p-3",
                   on ? "border-primary" : "border-border",
                 )}
               >
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleLocal(c)}
-                    className="h-4 w-4 shrink-0 accent-primary"
-                  />
-                  <span className="flex-1 truncate text-[0.85rem] font-medium">{c.name}</span>
-                </div>
-                {c.description && (
-                  <p className="line-clamp-2 text-[0.75rem] text-muted-foreground">{c.description}</p>
-                )}
-                {c.skills.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {c.skills.slice(0, 4).map((s) => (
-                      <span key={s} className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
-                        {s}
-                      </span>
-                    ))}
+                <label className="flex cursor-pointer flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleLocal(c)}
+                      className="h-4 w-4 shrink-0 accent-primary"
+                    />
+                    <span className="flex-1 truncate text-[0.85rem] font-medium">{c.name}</span>
                   </div>
+                  {c.description && (
+                    <p className="line-clamp-2 text-[0.75rem] text-muted-foreground">{c.description}</p>
+                  )}
+                  {c.skills.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {c.skills.slice(0, 4).map((s) => (
+                        <span key={s} className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </label>
+                {agent?.model && (
+                  <select
+                    aria-label={`Model for ${c.name}`}
+                    value={agent.model}
+                    onChange={(e) => setModel(c.name, e.target.value)}
+                    className="mt-1 rounded border border-border bg-secondary px-1.5 py-1 text-[0.7rem] text-foreground"
+                  >
+                    {(models.includes(agent.model) ? models : [agent.model, ...models]).map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
                 )}
-              </label>
+              </div>
             );
           })}
         </div>

@@ -783,36 +783,43 @@ fn gateway_url() -> String {
 }
 
 /// Run `infer <args>` to completion and return stdout, erroring on non-zero exit.
-fn run_infer(args: &[&str]) -> Result<String, String> {
-    let output = std::process::Command::new(infer_bin_path())
-        .args(args)
-        .env("HOME", home_dir().to_str().unwrap_or(""))
-        .current_dir(agent_cwd())
-        .output()
-        .map_err(|e| format!("Failed to run infer: {}", e))?;
-    if !output.status.success() {
-        return Err(format!(
-            "infer {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+/// The subprocess runs on the blocking pool so the async runtime keeps serving
+/// other commands while `infer` works.
+async fn run_infer(args: &[&str]) -> Result<String, String> {
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        let output = std::process::Command::new(infer_bin_path())
+            .args(&args)
+            .env("HOME", home_dir().to_str().unwrap_or(""))
+            .current_dir(agent_cwd())
+            .output()
+            .map_err(|e| format!("Failed to run infer: {}", e))?;
+        if !output.status.success() {
+            return Err(format!(
+                "infer {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    })
+    .await
+    .map_err(|e| format!("infer task failed: {}", e))?
 }
 
 #[tauri::command]
 async fn list_conversations() -> Result<String, String> {
-    run_infer(&["conversations", "list", "--format", "json"])
+    run_infer(&["conversations", "list", "--format", "json"]).await
 }
 
 #[tauri::command]
 async fn get_conversation(session_id: String) -> Result<String, String> {
-    run_infer(&["conversations", "show", &session_id, "--format", "json"])
+    run_infer(&["conversations", "show", &session_id, "--format", "json"]).await
 }
 
 #[tauri::command]
 async fn delete_conversation(session_id: String) -> Result<String, String> {
-    run_infer(&["conversations", "delete", &session_id])
+    run_infer(&["conversations", "delete", &session_id]).await
 }
 
 #[tauri::command]
@@ -900,88 +907,107 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
 }
 
 // --- A2A Agent configuration ---
-// Simple JSON-based agent registry managed by the desktop. Each entry is a
-// name (identity), a URL, and a status hint surfaced in the settings UI.
-// Keyed by name so multiple registry agents that share a placeholder URL
-// (e.g. localhost:8080) can be enabled independently.
-// ponytail: no live health-check pings — runs in-band with the settings
-// view, so a slow endpoint blocks the whole list. Add async reachability
-// probes if the list grows past ~20 agents.
-
-fn a2a_agents_path() -> PathBuf {
-    home_dir().join(".infer").join("a2a-agents.json")
-}
-
-fn read_a2a_agents() -> Result<Vec<serde_json::Value>, String> {
-    let path = a2a_agents_path();
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
-}
-
-fn write_a2a_agents(agents: &[serde_json::Value]) -> Result<(), String> {
-    let path = a2a_agents_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string_pretty(agents).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())
-}
+// A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
+// than reimplement the CLI's agent knowledge — it auto-fills oci/run/model/env
+// for known agents (browser-agent, documentation-agent, ...) and distinguishes
+// local containers from external URL agents — the desktop shells out to
+// `infer agents add|remove|list` so the two stay perfectly in sync. Keyed by
+// name (the CLI's primary key).
 
 #[derive(Clone, serde::Serialize)]
 struct A2aAgent {
     name: String,
     url: String,
-    status: String,
+    run: bool,
+    model: String,
 }
 
-fn agent_key(v: &serde_json::Value) -> Option<&str> {
-    v.get("name")
-        .and_then(|s| s.as_str())
-        .or_else(|| v.get("url").and_then(|s| s.as_str()))
+// `infer agents list --format json` fields are PascalCase (Go struct names),
+// split into `local` (container) and `external` (URL-only) groups.
+#[derive(serde::Deserialize)]
+struct CliAgent {
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "URL")]
+    url: String,
+    #[serde(rename = "Run")]
+    run: bool,
+    #[serde(rename = "Model", default)]
+    model: String,
 }
 
-#[tauri::command]
-async fn list_a2a_agents() -> Result<Vec<A2aAgent>, String> {
-    let agents = read_a2a_agents()?;
-    Ok(agents
+#[derive(serde::Deserialize)]
+struct CliAgentList {
+    local: Option<Vec<CliAgent>>,
+    external: Option<Vec<CliAgent>>,
+}
+
+fn parse_agent_list(json: &[u8]) -> Result<Vec<A2aAgent>, String> {
+    let parsed: CliAgentList = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+    Ok([parsed.local, parsed.external]
         .into_iter()
-        .filter_map(|v| {
-            let url = v.get("url")?.as_str()?.to_string();
-            let name = v
-                .get("name")
-                .and_then(|s| s.as_str())
-                .unwrap_or(&url)
-                .to_string();
-            let status = v
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("configured")
-                .to_string();
-            Some(A2aAgent { name, url, status })
+        .flatten()
+        .flatten()
+        .map(|a| A2aAgent {
+            name: a.name,
+            url: a.url,
+            run: a.run,
+            model: a.model,
         })
         .collect())
 }
 
+async fn run_infer_agents(args: &[&str]) -> Result<std::process::Output, String> {
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    tokio::task::spawn_blocking(move || {
+        std::process::Command::new(infer_bin_path())
+            .arg("agents")
+            .args(&args)
+            .arg("--no-colors")
+            .output()
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("infer agents task failed: {}", e))?
+}
+
+fn agents_command_ok(out: std::process::Output) -> Result<(), String> {
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+#[tauri::command]
+async fn list_a2a_agents() -> Result<Vec<A2aAgent>, String> {
+    let out = run_infer_agents(&["list", "--format", "json"]).await?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    parse_agent_list(&out.stdout)
+}
+
 #[tauri::command]
 async fn add_a2a_agent(name: String, url: String) -> Result<(), String> {
-    let mut agents = read_a2a_agents()?;
-    if agents.iter().any(|a| agent_key(a) == Some(name.as_str())) {
-        return Ok(());
+    let mut args = vec!["add", name.as_str()];
+    let url = url.trim();
+    if !url.is_empty() {
+        args.push(url);
     }
-    agents.push(serde_json::json!({ "name": name, "url": url, "status": "configured" }));
-    write_a2a_agents(&agents)
+    agents_command_ok(run_infer_agents(&args).await?)
 }
 
 #[tauri::command]
 async fn remove_a2a_agent(name: String) -> Result<(), String> {
-    let agents: Vec<serde_json::Value> = read_a2a_agents()?
-        .into_iter()
-        .filter(|a| agent_key(a) != Some(name.as_str()))
-        .collect();
-    write_a2a_agents(&agents)
+    agents_command_ok(run_infer_agents(&["remove", name.as_str()]).await?)
+}
+
+#[tauri::command]
+async fn set_a2a_agent_model(name: String, model: String) -> Result<(), String> {
+    agents_command_ok(
+        run_infer_agents(&["update", name.as_str(), "--model", model.as_str()]).await?,
+    )
 }
 
 // --- Gateway lifecycle (desktop-owned) ---
@@ -1658,6 +1684,7 @@ pub fn run() {
             list_a2a_agents,
             add_a2a_agent,
             remove_a2a_agent,
+            set_a2a_agent_model,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -2167,6 +2194,29 @@ mod tests {
         assert_eq!(
             resolve_agent_cwd(Some(PathBuf::from("/tmp/work")), home.clone()),
             PathBuf::from("/tmp/work")
+        );
+    }
+
+    #[test]
+    fn test_parse_agent_list_merges_local_and_external() {
+        let json = br#"{"external":[{"Name":"code-reviewer","URL":"https://a.example.com","Run":false}],"local":[{"Name":"browser-agent","URL":"http://localhost:8083","OCI":"x","Run":true,"Model":"deepseek/deepseek-v4-flash"}],"total":2}"#;
+        let agents = parse_agent_list(json).unwrap();
+        assert_eq!(agents.len(), 2);
+        assert_eq!(agents[0].name, "browser-agent");
+        assert_eq!(agents[0].url, "http://localhost:8083");
+        assert!(agents[0].run);
+        assert_eq!(agents[0].model, "deepseek/deepseek-v4-flash");
+        assert_eq!(agents[1].name, "code-reviewer");
+        assert!(!agents[1].run);
+        assert_eq!(agents[1].model, "");
+    }
+
+    #[test]
+    fn test_parse_agent_list_handles_null_groups() {
+        assert!(
+            parse_agent_list(br#"{"external":null,"local":null,"total":0}"#)
+                .unwrap()
+                .is_empty()
         );
     }
 }
