@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, Read, Write};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri::ipc::Channel;
@@ -948,6 +948,37 @@ fn append_history(line: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate a generated-image path before copying it out: absolute, under
+/// `home`, inside an `.infer/tmp` dir, no `..` traversal. Split from
+/// `save_image` so the guard is testable without touching the filesystem.
+fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, String> {
+    let p = Path::new(path);
+    let ok = p.starts_with(home)
+        && !p.components().any(|c| c == Component::ParentDir)
+        && path.contains("/.infer/tmp/");
+    if !ok {
+        return Err(format!("Refusing to save image outside .infer/tmp: {path}"));
+    }
+    Ok(p.to_path_buf())
+}
+
+/// Copy a generated image (the absolute path `infer` reported) to the user's
+/// Downloads folder. Returns the destination path on success.
+#[tauri::command]
+fn save_image(path: String) -> Result<String, String> {
+    let home = home_dir();
+    let src = safe_image_source(&path, &home)?;
+    if !src.exists() {
+        return Err(format!("Image not found: {path}"));
+    }
+    let name = src.file_name().ok_or("invalid image path")?;
+    let downloads = home.join("Downloads");
+    std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+    let dest = downloads.join(name);
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 // --- A2A Agent configuration ---
 // A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
 // than reimplement the CLI's agent knowledge — it auto-fills oci/run/model/env
@@ -1731,6 +1762,7 @@ pub fn run() {
             set_a2a_agent_model,
             read_history,
             append_history,
+            save_image,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -1756,6 +1788,16 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn safe_image_source_guards_scope() {
+        let home = PathBuf::from("/Users/me");
+        assert!(safe_image_source("/Users/me/proj/.infer/tmp/cat.png", &home).is_ok());
+        assert!(safe_image_source("/Users/me/.infer/tmp/cat.png", &home).is_ok());
+        assert!(safe_image_source("/etc/passwd", &home).is_err());
+        assert!(safe_image_source("/Users/me/.infer/tmp/../../../etc/passwd", &home).is_err());
+        assert!(safe_image_source("/Users/me/Pictures/cat.png", &home).is_err());
+    }
 
     #[test]
     fn test_asset_name_mapping() {

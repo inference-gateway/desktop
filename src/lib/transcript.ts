@@ -28,7 +28,7 @@ export type TranscriptItem =
       toolArgs: string;
       status: "pending" | "approved" | "denied";
     }
-  | { kind: "image"; id: string; src: string; filename: string }
+  | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
   | { kind: "cancelled"; id: string };
 
@@ -244,7 +244,7 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     const file = imageFilename(parsed.imagePath);
     if (!seenImages.includes(file)) {
       seenImages = [...seenImages, file];
-      items = [...items, { kind: "image", id: String(seq++), src, filename: file }];
+      items = [...items, { kind: "image", id: String(seq++), src, filename: file, path: parsed.imagePath }];
     }
   }
 
@@ -274,7 +274,7 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     const file = imageFilename(imagePath);
     if (seenImages.includes(file)) return;
     seenImages = [...seenImages, file];
-    items.push({ kind: "image", id: String(seq++), src, filename: file });
+    items.push({ kind: "image", id: String(seq++), src, filename: file, path: imagePath });
   };
 
   for (const line of ndjson.split("\n")) {

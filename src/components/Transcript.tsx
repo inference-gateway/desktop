@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { renderMarkdown } from "@/lib/markdown";
+import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { TranscriptItem } from "@/lib/transcript";
 
@@ -131,6 +134,41 @@ function TypingBubble() {
   );
 }
 
+function ImageDownload({ filename, src, path }: { filename: string; src: string; path: string }) {
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const save = () => {
+    if (status === "saving") return;
+    setStatus("saving");
+    api.saveImage(path).then(() => setStatus("saved")).catch(() => setStatus("error"));
+  };
+  useEffect(() => {
+    if (status !== "saved" && status !== "error") return;
+    const t = setTimeout(() => setStatus("idle"), 2000);
+    return () => clearTimeout(t);
+  }, [status]);
+  const Icon = status === "saving" ? Loader2 : status === "saved" ? Check : status === "error" ? X : Download;
+  return (
+    <div className="group relative my-2 inline-block max-w-full">
+      <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="secondary"
+        onClick={save}
+        disabled={status === "saving"}
+        aria-label="Download image"
+        className={cn(
+          "absolute right-2 top-2 opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100",
+          status === "saved" && "text-green-600 dark:text-green-500",
+          status === "error" && "text-destructive",
+        )}
+      >
+        <Icon className={cn(status === "saving" && "animate-spin")} />
+      </Button>
+    </div>
+  );
+}
+
 function Item({ item, approve }: { item: TranscriptItem; approve: (callId: string, approved: boolean) => void }) {
   switch (item.kind) {
     case "user":
@@ -144,14 +182,7 @@ function Item({ item, approve }: { item: TranscriptItem; approve: (callId: strin
     case "approval":
       return <ApprovalCard item={item} approve={approve} />;
     case "image":
-      return (
-        <img
-          className="generated-image my-2 block h-auto w-full max-w-[320px] rounded-md"
-          data-infer={item.filename}
-          src={item.src}
-          alt=""
-        />
-      );
+      return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
     case "error":
       return (
         <div className="max-w-[min(72ch,82%)] self-start rounded-md border border-err-border bg-err-bg px-3 py-2 text-err">

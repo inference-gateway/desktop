@@ -68,6 +68,7 @@ export const api = {
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
+  saveImage: (path: string) => invoke<string>("save_image", { path }),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
