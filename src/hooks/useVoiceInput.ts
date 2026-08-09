@@ -32,6 +32,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
   const [recording, setRecording] = useState(false);
 
   const recordingRef = useRef(false);
+  const preparingRef = useRef(false);
   const mediaStream = useRef<MediaStream | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
   const recNode = useRef<ScriptProcessorNode | null>(null);
@@ -178,8 +179,10 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
       await stopRecording();
       return;
     }
-    if (running) return;
+    if (running || preparingRef.current) return;
     if (!(sttBinary && sttModel)) {
+      if (!window.confirm("Download voice support (~75 MB)? One-time setup.")) return;
+      preparingRef.current = true;
       let fresh: SttStatus | null;
       try {
         await ensureStt();
@@ -188,6 +191,8 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
         setError(`Voice setup failed: ${err}`);
         await refreshSttStatus();
         return;
+      } finally {
+        preparingRef.current = false;
       }
       if (!(fresh && fresh.binary && fresh.model)) return;
     }
@@ -206,7 +211,9 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
         ? sttHint || "Voice input unavailable"
         : recording
           ? "Stop recording"
-          : "Voice input";
+          : !ready
+            ? "Click to set up voice input (downloads once)"
+            : "Voice input";
 
   return { recording, disabled, title, onClick: () => void onClick() };
 }

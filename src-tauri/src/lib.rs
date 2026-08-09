@@ -1410,7 +1410,13 @@ const WHISPER_MODEL_FILE: &str = "ggml-tiny.bin";
 const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
 const STT_BINARIES_BASE: &str =
-    "https://github.com/inference-gateway/stt-binaries/releases/download/v0.1.0";
+    "https://github.com/inference-gateway/stt-binaries/releases/download/v0.2.0";
+/// Filename for the downloaded whisper binary; Windows needs the `.exe` to run.
+const WHISPER_BIN_NAME: &str = if cfg!(windows) {
+    "whisper-cli.exe"
+} else {
+    "whisper-cli"
+};
 
 fn whisper_model_path() -> PathBuf {
     home_dir()
@@ -1420,8 +1426,7 @@ fn whisper_model_path() -> PathBuf {
         .join(WHISPER_MODEL_FILE)
 }
 
-/// Prebuilt whisper-cli asset for this platform, or `None` where none is
-/// published (macOS: install via `brew install whisper-cpp`).
+/// Prebuilt whisper-cli asset for this platform, or `None` where none is published.
 fn stt_bin_asset() -> Option<String> {
     stt_bin_asset_for(std::env::consts::OS, std::env::consts::ARCH)
 }
@@ -1434,6 +1439,8 @@ fn stt_bin_asset_for(os: &str, arch: &str) -> Option<String> {
     };
     match os {
         "linux" => Some(format!("whisper-cli-linux-{}", arch)),
+        "macos" => Some(format!("whisper-cli-darwin-{}", arch)),
+        "windows" if arch == "amd64" => Some("whisper-cli-windows-amd64.exe".into()),
         _ => None,
     }
 }
@@ -1486,7 +1493,7 @@ fn whisper_bin_path() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    let owned = home_dir().join(".infer").join("bin").join("whisper-cli");
+    let owned = home_dir().join(".infer").join("bin").join(WHISPER_BIN_NAME);
     is_executable_file(&owned).then_some(owned)
 }
 
@@ -1547,7 +1554,7 @@ fn ensure_whisper_model(on_progress: impl FnMut(u64, u64)) -> Result<PathBuf, St
 fn download_whisper_binary(on_event: &Channel<ProgressEvent>) -> Result<PathBuf, String> {
     let asset = stt_bin_asset().ok_or_else(|| {
         format!(
-            "No prebuilt whisper-cli for {}-{}. Install it: brew install whisper-cpp",
+            "No prebuilt whisper-cli for {}-{}",
             std::env::consts::OS,
             std::env::consts::ARCH
         )
@@ -1555,7 +1562,7 @@ fn download_whisper_binary(on_event: &Channel<ProgressEvent>) -> Result<PathBuf,
 
     let bin_dir = home_dir().join(".infer").join("bin");
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-    let dest = bin_dir.join("whisper-cli");
+    let dest = bin_dir.join(WHISPER_BIN_NAME);
     let tmp = bin_dir.join("whisper-cli.tmp");
 
     let _ = on_event.send(ProgressEvent::Downloading {
@@ -1671,7 +1678,7 @@ async fn stt_status() -> Result<SttStatus, String> {
     let binary = whisper_bin_path().is_some();
     let downloadable = stt_bin_asset().is_some();
     let hint = if !binary && !downloadable {
-        "Install whisper-cpp (brew install whisper-cpp) to enable voice input".into()
+        "Voice input isn't available on this platform".into()
     } else {
         String::new()
     };
@@ -1714,8 +1721,7 @@ async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
         return Ok("this is a mock transcription".into());
     }
     tokio::task::spawn_blocking(move || {
-        let bin = whisper_bin_path()
-            .ok_or("whisper-cli not found. Install it: brew install whisper-cpp")?;
+        let bin = whisper_bin_path().ok_or("whisper-cli not found")?;
         let model = ensure_whisper_model(|_, _| {})?;
         let tmp = std::env::temp_dir().join(format!(
             "infer-stt-{}-{}.wav",
@@ -2319,7 +2325,19 @@ mod tests {
             stt_bin_asset_for("linux", "aarch64").as_deref(),
             Some("whisper-cli-linux-arm64")
         );
-        assert_eq!(stt_bin_asset_for("macos", "aarch64"), None);
+        assert_eq!(
+            stt_bin_asset_for("macos", "aarch64").as_deref(),
+            Some("whisper-cli-darwin-arm64")
+        );
+        assert_eq!(
+            stt_bin_asset_for("macos", "x86_64").as_deref(),
+            Some("whisper-cli-darwin-amd64")
+        );
+        assert_eq!(
+            stt_bin_asset_for("windows", "x86_64").as_deref(),
+            Some("whisper-cli-windows-amd64.exe")
+        );
+        assert_eq!(stt_bin_asset_for("windows", "aarch64"), None);
         assert_eq!(stt_bin_asset_for("linux", "riscv64"), None);
     }
 
