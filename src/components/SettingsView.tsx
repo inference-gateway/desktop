@@ -263,6 +263,9 @@ function AgentsTab() {
                       className="h-4 w-4 shrink-0 accent-primary"
                     />
                     <span className="flex-1 truncate text-[0.85rem] font-medium">{c.name}</span>
+                    {c.version && (
+                      <span className="shrink-0 text-[0.7rem] font-normal text-muted-foreground">v{c.version}</span>
+                    )}
                   </div>
                   {c.description && (
                     <p className="line-clamp-2 text-[0.75rem] text-muted-foreground">{c.description}</p>

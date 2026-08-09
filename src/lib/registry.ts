@@ -1,10 +1,10 @@
 const CATALOG_URL = "https://cdn.jsdelivr.net/gh/inference-gateway/agents@main/catalog.json";
 
-export type CatalogAgent = { name: string; description: string; skills: string[] };
+export type CatalogAgent = { name: string; description: string; version: string; skills: string[] };
 
 type RawCatalog = {
   agents?: {
-    metadata?: { name?: string; description?: string };
+    metadata?: { name?: string; description?: string; version?: string };
     spec?: { skills?: { name?: string }[] };
   }[];
 };
@@ -13,6 +13,7 @@ export function toCatalogAgents(data: RawCatalog | null | undefined): CatalogAge
   return (data?.agents ?? []).map((a) => ({
     name: a?.metadata?.name ?? "",
     description: a?.metadata?.description ?? "",
+    version: a?.metadata?.version ?? "",
     skills: (a?.spec?.skills ?? []).map((s) => s?.name ?? "").filter(Boolean),
   }));
 }
