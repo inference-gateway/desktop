@@ -51,7 +51,7 @@ function useDesktopStore() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<"chat" | "settings">("chat");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -359,14 +359,14 @@ function useDesktopStore() {
 
   const openSettings = useCallback(() => {
     checkForUpdates();
-    setSettingsOpen(true);
+    setCurrentView("settings");
   }, [checkForUpdates]);
 
   const saveSettings = useCallback(
     async (keys: Record<string, string>) => {
       try {
         await api.setAuth(keys);
-        setSettingsOpen(false);
+        setCurrentView("chat");
         startGatewayThenModels();
       } catch (err) {
         setError(`Failed to save settings: ${err}`);
@@ -417,9 +417,9 @@ function useDesktopStore() {
     openConversation,
     newChat,
     restartBackend,
-    settingsOpen,
+    currentView,
     openSettings,
-    closeSettings: () => setSettingsOpen(false),
+    setCurrentView,
     saveSettings,
     getAuth: () => api.getAuth(),
     updates,

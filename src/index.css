@@ -244,16 +244,18 @@
     margin: 0.5rem 0;
   }
 
-  /* ---- Collapsible <details> chevron ---- */
-  .collapse > summary {
+  /* ---- Collapsible <details> chevron ----
+     Class is `disclosure`, NOT `collapse`: Tailwind v4 ships a `collapse`
+     utility (visibility: collapse) that would win and hide the whole card. */
+  .disclosure > summary {
     list-style: none;
     cursor: pointer;
     user-select: none;
   }
-  .collapse > summary::-webkit-details-marker {
+  .disclosure > summary::-webkit-details-marker {
     display: none;
   }
-  .collapse > summary::before {
+  .disclosure > summary::before {
     content: "";
     display: inline-block;
     width: 0.38rem;
@@ -265,7 +267,7 @@
     transform: rotate(-45deg);
     transition: transform 0.15s ease;
   }
-  .collapse[open] > summary::before {
+  .disclosure[open] > summary::before {
     transform: rotate(45deg);
   }
 

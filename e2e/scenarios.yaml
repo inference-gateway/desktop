@@ -65,6 +65,13 @@ scenarios:
 
           And a [link to the gateway](https://github.com/inference-gateway).
 
+  - name: a2a-query-agent
+    match: '(?i)what agents.*available'
+    turns:
+      - tool_calls:
+          - { name: A2A_QueryAgent, args: { agent_url: "http://localhost:8085" } }
+      - content: "The documentation-agent is available via A2A."
+
   - name: image-generation
     match: '(?i)generate an image'
     turns:

@@ -35,6 +35,7 @@ export type ProgressEvent =
 export type UpdateInfo = { name: string; current: string; latest: string | null; outdated: boolean };
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type Conversation = { id: string; title?: string | null };
+export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";
   content?: string;
@@ -65,4 +66,9 @@ export const api = {
   sttStatus: () => invoke<SttStatus>("stt_status"),
   prepareStt: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_stt", { onEvent }),
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),
+  listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
+  addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
+  removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
+  setA2aAgentModel: (name: string, model: string) =>
+    invoke<void>("set_a2a_agent_model", { name, model }),
 };
