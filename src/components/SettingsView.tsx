@@ -8,17 +8,27 @@ import { api, type A2aAgent } from "@/lib/tauri";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 
-type Tab = "keys" | "updates" | "agents";
+type Tab = "general" | "keys" | "updates" | "agents";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
   { id: "agents", label: "Agents" },
   { id: "updates", label: "Updates" },
 ];
 
 export function SettingsView() {
-  const { setCurrentView, saveSettings, getAuth, updates, checkForUpdates, applyUpdates, showUpdateBanner } =
-    useDesktop();
+  const {
+    setCurrentView,
+    saveSettings,
+    getAuth,
+    updates,
+    checkForUpdates,
+    applyUpdates,
+    showUpdateBanner,
+    maxSessions,
+    setMaxSessions,
+  } = useDesktop();
   const [tab, setTab] = useState<Tab>("keys");
   const [values, setValues] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(false);
@@ -73,6 +83,28 @@ export function SettingsView() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
+          {tab === "general" && (
+            <>
+              <h2 className="text-[1.05rem] font-semibold">General</h2>
+              <p className="mb-4 text-[0.8rem] text-muted-foreground">
+                Run multiple agent sessions at once. Each session is a separate infer agent process.
+              </p>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
+                  Max concurrent sessions
+                </Label>
+                <Input
+                  id="max-sessions"
+                  type="number"
+                  min={1}
+                  value={maxSessions}
+                  onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
+                  className="w-24"
+                />
+              </div>
+            </>
+          )}
+
           {tab === "keys" && (
             <>
               <h2 className="text-[1.05rem] font-semibold">API Keys</h2>

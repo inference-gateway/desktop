@@ -1,0 +1,31 @@
+name: five sessions run in parallel with a configurable cap
+# Start five sessions that each pause at the Write approval, so all five are
+# live at the same time. In the old single-session design "+ New chat" was
+# disabled while a run was active and the backend kept one child slot, so a
+# second concurrent session was impossible. Reaching a fresh Approve five times
+# proves five separate infer children are streaming at once; the sixth send is
+# rejected by the configured cap (default 5). Switching between running sessions
+# and approving a background one is verified manually (the AX harness can only
+# click buttons, not sidebar list items).
+cleanup:
+  - s.txt
+steps:
+  - new_chat
+  - send: "create a file named s1.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - new_chat
+  - send: "create a file named s2.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - new_chat
+  - send: "create a file named s3.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - new_chat
+  - send: "create a file named s4.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - new_chat
+  - send: "create a file named s5.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - screenshot: "five-parallel-sessions"
+  - new_chat
+  - send: "create a file named s6.txt"
+  - wait_for: { text: "Max 5 concurrent sessions reached", timeout: 10 }
