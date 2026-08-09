@@ -52,6 +52,7 @@ function useDesktopStore() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
   const [currentView, setCurrentView] = useState<"chat" | "settings">("chat");
+  const [history, setHistory] = useState<string[]>([]);
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -206,6 +207,7 @@ function useDesktopStore() {
       }
     }
     initBackend();
+    api.readHistory().then(setHistory).catch(() => {});
     const t = setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
     return () => clearInterval(t);
   }, [initBackend, checkForUpdates]);
@@ -304,6 +306,8 @@ function useDesktopStore() {
     setRunning(true);
     setStatus("Running...");
     dispatch({ type: "userSend", text });
+    api.appendHistory(text).catch(() => {});
+    setHistory((h) => [...h, text]);
     if (el) {
       el.value = "";
       autoGrow(el);
@@ -429,6 +433,7 @@ function useDesktopStore() {
     checkForUpdates,
     applyUpdates,
     composerRef,
+    history,
     setStatus,
     setError,
   };

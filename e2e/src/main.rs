@@ -135,6 +135,7 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
     match step {
         Step::Bare(BareStep::NewChat) => app.new_chat(),
         Step::Send { send } => app.send(send),
+        Step::Keypress { keypress } => app.keypress(keypress),
         Step::Click { click } => app.click(&click.button),
         Step::Screenshot { screenshot } => app.screenshot(screenshot).map(|_| ()),
         Step::AssertModel { assert_model } => {
@@ -175,6 +176,7 @@ fn describe(step: &Step) -> String {
     match step {
         Step::Bare(BareStep::NewChat) => "new_chat".into(),
         Step::Send { send } => format!("send {send:?}"),
+        Step::Keypress { keypress } => format!("keypress {keypress:?}"),
         Step::Click { click } => format!("click {:?}", click.button),
         Step::Screenshot { screenshot } => format!("screenshot {screenshot}"),
         Step::AssertModel { assert_model } => format!("assert_model {assert_model}"),
