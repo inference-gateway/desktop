@@ -953,7 +953,6 @@ fn append_history(line: String) -> Result<(), String> {
 /// `save_image` so the guard is testable without touching the filesystem.
 fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, String> {
     let p = Path::new(path);
-    // ponytail: unix separators - mirrors the asset-protocol scope ($HOME/**/.infer/tmp/**)
     let ok = p.starts_with(home)
         && !p.components().any(|c| c == Component::ParentDir)
         && path.contains("/.infer/tmp/");
