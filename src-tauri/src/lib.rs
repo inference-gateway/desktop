@@ -900,8 +900,10 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
 }
 
 // --- A2A Agent configuration ---
-// Simple JSON-based agent registry managed by the desktop. Each entry is
-// a URL plus a status hint surfaced in the settings UI.
+// Simple JSON-based agent registry managed by the desktop. Each entry is a
+// name (identity), a URL, and a status hint surfaced in the settings UI.
+// Keyed by name so multiple registry agents that share a placeholder URL
+// (e.g. localhost:8080) can be enabled independently.
 // ponytail: no live health-check pings — runs in-band with the settings
 // view, so a slow endpoint blocks the whole list. Add async reachability
 // probes if the list grows past ~20 agents.
@@ -930,8 +932,15 @@ fn write_a2a_agents(agents: &[serde_json::Value]) -> Result<(), String> {
 
 #[derive(Clone, serde::Serialize)]
 struct A2aAgent {
+    name: String,
     url: String,
     status: String,
+}
+
+fn agent_key(v: &serde_json::Value) -> Option<&str> {
+    v.get("name")
+        .and_then(|s| s.as_str())
+        .or_else(|| v.get("url").and_then(|s| s.as_str()))
 }
 
 #[tauri::command]
@@ -941,35 +950,36 @@ async fn list_a2a_agents() -> Result<Vec<A2aAgent>, String> {
         .into_iter()
         .filter_map(|v| {
             let url = v.get("url")?.as_str()?.to_string();
+            let name = v
+                .get("name")
+                .and_then(|s| s.as_str())
+                .unwrap_or(&url)
+                .to_string();
             let status = v
                 .get("status")
                 .and_then(|s| s.as_str())
                 .unwrap_or("configured")
                 .to_string();
-            Some(A2aAgent { url, status })
+            Some(A2aAgent { name, url, status })
         })
         .collect())
 }
 
 #[tauri::command]
-async fn add_a2a_agent(url: String) -> Result<(), String> {
+async fn add_a2a_agent(name: String, url: String) -> Result<(), String> {
     let mut agents = read_a2a_agents()?;
-    // Avoid duplicates
-    if agents
-        .iter()
-        .any(|a| a.get("url").and_then(|u| u.as_str()) == Some(&url))
-    {
+    if agents.iter().any(|a| agent_key(a) == Some(name.as_str())) {
         return Ok(());
     }
-    agents.push(serde_json::json!({ "url": url, "status": "configured" }));
+    agents.push(serde_json::json!({ "name": name, "url": url, "status": "configured" }));
     write_a2a_agents(&agents)
 }
 
 #[tauri::command]
-async fn remove_a2a_agent(url: String) -> Result<(), String> {
+async fn remove_a2a_agent(name: String) -> Result<(), String> {
     let agents: Vec<serde_json::Value> = read_a2a_agents()?
         .into_iter()
-        .filter(|a| a.get("url").and_then(|u| u.as_str()) != Some(&url))
+        .filter(|a| agent_key(a) != Some(name.as_str()))
         .collect();
     write_a2a_agents(&agents)
 }
