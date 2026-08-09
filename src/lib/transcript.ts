@@ -148,10 +148,6 @@ function applyAssistant(
   let currentAssistantId = state.currentAssistantId;
   let currentReasoningId = state.currentReasoningId;
 
-  // `typing` (the working dots) is left untouched here: it stays on through
-  // streamed reasoning/content/tool deltas and is only cleared by a terminal
-  // event (Done/Cancelled/ApprovalRequest/error).
-
   if (event.reasoning_content) {
     const text = event.reasoning_content;
     if (currentReasoningId) {
