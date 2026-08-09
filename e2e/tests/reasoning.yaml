@@ -1,13 +1,6 @@
 name: reasoning renders a collapsible Thought process block
-# The mock streams reasoning_content before the answer. A reasoning-emitting
-# infer (AG-UI REASONING_MESSAGE_* events) makes the desktop show the collapsed
-# "Thought process" disclosure plus the streamed answer. Run against a patched
-# CLI build until a release ships the emit: `INFER_BIN=<path> task e2e -- tests/reasoning.yaml`.
 steps:
   - new_chat
   - send: "think out loud about the meaning of life"
-  # The collapsed reasoning disclosure appears (its summary is visible even
-  # before expanding) - proof reasoning reached the UI.
   - wait_for: { text: "Thought process", timeout: 30 }
-  # The streamed answer renders in the assistant bubble.
   - wait_for: { text: "The answer is 42, plainly.", timeout: 20 }

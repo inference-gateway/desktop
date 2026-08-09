@@ -92,11 +92,6 @@ scenarios:
           - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
       - content: "Parallel file written."
 
-  # Reasoning scenario: the mock streams reasoning_content deltas before the
-  # content, so a reasoning-emitting infer renders the collapsible "Thought
-  # process" block above the streamed answer. Requires an infer whose AG-UI
-  # output emits the REASONING_MESSAGE_* events (INFER_BIN=<patched build> until
-  # a release ships it).
   - name: reasoning-demo
     match: '(?i)think out loud'
     turns:
