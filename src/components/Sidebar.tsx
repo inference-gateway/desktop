@@ -2,7 +2,7 @@ import { useDesktop } from "@/store";
 import { ChatList } from "./ChatList";
 
 export function Sidebar() {
-  const { running, newChat, setCurrentView } = useDesktop();
+  const { newChat, setCurrentView } = useDesktop();
   return (
     <aside
       id="sidebar"
@@ -10,8 +10,7 @@ export function Sidebar() {
     >
       <button
         onClick={newChat}
-        disabled={running}
-        className="rounded-md bg-primary px-3 py-[0.55rem] text-[0.85rem] font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-md bg-primary px-3 py-[0.55rem] text-[0.85rem] font-medium text-primary-foreground hover:bg-primary-hover"
       >
         + New chat
       </button>

@@ -385,8 +385,8 @@ struct ToolCallInfo {
 }
 
 struct AppState {
-    running_child: Mutex<Option<std::process::Child>>,
-    child_stdin: Mutex<Option<std::process::ChildStdin>>,
+    running_children: Mutex<std::collections::HashMap<String, std::process::Child>>,
+    child_stdins: Mutex<std::collections::HashMap<String, std::process::ChildStdin>>,
     gateway_child: Mutex<Option<std::process::Child>>,
 }
 
@@ -602,7 +602,7 @@ impl AgentParser {
 async fn send_message(
     prompt: String,
     model: String,
-    session_id: Option<String>,
+    session_id: String,
     on_event: Channel<AgentEvent>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<String>, String> {
@@ -613,7 +613,7 @@ async fn send_message(
         .arg("--output-format")
         .arg("ag-ui")
         .arg("--session-id")
-        .arg(session_id.as_deref().unwrap_or(""))
+        .arg(&session_id)
         .arg("--require-approval")
         .arg("-m")
         .arg(&model)
@@ -631,18 +631,18 @@ async fn send_message(
     let child_stdin = child.stdin.take().unwrap();
 
     {
-        let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
-        *guard = Some(child);
+        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
+        guard.insert(session_id.clone(), child);
     }
     {
-        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
-        *guard = Some(child_stdin);
+        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
+        guard.insert(session_id.clone(), child_stdin);
     }
 
     let on_event_clone = on_event.clone();
     let had_error = Arc::new(Mutex::new(false));
     let had_error_clone = Arc::clone(&had_error);
-    let parser = Arc::new(Mutex::new(AgentParser::new(session_id)));
+    let parser = Arc::new(Mutex::new(AgentParser::new(Some(session_id.clone()))));
     let parser_clone = Arc::clone(&parser);
 
     let stdout_handle: std::thread::JoinHandle<()> = std::thread::spawn(move || {
@@ -679,20 +679,21 @@ async fn send_message(
         .await
         .map_err(|e| format!("Join error: {}", e))?;
 
-    let status = {
-        let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
-        match guard.take() {
-            Some(mut child) => Some(
-                child
-                    .wait()
-                    .map_err(|e| format!("Failed to wait for process: {}", e))?,
-            ),
-            None => None,
-        }
+    let child = {
+        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
+        guard.remove(&session_id)
+    };
+    let status = match child {
+        Some(mut child) => Some(
+            child
+                .wait()
+                .map_err(|e| format!("Failed to wait for process: {}", e))?,
+        ),
+        None => None,
     };
     {
-        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
-        *guard = None;
+        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
+        guard.remove(&session_id);
     }
 
     let stderr_text = stderr_handle.join().unwrap_or_default();
@@ -723,12 +724,13 @@ async fn send_message(
 
 #[tauri::command]
 async fn send_approval(
+    session_id: String,
     tool_call_id: String,
     approved: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
-    let stdin = guard.as_mut().ok_or("No running agent")?;
+    let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
+    let stdin = guard.get_mut(&session_id).ok_or("No running agent")?;
     let response = serde_json::json!({
         "type": "approval_response",
         "tool_call_id": tool_call_id,
@@ -746,13 +748,16 @@ async fn send_approval(
 }
 
 #[tauri::command]
-async fn cancel_agent(state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn cancel_agent(session_id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
     {
-        let mut guard = state.child_stdin.lock().map_err(|e| e.to_string())?;
-        *guard = None;
+        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
+        guard.remove(&session_id);
     }
-    let mut guard = state.running_child.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = guard.take() {
+    let child = {
+        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
+        guard.remove(&session_id)
+    };
+    if let Some(mut child) = child {
         let _ = child.kill();
         let _ = child.wait();
     }
@@ -1691,8 +1696,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
-            running_child: Mutex::new(None),
-            child_stdin: Mutex::new(None),
+            running_children: Mutex::new(std::collections::HashMap::new()),
+            child_stdins: Mutex::new(std::collections::HashMap::new()),
             gateway_child: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
@@ -1722,12 +1727,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event
-                && let Ok(mut guard) = app_handle.state::<AppState>().gateway_child.lock()
-                && let Some(mut child) = guard.take()
-            {
-                let _ = child.kill();
-                let _ = child.wait();
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+                if let Ok(mut guard) = state.gateway_child.lock()
+                    && let Some(mut child) = guard.take()
+                {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                if let Ok(mut children) = state.running_children.lock() {
+                    for (_, mut child) in children.drain() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                }
             }
         });
 }

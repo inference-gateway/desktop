@@ -82,3 +82,13 @@ scenarios:
 
           ![Generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==)
 
+  # One scenario for every "create a file named sN.txt" prompt (N = 1-9). Each
+  # matched session pauses at the Write approval, so several can be live at once
+  # (used by the 5-in-parallel e2e test).
+  - name: write-parallel
+    match: '(?i)create a file named s\d\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
+      - content: "Parallel file written."
+

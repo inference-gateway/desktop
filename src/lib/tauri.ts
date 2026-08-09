@@ -48,12 +48,12 @@ export const api = {
   sendMessage: (args: {
     prompt: string;
     model: string;
-    sessionId: string | null;
+    sessionId: string;
     onEvent: Channel<AgentEvent>;
   }) => invoke<string | null>("send_message", args),
-  sendApproval: (toolCallId: string, approved: boolean) =>
-    invoke<void>("send_approval", { toolCallId, approved }),
-  cancelAgent: () => invoke<void>("cancel_agent"),
+  sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
+    invoke<void>("send_approval", { sessionId, toolCallId, approved }),
+  cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),
   listConversations: () => invoke<string>("list_conversations"),
   getConversation: (sessionId: string) => invoke<string>("get_conversation", { sessionId }),
   deleteConversation: (sessionId: string) => invoke<void>("delete_conversation", { sessionId }),

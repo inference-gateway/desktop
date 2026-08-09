@@ -3,7 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useReducer,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -16,10 +16,12 @@ import {
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
-import { chatReducer, initialChatState } from "@/lib/transcript";
+import { chatReducer, initialChatState, type ChatAction, type ChatState } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 
 const STORAGE_KEY = "selectedModel";
+const MAX_SESSIONS_KEY = "maxConcurrentSessions";
+const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
@@ -40,16 +42,21 @@ export const PROVIDERS = [
 ] as const;
 
 function useDesktopStore() {
-  const [chat, dispatch] = useReducer(chatReducer, initialChatState);
+  const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
+  const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIdRef = useRef<string | null>(null);
   const [statusText, setStatusText] = useState("");
   const [statusError, setStatusErr] = useState(false);
   const [ready, setReady] = useState(false);
-  const [running, setRunning] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [maxSessions, setMaxSessionsState] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem(MAX_SESSIONS_KEY) || "", 10);
+    return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
+  });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
   const [currentView, setCurrentView] = useState<"chat" | "settings">("chat");
   const [history, setHistory] = useState<string[]>([]);
@@ -70,6 +77,16 @@ function useDesktopStore() {
   const setModel = useCallback((m: string) => {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
+  }, []);
+
+  const setMaxSessions = useCallback((n: number) => {
+    const v = Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_MAX_SESSIONS;
+    setMaxSessionsState(v);
+    localStorage.setItem(MAX_SESSIONS_KEY, String(v));
+  }, []);
+
+  const dispatchTo = useCallback((id: string, action: ChatAction) => {
+    setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action) }));
   }, []);
 
   const populateModels = useCallback((list: string[]) => {
@@ -178,18 +195,19 @@ function useDesktopStore() {
 
   const restartBackend = useCallback(
     async (force: boolean) => {
-      if (running) {
+      for (const id of runningIds) {
         try {
-          await api.cancelAgent();
+          await api.cancelAgent(id);
         } catch (e) {
           console.error("Cancel failed:", e);
         }
       }
+      setRunningIds(new Set());
       setStatus(force ? "Updating..." : "Restarting CLI...");
       setReady(false);
       await initBackend(force);
     },
-    [running, setStatus, initBackend]
+    [runningIds, setStatus, initBackend]
   );
 
   useEffect(() => {
@@ -217,45 +235,83 @@ function useDesktopStore() {
     lastClickedIndex.current = -1;
   }, []);
 
+  // Running sessions not yet persisted to disk still need a sidebar entry so the
+  // user can switch back to them; show them first, titled by their first prompt.
+  const displayConversations = useMemo(() => {
+    const known = new Set(conversations.map((c) => c.id));
+    const pending: Conversation[] = [];
+    for (const id of runningIds) {
+      if (known.has(id)) continue;
+      const first = transcripts[id]?.items.find((it) => it.kind === "user");
+      pending.push({ id, title: first && first.kind === "user" ? first.text : "New chat" });
+    }
+    return [...pending, ...conversations];
+  }, [conversations, runningIds, transcripts]);
+
+  const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
+
+  const isAwaitingApproval = useCallback(
+    (id: string) =>
+      transcripts[id]?.items.some((it) => it.kind === "approval" && it.status === "pending") ?? false,
+    [transcripts]
+  );
+
   const openConversation = useCallback(
     async (id: string) => {
-      if (running) return;
+      setActiveId(id);
+      activeIdRef.current = id;
+      // Never overwrite a live in-memory transcript with stale on-disk history.
+      if (transcripts[id]) return;
       try {
         const ndjson = await api.getConversation(id);
-        setSessionId(id);
-        dispatch({ type: "loadHistory", ndjson });
+        dispatchTo(id, { type: "loadHistory", ndjson });
       } catch (err) {
-        dispatch({ type: "error", text: `Failed to load conversation: ${err}` });
+        dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [running]
+    [transcripts, dispatchTo]
   );
 
   const newChat = useCallback(() => {
-    if (running) return;
-    setSessionId(null);
-    dispatch({ type: "newChat" });
+    setActiveId(null);
+    activeIdRef.current = null;
     clearSelection();
     composerRef.current?.focus();
-  }, [running, clearSelection]);
+  }, [clearSelection]);
 
   const deleteConversation = useCallback(
     async (id: string) => {
-      if (running) return;
+      if (runningIds.has(id)) {
+        try {
+          await api.cancelAgent(id);
+        } catch (e) {
+          console.error("Cancel failed:", e);
+        }
+        setRunningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
       try {
         await api.deleteConversation(id);
-        if (id === sessionId) newChat();
+        setTranscripts((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        if (id === activeId) newChat();
         await refreshConversations();
       } catch (err) {
-        dispatch({ type: "error", text: `Failed to delete conversation: ${err}` });
+        setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [running, sessionId, newChat, refreshConversations]
+    [runningIds, activeId, newChat, refreshConversations, setError]
   );
 
   const onChatClick = useCallback(
     (index: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
-      const list = conversations;
+      const list = displayConversations;
       if (e.shiftKey) {
         if (lastClickedIndex.current < 0) lastClickedIndex.current = index;
         const start = Math.min(lastClickedIndex.current, index);
@@ -286,7 +342,7 @@ function useDesktopStore() {
       lastClickedIndex.current = index;
       openConversation(list[index].id);
     },
-    [conversations, selected, clearSelection, openConversation]
+    [displayConversations, selected, clearSelection, openConversation]
   );
 
   const bulkDelete = useCallback(() => {
@@ -298,68 +354,92 @@ function useDesktopStore() {
   const send = useCallback(async () => {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";
-    if (!text || running) return;
+    if (!text) return;
+    if (activeId && runningIds.has(activeId)) return;
     if (!model) {
       setError("Please select a model first");
       return;
     }
-    setRunning(true);
+    if (!activeId && runningIds.size >= maxSessions) {
+      setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+      return;
+    }
+    const runId = activeId ?? crypto.randomUUID();
+    setActiveId(runId);
+    activeIdRef.current = runId;
     setStatus("Running...");
-    dispatch({ type: "userSend", text });
+    dispatchTo(runId, { type: "userSend", text });
     api.appendHistory(text).catch(() => {});
     setHistory((h) => [...h, text]);
     if (el) {
       el.value = "";
       autoGrow(el);
     }
+    setRunningIds((prev) => new Set(prev).add(runId));
+    // The closure captures runId (not activeId) so events always route to their
+    // own session even if the user switches the view mid-stream.
     try {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {
-        dispatch({ type: "event", event });
+        dispatchTo(runId, { type: "event", event });
         switch (event.kind) {
-          case "SessionId":
-            setSessionId(event.session_id);
-            break;
           case "ApprovalRequest":
-            setStatus("Awaiting approval...");
+            if (runId === activeIdRef.current) setStatus("Awaiting approval...");
             break;
           case "Done":
-            setRunning(false);
-            setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              return next;
+            });
+            if (runId === activeIdRef.current)
+              setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
             break;
           case "Cancelled":
-            setRunning(false);
-            setStatus("Cancelled");
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              return next;
+            });
+            if (runId === activeIdRef.current) setStatus("Cancelled");
             break;
         }
       };
-      const newSessionId = await api.sendMessage({ prompt: text, model, sessionId, onEvent: ch });
-      if (newSessionId) setSessionId(newSessionId);
+      await api.sendMessage({ prompt: text, model, sessionId: runId, onEvent: ch });
       refreshConversations();
     } catch (err) {
-      dispatch({ type: "error", text: `Error: ${err}` });
-      setRunning(false);
-      setStatus("Error");
+      dispatchTo(runId, { type: "error", text: `Error: ${err}` });
+      setRunningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(runId);
+        return next;
+      });
+      if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [running, model, sessionId, setStatus, setError, refreshConversations]);
+  }, [activeId, runningIds, model, maxSessions, setStatus, setError, refreshConversations, dispatchTo]);
 
   const cancel = useCallback(async () => {
-    if (!running) return;
+    if (!activeId || !runningIds.has(activeId)) return;
     try {
-      await api.cancelAgent();
+      await api.cancelAgent(activeId);
     } catch (e) {
       console.error("Cancel failed:", e);
     }
-  }, [running]);
+  }, [activeId, runningIds]);
 
-  const approve = useCallback(async (callId: string, approved: boolean) => {
-    try {
-      await api.sendApproval(callId, approved);
-      dispatch({ type: "setApproval", callId, status: approved ? "approved" : "denied" });
-    } catch (err) {
-      dispatch({ type: "error", text: `Approval failed: ${err}` });
-    }
-  }, []);
+  const approve = useCallback(
+    async (callId: string, approved: boolean) => {
+      const id = activeIdRef.current;
+      if (!id) return;
+      try {
+        await api.sendApproval(id, callId, approved);
+        dispatchTo(id, { type: "setApproval", callId, status: approved ? "approved" : "denied" });
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
+      }
+    },
+    [dispatchTo]
+  );
 
   const openSettings = useCallback(() => {
     checkForUpdates();
@@ -386,10 +466,10 @@ function useDesktopStore() {
       try {
         await api.installDesktopUpdate();
       } catch (err) {
-        dispatch({ type: "error", text: `App update failed: ${err}` });
+        setError(`App update failed: ${err}`);
       }
     }
-  }, [restartBackend, updates, setStatus]);
+  }, [restartBackend, updates, setStatus, setError]);
 
   const outdated = updates.filter((u) => u.outdated);
   const versionBadge = updates.map((u) => `${u.name} ${u.current}`).join(" · ");
@@ -397,9 +477,12 @@ function useDesktopStore() {
     ? `${outdated.map((u) => `${u.name} ${u.latest}`).join(", ")} available - restart to update`
     : "";
 
+  const active = (activeId && transcripts[activeId]) || initialChatState;
+  const running = activeId != null && runningIds.has(activeId);
+
   return {
-    items: chat.items,
-    typing: chat.typing,
+    items: active.items,
+    typing: active.typing,
     statusText,
     statusError,
     ready,
@@ -408,9 +491,14 @@ function useDesktopStore() {
     models,
     model,
     setModel,
-    conversations,
+    maxSessions,
+    setMaxSessions,
+    conversations: displayConversations,
     selected,
-    sessionId,
+    sessionId: activeId,
+    isRunning,
+    isAwaitingApproval,
+    runningCount: runningIds.size,
     onChatClick,
     clearSelection,
     deleteConversation,
