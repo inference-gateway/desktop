@@ -948,6 +948,19 @@ fn append_history(line: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy a generated image from `.infer/tmp/<filename>` to the user's Downloads
+/// folder. Returns the destination path on success.
+#[tauri::command]
+fn save_image(filename: String) -> Result<String, String> {
+    let src = home_dir().join(".infer").join("tmp").join(&filename);
+    if !src.exists() {
+        return Err(format!("Image not found: {}", filename));
+    }
+    let dest = home_dir().join("Downloads").join(&filename);
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 // --- A2A Agent configuration ---
 // A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
 // than reimplement the CLI's agent knowledge — it auto-fills oci/run/model/env
@@ -1731,6 +1744,7 @@ pub fn run() {
             set_a2a_agent_model,
             read_history,
             append_history,
+            save_image,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

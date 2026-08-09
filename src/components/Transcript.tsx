@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { renderMarkdown } from "@/lib/markdown";
+import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { TranscriptItem } from "@/lib/transcript";
 
@@ -145,12 +146,30 @@ function Item({ item, approve }: { item: TranscriptItem; approve: (callId: strin
       return <ApprovalCard item={item} approve={approve} />;
     case "image":
       return (
-        <img
-          className="generated-image my-2 block h-auto w-full max-w-[320px] rounded-md"
-          data-infer={item.filename}
-          src={item.src}
-          alt=""
-        />
+        <div className="group relative my-2 inline-block max-w-full">
+          <img
+            className="block h-auto w-full rounded-md"
+            data-infer={item.filename}
+            src={item.src}
+            alt=""
+          />
+          <button
+            onClick={() => {
+              api.saveImage(item.filename).catch(() => {});
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                api.saveImage(item.filename).catch(() => {});
+              }
+            }}
+            tabIndex={0}
+            aria-label="Download image"
+            className="absolute right-1 top-1 rounded-md bg-black/60 px-2 py-1 text-[0.75rem] text-white opacity-0 transition-opacity hover:bg-black/80 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            Download
+          </button>
+        </div>
       );
     case "error":
       return (
