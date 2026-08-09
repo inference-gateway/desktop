@@ -394,23 +394,43 @@ struct AppState {
 /// message/tool-call triads internally.
 struct AgentParser {
     session_id: Option<String>,
-    msg_content: String,
     msg_from_user: bool,
     tc_id: String,
     tc_name: String,
     tc_args: String,
 }
 
+/// Reads the text delta of a streaming message event, tolerating producers that
+/// use `content` instead of `delta`.
+fn delta_of(val: &serde_json::Value) -> Option<&str> {
+    val.get("delta")
+        .or_else(|| val.get("content"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+}
+
 impl AgentParser {
     fn new(session_id: Option<String>) -> Self {
         Self {
             session_id,
-            msg_content: String::new(),
             msg_from_user: false,
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
         }
+    }
+
+    /// Emits an assistant text delta unless the current message is the echoed
+    /// user prompt.
+    fn assistant_text(&self, val: &serde_json::Value) -> Option<AgentEvent> {
+        if self.msg_from_user {
+            return None;
+        }
+        Some(AgentEvent::AssistantMessage {
+            content: delta_of(val)?.to_string(),
+            reasoning_content: None,
+            tool_calls: Vec::new(),
+        })
     }
 
     /// Take the accumulated session_id out.
@@ -450,31 +470,31 @@ impl AgentParser {
             "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
             "TEXT_MESSAGE_START" => {
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
-                self.msg_content = val
-                    .get("delta")
-                    .or_else(|| val.get("content"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                None
+                self.assistant_text(&val)
             }
-            "TEXT_MESSAGE_CONTENT" => {
-                if let Some(c) = val
-                    .get("delta")
-                    .or_else(|| val.get("content"))
-                    .and_then(|v| v.as_str())
-                {
-                    self.msg_content.push_str(c);
-                }
-                None
-            }
+            "TEXT_MESSAGE_CONTENT" => self.assistant_text(&val),
             "TEXT_MESSAGE_END" => {
-                if std::mem::take(&mut self.msg_from_user) {
-                    self.msg_content.clear();
-                    return None;
-                }
-                self.finish_message()
+                self.msg_from_user = false;
+                None
             }
+            // Reasoning/thinking phases are assistant-only; each content event is
+            // one streamed delta. THINKING_* are the deprecated aliases of the
+            // REASONING_* events - accept both.
+            "REASONING_MESSAGE_CONTENT" | "THINKING_TEXT_MESSAGE_CONTENT" => {
+                delta_of(&val).map(|d| AgentEvent::AssistantMessage {
+                    content: String::new(),
+                    reasoning_content: Some(d.to_string()),
+                    tool_calls: Vec::new(),
+                })
+            }
+            "REASONING_MESSAGE_START"
+            | "REASONING_MESSAGE_END"
+            | "REASONING_START"
+            | "REASONING_END"
+            | "THINKING_TEXT_MESSAGE_START"
+            | "THINKING_TEXT_MESSAGE_END"
+            | "THINKING_START"
+            | "THINKING_END" => None,
             "TOOL_CALL_START" => {
                 self.tc_id = val
                     .get("toolCallId")
@@ -582,19 +602,7 @@ impl AgentParser {
     }
 
     fn flush_message(&mut self) {
-        self.msg_content.clear();
         self.msg_from_user = false;
-    }
-
-    fn finish_message(&mut self) -> Option<AgentEvent> {
-        if self.msg_content.is_empty() {
-            return None;
-        }
-        Some(AgentEvent::AssistantMessage {
-            content: std::mem::take(&mut self.msg_content),
-            reasoning_content: None,
-            tool_calls: Vec::new(),
-        })
     }
 }
 
@@ -1884,7 +1892,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_text_message_multiple_content_parts() {
+    fn test_parse_text_message_streams_each_content_delta() {
         let lines = &[
             r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
             r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","content":"Hello.","contentType":"text"}"#,
@@ -1892,9 +1900,51 @@ mod tests {
             r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
         ];
         let (events, _) = parse_all(lines);
+        assert_eq!(
+            events.len(),
+            2,
+            "each content event streams as its own delta"
+        );
+        assert!(
+            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello.")
+        );
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == " I am an AI.")
+        );
+    }
+
+    #[test]
+    fn test_parse_reasoning_streams_as_reasoning_content() {
+        let lines = &[
+            r#"{"type":"REASONING_MESSAGE_START","messageId":"r1","role":"assistant"}"#,
+            r#"{"type":"REASONING_MESSAGE_CONTENT","messageId":"r1","delta":"Let me think. "}"#,
+            r#"{"type":"REASONING_MESSAGE_CONTENT","messageId":"r1","delta":"Step 1."}"#,
+            r#"{"type":"REASONING_MESSAGE_END","messageId":"r1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a1","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a1","delta":"Answer."}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a1"}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert_eq!(events.len(), 3, "two reasoning deltas + one content delta");
+        assert!(
+            matches!(&events[0], AgentEvent::AssistantMessage { reasoning_content: Some(r), content, .. } if r == "Let me think. " && content.is_empty())
+        );
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { reasoning_content: Some(r), .. } if r == "Step 1.")
+        );
+        assert!(
+            matches!(&events[2], AgentEvent::AssistantMessage { content, reasoning_content: None, .. } if content == "Answer.")
+        );
+    }
+
+    #[test]
+    fn test_parse_thinking_alias_maps_to_reasoning() {
+        let lines =
+            &[r#"{"type":"THINKING_TEXT_MESSAGE_CONTENT","messageId":"t1","delta":"pondering"}"#];
+        let (events, _) = parse_all(lines);
         assert_eq!(events.len(), 1);
         assert!(
-            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello. I am an AI.")
+            matches!(&events[0], AgentEvent::AssistantMessage { reasoning_content: Some(r), .. } if r == "pondering")
         );
     }
 
@@ -2000,7 +2050,12 @@ mod tests {
         ];
         let (events, _) = parse_all(lines);
         assert_eq!(events.len(), 3);
-        match &events[0] {
+        // Streamed text arrives first (on TEXT_MESSAGE_START), then each tool call.
+        assert!(
+            matches!(&events[0], AgentEvent::AssistantMessage { content, tool_calls, .. }
+            if content == "Let me check that file." && tool_calls.is_empty())
+        );
+        match &events[1] {
             AgentEvent::AssistantMessage {
                 content,
                 tool_calls,
@@ -2013,7 +2068,7 @@ mod tests {
             }
             _ => panic!("expected AssistantMessage for first tool call"),
         }
-        match &events[1] {
+        match &events[2] {
             AgentEvent::AssistantMessage {
                 content,
                 tool_calls,
@@ -2026,10 +2081,6 @@ mod tests {
             }
             _ => panic!("expected AssistantMessage for second tool call"),
         }
-        assert!(
-            matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
-            if content == "Let me check that file." && tool_calls.is_empty())
-        );
     }
 
     #[test]
@@ -2144,13 +2195,14 @@ mod tests {
 
         assert_eq!(events.len(), 5);
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        // Streamed text emits on TEXT_MESSAGE_START, before the tool call.
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. }
-            if content.is_empty() && tool_calls.len() == 1 && tool_calls[0].name == "search")
+            if content == "I'll look that up for you." && tool_calls.is_empty())
         );
         assert!(
             matches!(&events[2], AgentEvent::AssistantMessage { content, tool_calls, .. }
-            if content == "I'll look that up for you." && tool_calls.is_empty())
+            if content.is_empty() && tool_calls.len() == 1 && tool_calls[0].name == "search")
         );
         assert!(
             matches!(&events[3], AgentEvent::ToolResult { tool_call_id, .. } if tool_call_id == "call-1")
