@@ -1,0 +1,333 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-danger: var(--destructive);
+  --color-danger-hover: var(--danger-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* App-specific semantic colors (chat surfaces, tool/approval states) */
+  --color-user: var(--user-bubble);
+  --color-user-foreground: var(--user-bubble-fg);
+  --color-assistant: var(--assistant-bubble);
+  --color-assistant-foreground: var(--assistant-bubble-fg);
+  --color-tool: var(--tool-fg);
+  --color-tool-bg: var(--tool-bg);
+  --color-tool-border: var(--tool-border);
+  --color-warn: var(--warning-fg);
+  --color-warn-bg: var(--warning-bg);
+  --color-err: var(--error-fg);
+  --color-err-bg: var(--error-bg);
+  --color-err-border: var(--error-border);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: #f6f6f8;
+  --foreground: #1e1f24;
+  --card: #ffffff;
+  --card-foreground: #1e1f24;
+  --popover: #ffffff;
+  --popover-foreground: #1e1f24;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --primary-hover: #4338ca;
+  --secondary: #f0f0f3;
+  --secondary-foreground: #1e1f24;
+  --muted: #f0f0f3;
+  --muted-foreground: #6c6c78;
+  --accent: #f0f0f3;
+  --accent-foreground: #1e1f24;
+  --destructive: #dc2626;
+  --danger-hover: #b91c1c;
+  --border: #e4e4ea;
+  --border-strong: #d3d3dc;
+  --input: #d3d3dc;
+  --ring: #4f46e5;
+
+  --user-bubble: #4f46e5;
+  --user-bubble-fg: #ffffff;
+  --assistant-bubble: #f0f0f3;
+  --assistant-bubble-fg: #1e1f24;
+  --tool-bg: #eef6f0;
+  --tool-border: #cfe6d6;
+  --tool-fg: #256a3a;
+  --warning-bg: #fff3cd;
+  --warning-fg: #7a5b00;
+  --error-bg: #fdecef;
+  --error-fg: #b02a37;
+  --error-border: #f5c2c7;
+}
+
+.dark {
+  --background: #0f1012;
+  --foreground: #e7e7ea;
+  --card: #17181b;
+  --card-foreground: #e7e7ea;
+  --popover: #17181b;
+  --popover-foreground: #e7e7ea;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --primary-hover: #7c7ff2;
+  --secondary: #1f2024;
+  --secondary-foreground: #e7e7ea;
+  --muted: #1f2024;
+  --muted-foreground: #9a9aa6;
+  --accent: #1f2024;
+  --accent-foreground: #e7e7ea;
+  --destructive: #ef4444;
+  --danger-hover: #f87171;
+  --border: #2a2b30;
+  --border-strong: #3a3b42;
+  --input: #3a3b42;
+  --ring: #6366f1;
+
+  --user-bubble: #4f46e5;
+  --user-bubble-fg: #ffffff;
+  --assistant-bubble: #24252b;
+  --assistant-bubble-fg: #e7e7ea;
+  --tool-bg: #16241c;
+  --tool-border: #244030;
+  --tool-fg: #86d29e;
+  --warning-bg: #37301c;
+  --warning-fg: #e9d8a6;
+  --error-bg: #351f24;
+  --error-fg: #f1a9b0;
+  --error-border: #5a2b32;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@layer components {
+  /* ---- Rendered markdown (assistant messages) ---- */
+  .md p {
+    margin: 0.25rem 0;
+  }
+  .md p:first-child {
+    margin-top: 0;
+  }
+  .md p:last-child {
+    margin-bottom: 0;
+  }
+  .md h1,
+  .md h2,
+  .md h3 {
+    margin: 0.6rem 0 0.3rem;
+    line-height: 1.25;
+  }
+  .md h1 {
+    font-size: 1.3rem;
+  }
+  .md h2 {
+    font-size: 1.15rem;
+  }
+  .md h3 {
+    font-size: 1.02rem;
+  }
+  .md ul,
+  .md ol {
+    margin: 0.3rem 0;
+    padding-left: 1.4rem;
+  }
+  .md ul {
+    list-style: disc;
+  }
+  .md ol {
+    list-style: decimal;
+  }
+  .md li {
+    margin: 0.15rem 0;
+  }
+  .md a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  .md blockquote {
+    margin: 0.4rem 0;
+    padding-left: 0.7rem;
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
+  }
+  .md code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--secondary);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .md pre {
+    margin: 0.4rem 0;
+    padding: 0.6rem 0.75rem;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+  }
+  .md pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85rem;
+  }
+  .md table {
+    border-collapse: collapse;
+    margin: 0.4rem 0;
+  }
+  .md th,
+  .md td {
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.5rem;
+  }
+  .md img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    display: block;
+    margin: 0.5rem 0;
+  }
+  .md .image-error {
+    display: inline-block;
+    padding: 0.5rem 0.75rem;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-sm);
+    color: var(--error-fg);
+    font-size: 0.85rem;
+    margin: 0.5rem 0;
+  }
+
+  /* ---- Collapsible <details> chevron ---- */
+  .collapse > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  .collapse > summary::-webkit-details-marker {
+    display: none;
+  }
+  .collapse > summary::before {
+    content: "";
+    display: inline-block;
+    width: 0.38rem;
+    height: 0.38rem;
+    margin-right: 0.5rem;
+    vertical-align: 0.1em;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+  }
+  .collapse[open] > summary::before {
+    transform: rotate(45deg);
+  }
+
+  /* ---- Typing indicator ---- */
+  .typing-dots span {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+    animation: typing 1.2s ease-in-out infinite;
+  }
+  .typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  @keyframes typing {
+    0%,
+    60%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-0.2rem);
+    }
+  }
+
+  /* ---- Image generation skeleton ---- */
+  .image-skeleton {
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 1 / 1;
+    margin: 0.5rem 0;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(100deg, var(--secondary) 30%, var(--border) 50%, var(--secondary) 70%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes skeleton-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ---- Mic recording pulse ---- */
+  .mic-recording {
+    animation: mic-pulse 1.3s ease-in-out infinite;
+  }
+  @keyframes mic-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+    }
+  }
+}

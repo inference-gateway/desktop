@@ -9,15 +9,24 @@
 ├── AGENTS.md                     # This file — contributor & agent guide
 ├── CLAUDE.md → AGENTS.md         # Symlink for Claude Code compatibility
 ├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
-├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, infer)
+├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, bun, infer)
 ├── Taskfile.yml                  # Task runner: common build/test/dev commands
 ├── .agents/skills/               # Agent skill definitions
 ├── .claude/skills → ../.agents/skills  # Symlink for Claude Code
-├── src/                          # Static frontend (HTML/CSS/JS)
-│   ├── index.html
-│   ├── main.js
-│   └── style.css
-└── src-tauri/                    # Tauri v2 backend
+├── package.json                  # Frontend deps + scripts (Bun)
+├── vite.config.ts                # Vite (React + Tailwind v4 plugin, @ alias)
+├── tsconfig.json                 # TypeScript config
+├── components.json               # shadcn/ui config
+├── index.html                    # Vite entry (mounts src/main.tsx into #app)
+├── public/                       # Static assets (logo.png)
+├── dist/                         # Vite build output, embedded by Tauri (gitignored)
+├── src/                          # React + TypeScript frontend
+│   ├── main.tsx                  # Entry: mounts <App/>, system dark mode
+│   ├── App.tsx  store.tsx        # App shell + state store (context)
+│   ├── components/               # UI (TopBar, Sidebar, Transcript, Composer, …)
+│   ├── hooks/                    # useVoiceInput (speech-to-text)
+│   └── lib/                      # tauri client, markdown, tools, audio, transcript
+└── src-tauri/                    # Tauri v2 backend (Rust, unchanged by the frontend)
     ├── Cargo.toml
     ├── build.rs
     ├── tauri.conf.json
@@ -42,15 +51,30 @@ The hook runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo tes
 
 ## Build / Test / Dev Commands
 
-This project uses [Cargo](https://doc.rust-lang.org/cargo/) (Rust's build tool and package manager). The dev environment — a pinned Rust 1.95 toolchain plus `task` and `infer` — is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`. Cargo commands run from `src-tauri/`; the [Taskfile](Taskfile.yml) wraps them at the repo root.
+This project pairs a **React + TypeScript** frontend (built with **Bun + Vite**, styled with **Tailwind CSS v4 + shadcn/ui**) with a **Tauri v2 / Rust** backend. The dev environment — a pinned Rust 1.95 toolchain plus `task`, `bun`, and `infer` — is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`. Cargo commands run from `src-tauri/`; the [Taskfile](Taskfile.yml) wraps them at the repo root and builds the frontend first where needed.
 
 | Task            | Description                                                          |
 |-----------------|----------------------------------------------------------------------|
-| `task build`    | Build the project (`cargo build`)                                  |
-| `task test`     | Run all tests (`cargo test`)                                       |
+| `task install`  | Install frontend dependencies (`bun install`)                       |
+| `task web`      | Build the React frontend into `dist/` (`bun run build`)             |
+| `task build`    | Build the frontend then the Rust app (`bun run build`, `cargo build`) |
+| `task test`     | Build the frontend, then run all tests (`cargo test`)               |
 | `task clippy`   | Lint and format check (`cargo fmt --check`, `cargo clippy -- -D warnings`) |
-| `task check`    | Typecheck, no codegen (`cargo check`)                              |
-| `task dev`      | Start dev server with hot-reload (`cargo tauri dev`)               |
+| `task check`    | Typecheck, no codegen (`cargo check`)                               |
+| `task dev`      | Run the app (`cargo tauri dev`; rebuilds the frontend on launch)    |
+
+The Rust build embeds the frontend from `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate first builds `dist/`** — the Taskfile does this with a `web` dependency and CI runs `bun run build` before the cargo steps. Frontend unit checks (pure DSP, the transcript reducer) run with `bun test`.
+
+## Frontend (React + TypeScript)
+
+Frontend source lives in `src/` (`.tsx`/`.ts`), with `index.html`, `package.json`, `vite.config.ts`, `tsconfig*.json`, and `components.json` at the repo root; Vite outputs to `dist/`. State is a single context store (`src/store.tsx`); the typed Tauri client (16 `invoke` commands + the `Channel` event unions) and the transcript state machine live in `src/lib/`. Use `bun run <script>` (or `bun run tauri <cmd>`) for Bun-driven tasks.
+
+**The e2e harness drives the real UI through the macOS accessibility tree, so the DOM contract is load-bearing** — preserve it when editing components:
+
+- The model picker stays a native `<select id="model-select">` (not a custom/Radix dropdown) — it maps to `pop up button 1 of group 1 of root`.
+- The composer stays a single native, **uncontrolled** `<textarea id="prompt-input">` — the harness sets its AXValue and reads it back; a controlled value or a remount breaks that.
+- Keep the exact button names: visible text `+ New chat`, `Approve`, `Deny`; `aria-label` on the icon buttons (`Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
+- Keep the DOM shallow: `App` renders `<header id="top-bar">` + `<div id="main">` directly into `#app` (no wrapper); the settings dialog portals to `<body>`.
 
 ## Verifying the UI
 
@@ -63,8 +87,8 @@ mock scenario (canned LLM turns, incl. tool calls) in `e2e/scenarios.yaml`.
 `INFER_BIN=<path>` points the app at a specific infer build. Failures leave a
 window screenshot and the app log in `e2e/artifacts/`. Runs leave their test
 conversations in the user-level infer history (harmless; delete from the
-sidebar if they bother you). macOS-only; CI (ubuntu) runs only fmt/clippy/test —
-no `package.json`, no Playwright, no WebdriverIO, no `tauri-driver`.
+sidebar if they bother you). macOS-only; CI (ubuntu) runs `bun run build` then
+fmt/clippy/test — no Playwright, no WebdriverIO, no `tauri-driver`.
 
 The sections below document the raw AX primitives the harness is built on —
 use them when a test fails and you need to poke the tree by hand.
@@ -89,8 +113,9 @@ EOF
 screencapture -x -l <window-id> /tmp/app.png
 ```
 
-Frontend files are not hot-reloaded — `cargo tauri dev` watches `src-tauri/` only.
-After editing `src/`, kill the process and relaunch.
+The frontend is not hot-reloaded — `task dev` rebuilds it via `beforeDevCommand`
+on launch, then `cargo tauri dev` watches `src-tauri/` only. After editing the
+React frontend, kill the process and relaunch (or re-run `bun run build`).
 
 ### Clicking and typing work — via AX element actions only
 

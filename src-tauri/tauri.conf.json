@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.inference-gateway.desktop",
   "build": {
-    "frontendDist": "../src",
+    "frontendDist": "../dist",
     "devUrl": null,
-    "beforeDevCommand": null,
-    "beforeBuildCommand": null
+    "beforeDevCommand": "bun run build",
+    "beforeBuildCommand": "bun run build"
   },
   "app": {
     "windows": [

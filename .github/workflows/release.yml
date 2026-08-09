@@ -82,6 +82,15 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # tauri-action runs beforeBuildCommand ("bun run build"); node_modules must
+      # exist first.
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
       - name: Stamp version and updater public key
         shell: bash
         env:

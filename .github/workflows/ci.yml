@@ -25,6 +25,16 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # The Rust build embeds frontendDist (../dist) via generate_context!, so
+      # the frontend must be built before any cargo compile step.
+      - name: Build frontend
+        working-directory: ${{ github.workspace }}
+        run: bun install --frozen-lockfile && bun run build
+
       - name: Check formatting
         run: cargo fmt --check
 
