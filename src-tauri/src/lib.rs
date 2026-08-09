@@ -964,6 +964,8 @@ async fn run_infer_agents(args: &[&str]) -> Result<std::process::Output, String>
             .arg("agents")
             .args(&args)
             .arg("--no-colors")
+            .env("HOME", home_dir().to_str().unwrap_or(""))
+            .current_dir(agent_cwd())
             .output()
             .map_err(|e| e.to_string())
     })
