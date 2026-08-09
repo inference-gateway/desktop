@@ -68,6 +68,24 @@ test("Done stops typing and finalizes running tools", () => {
   expect(s.typing).toBe(false);
 });
 
+test("thinking indicator transitions to reasoning block when reasoning_content arrives", () => {
+  const s = run([
+    { type: "userSend", text: "think step by step" },
+    ev({ kind: "AssistantMessage", content: "", reasoning_content: "step 1: analyze", tool_calls: [] }),
+    ev({ kind: "AssistantMessage", content: "Here's the answer", reasoning_content: "step 2: conclude", tool_calls: [] }),
+  ]);
+  expect(s.typing).toBe(false);
+  const reasoning = s.items.filter((i) => i.kind === "reasoning");
+  expect(reasoning).toHaveLength(1);
+  if (reasoning[0]?.kind === "reasoning") {
+    expect(reasoning[0].paragraphs).toEqual(["step 1: analyze", "step 2: conclude"]);
+  }
+  const assistant = s.items.filter((i) => i.kind === "assistant");
+  expect(assistant).toHaveLength(1);
+  if (assistant[0]?.kind === "assistant") {
+    expect(assistant[0].chunks).toEqual(["Here's the answer"]);
+  }
+});
 test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   const ndjson = [
     JSON.stringify({ role: "user", content: "hello" }),

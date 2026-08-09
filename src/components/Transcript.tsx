@@ -32,8 +32,8 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
 
 function ReasoningBlock({ paragraphs }: { paragraphs: string[] }) {
   return (
-    <details className="disclosure max-w-[min(72ch,82%)] self-start overflow-hidden rounded-md border border-border bg-secondary text-[0.85rem] text-muted-foreground">
-      <summary className="px-[0.65rem] py-[0.35rem] hover:text-foreground">Thought process</summary>
+    <details className="disclosure max-w-[min(72ch,82%)] self-start overflow-hidden rounded-md border border-border border-l-2 border-l-primary/30 bg-secondary text-[0.85rem] text-muted-foreground">
+      <summary className="px-[0.65rem] py-[0.35rem] hover:text-foreground font-medium">Thinking…</summary>
       <div className="border-t border-border">
         {paragraphs.map((p, i) => (
           <p key={i} className="whitespace-pre-wrap px-[0.65rem] py-2 italic leading-[1.5]">
@@ -125,10 +125,8 @@ function ApprovalCard({
 
 function TypingBubble() {
   return (
-    <div className={cn(BUBBLE, "typing-dots flex items-center gap-[0.35rem] self-start rounded-bl-[4px] bg-assistant")}>
-      <span />
-      <span />
-      <span />
+    <div className={cn(BUBBLE, "self-start rounded-bl-[4px] bg-assistant px-4 py-[0.7rem] text-sm italic text-muted-foreground")}>
+      Thinking…
     </div>
   );
 }
