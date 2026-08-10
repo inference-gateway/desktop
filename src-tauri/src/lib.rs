@@ -774,25 +774,7 @@ async fn cancel_agent(session_id: String, state: tauri::State<'_, AppState>) -> 
 
 /// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
 fn gateway_url() -> String {
-    let default = "http://localhost:8080".to_string();
-    let cfg = match std::fs::read_to_string(config_path()) {
-        Ok(c) => c,
-        Err(_) => return default,
-    };
-    let mut in_gateway = false;
-    for line in cfg.lines() {
-        if !line.starts_with([' ', '\t']) {
-            in_gateway = line.trim_start().starts_with("gateway:");
-            continue;
-        }
-        if in_gateway && let Some(rest) = line.trim().strip_prefix("url:") {
-            let v = rest.trim().trim_matches(['"', '\'']);
-            if !v.is_empty() {
-                return v.to_string();
-            }
-        }
-    }
-    default
+    read_config().gateway_url
 }
 
 /// Run `infer <args>` to completion and return stdout, erroring on non-zero exit.
@@ -922,7 +904,7 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
 /// Desktop-facing config fields read from ~/.infer/config.yaml.
 /// Only the fields the Settings UI manages are exposed; the rest of the
 /// config (gateway.run, gateway.standalone_binary, etc.) passes through.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct DesktopConfig {
     storage_backend: String,
     storage_directory: String,
@@ -930,113 +912,111 @@ struct DesktopConfig {
     default_model: String,
 }
 
-fn read_config_value() -> Option<serde_yaml::Value> {
-    let text = std::fs::read_to_string(config_path()).ok()?;
-    serde_yaml::from_str(&text).ok()
+fn default_storage_directory(home: &std::path::Path) -> String {
+    home.join(".infer")
+        .join("conversations")
+        .to_string_lossy()
+        .to_string()
 }
 
 fn default_config() -> DesktopConfig {
     DesktopConfig {
         storage_backend: "jsonl".into(),
-        storage_directory: home_dir()
-            .join(".infer")
-            .join("conversations")
-            .to_string_lossy()
-            .to_string(),
+        storage_directory: default_storage_directory(&home_dir()),
         gateway_url: "http://localhost:8080".into(),
         default_model: String::new(),
     }
 }
 
-fn read_config() -> DesktopConfig {
-    let val = match read_config_value() {
-        Some(v) => v,
-        None => return default_config(),
+/// Pure core of `read_config`, split out so field extraction is testable
+/// without touching ~/.infer.
+fn config_from_value(val: &serde_norway::Value, home: &std::path::Path) -> DesktopConfig {
+    let str_at = |path: &[&str]| -> Option<String> {
+        let mut cur = val;
+        for key in path {
+            cur = cur.get(key)?;
+        }
+        cur.as_str().filter(|s| !s.is_empty()).map(str::to_string)
     };
     DesktopConfig {
-        storage_backend: val
-            .get("storage")
-            .and_then(|s| s.get("backend"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("jsonl")
-            .to_string(),
-        storage_directory: val
-            .get("storage")
-            .and_then(|s| s.get("directory"))
-            .and_then(|v| v.as_str())
-            .map(|s| {
-                if let Some(rest) = s.strip_prefix('~') {
-                    format!("{}{}", home_dir().display(), rest)
-                } else {
-                    s.to_string()
-                }
+        storage_backend: str_at(&["storage", "backend"]).unwrap_or_else(|| "jsonl".into()),
+        storage_directory: str_at(&["storage", "directory"])
+            .map(|s| match s.strip_prefix('~') {
+                Some(rest) => format!("{}{}", home.display(), rest),
+                None => s,
             })
-            .unwrap_or_else(|| {
-                home_dir()
-                    .join(".infer")
-                    .join("conversations")
-                    .to_string_lossy()
-                    .to_string()
-            }),
-        gateway_url: val
-            .get("gateway")
-            .and_then(|g| g.get("url"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("http://localhost:8080")
-            .to_string(),
-        default_model: val
-            .get("default_model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
+            .unwrap_or_else(|| default_storage_directory(home)),
+        gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
+        default_model: str_at(&["default_model"]).unwrap_or_default(),
     }
 }
 
-fn write_config(cfg: &DesktopConfig) -> Result<(), String> {
+fn read_config() -> DesktopConfig {
+    match std::fs::read_to_string(config_path())
+        .ok()
+        .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
+    {
+        Some(val) => config_from_value(&val, &home_dir()),
+        None => default_config(),
+    }
+}
+
+/// Parse `text` as a YAML mapping, or start from a fresh one. A malformed or
+/// non-mapping existing config is replaced rather than aborting the write.
+fn config_mapping(text: Option<&str>) -> serde_norway::Value {
+    text.and_then(|t| serde_norway::from_str::<serde_norway::Value>(t).ok())
+        .filter(serde_norway::Value::is_mapping)
+        .unwrap_or_else(|| serde_norway::Value::Mapping(Default::default()))
+}
+
+/// Merge the Settings-managed storage + gateway fields into the existing config
+/// text, returning serialized YAML. `default_model` is owned by
+/// `merge_default_model` (written from the composer too), so it is deliberately
+/// not touched here - otherwise a stale Settings form would clobber a newer
+/// model chosen from the composer. ponytail: serde round-trip drops YAML
+/// comments; the config is app-managed so that is acceptable.
+fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
+    let mut yaml = config_mapping(existing);
+    let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+
+    let storage = map
+        .entry("storage".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(smap) = storage.as_mapping_mut() {
+        smap.insert("backend".into(), cfg.storage_backend.clone().into());
+        smap.insert("directory".into(), cfg.storage_directory.clone().into());
+    }
+
+    let gateway = map
+        .entry("gateway".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(gmap) = gateway.as_mapping_mut() {
+        gmap.insert("url".into(), cfg.gateway_url.clone().into());
+    }
+
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
+/// Merge only the top-level `default_model` key into the existing config text.
+fn merge_default_model(existing: Option<&str>, model: &str) -> Result<String, String> {
+    let mut yaml = config_mapping(existing);
+    let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    map.insert("default_model".into(), model.to_string().into());
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
+/// Read ~/.infer/config.yaml, apply `f` to its text, and write the result back,
+/// creating the parent dir as needed.
+fn update_config_file(
+    f: impl FnOnce(Option<&str>) -> Result<String, String>,
+) -> Result<(), String> {
     let path = config_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let mut yaml: serde_yaml::Value = match std::fs::read_to_string(&path) {
-        Ok(text) => {
-            serde_yaml::from_str(&text).unwrap_or(serde_yaml::Value::Mapping(Default::default()))
-        }
-        Err(_) => serde_yaml::Value::Mapping(Default::default()),
-    };
-
-    let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    let storage = map
-        .entry(serde_yaml::Value::String("storage".into()))
-        .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(smap) = storage.as_mapping_mut() {
-        smap.insert(
-            serde_yaml::Value::String("backend".into()),
-            serde_yaml::Value::String(cfg.storage_backend.clone()),
-        );
-        smap.insert(
-            serde_yaml::Value::String("directory".into()),
-            serde_yaml::Value::String(cfg.storage_directory.clone()),
-        );
-    }
-
-    let gateway = map
-        .entry(serde_yaml::Value::String("gateway".into()))
-        .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
-    if let Some(gmap) = gateway.as_mapping_mut() {
-        gmap.insert(
-            serde_yaml::Value::String("url".into()),
-            serde_yaml::Value::String(cfg.gateway_url.clone()),
-        );
-    }
-
-    map.insert(
-        serde_yaml::Value::String("default_model".into()),
-        serde_yaml::Value::String(cfg.default_model.clone()),
-    );
-
-    let text = serde_yaml::to_string(&yaml).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
-    Ok(())
+    let existing = std::fs::read_to_string(&path).ok();
+    let text = f(existing.as_deref())?;
+    std::fs::write(&path, text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1046,7 +1026,12 @@ async fn get_config() -> Result<DesktopConfig, String> {
 
 #[tauri::command]
 async fn set_config(cfg: DesktopConfig) -> Result<(), String> {
-    write_config(&cfg)
+    update_config_file(|existing| merge_config(existing, &cfg))
+}
+
+#[tauri::command]
+async fn set_default_model(model: String) -> Result<(), String> {
+    update_config_file(|existing| merge_default_model(existing, &model))
 }
 
 /// Read ~/.infer/history (line-delimited prompt history shared with the CLI).
@@ -1888,6 +1873,7 @@ pub fn run() {
             set_auth,
             get_config,
             set_config,
+            set_default_model,
             start_gateway,
             check_updates,
             install_desktop_update,
@@ -2508,5 +2494,82 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    fn parse_yaml(text: &str) -> serde_norway::Value {
+        serde_norway::from_str(text).unwrap()
+    }
+
+    fn str_field<'a>(val: &'a serde_norway::Value, path: &[&str]) -> Option<&'a str> {
+        let mut cur = val;
+        for key in path {
+            cur = cur.get(key)?;
+        }
+        cur.as_str()
+    }
+
+    #[test]
+    fn config_from_value_reads_fields_and_expands_tilde() {
+        let home = PathBuf::from("/home/tester");
+        let val = parse_yaml(
+            "storage:\n  backend: postgres\n  directory: ~/conv\ngateway:\n  url: http://gw:9000\ndefault_model: gpt-x\n",
+        );
+        let cfg = config_from_value(&val, &home);
+        assert_eq!(cfg.storage_backend, "postgres");
+        assert_eq!(cfg.storage_directory, "/home/tester/conv");
+        assert_eq!(cfg.gateway_url, "http://gw:9000");
+        assert_eq!(cfg.default_model, "gpt-x");
+    }
+
+    #[test]
+    fn config_from_value_defaults_when_missing() {
+        let home = PathBuf::from("/home/tester");
+        let cfg = config_from_value(&serde_norway::Value::Mapping(Default::default()), &home);
+        assert_eq!(cfg.storage_backend, "jsonl");
+        assert_eq!(cfg.storage_directory, "/home/tester/.infer/conversations");
+        assert_eq!(cfg.gateway_url, "http://localhost:8080");
+        assert_eq!(cfg.default_model, "");
+    }
+
+    #[test]
+    fn merge_config_preserves_unrelated_fields_and_skips_default_model() {
+        let existing = "gateway:\n  run: true\n  standalone_binary: /x\nother_top: keep\n";
+        let cfg = DesktopConfig {
+            storage_backend: "jsonl".into(),
+            storage_directory: "/data".into(),
+            gateway_url: "http://gw".into(),
+            default_model: "ignored".into(),
+        };
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(str_field(&val, &["other_top"]), Some("keep"));
+        assert_eq!(
+            val.get("gateway")
+                .and_then(|g| g.get("run"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            str_field(&val, &["gateway", "standalone_binary"]),
+            Some("/x")
+        );
+        assert_eq!(str_field(&val, &["storage", "backend"]), Some("jsonl"));
+        assert_eq!(str_field(&val, &["storage", "directory"]), Some("/data"));
+        assert_eq!(str_field(&val, &["gateway", "url"]), Some("http://gw"));
+        assert!(val.get("default_model").is_none());
+    }
+
+    #[test]
+    fn merge_default_model_sets_only_that_key() {
+        let existing = "storage:\n  backend: jsonl\n";
+        let val = parse_yaml(&merge_default_model(Some(existing), "claude-x").unwrap());
+        assert_eq!(str_field(&val, &["default_model"]), Some("claude-x"));
+        assert_eq!(str_field(&val, &["storage", "backend"]), Some("jsonl"));
+    }
+
+    #[test]
+    fn merge_config_replaces_non_mapping_root() {
+        let cfg = default_config();
+        let val = parse_yaml(&merge_config(Some("just a scalar"), &cfg).unwrap());
+        assert_eq!(str_field(&val, &["storage", "backend"]), Some("jsonl"));
     }
 }

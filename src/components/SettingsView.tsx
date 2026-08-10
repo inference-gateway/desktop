@@ -173,23 +173,33 @@ function GeneralTab() {
     default_model: "",
   });
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     api.getConfig().then(setConfigs).catch(() => {});
   }, []);
 
   const apply = async () => {
+    setSaving(true);
     try {
       await api.setConfig(config);
       setDirty(false);
+      setSaved(true);
+      setError("");
     } catch (e) {
-      console.error("Failed to save config:", e);
+      setError(String(e));
+    } finally {
+      setSaving(false);
     }
   };
 
   const set = (k: keyof DesktopConfig, v: string) => {
     setConfigs((c) => ({ ...c, [k]: v }));
     setDirty(true);
+    setSaved(false);
+    setError("");
   };
 
   return (
@@ -240,17 +250,26 @@ function GeneralTab() {
           ))}
         </select>
       </div>
-      <div className="mb-3 flex flex-col gap-1">
-        <Label htmlFor="storage-dir" className="text-[0.8rem] text-muted-foreground">
-          Conversations directory
-        </Label>
-        <Input
-          id="storage-dir"
-          value={config.storage_directory}
-          onChange={(e) => set("storage_directory", e.target.value)}
-          placeholder={config.storage_directory || "~/.infer/conversations"}
-        />
-      </div>
+      {config.storage_backend === "jsonl" ? (
+        <div className="mb-3 flex flex-col gap-1">
+          <Label htmlFor="storage-dir" className="text-[0.8rem] text-muted-foreground">
+            Conversations directory
+          </Label>
+          <Input
+            id="storage-dir"
+            value={config.storage_directory}
+            onChange={(e) => set("storage_directory", e.target.value)}
+            placeholder="~/.infer/conversations"
+          />
+        </div>
+      ) : config.storage_backend === "disabled" ? (
+        <p className="mb-3 text-[0.75rem] text-muted-foreground">Conversations are not persisted.</p>
+      ) : (
+        <p className="mb-3 text-[0.75rem] text-muted-foreground">
+          The {config.storage_backend} connection is read from infer&apos;s environment (e.g. a
+          connection URL); it is not editable here yet.
+        </p>
+      )}
 
       {/* Default model */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Default Model</h3>
@@ -263,21 +282,15 @@ function GeneralTab() {
         </Label>
         <select
           id="default-model"
-          value={config.default_model || model}
-          onChange={(e) => {
-            const m = e.target.value;
-            set("default_model", m);
-            setModel(m);
-          }}
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
           className="w-full max-w-xs rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
         >
-          {(models.includes(config.default_model) ? models : [config.default_model, ...models].filter(Boolean)).map(
-            (m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ),
-          )}
+          {(models.includes(model) ? models : [model, ...models].filter(Boolean)).map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -298,11 +311,24 @@ function GeneralTab() {
         />
       </div>
 
-      {dirty && (
-        <div className="mt-6 flex items-center gap-2 border-t border-border pt-4">
-          <Button onClick={apply}>Save config</Button>
-        </div>
-      )}
+      <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-border bg-background/95 pb-1 pt-4 backdrop-blur">
+        <Button onClick={apply} disabled={!dirty || saving}>
+          {saving ? "Saving..." : "Save config"}
+        </Button>
+        {dirty && !error && (
+          <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>
+        )}
+        {saved && !dirty && (
+          <span role="status" className="text-[0.8rem] text-muted-foreground">
+            Saved
+          </span>
+        )}
+        {error && (
+          <span role="status" className="text-[0.8rem] text-err">
+            Couldn't save: {error}
+          </span>
+        )}
+      </div>
     </>
   );
 }

@@ -68,6 +68,7 @@ export const api = {
   setAuth: (keys: Record<string, string>) => invoke<void>("set_auth", { keys }),
   getConfig: () => invoke<DesktopConfig>("get_config"),
   setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
+  setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
   startGateway: (force = false) => invoke<void>("start_gateway", { force }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),
