@@ -74,12 +74,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
-      # The Rust build embeds frontendDist (../dist), so the frontend must exist
-      # before the agent runs any cargo compile.
       - name: Build frontend
         run: bun install --frozen-lockfile && bun run build
 
@@ -117,12 +115,13 @@ jobs:
               items to find it.
             - Set Status with `gh project item-edit --id <item-id> --project-id <project-id>
               --field-id <field-id> --single-select-option-id <option-id>`: the option closest to
-              "In Progress" BEFORE you start changing anything, and the option closest to "Done" when
-              your work is complete (body refined, fix pushed, or comment posted).
+              "In Progress" BEFORE you start changing anything, and the option closest to "QA" right
+              after the pull request is opened (fall back to "Done" only when no QA-like option
+              exists). Never set "Done" - that happens at merge.
           plugins: |
             DietrichGebert/ponytail
             ayghri/i-have-adhd
-          agents: ${{ inputs.agents || 'documentation-agent,browser-agent' }}
+          agents: ${{ inputs.agents || 'documentation-agent' }}
           llamacpp-api-url: ${{ secrets.LLAMACPP_API_URL }}
           llamacpp-api-key: ${{ secrets.LLAMACPP_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
