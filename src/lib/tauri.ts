@@ -41,6 +41,21 @@ export type DesktopConfig = {
   storage_directory: string;
   gateway_url: string;
   default_model: string;
+  sqlite_path: string;
+  postgres_host: string;
+  postgres_port: string;
+  postgres_database: string;
+  postgres_username: string;
+  postgres_password: string;
+  postgres_ssl_mode: string;
+  redis_host: string;
+  redis_port: string;
+  redis_password: string;
+  redis_db: string;
+  d1_account_id: string;
+  d1_database_id: string;
+  d1_api_token: string;
+  d1_base_url: string;
 };
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";

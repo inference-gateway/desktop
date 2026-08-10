@@ -164,6 +164,46 @@ export function SettingsView() {
   );
 }
 
+type StorageField = {
+  key: keyof DesktopConfig;
+  label: string;
+  ph?: string;
+  secret?: boolean;
+  options?: readonly string[];
+};
+
+const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const;
+
+// Fields per backend, mapping 1:1 to infer's storage.<type>.* schema.
+const STORAGE_FIELDS: Record<string, readonly StorageField[]> = {
+  jsonl: [{ key: "storage_directory", label: "Conversations directory", ph: "~/.infer/conversations" }],
+  sqlite: [{ key: "sqlite_path", label: "Database file", ph: ".infer/conversations.db" }],
+  postgres: [
+    { key: "postgres_host", label: "Host", ph: "localhost" },
+    { key: "postgres_port", label: "Port", ph: "5432" },
+    { key: "postgres_database", label: "Database", ph: "infer_conversations" },
+    { key: "postgres_username", label: "Username" },
+    { key: "postgres_password", label: "Password", secret: true },
+    {
+      key: "postgres_ssl_mode",
+      label: "SSL mode",
+      options: ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"],
+    },
+  ],
+  redis: [
+    { key: "redis_host", label: "Host", ph: "localhost" },
+    { key: "redis_port", label: "Port", ph: "6379" },
+    { key: "redis_password", label: "Password", secret: true },
+    { key: "redis_db", label: "Database number", ph: "0" },
+  ],
+  d1: [
+    { key: "d1_account_id", label: "Account ID" },
+    { key: "d1_database_id", label: "Database ID" },
+    { key: "d1_api_token", label: "API token", secret: true },
+    { key: "d1_base_url", label: "Base URL", ph: "https://api.cloudflare.com/client/v4" },
+  ],
+};
+
 function GeneralTab() {
   const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({
@@ -171,6 +211,21 @@ function GeneralTab() {
     storage_directory: "",
     gateway_url: "http://localhost:8080",
     default_model: "",
+    sqlite_path: ".infer/conversations.db",
+    postgres_host: "localhost",
+    postgres_port: "5432",
+    postgres_database: "infer_conversations",
+    postgres_username: "",
+    postgres_password: "",
+    postgres_ssl_mode: "prefer",
+    redis_host: "localhost",
+    redis_port: "6379",
+    redis_password: "",
+    redis_db: "0",
+    d1_account_id: "",
+    d1_database_id: "",
+    d1_api_token: "",
+    d1_base_url: "https://api.cloudflare.com/client/v4",
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -202,6 +257,8 @@ function GeneralTab() {
     setError("");
   };
 
+  const storageFields = STORAGE_FIELDS[config.storage_backend];
+
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">General</h2>
@@ -231,7 +288,7 @@ function GeneralTab() {
       {/* Storage */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Storage</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Where conversations are stored. The jsonl backend writes to the configured directory.
+        Where conversations are stored. Pick a backend and fill in its connection details.
       </p>
       <div className="mb-3 flex flex-col gap-1">
         <Label htmlFor="storage-backend" className="text-[0.8rem] text-muted-foreground">
@@ -243,31 +300,48 @@ function GeneralTab() {
           onChange={(e) => set("storage_backend", e.target.value)}
           className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
         >
-          {["jsonl", "postgres", "redis", "disabled"].map((b) => (
+          {STORAGE_BACKENDS.map((b) => (
             <option key={b} value={b}>
               {b}
             </option>
           ))}
         </select>
       </div>
-      {config.storage_backend === "jsonl" ? (
-        <div className="mb-3 flex flex-col gap-1">
-          <Label htmlFor="storage-dir" className="text-[0.8rem] text-muted-foreground">
-            Conversations directory
-          </Label>
-          <Input
-            id="storage-dir"
-            value={config.storage_directory}
-            onChange={(e) => set("storage_directory", e.target.value)}
-            placeholder="~/.infer/conversations"
-          />
+      {storageFields ? (
+        <div className="mb-3 flex flex-col gap-3">
+          {storageFields.map((f) => (
+            <div key={f.key} className="flex flex-col gap-1">
+              <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
+                {f.label}
+              </Label>
+              {f.options ? (
+                <select
+                  id={f.key}
+                  value={config[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+                >
+                  {f.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  id={f.key}
+                  type={f.secret ? "password" : undefined}
+                  value={config[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  placeholder={f.ph}
+                />
+              )}
+            </div>
+          ))}
         </div>
-      ) : config.storage_backend === "disabled" ? (
-        <p className="mb-3 text-[0.75rem] text-muted-foreground">Conversations are not persisted.</p>
       ) : (
         <p className="mb-3 text-[0.75rem] text-muted-foreground">
-          The {config.storage_backend} connection is read from infer&apos;s environment (e.g. a
-          connection URL); it is not editable here yet.
+          The {config.storage_backend} backend is not editable here yet.
         </p>
       )}
 
