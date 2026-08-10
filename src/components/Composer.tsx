@@ -11,7 +11,7 @@ import { useRef } from "react";
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
 
 export function Composer() {
-  const { composerRef, enabled, running, send, cancel, setStatus, setError, history, tokenUsage, sessionId } = useDesktop();
+  const { composerRef, enabled, running, send, cancel, setStatus, setError, history } = useDesktop();
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
   const cursorRef = useRef(-1);
   const draftRef = useRef("");
