@@ -784,8 +784,9 @@ function SystemPromptTab() {
             Override system prompt
           </Label>
           <p className="text-[0.75rem] text-muted-foreground">
-            Replaces the entire default system prompt. Advanced users only. When enabled, extra instructions are still
-            appended after the override.
+            Replaces the entire default system prompt, discarding built-in instructions the agent relies on, such as how
+            to use its tools and workspace context like the current directory, file tree, and git branch. Prefer extra
+            instructions above. When enabled, extra instructions are still appended after the override.
           </p>
         </div>
       </div>
