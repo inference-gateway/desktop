@@ -78,7 +78,6 @@ function useDesktopStore() {
   const setModel = useCallback((m: string) => {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
-    // ponytail: fire-and-forget backend persist — no need to await on every model change
     api.getConfig().then((cfg) => api.setConfig({ ...cfg, default_model: m })).catch(() => {});
   }, []);
 
