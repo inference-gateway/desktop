@@ -613,24 +613,40 @@ async fn send_message(
     session_id: String,
     on_event: Channel<AgentEvent>,
     state: tauri::State<'_, AppState>,
+    system_prompt: Option<String>,
+    extra_instructions: Option<String>,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
-    let mut child = std::process::Command::new(&bin_path)
-        .arg("agent")
+    let mut cmd = std::process::Command::new(&bin_path);
+    cmd.arg("agent")
         .arg("--output-format")
         .arg("ag-ui")
         .arg("--session-id")
         .arg(&session_id)
         .arg("--require-approval")
         .arg("-m")
-        .arg(&model)
-        .arg(&prompt)
+        .arg(&model);
+
+    if let Some(ref sp) = system_prompt
+        && !sp.is_empty()
+    {
+        cmd.arg("--system-prompt").arg(sp);
+    }
+    if let Some(ref ei) = extra_instructions
+        && !ei.is_empty()
+    {
+        cmd.arg("--append-system-prompt").arg(ei);
+    }
+
+    cmd.arg(&prompt)
         .envs(infer_env())
         .current_dir(agent_cwd())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn infer agent: {}", e))?;
 
@@ -925,6 +941,12 @@ struct DesktopConfig {
     d1_database_id: String,
     d1_api_token: String,
     d1_base_url: String,
+    /// Extra instructions appended to the default system prompt on every invocation.
+    extra_instructions: String,
+    /// Override the entire default system prompt with user-supplied text.
+    /// When both are set, override replaces the default and extra_instructions are
+    /// appended after it.
+    system_prompt: String,
 }
 
 fn default_storage_directory(home: &std::path::Path) -> String {
@@ -955,6 +977,8 @@ fn default_config() -> DesktopConfig {
         d1_database_id: String::new(),
         d1_api_token: String::new(),
         d1_base_url: "https://api.cloudflare.com/client/v4".into(),
+        extra_instructions: String::new(),
+        system_prompt: String::new(),
     }
 }
 
@@ -1011,6 +1035,8 @@ fn config_from_value(val: &serde_norway::Value, home: &std::path::Path) -> Deskt
         d1_database_id: str_at(&["storage", "d1", "database_id"]).unwrap_or(d.d1_database_id),
         d1_api_token: str_at(&["storage", "d1", "api_token"]).unwrap_or(d.d1_api_token),
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
+        extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
+        system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
     }
 }
 
@@ -1124,6 +1150,12 @@ fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, S
     if let Some(gmap) = gateway.as_mapping_mut() {
         gmap.insert("url".into(), cfg.gateway_url.clone().into());
     }
+
+    map.insert(
+        "extra_instructions".into(),
+        cfg.extra_instructions.clone().into(),
+    );
+    map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }

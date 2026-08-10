@@ -424,7 +424,15 @@ function useDesktopStore() {
             break;
         }
       };
-      await api.sendMessage({ prompt: text, model, sessionId: runId, onEvent: ch });
+      const cfg = await api.getConfig();
+      await api.sendMessage({
+        prompt: text,
+        model,
+        sessionId: runId,
+        onEvent: ch,
+        systemPrompt: cfg.system_prompt || undefined,
+        extraInstructions: cfg.extra_instructions || undefined,
+      });
       refreshConversations();
     } catch (err) {
       dispatchTo(runId, { type: "error", text: `Error: ${err}` });
