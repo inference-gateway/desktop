@@ -919,6 +919,139 @@ async fn set_auth(keys: std::collections::HashMap<String, String>) -> Result<(),
     Ok(())
 }
 
+/// Desktop-facing config fields read from ~/.infer/config.yaml.
+/// Only the fields the Settings UI manages are exposed; the rest of the
+/// config (gateway.run, gateway.standalone_binary, etc.) passes through.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct DesktopConfig {
+    storage_backend: String,
+    storage_directory: String,
+    gateway_url: String,
+    default_model: String,
+}
+
+fn read_config_value() -> Option<serde_yaml::Value> {
+    let text = std::fs::read_to_string(config_path()).ok()?;
+    serde_yaml::from_str(&text).ok()
+}
+
+fn default_config() -> DesktopConfig {
+    DesktopConfig {
+        storage_backend: "jsonl".into(),
+        storage_directory: home_dir()
+            .join(".infer")
+            .join("conversations")
+            .to_string_lossy()
+            .to_string(),
+        gateway_url: "http://localhost:8080".into(),
+        default_model: String::new(),
+    }
+}
+
+fn read_config() -> DesktopConfig {
+    let val = match read_config_value() {
+        Some(v) => v,
+        None => return default_config(),
+    };
+    DesktopConfig {
+        storage_backend: val
+            .get("storage")
+            .and_then(|s| s.get("backend"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("jsonl")
+            .to_string(),
+        storage_directory: val
+            .get("storage")
+            .and_then(|s| s.get("directory"))
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                if let Some(rest) = s.strip_prefix('~') {
+                    format!("{}{}", home_dir().display(), rest)
+                } else {
+                    s.to_string()
+                }
+            })
+            .unwrap_or_else(|| {
+                home_dir()
+                    .join(".infer")
+                    .join("conversations")
+                    .to_string_lossy()
+                    .to_string()
+            }),
+        gateway_url: val
+            .get("gateway")
+            .and_then(|g| g.get("url"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("http://localhost:8080")
+            .to_string(),
+        default_model: val
+            .get("default_model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    }
+}
+
+fn write_config(cfg: &DesktopConfig) -> Result<(), String> {
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut yaml: serde_yaml::Value = match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            serde_yaml::from_str(&text).unwrap_or(serde_yaml::Value::Mapping(Default::default()))
+        }
+        Err(_) => serde_yaml::Value::Mapping(Default::default()),
+    };
+
+    // Ensure storage key exists, then set its subfields
+    let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    let storage = map
+        .entry(serde_yaml::Value::String("storage".into()))
+        .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
+    if let Some(smap) = storage.as_mapping_mut() {
+        smap.insert(
+            serde_yaml::Value::String("backend".into()),
+            serde_yaml::Value::String(cfg.storage_backend.clone()),
+        );
+        smap.insert(
+            serde_yaml::Value::String("directory".into()),
+            serde_yaml::Value::String(cfg.storage_directory.clone()),
+        );
+    }
+
+    // Ensure gateway key exists, then set its subfields
+    let gateway = map
+        .entry(serde_yaml::Value::String("gateway".into()))
+        .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
+    if let Some(gmap) = gateway.as_mapping_mut() {
+        gmap.insert(
+            serde_yaml::Value::String("url".into()),
+            serde_yaml::Value::String(cfg.gateway_url.clone()),
+        );
+    }
+
+    // Set default_model at root
+    map.insert(
+        serde_yaml::Value::String("default_model".into()),
+        serde_yaml::Value::String(cfg.default_model.clone()),
+    );
+
+    let text = serde_yaml::to_string(&yaml).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_config() -> Result<DesktopConfig, String> {
+    Ok(read_config())
+}
+
+#[tauri::command]
+async fn set_config(cfg: DesktopConfig) -> Result<(), String> {
+    write_config(&cfg)
+}
+
 /// Read ~/.infer/history (line-delimited prompt history shared with the CLI).
 /// Returns an empty vec when the file does not exist yet.
 #[tauri::command]
@@ -1756,6 +1889,8 @@ pub fn run() {
             list_models,
             get_auth,
             set_auth,
+            get_config,
+            set_config,
             start_gateway,
             check_updates,
             install_desktop_update,

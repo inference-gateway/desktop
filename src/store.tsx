@@ -13,6 +13,7 @@ import {
   Channel,
   type AgentEvent,
   type Conversation,
+  type DesktopConfig,
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
@@ -77,6 +78,8 @@ function useDesktopStore() {
   const setModel = useCallback((m: string) => {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
+    // ponytail: fire-and-forget backend persist — no need to await on every model change
+    api.getConfig().then((cfg) => api.setConfig({ ...cfg, default_model: m })).catch(() => {});
   }, []);
 
   const setMaxSessions = useCallback((n: number) => {
@@ -513,7 +516,9 @@ function useDesktopStore() {
     openSettings,
     setCurrentView,
     saveSettings,
+    getConfig: () => api.getConfig(),
     getAuth: () => api.getAuth(),
+    saveConfig: (cfg: DesktopConfig) => api.setConfig(cfg),
     updates,
     versionBadge,
     updateBannerText,

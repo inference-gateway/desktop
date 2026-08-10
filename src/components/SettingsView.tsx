@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { api, type A2aAgent } from "@/lib/tauri";
+import { api, type A2aAgent, type DesktopConfig } from "@/lib/tauri";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 
@@ -26,8 +26,6 @@ export function SettingsView() {
     checkForUpdates,
     applyUpdates,
     showUpdateBanner,
-    maxSessions,
-    setMaxSessions,
   } = useDesktop();
   const [tab, setTab] = useState<Tab>("keys");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -83,27 +81,7 @@ export function SettingsView() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
-          {tab === "general" && (
-            <>
-              <h2 className="text-[1.05rem] font-semibold">General</h2>
-              <p className="mb-4 text-[0.8rem] text-muted-foreground">
-                Run multiple agent sessions at once. Each session is a separate infer agent process.
-              </p>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
-                  Max concurrent sessions
-                </Label>
-                <Input
-                  id="max-sessions"
-                  type="number"
-                  min={1}
-                  value={maxSessions}
-                  onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
-                  className="w-24"
-                />
-              </div>
-            </>
-          )}
+          {tab === "general" && <GeneralTab />}
 
           {tab === "keys" && (
             <>
@@ -180,6 +158,149 @@ export function SettingsView() {
         </div>
       </div>
     </div>
+  );
+}
+
+function GeneralTab() {
+  const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
+  const [config, setConfigs] = useState<DesktopConfig>({
+    storage_backend: "jsonl",
+    storage_directory: "",
+    gateway_url: "http://localhost:8080",
+    default_model: "",
+  });
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    api.getConfig().then(setConfigs).catch(() => {});
+  }, []);
+
+  const apply = async () => {
+    try {
+      await api.setConfig(config);
+      setDirty(false);
+    } catch (e) {
+      console.error("Failed to save config:", e);
+    }
+  };
+
+  const set = (k: keyof DesktopConfig, v: string) => {
+    setConfigs((c) => ({ ...c, [k]: v }));
+    setDirty(true);
+  };
+
+  return (
+    <>
+      <h2 className="text-[1.05rem] font-semibold">General</h2>
+      <p className="mb-5 text-[0.8rem] text-muted-foreground">
+        Agent sessions, storage backend, default model, and gateway settings. Changes take effect on next agent spawn.
+      </p>
+
+      {/* Agent sessions */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Sessions</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Run multiple agent sessions at once. Each session is a separate infer agent process.
+      </p>
+      <div className="mb-5 flex flex-col gap-1">
+        <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
+          Max concurrent sessions
+        </Label>
+        <Input
+          id="max-sessions"
+          type="number"
+          min={1}
+          value={maxSessions}
+          onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
+          className="w-24"
+        />
+      </div>
+
+      {/* Storage */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Storage</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Where conversations are stored. The jsonl backend writes to the configured directory.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="storage-backend" className="text-[0.8rem] text-muted-foreground">
+          Backend
+        </Label>
+        <select
+          id="storage-backend"
+          value={config.storage_backend}
+          onChange={(e) => set("storage_backend", e.target.value)}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {["jsonl", "postgres", "redis", "disabled"].map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="storage-dir" className="text-[0.8rem] text-muted-foreground">
+          Conversations directory
+        </Label>
+        <Input
+          id="storage-dir"
+          value={config.storage_directory}
+          onChange={(e) => set("storage_directory", e.target.value)}
+          placeholder={config.storage_directory || "~/.infer/conversations"}
+        />
+      </div>
+
+      {/* Default model */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Default Model</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Model selected by default for new chats. Persisted server-side so it survives a cache clear.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="default-model" className="text-[0.8rem] text-muted-foreground">
+          Model
+        </Label>
+        <select
+          id="default-model"
+          value={config.default_model || model}
+          onChange={(e) => {
+            const m = e.target.value;
+            set("default_model", m);
+            setModel(m);
+          }}
+          className="w-full max-w-xs rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {(models.includes(config.default_model) ? models : [config.default_model, ...models].filter(Boolean)).map(
+            (m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ),
+          )}
+        </select>
+      </div>
+
+      {/* Gateway */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Gateway</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        URL of the inference gateway. Changes take effect on the next gateway restart.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="gateway-url" className="text-[0.8rem] text-muted-foreground">
+          Gateway URL
+        </Label>
+        <Input
+          id="gateway-url"
+          value={config.gateway_url}
+          onChange={(e) => set("gateway_url", e.target.value)}
+          placeholder="http://localhost:8080"
+        />
+      </div>
+
+      {dirty && (
+        <div className="mt-6 flex items-center gap-2 border-t border-border pt-4">
+          <Button onClick={apply}>Save config</Button>
+        </div>
+      )}
+    </>
   );
 }
 
