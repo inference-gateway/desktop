@@ -31,7 +31,7 @@ export function SettingsView() {
     statusText,
     statusError,
   } = useDesktop();
-  const [tab, setTab] = useState<Tab>("keys");
+  const [tab, setTab] = useState<Tab>("general");
   const [values, setValues] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(false);
 
