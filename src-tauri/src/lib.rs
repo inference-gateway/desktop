@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use std::collections::VecDeque;
 use std::io::{BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -74,10 +75,18 @@ fn mock_mode() -> bool {
     std::env::var("DESKTOP_MOCK").is_ok_and(|v| v == "true" || v == "1")
 }
 
+fn collector_env() -> Vec<(String, String)> {
+    vec![(
+        "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+        "http://localhost:4318/".into(),
+    )]
+}
+
 /// Extra env vars for spawned infer processes: provider keys, plus the CLI
 /// mock switch when the desktop runs in mock mode.
 fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
+    env.extend(collector_env());
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }
@@ -391,6 +400,12 @@ enum AgentEvent {
         exit_code: i32,
         stderr: String,
     },
+    TokenUsage {
+        input: i64,
+        output: i64,
+        cached_read: i64,
+        total_tool_calls: i64,
+    },
     #[allow(dead_code)]
     Cancelled,
 }
@@ -402,10 +417,26 @@ struct ToolCallInfo {
     args: String,
 }
 
+/// Stored trace span extracted from an OTLP export.
+#[derive(Clone, serde::Serialize)]
+struct StoredSpan {
+    trace_id: String,
+    span_id: String,
+    parent_span_id: String,
+    name: String,
+    kind: i32,
+    start_time_unix_nano: u64,
+    end_time_unix_nano: u64,
+    attributes: Vec<(String, String)>,
+    status_code: i32,
+    service_name: String,
+}
+
 struct AppState {
     running_children: Mutex<std::collections::HashMap<String, std::process::Child>>,
     child_stdins: Mutex<std::collections::HashMap<String, std::process::ChildStdin>>,
     gateway_child: Mutex<Option<std::process::Child>>,
+    stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
 }
 
 /// Folds AG-UI event-stream lines into complete AgentEvents, accumulating
@@ -602,7 +633,29 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
-                None
+                let stats = val.get("stats");
+                let i = stats
+                    .and_then(|s| s.get("inputTokens"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
+                let o = stats
+                    .and_then(|s| s.get("outputTokens"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
+                let c = stats
+                    .and_then(|s| s.get("cacheReadTokens"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
+                let t = stats
+                    .and_then(|s| s.get("totalToolCalls"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
+                Some(AgentEvent::TokenUsage {
+                    input: i,
+                    output: o,
+                    cached_read: c,
+                    total_tool_calls: t,
+                })
             }
             "RUN_ERROR" => {
                 self.flush_message();
@@ -1511,6 +1564,7 @@ async fn start_gateway(state: tauri::State<'_, AppState>, force: bool) -> Result
     let bin = ensure_gateway_binary(force)?;
     let child = std::process::Command::new(&bin)
         .envs(auth_env())
+        .envs(collector_env())
         .env("ENABLE_IMAGES", "true")
         .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
         .stdout(std::process::Stdio::null())
@@ -2028,13 +2082,260 @@ async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+// --- OTLP collector ---
+// ponytail: stdlib TCP listener, no server framework. JSON-only OTLP receiver.
+// Add protobuf support if the CLI/gateway cannot be configured to use
+// OTEL_EXPORTER_OTLP_PROTOCOL=http/json.
+
+const COLLECTOR_PORT: u16 = 4318;
+const MAX_SPANS: usize = 5000;
+
+/// Extract an i64 from a JSON value that may be a number or a string.
+fn json_val_i64(val: &serde_json::Value) -> i64 {
+    val.as_i64()
+        .or_else(|| val.as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0)
+}
+
+/// Extract a string value from an OTLP AnyValue.
+fn attr_value(val: &serde_json::Value) -> String {
+    if let Some(s) = val.get("stringValue").and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if let Some(s) = val.get("intValue").and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if let Some(n) = val.get("intValue").and_then(|v| v.as_i64()) {
+        return n.to_string();
+    }
+    if let Some(n) = val.get("doubleValue").and_then(|v| v.as_f64()) {
+        return n.to_string();
+    }
+    if let Some(b) = val.get("boolValue").and_then(|v| v.as_bool()) {
+        return b.to_string();
+    }
+    String::new()
+}
+
+/// Parse OTLP ExportTraceServiceRequest JSON body, extract StoredSpans.
+fn extract_spans(body: &str) -> Vec<StoredSpan> {
+    let val: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let mut spans = Vec::new();
+    let Some(rs_arr) = val.get("resourceSpans").and_then(|v| v.as_array()) else {
+        return spans;
+    };
+    for rs_item in rs_arr {
+        let resource_attrs = rs_item
+            .get("resource")
+            .and_then(|r| r.get("attributes"))
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|attr| {
+                        let key = attr.get("key").and_then(|k| k.as_str())?;
+                        let val = attr_value(attr.get("value")?);
+                        Some((key.to_string(), val))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let service_name = resource_attrs
+            .iter()
+            .find(|(k, _)| k == "service.name")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        let Some(ss_arr) = rs_item.get("scopeSpans").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for ss_item in ss_arr {
+            let Some(spans_arr) = ss_item.get("spans").and_then(|v| v.as_array()) else {
+                continue;
+            };
+            for span_val in spans_arr {
+                let trace_id = span_val
+                    .get("traceId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let span_id = span_val
+                    .get("spanId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let parent_span_id = span_val
+                    .get("parentSpanId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = span_val
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let kind = span_val.get("kind").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let start_time = span_val
+                    .get("startTimeUnixNano")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let end_time = span_val
+                    .get("endTimeUnixNano")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let status_code = span_val
+                    .get("status")
+                    .and_then(|s| s.get("code"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i32;
+                let attributes = span_val
+                    .get("attributes")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|attr| {
+                                let key = attr.get("key").and_then(|k| k.as_str())?;
+                                let val = attr_value(attr.get("value")?);
+                                Some((key.to_string(), val))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                spans.push(StoredSpan {
+                    trace_id,
+                    span_id,
+                    parent_span_id,
+                    name,
+                    kind,
+                    start_time_unix_nano: start_time,
+                    end_time_unix_nano: end_time,
+                    attributes,
+                    status_code,
+                    service_name: service_name.clone(),
+                });
+            }
+        }
+    }
+    spans
+}
+
+/// Handle a single OTLP HTTP request on the collector's TCP socket.
+fn handle_otlp_request(
+    stream: &mut std::net::TcpStream,
+    storage: &Arc<Mutex<VecDeque<StoredSpan>>>,
+) {
+    use std::io::{Read, Write};
+    let mut buf = [0u8; 65536];
+    let mut offset = 0;
+    // Read until headers end (double CRLF), or buffer full.
+    loop {
+        match stream.read(&mut buf[offset..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                offset += n;
+                // Check if we have the full headers
+                if offset >= 4 && buf[..offset].windows(4).any(|w| w == b"\r\n\r\n") {
+                    // Try to read the full body
+                    let request = String::from_utf8_lossy(&buf[..offset]);
+                    if let Some(hdr_end) = request.find("\r\n\r\n") {
+                        let body_start = hdr_end + 4;
+                        let content_len = request[..hdr_end]
+                            .lines()
+                            .find(|l| l.to_lowercase().starts_with("content-length:"))
+                            .and_then(|l| l.split(':').nth(1))
+                            .and_then(|s| s.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        if offset >= body_start + content_len {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                if offset >= buf.len() {
+                    break;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(_) => return,
+        }
+    }
+    let request = String::from_utf8_lossy(&buf[..offset]);
+    let first = request.lines().next().unwrap_or("");
+    if !first.starts_with("POST") {
+        return;
+    }
+    // Send 200 OK response immediately.
+    let response =
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}";
+    let _ = stream.write_all(response);
+    let _ = stream.flush();
+    // Find and parse the JSON body.
+    let body_start = request.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
+    let body = &request[body_start..];
+    let spans = extract_spans(body);
+    if !spans.is_empty()
+        && let Ok(mut guard) = storage.lock()
+    {
+        for span in spans {
+            if guard.len() >= MAX_SPANS {
+                guard.pop_front();
+            }
+            guard.push_back(span);
+        }
+    }
+}
+
+/// Spawn the OTLP collector thread.
+fn start_collector(storage: Arc<Mutex<VecDeque<StoredSpan>>>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let addr = format!("127.0.0.1:{}", COLLECTOR_PORT);
+        let listener = match std::net::TcpListener::bind(&addr) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("desktop: OTLP collector failed to bind {}: {}", addr, e);
+                return;
+            }
+        };
+        let _ = listener.set_nonblocking(true);
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut stream) => handle_otlp_request(&mut stream, &storage),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => {
+                    eprintln!("desktop: OTLP collector accept error: {}", e);
+                    break;
+                }
+            }
+        }
+    })
+}
+
+/// Return all stored traces, newest first.
+#[tauri::command]
+fn get_traces(state: tauri::State<'_, AppState>) -> Result<Vec<StoredSpan>, String> {
+    let guard = state.stored_traces.lock().map_err(|e| e.to_string())?;
+    let mut spans: Vec<StoredSpan> = guard.iter().cloned().collect();
+    spans.reverse();
+    Ok(spans)
+}
+
 pub fn run() {
+    let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let _collector = start_collector(Arc::clone(&stored_traces));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             running_children: Mutex::new(std::collections::HashMap::new()),
             child_stdins: Mutex::new(std::collections::HashMap::new()),
             gateway_child: Mutex::new(None),
+            stored_traces,
         })
         .invoke_handler(tauri::generate_handler![
             check_and_install_cli,
@@ -2063,6 +2364,7 @@ pub fn run() {
             read_history,
             append_history,
             save_image,
+            get_traces,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
