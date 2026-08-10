@@ -84,6 +84,24 @@ fn infer_env() -> Vec<(String, String)> {
     env
 }
 
+/// Prompt customisation env vars for the spawned agent. The CLI applies these
+/// after loading prompts.yaml, so they win over any file config: the override
+/// replaces the base system prompt, extras are appended after it
+/// (prompts.agent.custom_instructions).
+fn prompt_env(
+    system_prompt: Option<&str>,
+    extra_instructions: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    let mut env = Vec::new();
+    if let Some(sp) = system_prompt.filter(|s| !s.trim().is_empty()) {
+        env.push(("INFER_PROMPTS_AGENT_SYSTEM_PROMPT", sp.to_string()));
+    }
+    if let Some(ei) = extra_instructions.filter(|s| !s.trim().is_empty()) {
+        env.push(("INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS", ei.to_string()));
+    }
+    env
+}
+
 fn config_path() -> PathBuf {
     home_dir().join(".infer").join("config.yaml")
 }
@@ -613,24 +631,33 @@ async fn send_message(
     session_id: String,
     on_event: Channel<AgentEvent>,
     state: tauri::State<'_, AppState>,
+    system_prompt: Option<String>,
+    extra_instructions: Option<String>,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
-    let mut child = std::process::Command::new(&bin_path)
-        .arg("agent")
+    let mut cmd = std::process::Command::new(&bin_path);
+    cmd.arg("agent")
         .arg("--output-format")
         .arg("ag-ui")
         .arg("--session-id")
         .arg(&session_id)
         .arg("--require-approval")
         .arg("-m")
-        .arg(&model)
-        .arg(&prompt)
+        .arg(&model);
+
+    cmd.arg(&prompt)
         .envs(infer_env())
+        .envs(prompt_env(
+            system_prompt.as_deref(),
+            extra_instructions.as_deref(),
+        ))
         .current_dir(agent_cwd())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn infer agent: {}", e))?;
 
@@ -925,6 +952,12 @@ struct DesktopConfig {
     d1_database_id: String,
     d1_api_token: String,
     d1_base_url: String,
+    /// Extra instructions appended to the default system prompt on every invocation.
+    extra_instructions: String,
+    /// Override the entire default system prompt with user-supplied text.
+    /// When both are set, override replaces the default and extra_instructions are
+    /// appended after it.
+    system_prompt: String,
 }
 
 fn default_storage_directory(home: &std::path::Path) -> String {
@@ -955,6 +988,8 @@ fn default_config() -> DesktopConfig {
         d1_database_id: String::new(),
         d1_api_token: String::new(),
         d1_base_url: "https://api.cloudflare.com/client/v4".into(),
+        extra_instructions: String::new(),
+        system_prompt: String::new(),
     }
 }
 
@@ -1011,6 +1046,8 @@ fn config_from_value(val: &serde_norway::Value, home: &std::path::Path) -> Deskt
         d1_database_id: str_at(&["storage", "d1", "database_id"]).unwrap_or(d.d1_database_id),
         d1_api_token: str_at(&["storage", "d1", "api_token"]).unwrap_or(d.d1_api_token),
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
+        extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
+        system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
     }
 }
 
@@ -1124,6 +1161,14 @@ fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, S
     if let Some(gmap) = gateway.as_mapping_mut() {
         gmap.insert("url".into(), cfg.gateway_url.clone().into());
     }
+
+    // Desktop round-trip: write individual fields at top level so the Settings
+    // UI can read them back via config_from_value.
+    map.insert(
+        "extra_instructions".into(),
+        cfg.extra_instructions.clone().into(),
+    );
+    map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
@@ -2740,6 +2785,33 @@ mod tests {
         );
         assert_eq!(str_field(&val, &["gateway", "url"]), Some("http://gw"));
         assert!(val.get("default_model").is_none());
+        assert!(val.get("prompts").is_none());
+    }
+
+    #[test]
+    fn prompt_env_maps_override_and_extras_to_cli_env_vars() {
+        assert!(prompt_env(None, None).is_empty());
+        assert!(prompt_env(Some("  "), Some("")).is_empty());
+        assert_eq!(
+            prompt_env(None, Some("be a pirate")),
+            vec![(
+                "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
+                "be a pirate".to_string()
+            )]
+        );
+        assert_eq!(
+            prompt_env(Some("full override"), Some("extras")),
+            vec![
+                (
+                    "INFER_PROMPTS_AGENT_SYSTEM_PROMPT",
+                    "full override".to_string()
+                ),
+                (
+                    "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
+                    "extras".to_string()
+                ),
+            ]
+        );
     }
 
     #[test]

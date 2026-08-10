@@ -56,6 +56,8 @@ export type DesktopConfig = {
   d1_database_id: string;
   d1_api_token: string;
   d1_base_url: string;
+  extra_instructions: string;
+  system_prompt: string;
 };
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";
@@ -71,6 +73,8 @@ export const api = {
     model: string;
     sessionId: string;
     onEvent: Channel<AgentEvent>;
+    systemPrompt?: string;
+    extraInstructions?: string;
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved }),
