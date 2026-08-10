@@ -2,6 +2,7 @@ import { ArrowUp, Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
+import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
 import { useRef } from "react";
@@ -109,6 +110,7 @@ export function Composer() {
           )}
         </div>
       </div>
+      <SnippetBar />
     </div>
   );
 }

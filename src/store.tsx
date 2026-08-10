@@ -19,6 +19,7 @@ import {
 } from "@/lib/tauri";
 import { chatReducer, initialChatState, type ChatAction, type ChatState } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
+import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
 const STORAGE_KEY = "selectedModel";
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
@@ -61,6 +62,7 @@ function useDesktopStore() {
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
   const [currentView, setCurrentView] = useState<"chat" | "settings">("chat");
   const [history, setHistory] = useState<string[]>([]);
+  const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -458,6 +460,40 @@ function useDesktopStore() {
     [dispatchTo]
   );
 
+  const insertSnippet = useCallback((prompt: string) => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.value = prompt;
+    autoGrow(el);
+    el.focus();
+  }, []);
+
+  const resetSnippet = useCallback((id: string) => {
+    const def = defaultForId(id);
+    if (!def) return;
+    setSnippetsState((prev) => {
+      const next = prev.map((s) => (s.id === id ? { ...def } : s));
+      saveSnippets(next);
+      return next;
+    });
+  }, []);
+
+  const updateSnippet = useCallback(
+    (id: string, patch: { label?: string; prompt?: string }) => {
+      setSnippetsState((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        saveSnippets(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const resetAllSnippets = useCallback(() => {
+    setSnippetsState(DEFAULT_SNIPPETS);
+    saveSnippets(DEFAULT_SNIPPETS);
+  }, []);
+
   const openSettings = useCallback(() => {
     checkForUpdates();
     setCurrentView("settings");
@@ -541,6 +577,11 @@ function useDesktopStore() {
     applyUpdates,
     composerRef,
     history,
+    snippets,
+    insertSnippet,
+    updateSnippet,
+    resetSnippet,
+    resetAllSnippets,
     setStatus,
     setError,
   };
