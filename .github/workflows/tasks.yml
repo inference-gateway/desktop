@@ -69,20 +69,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      # The Rust build embeds frontendDist (../dist), so the frontend must exist
-      # before the agent runs any cargo compile.
-      - name: Build frontend
-        run: bun install --frozen-lockfile && bun run build
-
       - uses: inference-gateway/infer-action@v0.46.2
         with:
           debug: true
@@ -94,7 +80,7 @@ jobs:
           direct-prompt: ${{ inputs.prompt }}
           system-prompt-direct: ${{ inputs.system_prompt }}
           enable-git-operations: "${{ inputs.enable_git || 'true' }}"
-          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?,rustup( .*)?,bun( .*)?,bunx( .*)?"
+          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?,rustup( .*)?"
           custom-instructions: |
             When working on a GitHub issue that belongs to a project board, keep the board's status in
             sync as you go. This is best-effort: on any error (no board, no Status field, missing
@@ -122,7 +108,7 @@ jobs:
           plugins: |
             DietrichGebert/ponytail
             ayghri/i-have-adhd
-          agents: ${{ inputs.agents || 'documentation-agent,browser-agent' }}
+          agents: ${{ inputs.agents || 'documentation-agent' }}
           llamacpp-api-url: ${{ secrets.LLAMACPP_API_URL }}
           llamacpp-api-key: ${{ secrets.LLAMACPP_API_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
