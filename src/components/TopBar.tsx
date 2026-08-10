@@ -1,9 +1,9 @@
-import { RotateCw, Settings } from "lucide-react";
+import { Eye, RotateCw, Settings } from "lucide-react";
 import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
 export function TopBar() {
-  const { versionBadge, showUpdateBanner, updateBannerText, applyUpdates, restartBackend, openSettings } = useDesktop();
+  const { versionBadge, showUpdateBanner, updateBannerText, applyUpdates, restartBackend, openSettings, openObservability } = useDesktop();
   return (
     <header id="top-bar" className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-[0.6rem]">
       <img src="/logo.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0 rounded-[5px]" />
@@ -31,6 +31,14 @@ export function TopBar() {
           <RotateCw size={16} />
         </button>
       </div>
+      <button
+        title="Observability"
+        aria-label="Observability"
+        onClick={openObservability}
+        className="inline-flex items-center justify-center rounded-md p-[0.35rem] text-muted-foreground hover:bg-secondary hover:text-foreground"
+      >
+        <Eye size={16} />
+      </button>
       <button
         title="Settings"
         aria-label="Settings"

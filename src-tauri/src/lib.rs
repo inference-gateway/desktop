@@ -2617,13 +2617,17 @@ mod tests {
         let (events, _) = parse_all(lines);
         assert_eq!(
             events.len(),
-            2,
-            "expected Info + one AssistantMessage (user echo skipped)"
+            3,
+            "expected Info + AssistantMessage + TokenUsage"
         );
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "All good!"),
             "assistant reply must render from `delta`; the user echo must be skipped"
+        );
+        assert!(
+            matches!(&events[2], AgentEvent::TokenUsage { .. }),
+            "RUN_FINISHED emits TokenUsage"
         );
     }
 
@@ -2643,13 +2647,17 @@ mod tests {
         let (events, _) = parse_all(lines);
         assert_eq!(
             events.len(),
-            2,
-            "expected Info + one AssistantMessage on resume (snapshot dropped, user echo skipped)"
+            3,
+            "expected Info + AssistantMessage + TokenUsage"
         );
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
             "resumed reply must render from `delta`"
+        );
+        assert!(
+            matches!(&events[2], AgentEvent::TokenUsage { .. }),
+            "RUN_FINISHED emits TokenUsage"
         );
     }
 
@@ -2756,9 +2764,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_run_finished_returns_none() {
+    fn test_parse_run_finished_returns_token_usage() {
         let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
-        assert_eq!(events.len(), 0);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::TokenUsage { .. }));
     }
 
     #[test]
