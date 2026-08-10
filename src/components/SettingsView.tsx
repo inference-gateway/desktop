@@ -28,6 +28,8 @@ export function SettingsView() {
     showUpdateBanner,
     maxSessions,
     setMaxSessions,
+    statusText,
+    statusError,
   } = useDesktop();
   const [tab, setTab] = useState<Tab>("keys");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -83,6 +85,7 @@ export function SettingsView() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
+          {statusError && <div role="status" className="mb-3 text-[0.8rem] text-err">{statusText}</div>}
           {tab === "general" && (
             <>
               <h2 className="text-[1.05rem] font-semibold">General</h2>
