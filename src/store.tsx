@@ -478,6 +478,17 @@ function useDesktopStore() {
     });
   }, []);
 
+  const updateSnippet = useCallback(
+    (id: string, patch: { label?: string; prompt?: string }) => {
+      setSnippetsState((prev) => {
+        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        saveSnippets(next);
+        return next;
+      });
+    },
+    [],
+  );
+
   const resetAllSnippets = useCallback(() => {
     setSnippetsState(DEFAULT_SNIPPETS);
     saveSnippets(DEFAULT_SNIPPETS);
@@ -568,6 +579,7 @@ function useDesktopStore() {
     history,
     snippets,
     insertSnippet,
+    updateSnippet,
     resetSnippet,
     resetAllSnippets,
     setStatus,
