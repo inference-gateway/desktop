@@ -26,8 +26,6 @@ export function SettingsView() {
     checkForUpdates,
     applyUpdates,
     showUpdateBanner,
-    maxSessions,
-    setMaxSessions,
     statusText,
     statusError,
   } = useDesktop();
@@ -86,27 +84,7 @@ export function SettingsView() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
           {statusError && <div role="status" className="mb-3 text-[0.8rem] text-err">{statusText}</div>}
-          {tab === "general" && (
-            <>
-              <h2 className="text-[1.05rem] font-semibold">General</h2>
-              <p className="mb-4 text-[0.8rem] text-muted-foreground">
-                Run multiple agent sessions at once. Each session is a separate infer agent process.
-              </p>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
-                  Max concurrent sessions
-                </Label>
-                <Input
-                  id="max-sessions"
-                  type="number"
-                  min={1}
-                  value={maxSessions}
-                  onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
-                  className="w-24"
-                />
-              </div>
-            </>
-          )}
+          {tab === "general" && <GeneralTab />}
 
           {tab === "keys" && (
             <>
