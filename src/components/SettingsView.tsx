@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { api, type A2aAgent } from "@/lib/tauri";
+import { api, type A2aAgent, type DesktopConfig } from "@/lib/tauri";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 
@@ -26,8 +26,6 @@ export function SettingsView() {
     checkForUpdates,
     applyUpdates,
     showUpdateBanner,
-    maxSessions,
-    setMaxSessions,
     statusText,
     statusError,
   } = useDesktop();
@@ -86,27 +84,7 @@ export function SettingsView() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
           {statusError && <div role="status" className="mb-3 text-[0.8rem] text-err">{statusText}</div>}
-          {tab === "general" && (
-            <>
-              <h2 className="text-[1.05rem] font-semibold">General</h2>
-              <p className="mb-4 text-[0.8rem] text-muted-foreground">
-                Run multiple agent sessions at once. Each session is a separate infer agent process.
-              </p>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
-                  Max concurrent sessions
-                </Label>
-                <Input
-                  id="max-sessions"
-                  type="number"
-                  min={1}
-                  value={maxSessions}
-                  onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
-                  className="w-24"
-                />
-              </div>
-            </>
-          )}
+          {tab === "general" && <GeneralTab />}
 
           {tab === "keys" && (
             <>
@@ -183,6 +161,249 @@ export function SettingsView() {
         </div>
       </div>
     </div>
+  );
+}
+
+type StorageField = {
+  key: keyof DesktopConfig;
+  label: string;
+  ph?: string;
+  secret?: boolean;
+  options?: readonly string[];
+};
+
+const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const;
+
+// Fields per backend, mapping 1:1 to infer's storage.<type>.* schema.
+const STORAGE_FIELDS: Record<string, readonly StorageField[]> = {
+  jsonl: [{ key: "storage_directory", label: "Conversations directory", ph: "~/.infer/conversations" }],
+  sqlite: [{ key: "sqlite_path", label: "Database file", ph: ".infer/conversations.db" }],
+  postgres: [
+    { key: "postgres_host", label: "Host", ph: "localhost" },
+    { key: "postgres_port", label: "Port", ph: "5432" },
+    { key: "postgres_database", label: "Database", ph: "infer_conversations" },
+    { key: "postgres_username", label: "Username" },
+    { key: "postgres_password", label: "Password", secret: true },
+    {
+      key: "postgres_ssl_mode",
+      label: "SSL mode",
+      options: ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"],
+    },
+  ],
+  redis: [
+    { key: "redis_host", label: "Host", ph: "localhost" },
+    { key: "redis_port", label: "Port", ph: "6379" },
+    { key: "redis_password", label: "Password", secret: true },
+    { key: "redis_db", label: "Database number", ph: "0" },
+  ],
+  d1: [
+    { key: "d1_account_id", label: "Account ID" },
+    { key: "d1_database_id", label: "Database ID" },
+    { key: "d1_api_token", label: "API token", secret: true },
+    { key: "d1_base_url", label: "Base URL", ph: "https://api.cloudflare.com/client/v4" },
+  ],
+};
+
+function GeneralTab() {
+  const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
+  const [config, setConfigs] = useState<DesktopConfig>({
+    storage_backend: "jsonl",
+    storage_directory: "",
+    gateway_url: "http://localhost:8080",
+    default_model: "",
+    sqlite_path: ".infer/conversations.db",
+    postgres_host: "localhost",
+    postgres_port: "5432",
+    postgres_database: "infer_conversations",
+    postgres_username: "",
+    postgres_password: "",
+    postgres_ssl_mode: "prefer",
+    redis_host: "localhost",
+    redis_port: "6379",
+    redis_password: "",
+    redis_db: "0",
+    d1_account_id: "",
+    d1_database_id: "",
+    d1_api_token: "",
+    d1_base_url: "https://api.cloudflare.com/client/v4",
+  });
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.getConfig().then(setConfigs).catch(() => {});
+  }, []);
+
+  const apply = async () => {
+    setSaving(true);
+    try {
+      await api.setConfig(config);
+      setDirty(false);
+      setSaved(true);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const set = (k: keyof DesktopConfig, v: string) => {
+    setConfigs((c) => ({ ...c, [k]: v }));
+    setDirty(true);
+    setSaved(false);
+    setError("");
+  };
+
+  const storageFields = STORAGE_FIELDS[config.storage_backend];
+
+  return (
+    <>
+      <h2 className="text-[1.05rem] font-semibold">General</h2>
+      <p className="mb-5 text-[0.8rem] text-muted-foreground">
+        Agent sessions, storage backend, default model, and gateway settings. Changes take effect on next agent spawn.
+      </p>
+
+      {/* Agent sessions */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Sessions</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Run multiple agent sessions at once. Each session is a separate infer agent process.
+      </p>
+      <div className="mb-5 flex flex-col gap-1">
+        <Label htmlFor="max-sessions" className="text-[0.8rem] text-muted-foreground">
+          Max concurrent sessions
+        </Label>
+        <Input
+          id="max-sessions"
+          type="number"
+          min={1}
+          value={maxSessions}
+          onChange={(e) => setMaxSessions(parseInt(e.target.value, 10))}
+          className="w-24"
+        />
+      </div>
+
+      {/* Storage */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Storage</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Where conversations are stored. Pick a backend and fill in its connection details.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="storage-backend" className="text-[0.8rem] text-muted-foreground">
+          Backend
+        </Label>
+        <select
+          id="storage-backend"
+          value={config.storage_backend}
+          onChange={(e) => set("storage_backend", e.target.value)}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {STORAGE_BACKENDS.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+      </div>
+      {storageFields ? (
+        <div className="mb-3 flex flex-col gap-3">
+          {storageFields.map((f) => (
+            <div key={f.key} className="flex flex-col gap-1">
+              <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
+                {f.label}
+              </Label>
+              {f.options ? (
+                <select
+                  id={f.key}
+                  value={config[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+                >
+                  {f.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  id={f.key}
+                  type={f.secret ? "password" : undefined}
+                  value={config[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  placeholder={f.ph}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mb-3 text-[0.75rem] text-muted-foreground">
+          The {config.storage_backend} backend is not editable here yet.
+        </p>
+      )}
+
+      {/* Default model */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Default Model</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Model selected by default for new chats. Persisted server-side so it survives a cache clear.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="default-model" className="text-[0.8rem] text-muted-foreground">
+          Model
+        </Label>
+        <select
+          id="default-model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full max-w-xs rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {(models.includes(model) ? models : [model, ...models].filter(Boolean)).map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Gateway */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Gateway</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        URL of the inference gateway. Changes take effect on the next gateway restart.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="gateway-url" className="text-[0.8rem] text-muted-foreground">
+          Gateway URL
+        </Label>
+        <Input
+          id="gateway-url"
+          value={config.gateway_url}
+          onChange={(e) => set("gateway_url", e.target.value)}
+          placeholder="http://localhost:8080"
+        />
+      </div>
+
+      <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-border bg-background/95 pb-1 pt-4 backdrop-blur">
+        <Button onClick={apply} disabled={!dirty || saving}>
+          {saving ? "Saving..." : "Save config"}
+        </Button>
+        {dirty && !error && (
+          <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>
+        )}
+        {saved && !dirty && (
+          <span role="status" className="text-[0.8rem] text-muted-foreground">
+            Saved
+          </span>
+        )}
+        {error && (
+          <span role="status" className="text-[0.8rem] text-err">
+            Couldn't save: {error}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
 

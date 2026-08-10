@@ -36,6 +36,27 @@ export type UpdateInfo = { name: string; current: string; latest: string | null;
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type Conversation = { id: string; title?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
+export type DesktopConfig = {
+  storage_backend: string;
+  storage_directory: string;
+  gateway_url: string;
+  default_model: string;
+  sqlite_path: string;
+  postgres_host: string;
+  postgres_port: string;
+  postgres_database: string;
+  postgres_username: string;
+  postgres_password: string;
+  postgres_ssl_mode: string;
+  redis_host: string;
+  redis_port: string;
+  redis_password: string;
+  redis_db: string;
+  d1_account_id: string;
+  d1_database_id: string;
+  d1_api_token: string;
+  d1_base_url: string;
+};
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";
   content?: string;
@@ -60,6 +81,9 @@ export const api = {
   listModels: () => invoke<string[]>("list_models"),
   getAuth: () => invoke<Record<string, string>>("get_auth"),
   setAuth: (keys: Record<string, string>) => invoke<void>("set_auth", { keys }),
+  getConfig: () => invoke<DesktopConfig>("get_config"),
+  setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
+  setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
   startGateway: (force = false) => invoke<void>("start_gateway", { force }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),

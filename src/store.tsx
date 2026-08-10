@@ -13,6 +13,7 @@ import {
   Channel,
   type AgentEvent,
   type Conversation,
+  type DesktopConfig,
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
@@ -77,6 +78,7 @@ function useDesktopStore() {
   const setModel = useCallback((m: string) => {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
+    api.setDefaultModel(m).catch(() => {});
   }, []);
 
   const setMaxSessions = useCallback((n: number) => {
@@ -223,6 +225,21 @@ function useDesktopStore() {
       } catch {
         localStorage.removeItem(UPDATE_CACHE_KEY);
       }
+    }
+    // Restore the persisted default model when localStorage was cleared, so the
+    // choice survives a cache clear or fresh profile. populateModels reads
+    // localStorage live, and this resolves before it (a config file read beats
+    // gateway startup). ponytail: if that ordering ever flips, the model shows
+    // the list default until the next launch - not worth syncing on.
+    if (!localStorage.getItem(STORAGE_KEY)) {
+      api
+        .getConfig()
+        .then((cfg) => {
+          if (cfg.default_model && !localStorage.getItem(STORAGE_KEY)) {
+            localStorage.setItem(STORAGE_KEY, cfg.default_model);
+          }
+        })
+        .catch(() => {});
     }
     initBackend();
     api.readHistory().then(setHistory).catch(() => {});
@@ -513,7 +530,9 @@ function useDesktopStore() {
     openSettings,
     setCurrentView,
     saveSettings,
+    getConfig: () => api.getConfig(),
     getAuth: () => api.getAuth(),
+    saveConfig: (cfg: DesktopConfig) => api.setConfig(cfg),
     updates,
     versionBadge,
     updateBannerText,
