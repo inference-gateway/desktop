@@ -69,6 +69,18 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev
+
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+
+      - name: Build frontend
+        run: bun install --frozen-lockfile && bun run build
+
       - uses: inference-gateway/infer-action@v0.46.2
         with:
           debug: true
@@ -80,7 +92,7 @@ jobs:
           direct-prompt: ${{ inputs.prompt }}
           system-prompt-direct: ${{ inputs.system_prompt }}
           enable-git-operations: "${{ inputs.enable_git || 'true' }}"
-          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?,rustup( .*)?"
+          bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?,rustup( .*)?,bun( .*)?,bunx( .*)?"
           custom-instructions: |
             When working on a GitHub issue that belongs to a project board, keep the board's status in
             sync as you go. This is best-effort: on any error (no board, no Status field, missing
