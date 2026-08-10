@@ -1004,7 +1004,6 @@ fn write_config(cfg: &DesktopConfig) -> Result<(), String> {
         Err(_) => serde_yaml::Value::Mapping(Default::default()),
     };
 
-    // Ensure storage key exists, then set its subfields
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     let storage = map
         .entry(serde_yaml::Value::String("storage".into()))
@@ -1020,7 +1019,6 @@ fn write_config(cfg: &DesktopConfig) -> Result<(), String> {
         );
     }
 
-    // Ensure gateway key exists, then set its subfields
     let gateway = map
         .entry(serde_yaml::Value::String("gateway".into()))
         .or_insert_with(|| serde_yaml::Value::Mapping(Default::default()));
@@ -1031,7 +1029,6 @@ fn write_config(cfg: &DesktopConfig) -> Result<(), String> {
         );
     }
 
-    // Set default_model at root
     map.insert(
         serde_yaml::Value::String("default_model".into()),
         serde_yaml::Value::String(cfg.default_model.clone()),
