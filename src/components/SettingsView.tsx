@@ -22,6 +22,7 @@ type Tab = "general" | "keys" | "prompt" | "updates" | "agents" | "snippets";
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
+  { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
   { id: "snippets", label: "Snippets" },
   { id: "updates", label: "Updates" },
