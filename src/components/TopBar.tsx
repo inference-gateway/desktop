@@ -1,6 +1,5 @@
 import { RotateCw, Settings } from "lucide-react";
 import { useDesktop } from "@/store";
-import { StatusBar } from "./StatusBar";
 import { ModelSelect } from "./ModelSelect";
 
 export function TopBar() {
@@ -20,8 +19,7 @@ export function TopBar() {
           {updateBannerText}
         </button>
       )}
-      <StatusBar />
-      <div id="model-controls" className="flex items-center gap-2">
+      <div id="model-controls" className="ml-auto flex items-center gap-2">
         <ModelSelect />
         <button
           title="Restart CLI"
