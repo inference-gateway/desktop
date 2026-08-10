@@ -613,8 +613,8 @@ async fn send_message(
     session_id: String,
     on_event: Channel<AgentEvent>,
     state: tauri::State<'_, AppState>,
-    system_prompt: Option<String>,
-    extra_instructions: Option<String>,
+    _system_prompt: Option<String>,
+    _extra_instructions: Option<String>,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
@@ -628,17 +628,10 @@ async fn send_message(
         .arg("-m")
         .arg(&model);
 
-    if let Some(ref sp) = system_prompt
-        && !sp.is_empty()
-    {
-        cmd.arg("--system-prompt").arg(sp);
-    }
-    if let Some(ref ei) = extra_instructions
-        && !ei.is_empty()
-    {
-        cmd.arg("--append-system-prompt").arg(ei);
-    }
-
+    // infer agent does not support --system-prompt or --append-system-prompt
+    // flags; system prompt customisation is read from config.yaml by the CLI
+    // at startup (prompts.agent.system_prompt). The values are written there
+    // by merge_config when the user saves settings.
     cmd.arg(&prompt)
         .envs(infer_env())
         .current_dir(agent_cwd())
@@ -1151,11 +1144,37 @@ fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, S
         gmap.insert("url".into(), cfg.gateway_url.clone().into());
     }
 
+    // Desktop round-trip: write individual fields at top level so the Settings
+    // UI can read them back via config_from_value.
     map.insert(
         "extra_instructions".into(),
         cfg.extra_instructions.clone().into(),
     );
     map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
+
+    // Effective system prompt for the CLI: persist to prompts.agent.system_prompt
+    // so infer agent reads it from ~/.infer/config.yaml at startup.
+    // When both override and extras are set, combine them.
+    let effective = match (cfg.system_prompt.as_str(), cfg.extra_instructions.as_str()) {
+        (sp, "") | ("", sp) if !sp.is_empty() => sp.to_string(),
+        (sp, ei) if !sp.is_empty() && !ei.is_empty() => format!("{}\n\n{}", sp, ei),
+        _ => String::new(),
+    };
+    let prompts = map
+        .entry("prompts".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(pmap) = prompts.as_mapping_mut() {
+        let agent = pmap
+            .entry("agent".into())
+            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+        if let Some(amap) = agent.as_mapping_mut() {
+            if effective.is_empty() {
+                amap.remove("system_prompt");
+            } else {
+                amap.insert("system_prompt".into(), effective.into());
+            }
+        }
+    }
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
