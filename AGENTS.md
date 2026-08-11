@@ -17,16 +17,18 @@
 ├── vite.config.ts                # Vite (React + Tailwind v4 plugin, @ alias)
 ├── tsconfig.json                 # TypeScript config
 ├── components.json               # shadcn/ui config
-├── index.html                    # Vite entry (mounts src/main.tsx into #app)
-├── public/                       # Static assets (logo.png)
+├── index.html                    # Vite entry (mounts frontend/main.tsx into #app)
+├── Cargo.toml                    # Root workspace: members = ["backend", "e2e"]
 ├── dist/                         # Vite build output, embedded by Tauri (gitignored)
-├── src/                          # React + TypeScript frontend
+├── frontend/                     # React + TypeScript frontend
 │   ├── main.tsx                  # Entry: mounts <App/>, system dark mode
 │   ├── App.tsx  store.tsx        # App shell + state store (context)
 │   ├── components/               # UI (TopBar, Sidebar, Transcript, Composer, ...)
 │   ├── hooks/                    # useVoiceInput (speech-to-text)
-│   └── lib/                      # tauri client, markdown, tools, audio, transcript
-└── src-tauri/                    # Tauri v2 backend (Rust)
+│   ├── lib/                      # tauri client, markdown, tools, audio, transcript
+│   └── public/                   # Static assets (logo.png)
+├── e2e/                          # macOS e2e harness (workspace member)
+└── backend/                      # Tauri v2 backend (Rust)
     ├── Cargo.toml
     ├── build.rs
     ├── tauri.conf.json
@@ -36,7 +38,7 @@
         └── main.rs
 ```
 
-The repository is a scaffold for agent-driven development on `inference-gateway/desktop`. It pairs a **React + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) with a **Tauri v2 / Rust** backend. Cargo commands run from `src-tauri/`; the Taskfile wraps them at the repo root and builds the frontend first where needed.
+The repository is a scaffold for agent-driven development on `inference-gateway/desktop`. It pairs a **React + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) with a **Tauri v2 / Rust** backend. Cargo commands run from `backend/` (or the workspace root with `-p inference-gateway-desktop`); the Taskfile wraps them at the repo root and builds the frontend first where needed.
 
 ## Before You Start
 

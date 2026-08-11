@@ -28,7 +28,7 @@ tasks:
 
   build:
     desc: Build the project
-    dir: src-tauri
+    dir: backend
     deps:
       - web
     cmds:
@@ -36,7 +36,7 @@ tasks:
 
   test:
     desc: Run all tests
-    dir: src-tauri
+    dir: backend
     deps:
       - web
     cmds:
@@ -44,7 +44,7 @@ tasks:
 
   clippy:
     desc: Lint and format check
-    dir: src-tauri
+    dir: backend
     deps:
       - web
     cmds:
@@ -53,7 +53,7 @@ tasks:
 
   check:
     desc: Typecheck (no codegen)
-    dir: src-tauri
+    dir: backend
     deps:
       - web
     cmds:

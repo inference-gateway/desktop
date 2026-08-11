@@ -30,7 +30,7 @@ The flox manifest doesn't include `cargo` or the Tauri CLI yet - add them once f
 cargo tauri build
 ```
 
-The bundled app goes to `src-tauri/target/release/bundle/`. `task build` runs a plain `cargo build` (debug); use `cargo tauri build` for the release bundle.
+The bundled app goes to `target/release/bundle/`. `task build` runs a plain `cargo build` (debug); use `cargo tauri build` for the release bundle.
 
 `bundle.createUpdaterArtifacts` is on, so `cargo tauri build` needs the updater signing key in `TAURI_SIGNING_PRIVATE_KEY` (see below). `cargo tauri dev` and `cargo test` do not.
 

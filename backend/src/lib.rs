@@ -131,16 +131,14 @@ fn config_path() -> PathBuf {
 /// Pure core of `agent_cwd`, split out so the fallback is testable.
 fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> PathBuf {
     match current {
-        Some(dir) if dir.ends_with("src-tauri") => {
-            dir.parent().map(Path::to_path_buf).unwrap_or(dir)
-        }
+        Some(dir) if dir.ends_with("backend") => dir.parent().map(Path::to_path_buf).unwrap_or(dir),
         Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
         _ => home,
     }
 }
 
 /// Working directory for spawned infer processes. `cargo tauri dev` runs the
-/// app from src-tauri/ regardless of where it was invoked, but agent sessions
+/// app from backend/ regardless of where it was invoked, but agent sessions
 /// should work in the project root - one level up. Finder-launched `.app`
 /// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
 /// storage would land at `/.infer` and panic; fall back to the home dir there.
@@ -3362,15 +3360,15 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_agent_cwd_escapes_src_tauri() {
+    fn test_resolve_agent_cwd_escapes_backend() {
         let home = PathBuf::from("/Users/x");
         assert_eq!(
-            resolve_agent_cwd(Some(PathBuf::from("/repo/desktop/src-tauri")), home.clone()),
+            resolve_agent_cwd(Some(PathBuf::from("/repo/desktop/backend")), home.clone()),
             PathBuf::from("/repo/desktop")
         );
         assert_eq!(
-            resolve_agent_cwd(Some(PathBuf::from("/repo/src-tauri-ish")), home),
-            PathBuf::from("/repo/src-tauri-ish")
+            resolve_agent_cwd(Some(PathBuf::from("/repo/backend-ish")), home),
+            PathBuf::from("/repo/backend-ish")
         );
     }
 

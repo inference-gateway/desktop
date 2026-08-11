@@ -104,8 +104,8 @@ jobs:
           fi
           jq --arg v "$VERSION" --arg k "$PUBKEY" \
             '.version = $v | .plugins.updater.pubkey = $k' \
-            src-tauri/tauri.conf.json > tauri.conf.stamped.json
-          mv tauri.conf.stamped.json src-tauri/tauri.conf.json
+            backend/tauri.conf.json > tauri.conf.stamped.json
+          mv tauri.conf.stamped.json backend/tauri.conf.json
 
       - name: Build Tauri bundles
         uses: tauri-apps/tauri-action@v1.0.0
@@ -113,14 +113,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: src-tauri
+          projectPath: backend
           args: ${{ matrix.args }}
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.artifact_name }}
-          path: src-tauri/target/**/release/bundle/**
+          path: target/**/release/bundle/**
           if-no-files-found: error
 
   release:

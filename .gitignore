@@ -1,8 +1,7 @@
 target/
-src-tauri/gen/
+backend/gen/
 .env
 .infer/
-e2e/target/
 e2e/artifacts/
 
 # Frontend (Bun + Vite)
