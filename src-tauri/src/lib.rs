@@ -114,6 +114,16 @@ fn prompt_env(
     env
 }
 
+/// Append the agent's actual working directory to the custom instructions so
+/// the model states it instead of guessing (Finder launches land in $HOME).
+fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
+    let cwd_note = format!("Current working directory: {}", cwd.display());
+    match extra_instructions.filter(|s| !s.trim().is_empty()) {
+        Some(ei) => format!("{ei}\n\n{cwd_note}"),
+        None => cwd_note,
+    }
+}
+
 fn config_path() -> PathBuf {
     home_dir().join(".infer").join("config.yaml")
 }
@@ -720,13 +730,12 @@ async fn send_message(
         .arg("-m")
         .arg(&model);
 
+    let cwd = agent_cwd();
+    let extras = compose_extras(extra_instructions.as_deref(), &cwd);
     cmd.arg(&prompt)
         .envs(infer_env())
-        .envs(prompt_env(
-            system_prompt.as_deref(),
-            extra_instructions.as_deref(),
-        ))
-        .current_dir(agent_cwd())
+        .envs(prompt_env(system_prompt.as_deref(), Some(&extras)))
+        .current_dir(cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -3527,6 +3536,23 @@ mod tests {
                     "extras".to_string()
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn compose_extras_appends_cwd_to_instructions() {
+        let cwd = Path::new("/Users/edenreich/project");
+        assert_eq!(
+            compose_extras(None, cwd),
+            "Current working directory: /Users/edenreich/project"
+        );
+        assert_eq!(
+            compose_extras(Some("  "), cwd),
+            "Current working directory: /Users/edenreich/project"
+        );
+        assert_eq!(
+            compose_extras(Some("be a pirate"), cwd),
+            "be a pirate\n\nCurrent working directory: /Users/edenreich/project"
         );
     }
 
