@@ -2,6 +2,7 @@ use crate::AppState;
 use crate::config::read_config;
 use crate::env::{
     agent_cwd, compose_extras, home_dir, infer_bin_path, infer_env, mock_mode, prompt_env,
+    uploads_dir,
 };
 use crate::observability::json_val_i64;
 use std::io::{BufRead, Read, Write};
@@ -625,6 +626,38 @@ pub(crate) fn save_image(path: String) -> Result<String, String> {
     std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
     let dest = downloads.join(name);
     std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> {
+    // Map MIME type to file extension.
+    let ext = match mime.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/svg+xml" => "svg",
+        "application/pdf" => "pdf",
+        _ => return Err(format!("Unsupported file type: {mime}")),
+    };
+
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("Invalid upload data: {e}"))?;
+
+    // Enforce 10 MB max.
+    const MAX_BYTES: usize = 10 * 1024 * 1024;
+    if bytes.len() > MAX_BYTES {
+        return Err(format!("File too large: {} bytes (max 10 MB)", bytes.len()));
+    }
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let name = format!("{nanos:x}.{ext}");
+    let dest = uploads_dir().join(&name);
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to save upload: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }
 

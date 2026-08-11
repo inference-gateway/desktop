@@ -11,7 +11,7 @@ export type ParsedToolResult = {
 // infer's ImageGeneration result carries the saved absolute path; WKWebView
 // can't load a bare file path, so only paths under ~/.infer/tmp are served
 // through Tauri's asset protocol.
-const SAFE_IMAGE_PATH = /\.infer\/tmp\/[\w.-]+\.(?:png|gif|webp|avif|jpe?g)$/i;
+const SAFE_IMAGE_PATH = /\.infer\/(?:tmp|uploads)\/[\w.-]+\.(?:png|gif|webp|avif|jpe?g|svg|pdf)$/i;
 
 export function prettyJson(str: string): string {
   try {
