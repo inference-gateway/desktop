@@ -2,6 +2,7 @@ import { ArrowUp, Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
+import { TokenReadout } from "./TokenReadout";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
@@ -55,6 +56,7 @@ export function Composer() {
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
+      <TokenReadout />
       <div
         id="composer"
         className="mx-auto flex max-w-[52rem] items-end gap-[0.35rem] rounded-[1.6rem] border border-border-strong bg-background py-[0.35rem] pl-4 pr-[0.4rem] shadow-sm focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20"

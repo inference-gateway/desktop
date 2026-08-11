@@ -65,7 +65,7 @@ fn escape(s: &str) -> String {
 
 pub struct AppDriver {
     child: Child,
-    src_tauri: PathBuf,
+    repo_root: PathBuf,
     artifacts: PathBuf,
 }
 
@@ -106,7 +106,7 @@ impl AppDriver {
 
         let driver = Self {
             child,
-            src_tauri,
+            repo_root: repo_root.to_path_buf(),
             artifacts: artifacts.to_path_buf(),
         };
         driver.wait_ready()?;
@@ -211,12 +211,13 @@ impl AppDriver {
         osascript(&script)
     }
 
-    /// Resolve a cleanup/assert path against src-tauri/ (the infer child's cwd).
+    /// Resolve a cleanup/assert path against the repo root (the infer child's
+    /// cwd - the app hops out of src-tauri/, see `resolve_agent_cwd`).
     pub fn resolve(&self, p: &Path) -> PathBuf {
         if p.is_absolute() {
             p.to_path_buf()
         } else {
-            self.src_tauri.join(p)
+            self.repo_root.join(p)
         }
     }
 

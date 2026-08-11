@@ -60,9 +60,10 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
   const [history, setHistory] = useState<string[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
+  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -217,8 +218,7 @@ function useDesktopStore() {
   useEffect(() => {
     if (initRan.current) return;
     initRan.current = true;
-    // Invalidate the cached update check on launch so a new version is detected,
-    // keeping the stale data as an offline fallback.
+
     const staleRaw = localStorage.getItem(UPDATE_CACHE_KEY);
     if (staleRaw) {
       try {
@@ -228,11 +228,7 @@ function useDesktopStore() {
         localStorage.removeItem(UPDATE_CACHE_KEY);
       }
     }
-    // Restore the persisted default model when localStorage was cleared, so the
-    // choice survives a cache clear or fresh profile. populateModels reads
-    // localStorage live, and this resolves before it (a config file read beats
-    // gateway startup). ponytail: if that ordering ever flips, the model shows
-    // the list default until the next launch - not worth syncing on.
+
     if (!localStorage.getItem(STORAGE_KEY)) {
       api
         .getConfig()
@@ -296,7 +292,7 @@ function useDesktopStore() {
     activeIdRef.current = null;
     clearSelection();
     composerRef.current?.focus();
-  }, [clearSelection]);
+  }, [clearSelection, composerRef]);
 
   const deleteConversation = useCallback(
     async (id: string) => {
@@ -395,12 +391,18 @@ function useDesktopStore() {
       autoGrow(el);
     }
     setRunningIds((prev) => new Set(prev).add(runId));
-    // The closure captures runId (not activeId) so events always route to their
-    // own session even if the user switches the view mid-stream.
     try {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {
         dispatchTo(runId, { type: "event", event });
+        if (event.kind === "TokenUsage") {
+          setTokenUsage((prev) => ({
+            input: prev.input + event.input,
+            output: prev.output + event.output,
+            cached_read: prev.cached_read + event.cached_read,
+            total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
+          }));
+        }
         switch (event.kind) {
           case "ApprovalRequest":
             if (runId === activeIdRef.current) setStatus("Awaiting approval...");
@@ -507,6 +509,10 @@ function useDesktopStore() {
     setCurrentView("settings");
   }, [checkForUpdates]);
 
+  const openObservability = useCallback(() => {
+    setCurrentView("observability");
+  }, []);
+
   const saveSettings = useCallback(
     async (keys: Record<string, string>) => {
       try {
@@ -572,6 +578,7 @@ function useDesktopStore() {
     restartBackend,
     currentView,
     openSettings,
+    openObservability,
     setCurrentView,
     saveSettings,
     getConfig: () => api.getConfig(),
@@ -592,6 +599,7 @@ function useDesktopStore() {
     resetAllSnippets,
     setStatus,
     setError,
+    tokenUsage,
   };
 }
 

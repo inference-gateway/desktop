@@ -1,7 +1,7 @@
 //! YAML test specification.
 //!
 //! A test file has a `name`, an optional `cleanup` list (paths relative to
-//! src-tauri/, the infer child's cwd, deleted before and after the run), and
+//! the repo root, the infer child's cwd, deleted before and after the run), and
 //! a list of steps. Steps are either a bare verb (`- new_chat`) or a
 //! single-key map (`- send: "..."`).
 

@@ -2,7 +2,7 @@ import { useDesktop } from "@/store";
 import { ChatList } from "./ChatList";
 
 export function Sidebar() {
-  const { newChat, setCurrentView } = useDesktop();
+  const { newChat } = useDesktop();
   return (
     <aside
       id="sidebar"
@@ -13,12 +13,6 @@ export function Sidebar() {
         className="rounded-md bg-primary px-3 py-[0.55rem] text-[0.85rem] font-medium text-primary-foreground hover:bg-primary-hover"
       >
         + New chat
-      </button>
-      <button
-        onClick={() => setCurrentView("settings")}
-        className="rounded-md px-3 py-[0.55rem] text-[0.85rem] font-medium text-left hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Settings
       </button>
       <ChatList />
     </aside>

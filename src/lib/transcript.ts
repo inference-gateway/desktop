@@ -130,6 +130,8 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     }
     case "Done":
       return { ...finalizeTools(state), typing: false, currentAssistantId: null };
+    case "TokenUsage":
+      return state;
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
