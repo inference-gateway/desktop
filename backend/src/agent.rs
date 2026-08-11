@@ -631,7 +631,6 @@ pub(crate) fn save_image(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> {
-    // Map MIME type to file extension.
     let ext = match mime.as_str() {
         "image/png" => "png",
         "image/jpeg" => "jpg",

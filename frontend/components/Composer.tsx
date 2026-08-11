@@ -53,7 +53,6 @@ export function Composer() {
       const el = composerRef.current;
       if (!el) return;
       const text = el.value.trim();
-      // Save each image to disk via the Tauri command.
       const paths: string[] = [];
       for (const img of pending) {
         try {
@@ -65,7 +64,6 @@ export function Composer() {
           return;
         }
       }
-      // Prepend image references to the prompt text.
       const refs = paths.map((p) => `[Attached image: ${p}]`).join("\n");
       el.value = text ? `${refs}\n\n${text}` : refs;
       autoGrow(el);
