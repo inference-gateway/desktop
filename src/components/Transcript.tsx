@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { renderMarkdown } from "@/lib/markdown";
@@ -8,10 +9,15 @@ import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { TranscriptItem } from "@/lib/transcript";
 
-const BUBBLE = "max-w-[min(72ch,82%)] rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
+const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
 function UserBubble({ text }: { text: string }) {
-  return <div className={cn(BUBBLE, "self-end rounded-br-[4px] bg-user text-user-foreground")}>{text}</div>;
+  return (
+        <div className="flex max-w-[min(72ch,82%)] flex-col items-end gap-1 self-end">
+          <div className={cn(BUBBLE, "rounded-br-[4px] bg-user text-user-foreground")}>{text}</div>
+          <CopyButton text={text} />
+        </div>
+  );
 }
 
 function AssistantBubble({ chunks }: { chunks: string[] }) {
@@ -26,12 +32,16 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
   if (chunks.length === 0) return null;
   // Chunks are streamed content deltas; join before rendering so markdown
   // parses as one document instead of fragmenting per token.
+  const merged = chunks.join("");
   return (
-    <div
-      ref={ref}
-      className={cn(BUBBLE, "md self-start rounded-bl-[4px] bg-assistant text-assistant-foreground")}
-      dangerouslySetInnerHTML={{ __html: renderMarkdown(chunks.join("")) }}
-    />
+    <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
+      <div
+        ref={ref}
+        className={cn(BUBBLE, "md rounded-bl-[4px] bg-assistant text-assistant-foreground")}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(merged) }}
+      />
+      <CopyButton text={merged} />
+    </div>
   );
 }
 
@@ -50,27 +60,30 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
   const failed = item.state === "failed";
   const pre = [prettyJson(item.args), item.output ?? ""].filter(Boolean).join("\n\n");
   return (
-    <details
-      className={cn(
-        "disclosure max-w-[min(72ch,82%)] self-start overflow-hidden rounded-md border border-l-[3px] font-mono text-[0.82rem]",
-        failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg"
-      )}
-    >
-      <summary className="overflow-hidden text-ellipsis whitespace-nowrap px-[0.65rem] py-[0.35rem]">
-        <span className={cn("font-bold", failed ? "text-err" : "text-tool")}>{item.name}</span>
-        <span className="ml-[0.4rem] text-muted-foreground">{item.args}</span>
-        {item.state === "running" && <span className="ml-[0.4rem] animate-pulse text-muted-foreground">…</span>}
-      </summary>
-      {item.skeleton && item.state === "running" && <div className="image-skeleton mx-[0.65rem]" />}
-      <pre
+    <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
+      <details
         className={cn(
-          "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
-          failed ? "bg-err-bg" : "bg-tool-bg"
+          "disclosure overflow-hidden rounded-md border border-l-[3px] font-mono text-[0.82rem]",
+          failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg"
         )}
       >
-        {pre}
-      </pre>
-    </details>
+        <summary className="overflow-hidden text-ellipsis whitespace-nowrap px-[0.65rem] py-[0.35rem]">
+          <span className={cn("font-bold", failed ? "text-err" : "text-tool")}>{item.name}</span>
+          <span className="ml-[0.4rem] text-muted-foreground">{item.args}</span>
+          {item.state === "running" && <span className="ml-[0.4rem] animate-pulse text-muted-foreground">…</span>}
+        </summary>
+        {item.skeleton && item.state === "running" && <div className="image-skeleton mx-[0.65rem]" />}
+        <pre
+          className={cn(
+                "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
+                failed ? "bg-err-bg" : "bg-tool-bg"
+          )}
+        >
+          {pre}
+        </pre>
+      </details>
+      <CopyButton text={pre} />
+    </div>
   );
 }
 
