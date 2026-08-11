@@ -270,7 +270,7 @@ pub(crate) struct SttStatus {
     hint: String,
 }
 
-/// Whether STT is usable and, if not, why — so the frontend can grey the mic and
+/// Whether STT is usable and, if not, why - so the frontend can grey the mic and
 /// show the right tooltip.
 #[tauri::command]
 pub(crate) async fn stt_status() -> Result<SttStatus, String> {
