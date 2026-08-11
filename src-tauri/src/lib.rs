@@ -634,27 +634,27 @@ impl AgentParser {
             "RUN_FINISHED" => {
                 self.flush_message();
                 let stats = val.get("stats");
-                let i = stats
+                let input = stats
                     .and_then(|s| s.get("inputTokens"))
                     .map(json_val_i64)
                     .unwrap_or(0);
-                let o = stats
+                let output = stats
                     .and_then(|s| s.get("outputTokens"))
                     .map(json_val_i64)
                     .unwrap_or(0);
-                let c = stats
+                let cached = stats
                     .and_then(|s| s.get("cacheReadTokens"))
                     .map(json_val_i64)
                     .unwrap_or(0);
-                let t = stats
+                let tools = stats
                     .and_then(|s| s.get("totalToolCalls"))
                     .map(json_val_i64)
                     .unwrap_or(0);
                 Some(AgentEvent::TokenUsage {
-                    input: i,
-                    output: o,
-                    cached_read: c,
-                    total_tool_calls: t,
+                    input,
+                    output,
+                    cached_read: cached,
+                    total_tool_calls: tools,
                 })
             }
             "RUN_ERROR" => {
@@ -2086,6 +2086,8 @@ async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
 // ponytail: stdlib TCP listener, no server framework. JSON-only OTLP receiver.
 // Add protobuf support if the CLI/gateway cannot be configured to use
 // OTEL_EXPORTER_OTLP_PROTOCOL=http/json.
+// ponytail: detached collector thread lives for the app lifetime, no shutdown signal.
+// Add a CancellationToken if the collector ever blocks app exit cleanly.
 
 const COLLECTOR_PORT: u16 = 4318;
 const MAX_SPANS: usize = 5000;
@@ -2227,7 +2229,8 @@ fn handle_otlp_request(
     stream: &mut std::net::TcpStream,
     storage: &Arc<Mutex<VecDeque<StoredSpan>>>,
 ) {
-    use std::io::{Read, Write};
+    // ponytail: 64KB stack buffer, enough for any single OTLP export.
+    // Upgrade to a heap-allocated Vec if spans routinely exceed 64KB.
     let mut buf = [0u8; 65536];
     let mut offset = 0;
     // Read until headers end (double CRLF), or buffer full.
