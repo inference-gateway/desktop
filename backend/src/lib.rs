@@ -65,6 +65,7 @@ pub fn run() {
             agent::read_history,
             agent::append_history,
             agent::save_image,
+            agent::save_upload,
             observability::get_traces,
             observability::get_metrics,
         ])

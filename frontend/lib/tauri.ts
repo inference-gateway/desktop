@@ -122,6 +122,8 @@ export const api = {
   readProjects: () => invoke<string>("read_projects"),
   writeProjects: (data: string) => invoke<void>("write_projects", { data }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
+  saveUpload: (data: string, mime: string) =>
+        invoke<string>("save_upload", { data, mime }),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
   getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),

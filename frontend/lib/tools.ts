@@ -35,7 +35,7 @@ export function parseToolResult(content: string): ParsedToolResult | null {
       args: JSON.stringify(result.arguments ?? {}),
       output,
       failed: result.success === false,
-      imagePath: data?.path || data?.source || null,
+      imagePath: data?.path || null,
     };
   } catch {
     return null;

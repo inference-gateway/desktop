@@ -122,6 +122,13 @@ pub(crate) fn agent_cwd() -> PathBuf {
     resolve_agent_cwd(std::env::current_dir().ok(), home_dir())
 }
 
+/// Directory for user-uploaded/pasted images, created on first access.
+pub(crate) fn uploads_dir() -> PathBuf {
+    let dir = home_dir().join(".infer").join("uploads");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
