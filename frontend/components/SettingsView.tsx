@@ -414,6 +414,12 @@ function GeneralTab() {
                 setDirty(true);
                 setSaved(false);
                 setError("");
+                // Start/stop daemon immediately so the toggle has an effect
+                if (e.target.checked) {
+                      api.startScheduler().catch(console.error);
+                } else {
+                      api.stopScheduler().catch(console.error);
+                }
               }}
               className="h-4 w-4 accent-primary"
             />

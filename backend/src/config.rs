@@ -425,6 +425,7 @@ mod tests {
         assert_eq!(cfg.redis_port, "6379");
         assert_eq!(cfg.redis_db, "0");
         assert_eq!(cfg.d1_base_url, "https://api.cloudflare.com/client/v4");
+        assert!(!cfg.schedule_enabled);
     }
 
     #[test]
@@ -480,6 +481,13 @@ mod tests {
         assert_eq!(str_field(&val, &["gateway", "url"]), Some("http://gw"));
         assert!(val.get("default_model").is_none());
         assert!(val.get("prompts").is_none());
+        assert_eq!(
+            val.get("tools")
+                .and_then(|t| t.get("schedule"))
+                .and_then(|s| s.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 
     #[test]

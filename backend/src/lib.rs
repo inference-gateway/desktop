@@ -20,7 +20,7 @@ pub(crate) struct AppState {
     child_stdins: Mutex<std::collections::HashMap<String, std::process::ChildStdin>>,
     gateway_child: Mutex<Option<std::process::Child>>,
     scheduler_child: Mutex<Option<std::process::Child>>,
-    scheduler_log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    scheduler_log: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
 }
@@ -37,7 +37,7 @@ pub fn run() {
             child_stdins: Mutex::new(std::collections::HashMap::new()),
             gateway_child: Mutex::new(None),
             scheduler_child: Mutex::new(None),
-            scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
             stored_traces,
             stored_metrics,
         })
