@@ -1,0 +1,254 @@
+use crate::config::auth_env;
+use std::path::{Path, PathBuf};
+
+/// Map the running platform to the CLI release asset name.
+/// Returns `None` for unsupported platforms.
+pub(crate) fn asset_name() -> Option<&'static str> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    match (os, arch) {
+        ("linux", "x86_64") => Some("infer-linux-amd64"),
+        ("linux", "aarch64") => Some("infer-linux-arm64"),
+        ("macos", "x86_64") => Some("infer-darwin-amd64"),
+        ("macos", "aarch64") => Some("infer-darwin-arm64"),
+        ("windows", "x86_64") => Some("infer-windows-amd64"),
+        ("windows", "aarch64") => Some("infer-windows-arm64"),
+        _ => None,
+    }
+}
+
+pub(crate) fn binary_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "infer.exe"
+    } else {
+        "infer"
+    }
+}
+
+pub(crate) fn home_dir() -> PathBuf {
+    #[cfg(unix)]
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    #[cfg(windows)]
+    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".into());
+    PathBuf::from(home)
+}
+
+/// Path of the infer binary to spawn. INFER_BIN overrides the installed one
+/// so test harnesses can point at a specific build without touching
+/// ~/.infer/bin.
+pub(crate) fn infer_bin_path() -> PathBuf {
+    match std::env::var("INFER_BIN") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ => home_dir().join(".infer").join("bin").join(binary_name()),
+    }
+}
+
+/// Token-free e2e testing: DESKTOP_MOCK=true skips the desktop-owned gateway,
+/// serves a canned model list, and spawns infer children with
+/// INFER_GATEWAY_MOCK=true - the CLI's own mock mode, where infer serves its
+/// embedded scenario gateway (see cli/internal/mockgateway).
+pub(crate) fn mock_mode() -> bool {
+    std::env::var("DESKTOP_MOCK").is_ok_and(|v| v == "true" || v == "1")
+}
+
+/// The Go OTLP/HTTP exporters in the CLI and gateway only speak
+/// http/protobuf (the Go SDK never implemented http/json), so the collector
+/// must accept protobuf; no protocol pin is set here.
+pub(crate) fn collector_env() -> Vec<(String, String)> {
+    vec![(
+        "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+        "http://localhost:4318/".into(),
+    )]
+}
+
+/// Extra env vars for spawned infer processes: provider keys, plus the CLI
+/// mock switch when the desktop runs in mock mode.
+pub(crate) fn infer_env() -> Vec<(String, String)> {
+    let mut env = auth_env();
+    env.extend(collector_env());
+    if mock_mode() {
+        env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
+    }
+    env
+}
+
+/// Prompt customisation env vars for the spawned agent. The CLI applies these
+/// after loading prompts.yaml, so they win over any file config: the override
+/// replaces the base system prompt, extras are appended after it
+/// (prompts.agent.custom_instructions).
+pub(crate) fn prompt_env(
+    system_prompt: Option<&str>,
+    extra_instructions: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    let mut env = Vec::new();
+    if let Some(sp) = system_prompt.filter(|s| !s.trim().is_empty()) {
+        env.push(("INFER_PROMPTS_AGENT_SYSTEM_PROMPT", sp.to_string()));
+    }
+    if let Some(ei) = extra_instructions.filter(|s| !s.trim().is_empty()) {
+        env.push(("INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS", ei.to_string()));
+    }
+    env
+}
+
+/// Append the agent's actual working directory to the custom instructions so
+/// the model states it instead of guessing (Finder launches land in $HOME).
+pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
+    let cwd_note = format!("Current working directory: {}", cwd.display());
+    match extra_instructions.filter(|s| !s.trim().is_empty()) {
+        Some(ei) => format!("{ei}\n\n{cwd_note}"),
+        None => cwd_note,
+    }
+}
+
+pub(crate) fn config_path() -> PathBuf {
+    home_dir().join(".infer").join("config.yaml")
+}
+
+/// Pure core of `agent_cwd`, split out so the fallback is testable.
+pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> PathBuf {
+    match current {
+        Some(dir) if dir.ends_with("backend") => dir.parent().map(Path::to_path_buf).unwrap_or(dir),
+        Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
+        _ => home,
+    }
+}
+
+/// Working directory for spawned infer processes. `cargo tauri dev` runs the
+/// app from backend/ regardless of where it was invoked, but agent sessions
+/// should work in the project root - one level up. Finder-launched `.app`
+/// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
+/// storage would land at `/.infer` and panic; fall back to the home dir there.
+pub(crate) fn agent_cwd() -> PathBuf {
+    resolve_agent_cwd(std::env::current_dir().ok(), home_dir())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_asset_name_mapping() {
+        assert_eq!(asset_name_for("linux", "x86_64"), Some("infer-linux-amd64"));
+        assert_eq!(
+            asset_name_for("linux", "aarch64"),
+            Some("infer-linux-arm64")
+        );
+        assert_eq!(
+            asset_name_for("macos", "x86_64"),
+            Some("infer-darwin-amd64")
+        );
+        assert_eq!(
+            asset_name_for("macos", "aarch64"),
+            Some("infer-darwin-arm64")
+        );
+        assert_eq!(
+            asset_name_for("windows", "x86_64"),
+            Some("infer-windows-amd64")
+        );
+        assert_eq!(
+            asset_name_for("windows", "aarch64"),
+            Some("infer-windows-arm64")
+        );
+
+        assert_eq!(asset_name_for("linux", "i686"), None);
+        assert_eq!(asset_name_for("freebsd", "x86_64"), None);
+    }
+
+    /// Test helper that mirrors asset_name() but takes explicit os/arch strings.
+    fn asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
+        match (os, arch) {
+            ("linux", "x86_64") => Some("infer-linux-amd64"),
+            ("linux", "aarch64") => Some("infer-linux-arm64"),
+            ("macos", "x86_64") => Some("infer-darwin-amd64"),
+            ("macos", "aarch64") => Some("infer-darwin-arm64"),
+            ("windows", "x86_64") => Some("infer-windows-amd64"),
+            ("windows", "aarch64") => Some("infer-windows-arm64"),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn test_mock_mode_parses_env() {
+        unsafe { std::env::remove_var("DESKTOP_MOCK") };
+        assert!(!mock_mode());
+        unsafe { std::env::set_var("DESKTOP_MOCK", "true") };
+        assert!(mock_mode());
+        assert!(infer_env().contains(&("INFER_GATEWAY_MOCK".to_string(), "true".to_string())));
+        unsafe { std::env::set_var("DESKTOP_MOCK", "false") };
+        assert!(!mock_mode());
+        unsafe { std::env::remove_var("DESKTOP_MOCK") };
+    }
+
+    /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a
+    /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
+
+    #[test]
+    fn test_resolve_agent_cwd_falls_back_to_home_at_root() {
+        let home = PathBuf::from("/Users/x");
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/")), home.clone()),
+            home
+        );
+        assert_eq!(resolve_agent_cwd(None, home.clone()), home);
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/tmp/work")), home.clone()),
+            PathBuf::from("/tmp/work")
+        );
+    }
+
+    #[test]
+    fn test_resolve_agent_cwd_escapes_backend() {
+        let home = PathBuf::from("/Users/x");
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/repo/desktop/backend")), home.clone()),
+            PathBuf::from("/repo/desktop")
+        );
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/repo/backend-ish")), home),
+            PathBuf::from("/repo/backend-ish")
+        );
+    }
+
+    #[test]
+    fn prompt_env_maps_override_and_extras_to_cli_env_vars() {
+        assert!(prompt_env(None, None).is_empty());
+        assert!(prompt_env(Some("  "), Some("")).is_empty());
+        assert_eq!(
+            prompt_env(None, Some("be a pirate")),
+            vec![(
+                "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
+                "be a pirate".to_string()
+            )]
+        );
+        assert_eq!(
+            prompt_env(Some("full override"), Some("extras")),
+            vec![
+                (
+                    "INFER_PROMPTS_AGENT_SYSTEM_PROMPT",
+                    "full override".to_string()
+                ),
+                (
+                    "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
+                    "extras".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn compose_extras_appends_cwd_to_instructions() {
+        let cwd = Path::new("/Users/edenreich/project");
+        assert_eq!(
+            compose_extras(None, cwd),
+            "Current working directory: /Users/edenreich/project"
+        );
+        assert_eq!(
+            compose_extras(Some("  "), cwd),
+            "Current working directory: /Users/edenreich/project"
+        );
+        assert_eq!(
+            compose_extras(Some("be a pirate"), cwd),
+            "be a pirate\n\nCurrent working directory: /Users/edenreich/project"
+        );
+    }
+}
