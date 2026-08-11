@@ -17,13 +17,14 @@ import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 
-type Tab = "general" | "keys" | "prompt" | "updates" | "agents" | "snippets";
+type Tab = "general" | "keys" | "prompt" | "updates" | "agents" | "snippets" | "projects";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
   { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
+  { id: "projects", label: "Projects" },
   { id: "snippets", label: "Snippets" },
   { id: "updates", label: "Updates" },
 ];
@@ -39,8 +40,16 @@ export function SettingsView() {
     showUpdateBanner,
     statusText,
     statusError,
+    initialSettingsTab,
+    setInitialSettingsTab,
   } = useDesktop();
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab, setTab] = useState<Tab>(
+    TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general"
+  );
+
+  useEffect(() => {
+    setInitialSettingsTab("general");
+  }, [setInitialSettingsTab]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(false);
 
@@ -169,6 +178,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
+          {tab === "projects" && <ProjectsTab />}
           {tab === "snippets" && <SnippetsTab />}
           {tab === "prompt" && <SystemPromptTab />}
         </div>
@@ -598,6 +608,44 @@ function AgentsTab() {
           Add
         </Button>
       </div>
+    </>
+  );
+}
+
+function ProjectsTab() {
+  const { projectNames, projectContexts, setProjectContext } = useDesktop();
+
+  return (
+    <>
+      <h2 className="text-[1.05rem] font-semibold">Projects</h2>
+      <p className="mb-5 text-[0.8rem] text-muted-foreground">
+        Per-project context sent as extra instructions with every message in that project. Changes save automatically.
+      </p>
+      {projectNames.length === 0 ? (
+        <p className="text-[0.8rem] text-muted-foreground">
+          No projects yet. Create one from the sidebar with "New project".
+        </p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {projectNames.map((name) => (
+            <div key={name} className="rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor={`project-context-${name}`} className="text-[0.8rem] font-medium">
+                  {name}
+                </Label>
+                <textarea
+                  id={`project-context-${name}`}
+                  rows={4}
+                  value={projectContexts[name] ?? ""}
+                  onChange={(e) => setProjectContext(name, e.target.value)}
+                  placeholder="e.g. This project is about... Always use..."
+                  className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

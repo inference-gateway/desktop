@@ -1,4 +1,4 @@
-import { ArrowUp, Mic, Square } from "lucide-react";
+import { ArrowUp, Folder, Mic, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -11,7 +11,7 @@ import { useRef } from "react";
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
 
 export function Composer() {
-  const { composerRef, enabled, running, send, cancel, setStatus, setError, history } = useDesktop();
+  const { composerRef, enabled, running, send, cancel, setStatus, setError, history, activeProject, setActiveProject, currentProject } = useDesktop();
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
   const cursorRef = useRef(-1);
   const draftRef = useRef("");
@@ -57,6 +57,22 @@ export function Composer() {
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
       <TokenReadout />
+      {currentProject && (
+        <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
+          <Folder size={14} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{currentProject}</span>
+          {currentProject === activeProject && (
+            <button
+              aria-label="Leave project context"
+              title="Leave project context"
+              onClick={() => setActiveProject(null)}
+              className="inline-flex shrink-0 items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
       <div
         id="composer"
         className="mx-auto flex max-w-[52rem] items-end gap-[0.35rem] rounded-[1.6rem] border border-border-strong bg-background py-[0.35rem] pl-4 pr-[0.4rem] shadow-sm focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20"

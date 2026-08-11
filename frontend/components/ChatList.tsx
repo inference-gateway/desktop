@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, X } from "lucide-react";
+import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 
@@ -21,7 +21,8 @@ function ChatItem({ index }: { index: number }) {
       onClick={(e) => onChatClick(index, e)}
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", conv.id);
+        const ids = isSelected ? Array.from(selected) : [conv.id];
+        e.dataTransfer.setData("text/plain", JSON.stringify(ids));
         e.dataTransfer.effectAllowed = "move";
       }}
       className={cn(
@@ -89,7 +90,10 @@ function ProjectGroup({
   name,
   count,
   collapsed,
+  active,
   onToggle,
+  onSelect,
+  onSettings,
   onRename,
   onDelete,
   onDrop,
@@ -99,7 +103,10 @@ function ProjectGroup({
   name: string;
   count: number;
   collapsed: boolean;
+  active: boolean;
   onToggle: () => void;
+  onSelect: () => void;
+  onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
   onDrop: (e: DragEvent) => void;
@@ -130,16 +137,21 @@ function ProjectGroup({
       className="group/project"
     >
       <div
+        onClick={onSelect}
+        aria-label={`Select project ${name}`}
         className={cn(
-          "flex cursor-pointer items-center gap-1 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-muted-foreground hover:bg-card",
+          "flex cursor-pointer items-center gap-1 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
+          active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
         )}
       >
         <button
-          onClick={onToggle}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
-          className="inline-flex items-center gap-1 truncate"
+          className="inline-flex shrink-0 items-center"
         >
           {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        </button>
+        <span className="inline-flex min-w-0 items-center gap-1 truncate">
           {editing ? (
             <input
               value={editValue}
@@ -159,8 +171,16 @@ function ProjectGroup({
             </span>
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
-        </button>
+        </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
+          <button
+            aria-label={`Settings for project ${name}`}
+            title="Project settings"
+            onClick={(e) => { e.stopPropagation(); onSettings(); }}
+            className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+          >
+            <Settings2 size={11} />
+          </button>
           <button
             aria-label={`Rename project ${name}`}
             title="Rename"
@@ -201,6 +221,10 @@ export function ChatList() {
     renameProject,
     toggleCollapseProject,
     createProject,
+    activeProject,
+    setActiveProject,
+    setInitialSettingsTab,
+    setCurrentView,
   } = useDesktop();
 
   const [newProjectInput, setNewProjectInput] = useState(false);
@@ -221,23 +245,29 @@ export function ChatList() {
         ungrouped.push(i);
       }
     });
-    // Only show projects that have sessions (or are new with a heading)
     return {
-      projects: Object.entries(map).filter(([, indices]) => indices.length > 0),
+      projects: Object.entries(map),
       ungrouped,
     };
   }, [conversations, projects, projectNames]);
 
+  const draggedIds = (e: DragEvent): string[] => {
+    try {
+      const parsed = JSON.parse(e.dataTransfer.getData("text/plain"));
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
   const handleDropOnProject = (e: DragEvent, projectName: string) => {
     e.preventDefault();
-    const sessionId = e.dataTransfer.getData("text/plain");
-    if (sessionId) assignProject(sessionId, projectName);
+    for (const id of draggedIds(e)) assignProject(id, projectName);
   };
 
   const handleDropOnUngrouped = (e: DragEvent) => {
     e.preventDefault();
-    const sessionId = e.dataTransfer.getData("text/plain");
-    if (sessionId) unassignProject(sessionId);
+    for (const id of draggedIds(e)) unassignProject(id);
   };
 
   const handleNewProject = () => {
@@ -260,7 +290,10 @@ export function ChatList() {
               name={name}
               count={indices.length}
               collapsed={collapsed}
+              active={activeProject === name}
               onToggle={() => toggleCollapseProject(name)}
+              onSelect={() => setActiveProject(activeProject === name ? null : name)}
+              onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
               onRename={(n) => renameProject(name, n)}
               onDelete={() => deleteProject(name)}
               onDrop={(e) => handleDropOnProject(e, name)}

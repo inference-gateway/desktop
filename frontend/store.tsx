@@ -67,6 +67,10 @@ function useDesktopStore() {
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
   const [projectNames, setProjectNames] = useState<string[]>(() => []);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
+  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -147,16 +151,28 @@ function useDesktopStore() {
       const parsed = JSON.parse(raw);
       const map: Record<string, string> = {};
       const names = new Set<string>();
-      for (const [id, name] of Object.entries(parsed)) {
-            if (typeof name === "string" && name.trim()) {
-              map[id] = name;
-              names.add(name);
-            }
+      if (Array.isArray(parsed?.names)) {
+        for (const n of parsed.names) {
+          if (typeof n === "string" && n.trim()) names.add(n);
+        }
+      }
+      for (const [id, name] of Object.entries(parsed?.assignments ?? {})) {
+        if (typeof name === "string" && name.trim()) {
+          map[id] = name;
+          names.add(name);
+        }
+      }
+      const contexts: Record<string, string> = {};
+      for (const [name, ctx] of Object.entries(parsed?.contexts ?? {})) {
+        if (typeof ctx === "string" && ctx.trim()) contexts[name] = ctx;
       }
       setProjects(map);
       setProjectNames(Array.from(names));
+      setProjectContexts(contexts);
     } catch (e) {
       console.error("Failed to load projects:", e);
+    } finally {
+      setProjectsLoaded(true);
     }
   }, []);
 
@@ -300,6 +316,7 @@ function useDesktopStore() {
     async (id: string) => {
       setActiveId(id);
       activeIdRef.current = id;
+      setActiveProject(projects[id] ?? null);
       // Never overwrite a live in-memory transcript with stale on-disk history.
       if (transcripts[id]) return;
       try {
@@ -309,7 +326,7 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, dispatchTo]
+    [transcripts, projects, dispatchTo]
   );
 
   const newChat = useCallback(() => {
@@ -354,12 +371,21 @@ function useDesktopStore() {
       const list = displayConversations;
       if (e.shiftKey) {
         if (lastClickedIndex.current < 0) lastClickedIndex.current = index;
-        const start = Math.min(lastClickedIndex.current, index);
-        const end = Math.max(lastClickedIndex.current, index);
+        const order: number[] = [];
+        for (const name of projectNames) {
+          list.forEach((conv, i) => {
+            if (projects[conv.id] === name) order.push(i);
+          });
+        }
+        list.forEach((conv, i) => {
+          if (!projectNames.includes(projects[conv.id])) order.push(i);
+        });
+        const start = order.indexOf(lastClickedIndex.current);
+        const end = order.indexOf(index);
         setSelected((prev) => {
           const next = new Set(prev);
-          for (let i = start; i <= end; i++) {
-            const id = list[i]?.id;
+          for (let i = Math.min(start, end); i <= Math.max(start, end); i++) {
+            const id = list[order[i]]?.id;
             if (id) next.add(id);
           }
           return next;
@@ -382,7 +408,7 @@ function useDesktopStore() {
       lastClickedIndex.current = index;
       openConversation(list[index].id);
     },
-    [displayConversations, selected, clearSelection, openConversation]
+    [displayConversations, projects, projectNames, selected, clearSelection, openConversation]
   );
 
   const bulkDelete = useCallback(() => {
@@ -390,6 +416,18 @@ function useDesktopStore() {
     clearSelection();
     Promise.all(ids.map((id) => deleteConversation(id)));
   }, [selected, clearSelection, deleteConversation]);
+
+  useEffect(() => {
+    if (!projectsLoaded) return;
+    api
+      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts }))
+      .catch(() => {});
+  }, [projectsLoaded, projects, projectNames, projectContexts]);
+
+  const assignProject = useCallback((sessionId: string, projectName: string) => {
+    setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
+    setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
+  }, []);
 
   const send = useCallback(async () => {
     const el = composerRef.current;
@@ -405,6 +443,7 @@ function useDesktopStore() {
       return;
     }
     const runId = activeId ?? crypto.randomUUID();
+    if (!activeId && activeProject) assignProject(runId, activeProject);
     setActiveId(runId);
     activeIdRef.current = runId;
     setStatus("Running...");
@@ -452,13 +491,16 @@ function useDesktopStore() {
         }
       };
       const cfg = await api.getConfig();
+      const projectName = activeId ? projects[activeId] : activeProject;
+      const projectContext = projectName ? projectContexts[projectName] : undefined;
       await api.sendMessage({
         prompt: text,
         model,
         sessionId: runId,
         onEvent: ch,
         systemPrompt: cfg.system_prompt || undefined,
-        extraInstructions: cfg.extra_instructions || undefined,
+        extraInstructions:
+          [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
       });
       refreshConversations();
     } catch (err) {
@@ -470,7 +512,7 @@ function useDesktopStore() {
       });
       if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [activeId, runningIds, model, maxSessions, setStatus, setError, refreshConversations, dispatchTo]);
+  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -569,76 +611,49 @@ function useDesktopStore() {
     ? `${outdated.map((u) => `${u.name} ${u.latest}`).join(", ")} available - restart to update`
     : "";
 
-  const assignProject = useCallback(
-        (sessionId: string, projectName: string) => {
-          setProjects((prev) => {
-            const next = { ...prev, [sessionId]: projectName };
-            const names = new Set(Object.values(next).filter(Boolean));
-            setProjectNames(Array.from(names));
-            api.writeProjects(JSON.stringify(next)).catch(() => {});
-            return next;
-          });
-        },
-        [],
-  );
+  const unassignProject = useCallback((sessionId: string) => {
+    setProjects((prev) => {
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
 
-  const unassignProject = useCallback(
-        (sessionId: string) => {
-          setProjects((prev) => {
-            const next = { ...prev };
-            delete next[sessionId];
-            const names = new Set(Object.values(next).filter(Boolean));
-            setProjectNames(Array.from(names));
-            api.writeProjects(JSON.stringify(next)).catch(() => {});
-            return next;
-          });
-        },
-        [],
-  );
+  const createProject = useCallback((name: string) => {
+    setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+  }, []);
 
-  const createProject = useCallback(
-        (name: string) => {
-          setProjectNames((prev) => {
-            if (prev.includes(name)) return prev;
-            const next = [...prev, name];
-            api.writeProjects(JSON.stringify(projects)).catch(() => {});
-            return next;
-          });
-        },
-        [projects],
-  );
+  const deleteProject = useCallback((name: string) => {
+    setProjects((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([, p]) => p !== name))
+    );
+    setProjectNames((prev) => prev.filter((n) => n !== name));
+    setProjectContexts((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+    setActiveProject((p) => (p === name ? null : p));
+  }, []);
 
-  const deleteProject = useCallback(
-        (name: string) => {
-          setProjects((prev) => {
-            const next: Record<string, string> = {};
-            for (const [id, p] of Object.entries(prev)) {
-              if (p !== name) next[id] = p;
-            }
-            const names = new Set(Object.values(next).filter(Boolean));
-            setProjectNames(Array.from(names));
-            api.writeProjects(JSON.stringify(next)).catch(() => {});
-            return next;
-          });
-        },
-        [],
-  );
+  const renameProject = useCallback((oldName: string, newName: string) => {
+    setProjects((prev) =>
+      Object.fromEntries(Object.entries(prev).map(([id, p]) => [id, p === oldName ? newName : p]))
+    );
+    setProjectNames((prev) => prev.map((n) => (n === oldName ? newName : n)));
+    setProjectContexts((prev) => {
+      if (!(oldName in prev)) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
+    setActiveProject((p) => (p === oldName ? newName : p));
+  }, []);
 
-  const renameProject = useCallback(
-        (oldName: string, newName: string) => {
-          setProjects((prev) => {
-            const next: Record<string, string> = {};
-            for (const [id, p] of Object.entries(prev)) {
-              next[id] = p === oldName ? newName : p;
-            }
-            const names = new Set(Object.values(next).filter(Boolean));
-            setProjectNames(Array.from(names));
-            api.writeProjects(JSON.stringify(next)).catch(() => {});
-            return next;
-          });
-        },
-        [],
-  );
+  const setProjectContext = useCallback((name: string, context: string) => {
+    setProjectContexts((prev) => ({ ...prev, [name]: context }));
+  }, []);
 
   const toggleCollapseProject = useCallback((name: string) => {
         setCollapsedProjects((prev) => {
@@ -648,6 +663,8 @@ function useDesktopStore() {
           return next;
         });
   }, []);
+
+  const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
 
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
@@ -708,6 +725,13 @@ function useDesktopStore() {
     projects,
     projectNames,
     collapsedProjects,
+    activeProject,
+    setActiveProject,
+    currentProject,
+    projectContexts,
+    setProjectContext,
+    initialSettingsTab,
+    setInitialSettingsTab,
     assignProject,
     unassignProject,
     createProject,
