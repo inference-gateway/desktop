@@ -20,7 +20,7 @@ task install   # bun install (first run only)
 task dev
 ```
 
-`task dev` rebuilds the React frontend into `dist/` before launching Tauri. The frontend is not hot-reloaded - after editing `src/`, re-run `task web` (or relaunch).
+`task dev` rebuilds the React frontend into `dist/` before launching Tauri. The frontend is not hot-reloaded - after editing `frontend/`, re-run `task web` (or relaunch).
 
 The flox manifest doesn't include `cargo` or the Tauri CLI yet - add them once from the repo root with `flox install cargo cargo-tauri`.
 

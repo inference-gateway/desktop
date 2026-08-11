@@ -65,7 +65,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
         setMicPermission(st.state);
         st.onchange = () => setMicPermission(st.state);
       } catch {
-        // WebKit may not expose the microphone permission — fall back to prompt-on-use.
+        // WebKit may not expose the microphone permission - fall back to prompt-on-use.
       }
     })();
     return () => {

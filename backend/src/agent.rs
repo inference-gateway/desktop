@@ -609,9 +609,9 @@ pub(crate) fn save_image(path: String) -> Result<String, String> {
 
 // --- A2A Agent configuration ---
 // A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
-// than reimplement the CLI's agent knowledge — it auto-fills oci/run/model/env
+// than reimplement the CLI's agent knowledge - it auto-fills oci/run/model/env
 // for known agents (browser-agent, documentation-agent, ...) and distinguishes
-// local containers from external URL agents — the desktop shells out to
+// local containers from external URL agents - the desktop shells out to
 // `infer agents add|remove|list` so the two stay perfectly in sync. Keyed by
 // name (the CLI's primary key).
 

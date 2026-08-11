@@ -1,6 +1,6 @@
 import { useDesktop } from "@/store";
 
-// Native <select> (AXPopUpButton) — required by the e2e harness; do not replace
+// Native <select> (AXPopUpButton) - required by the e2e harness; do not replace
 // with a custom dropdown.
 export function ModelSelect() {
   const { models, model, setModel, enabled } = useDesktop();

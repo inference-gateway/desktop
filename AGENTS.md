@@ -34,8 +34,17 @@
     ├── tauri.conf.json
     ├── capabilities/default.json
     └── src/
-        ├── lib.rs
-        └── main.rs
+        ├── lib.rs                # Wiring only: AppState, run(), command registration
+        ├── main.rs
+        ├── agent.rs              # AG-UI parser, sessions, approvals, A2A agents
+        ├── cli_install.rs        # CLI download/install
+        ├── config.rs             # config.yaml merging + auth store
+        ├── download.rs           # Shared download + checksum helpers
+        ├── env.rs                # Paths, env composition, agent cwd
+        ├── gateway.rs            # Gateway binary + lifecycle
+        ├── observability.rs      # OTLP collector, traces/metrics
+        ├── stt.rs                # Whisper voice input
+        └── updates.rs            # CLI/gateway/desktop update checks
 ```
 
 The repository is a scaffold for agent-driven development on `inference-gateway/desktop`. It pairs a **React + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) with a **Tauri v2 / Rust** backend. Cargo commands run from `backend/` (or the workspace root with `-p inference-gateway-desktop`); the Taskfile wraps them at the repo root and builds the frontend first where needed.
@@ -68,7 +77,7 @@ The Rust build embeds the frontend from `frontendDist` (`../dist`) via `generate
 
 ## Frontend (React + TypeScript)
 
-Frontend source lives in `src/`; state is a single context store (`src/store.tsx`); the typed Tauri client and transcript state machine are in `src/lib/`.
+Frontend source lives in `frontend/`; state is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine are in `frontend/lib/`.
 
 **The e2e harness drives the real UI through the macOS accessibility tree, so the DOM contract is load-bearing** - preserve these when editing components:
 
