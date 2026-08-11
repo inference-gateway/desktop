@@ -11,7 +11,6 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
         return Ok(());
     }
 
-    // Kill any existing instance first.
     {
         let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
         if let Some(mut old) = guard.take() {
@@ -29,7 +28,6 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
         .spawn()
         .map_err(|e| format!("Failed to start scheduler: {}", e))?;
 
-    // Collect stdout/stderr into the shared log buffer.
     let log = state.scheduler_log.clone();
     if let Some(stdout) = child.stdout.take() {
         let log_clone = log.clone();
