@@ -9,7 +9,7 @@ import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { TranscriptItem } from "@/lib/transcript";
 
-const BUBBLE = "max-w-[min(72ch,82%)] rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
+const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
 function UserBubble({ text }: { text: string }) {
   return (
