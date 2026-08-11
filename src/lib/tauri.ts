@@ -79,6 +79,15 @@ export type StoredSpan = {
   service_name: string;
 };
 
+export type StoredMetric = {
+  name: string;
+  unit: string;
+  value: number;
+  count: number;
+  attributes: [string, string][];
+  time_unix_nano: number;
+};
+
 export const api = {
   checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false) =>
     invoke<void>("check_and_install_cli", { onEvent, force }),
@@ -112,6 +121,7 @@ export const api = {
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
+  getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
