@@ -121,16 +121,19 @@ fn config_path() -> PathBuf {
 /// Pure core of `agent_cwd`, split out so the fallback is testable.
 fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> PathBuf {
     match current {
+        Some(dir) if dir.ends_with("src-tauri") => {
+            dir.parent().map(Path::to_path_buf).unwrap_or(dir)
+        }
         Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
         _ => home,
     }
 }
 
-/// Working directory for spawned infer processes. Finder-launched `.app`
+/// Working directory for spawned infer processes. `cargo tauri dev` runs the
+/// app from src-tauri/ regardless of where it was invoked, but agent sessions
+/// should work in the project root - one level up. Finder-launched `.app`
 /// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
-/// storage lands at `/.infer` and panics. Fall back to the home dir there,
-/// while keeping the real cwd in dev (where e2e expects tool paths under
-/// src-tauri/).
+/// storage would land at `/.infer` and panic; fall back to the home dir there.
 fn agent_cwd() -> PathBuf {
     resolve_agent_cwd(std::env::current_dir().ok(), home_dir())
 }
@@ -3346,6 +3349,19 @@ mod tests {
         assert_eq!(
             resolve_agent_cwd(Some(PathBuf::from("/tmp/work")), home.clone()),
             PathBuf::from("/tmp/work")
+        );
+    }
+
+    #[test]
+    fn test_resolve_agent_cwd_escapes_src_tauri() {
+        let home = PathBuf::from("/Users/x");
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/repo/desktop/src-tauri")), home.clone()),
+            PathBuf::from("/repo/desktop")
+        );
+        assert_eq!(
+            resolve_agent_cwd(Some(PathBuf::from("/repo/src-tauri-ish")), home),
+            PathBuf::from("/repo/src-tauri-ish")
         );
     }
 
