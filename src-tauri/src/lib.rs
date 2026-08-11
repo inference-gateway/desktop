@@ -76,10 +76,13 @@ fn mock_mode() -> bool {
 }
 
 fn collector_env() -> Vec<(String, String)> {
-    vec![(
-        "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
-        "http://localhost:4318/".into(),
-    )]
+    vec![
+        (
+            "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+            "http://localhost:4318/".into(),
+        ),
+        ("OTEL_EXPORTER_OTLP_PROTOCOL".into(), "http/json".into()),
+    ]
 }
 
 /// Extra env vars for spawned infer processes: provider keys, plus the CLI
@@ -2231,6 +2234,7 @@ fn handle_otlp_request(
 ) {
     // ponytail: 64KB stack buffer, enough for any single OTLP export.
     // Upgrade to a heap-allocated Vec if spans routinely exceed 64KB.
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let mut buf = [0u8; 65536];
     let mut offset = 0;
     // Read until headers end (double CRLF), or buffer full.
@@ -2303,13 +2307,9 @@ fn start_collector(storage: Arc<Mutex<VecDeque<StoredSpan>>>) -> std::thread::Jo
                 return;
             }
         };
-        let _ = listener.set_nonblocking(true);
         for stream in listener.incoming() {
             match stream {
                 Ok(mut stream) => handle_otlp_request(&mut stream, &storage),
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
                 Err(e) => {
                     eprintln!("desktop: OTLP collector accept error: {}", e);
                     break;
