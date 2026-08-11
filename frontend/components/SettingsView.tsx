@@ -394,14 +394,14 @@ function GeneralTab() {
         </select>
       </div>
 
-      {/* Scheduling */}
+      {/* Channels daemon (message listener, not cron) */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Scheduling</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-            Run <code className="rounded bg-secondary px-1">infer channels-manager</code> as a local daemon for
-            cron-triggered agent jobs (e.g. daily briefings, reminders). Requires{" "}
+            Run <code className="rounded bg-secondary px-1">infer channels-manager</code> as a local daemon that
+            listens on your configured channels (e.g. Telegram, Discord) and fires an agent
+            job per incoming message. Requires{" "}
             <code className="rounded bg-secondary px-1">tools.schedule.enabled: true</code> in config.
-            The daemon runs while the app is open and stops on quit. For jobs while the laptop is
-            closed, see remote scheduling (Phase 2).
+            The daemon runs while the app is open and stops on quit.
       </p>
       <div className="mb-3 flex items-center gap-3">
             <input
