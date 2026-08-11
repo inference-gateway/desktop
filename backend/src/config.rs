@@ -185,11 +185,11 @@ pub(crate) fn config_from_value(
         extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
         system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
         schedule_enabled: val
-                .get("tools")
-                .and_then(|t| t.get("schedule"))
-                .and_then(|s| s.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
+            .get("tools")
+            .and_then(|t| t.get("schedule"))
+            .and_then(|s| s.get("enabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     }
 }
 
@@ -312,16 +312,14 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
     map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
 
     let tools = map
-            .entry("tools".into())
-            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+        .entry("tools".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
     if let Some(tmap) = tools.as_mapping_mut() {
-            set_section(
-                tmap,
-                "schedule",
-                vec![
-                    ("enabled", cfg.schedule_enabled.into()),
-                ],
-            );
+        set_section(
+            tmap,
+            "schedule",
+            vec![("enabled", cfg.schedule_enabled.into())],
+        );
     }
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())

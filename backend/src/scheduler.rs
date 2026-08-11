@@ -6,9 +6,7 @@ use std::io::BufRead;
 const MAX_LOG: usize = 200;
 
 #[tauri::command]
-pub(crate) async fn start_scheduler(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
     if mock_mode() {
         return Ok(());
     }
@@ -65,9 +63,7 @@ pub(crate) async fn start_scheduler(
 }
 
 #[tauri::command]
-pub(crate) async fn stop_scheduler(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+pub(crate) async fn stop_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
     if let Some(mut child) = guard.take() {
         let _ = child.kill();

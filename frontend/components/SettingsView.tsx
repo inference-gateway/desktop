@@ -776,6 +776,7 @@ function SystemPromptTab() {
     d1_base_url: "https://api.cloudflare.com/client/v4",
     extra_instructions: "",
     system_prompt: "",
+    schedule_enabled: false,
   });
   const [overrideEnabled, setOverrideEnabled] = useState(false);
   const [showOverrideWarning, setShowOverrideWarning] = useState(false);
@@ -930,7 +931,7 @@ function SchedulerLogView() {
   const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
-api.getSchedulerStatus().then(setRunning).catch(() => {});
+        api.getSchedulerStatus().then(setRunning).catch(() => {});
   }, []);
 
   const refreshLog = useCallback(async () => {
@@ -940,64 +941,64 @@ try {
   }, []);
 
   useEffect(() => {
-if (!open) return;
-refreshLog();
-const t = setInterval(refreshLog, 3000);
-return () => clearInterval(t);
+        if (!open) return;
+        refreshLog();
+        const t = setInterval(refreshLog, 3000);
+        return () => clearInterval(t);
   }, [open, refreshLog]);
 
   const toggleScheduler = useCallback(async () => {
-setToggling(true);
-try {
-  if (running) {
-    await api.stopScheduler();
-    setRunning(false);
-  } else {
-    await api.startScheduler();
-    setRunning(true);
-  }
-} catch (e) {
-  console.error("Failed to toggle scheduler:", e);
-} finally {
-  setToggling(false);
-}
+    setToggling(true);
+    try {
+          if (running) {
+            await api.stopScheduler();
+            setRunning(false);
+          } else {
+            await api.startScheduler();
+            setRunning(true);
+          }
+    } catch (e) {
+          console.error("Failed to toggle scheduler:", e);
+    } finally {
+          setToggling(false);
+    }
   }, [running]);
 
   return (
-<div className="mb-3 rounded-md border border-border bg-card">
-  <button
-    onClick={() => setOpen(!open)}
-    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-medium text-muted-foreground hover:text-foreground"
-  >
-    <span className="flex-1">Scheduler daemon</span>
-    {running ? (
-      <span className="flex items-center gap-1 text-emerald-500">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        Running
-      </span>
-    ) : (
-      <span className="text-muted-foreground">Stopped</span>
-    )}
-  </button>
-  {open && (
-    <div className="border-t border-border px-3 pb-3 pt-2">
-      <div className="mb-2 flex items-center gap-2">
-        <Button size="xs" variant={running ? "destructive" : "default"} onClick={toggleScheduler} disabled={toggling}>
-              {toggling ? "..." : running ? "Stop" : "Start"}
-        </Button>
-        <Button size="xs" variant="outline" onClick={refreshLog} disabled={!running}>
-              Refresh
-        </Button>
-      </div>
-      <div className="max-h-[200px] overflow-y-auto rounded bg-secondary p-2 font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
-        {log.length === 0 ? (
-              <span className="italic">No log entries yet.</span>
+    <div className="mb-3 rounded-md border border-border bg-card">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-medium text-muted-foreground hover:text-foreground"
+      >
+        <span className="flex-1">Scheduler daemon</span>
+        {running ? (
+              <span className="flex items-center gap-1 text-emerald-500">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Running
+              </span>
         ) : (
-              log.map((line, i) => <div key={i}>{line}</div>)
+              <span className="text-muted-foreground">Stopped</span>
         )}
-      </div>
+      </button>
+      {open && (
+        <div className="border-t border-border px-3 pb-3 pt-2">
+              <div className="mb-2 flex items-center gap-2">
+                <Button size="xs" variant={running ? "destructive" : "default"} onClick={toggleScheduler} disabled={toggling}>
+              {toggling ? "..." : running ? "Stop" : "Start"}
+                </Button>
+                <Button size="xs" variant="outline" onClick={refreshLog} disabled={!running}>
+              Refresh
+                </Button>
+              </div>
+              <div className="max-h-[200px] overflow-y-auto rounded bg-secondary p-2 font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
+                {log.length === 0 ? (
+              <span className="italic">No log entries yet.</span>
+                ) : (
+              log.map((line, i) => <div key={i}>{line}</div>)
+                )}
+              </div>
+        </div>
+      )}
     </div>
-  )}
-</div>
   );
 }
