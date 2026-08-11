@@ -1,4 +1,5 @@
-import { Eye, RotateCw, Settings } from "lucide-react";
+import { ChartColumn, RotateCw, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
@@ -22,31 +23,37 @@ export function TopBar() {
       )}
       <div id="model-controls" className="ml-auto flex items-center gap-2">
         <ModelSelect />
-        <button
+        <Button
+          variant="ghost"
+          size="icon-sm"
           title="Restart CLI"
           aria-label="Restart CLI"
           onClick={() => restartBackend(false)}
-          className="inline-flex items-center justify-center rounded-md p-[0.35rem] text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className="text-muted-foreground"
         >
           <RotateCw size={16} />
-        </button>
+        </Button>
       </div>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-sm"
         title="Observability"
         aria-label="Observability"
         onClick={openObservability}
-        className="inline-flex items-center justify-center rounded-md p-[0.35rem] text-muted-foreground hover:bg-secondary hover:text-foreground"
+        className="text-muted-foreground"
       >
-        <Eye size={16} />
-      </button>
-      <button
+        <ChartColumn size={16} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
         title="Settings"
         aria-label="Settings"
         onClick={openSettings}
-        className="inline-flex items-center justify-center rounded-md p-[0.35rem] text-muted-foreground hover:bg-secondary hover:text-foreground"
+        className="text-muted-foreground"
       >
         <Settings size={16} />
-      </button>
+      </Button>
     </header>
   );
 }
