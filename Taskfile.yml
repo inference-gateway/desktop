@@ -21,28 +21,32 @@ tasks:
 
   web:
     desc: Build the React frontend into dist/ (embedded by the Rust build)
-    deps: [install]
+    deps:
+      - install
     cmds:
       - bun run build
 
   build:
     desc: Build the project
     dir: src-tauri
-    deps: [web]
+    deps:
+      - web
     cmds:
       - cargo build
 
   test:
     desc: Run all tests
     dir: src-tauri
-    deps: [web]
+    deps:
+      - web
     cmds:
       - cargo test
 
   clippy:
     desc: Lint and format check
     dir: src-tauri
-    deps: [web]
+    deps:
+      - web
     cmds:
       - cargo fmt --check
       - cargo clippy -- -D warnings
@@ -50,25 +54,25 @@ tasks:
   check:
     desc: Typecheck (no codegen)
     dir: src-tauri
-    deps: [web]
+    deps:
+      - web
     cmds:
       - cargo check
 
   dev:
     desc: Start the app (rebuilds the frontend via beforeDevCommand)
-    dir: src-tauri
-    deps: [install]
+    deps:
+      - install
     cmds:
       - cargo tauri dev
 
   e2e:
     desc: Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/)
     dir: e2e
-    deps: [web]
+    deps:
+      - web
     preconditions:
       - sh: '[ "$(uname)" = "Darwin" ]'
         msg: 'e2e harness is macOS-only (drives the app via the accessibility tree)'
     cmds:
-      # debug profile on purpose: the pinned Rust 1.95 toolchain miscompiles
-      # this crate in release mode on macOS (SIGSEGV in str::replace)
       - cargo run -- {{.CLI_ARGS}}

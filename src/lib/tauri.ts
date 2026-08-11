@@ -21,6 +21,7 @@ export type AgentEvent =
   | { kind: "AgentError"; message: string }
   | { kind: "RawLine"; line: string }
   | { kind: "Done"; exit_code: number; stderr: string }
+  | { kind: "TokenUsage"; input: number; output: number; cached_read: number; total_tool_calls: number }
   | { kind: "Cancelled" };
 
 export type ProgressEvent =
@@ -65,6 +66,28 @@ export type HistoryLine = {
   reasoning_content?: string | null;
 };
 
+export type StoredSpan = {
+  trace_id: string;
+  span_id: string;
+  parent_span_id: string;
+  name: string;
+  kind: number;
+  start_time_unix_nano: number;
+  end_time_unix_nano: number;
+  attributes: [string, string][];
+  status_code: number;
+  service_name: string;
+};
+
+export type StoredMetric = {
+  name: string;
+  unit: string;
+  value: number;
+  count: number;
+  attributes: [string, string][];
+  time_unix_nano: number;
+};
+
 export const api = {
   checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false) =>
     invoke<void>("check_and_install_cli", { onEvent, force }),
@@ -97,6 +120,8 @@ export const api = {
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
+  getTraces: () => invoke<StoredSpan[]>("get_traces"),
+  getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),

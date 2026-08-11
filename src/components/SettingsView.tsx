@@ -440,7 +440,6 @@ function AgentsTab() {
 
   useEffect(() => {
     loadAgents();
-    // ponytail: fetch catalog on tab open — small CDN-cached file; cache only if it drags.
     fetchAgentCatalog()
       .then(setCatalog)
       .catch((e) => {
@@ -454,8 +453,6 @@ function AgentsTab() {
   const catalogNames = useMemo(() => new Set(catalog.map((c) => c.name)), [catalog]);
   const remoteAgents = useMemo(() => agents.filter((a) => !catalogNames.has(a.name)), [agents, catalogNames]);
 
-  // ponytail: register by name only — the CLI (agent_defaults.go) assigns each known agent a
-  // collision-free host port; passing a URL would override that onto the gateway's own :8080.
   const toggleLocal = async (c: CatalogAgent) => {
     try {
       if (configured.has(c.name)) await api.removeA2aAgent(c.name);

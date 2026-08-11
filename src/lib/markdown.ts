@@ -11,9 +11,8 @@ export function normalizeImageUrls(text: string): string {
   return text.replace(BARE_IMAGE, (url) => `![](${url})`);
 }
 
-// ponytail: each chunk renders as its own markdown doc. Ceiling: a code fence
-// split across two stream events renders wrong — accumulate full text before
-// parsing only if that shows up.
+// Ceiling: a code fence split across two stream events renders
+// wrong - accumulate full text before parsing only if that shows up.
 export function renderMarkdown(text: string): string {
   return md.render(normalizeImageUrls(text));
 }
