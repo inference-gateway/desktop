@@ -44,6 +44,8 @@ pub fn run() {
             agent::list_conversations,
             agent::get_conversation,
             agent::delete_conversation,
+            agent::read_projects,
+            agent::write_projects,
             agent::list_models,
             config::get_auth,
             config::set_auth,

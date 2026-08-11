@@ -1,6 +1,7 @@
 import { useDesktop } from "@/store";
 import { ChatList } from "./ChatList";
 
+/** Prompt to create a new project shown below the chat list */
 export function Sidebar() {
   const { newChat } = useDesktop();
   return (

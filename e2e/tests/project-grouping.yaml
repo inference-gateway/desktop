@@ -1,0 +1,11 @@
+name: project grouping - create project and assign session
+steps:
+  - new_chat
+  - send: "create a file named project-test.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "The file was written.", timeout: 15 }
+  - wait_for: { button: "+ New chat", timeout: 10 }
+  - keypress: "n"
+  - send: "what is 2+2?"
+  - wait_for: { text: "Done.", timeout: 30 }

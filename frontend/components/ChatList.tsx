@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useMemo, useState, type DragEvent } from "react";
+import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 
@@ -19,6 +19,12 @@ function ChatItem({ index }: { index: number }) {
       title={conv.title || conv.id}
       aria-selected={isSelected || undefined}
       onClick={(e) => onChatClick(index, e)}
+      draggable
+      onDragStart={(e) => {
+        const ids = isSelected ? Array.from(selected) : [conv.id];
+        e.dataTransfer.setData("text/plain", JSON.stringify(ids));
+        e.dataTransfer.effectAllowed = "move";
+      }}
       className={cn(
         "group flex cursor-pointer items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.83rem] text-muted-foreground hover:bg-card hover:text-foreground",
         isActive && "bg-card font-medium text-foreground shadow-[inset_3px_0_0_var(--primary)]",
@@ -80,15 +86,278 @@ function BulkDeleteBar({ count, onDelete }: { count: number; onDelete: () => voi
   );
 }
 
+function ProjectGroup({
+  name,
+  count,
+  collapsed,
+  active,
+  onToggle,
+  onSelect,
+  onSettings,
+  onRename,
+  onDelete,
+  onDrop,
+  onDragOverProject,
+  children,
+}: {
+  name: string;
+  count: number;
+  collapsed: boolean;
+  active: boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onSettings: () => void;
+  onRename: (newName: string) => void;
+  onDelete: () => void;
+  onDrop: (e: DragEvent) => void;
+  onDragOverProject: (over: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(name);
+
+  const handleSubmit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== name) onRename(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOverProject(true);
+      }}
+      onDragLeave={() => onDragOverProject(false)}
+      onDrop={(e) => {
+        onDrop(e);
+        onDragOverProject(false);
+      }}
+      className="group/project"
+    >
+      <div
+        onClick={onSelect}
+        aria-label={`Select project ${name}`}
+        className={cn(
+          "flex cursor-pointer items-center gap-1 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
+          active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
+        )}
+      >
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
+          className="inline-flex shrink-0 items-center"
+        >
+          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        </button>
+        <span className="inline-flex min-w-0 items-center gap-1 truncate">
+          {editing ? (
+            <input
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleSubmit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmit();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              autoFocus
+              className="w-full bg-transparent text-foreground outline-none"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); setEditValue(name); }}>
+              {name}
+            </span>
+          )}
+          <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+        </span>
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
+          <button
+            aria-label={`Settings for project ${name}`}
+            title="Project settings"
+            onClick={(e) => { e.stopPropagation(); onSettings(); }}
+            className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+          >
+            <Settings2 size={11} />
+          </button>
+          <button
+            aria-label={`Rename project ${name}`}
+            title="Rename"
+            onClick={(e) => { e.stopPropagation(); setEditing(true); setEditValue(name); }}
+            className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            aria-label={`Delete project ${name}`}
+            title="Delete project"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-destructive"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+      {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
+    </div>
+  );
+}
+
 export function ChatList() {
-  const { conversations, selected, bulkDelete } = useDesktop();
+  const {
+    conversations,
+    selected,
+    projects,
+    projectNames,
+    collapsedProjects,
+    bulkDelete,
+    assignProject,
+    unassignProject,
+    deleteProject,
+    renameProject,
+    toggleCollapseProject,
+    createProject,
+    activeProject,
+    setActiveProject,
+    setInitialSettingsTab,
+    setCurrentView,
+  } = useDesktop();
+
+  const [newProjectInput, setNewProjectInput] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
+
+  const groups = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    for (const name of projectNames) {
+      map[name] = [];
+    }
+    const ungrouped: number[] = [];
+    conversations.forEach((conv, i) => {
+      const p = projects[conv.id];
+      if (p && map[p]) {
+        map[p].push(i);
+      } else {
+        ungrouped.push(i);
+      }
+    });
+    return {
+      projects: Object.entries(map),
+      ungrouped,
+    };
+  }, [conversations, projects, projectNames]);
+
+  const draggedIds = (e: DragEvent): string[] => {
+    try {
+      const parsed = JSON.parse(e.dataTransfer.getData("text/plain"));
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const handleDropOnProject = (e: DragEvent, projectName: string) => {
+    e.preventDefault();
+    for (const id of draggedIds(e)) assignProject(id, projectName);
+  };
+
+  const handleDropOnUngrouped = (e: DragEvent) => {
+    e.preventDefault();
+    for (const id of draggedIds(e)) unassignProject(id);
+  };
+
+  const handleNewProject = () => {
+    const trimmed = newProjectName.trim();
+    if (trimmed) {
+      createProject(trimmed);
+      setNewProjectInput(false);
+      setNewProjectName("");
+    }
+  };
+
   return (
     <>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto">
-        {conversations.map((c, i) => (
-          <ChatItem key={c.id} index={i} />
-        ))}
+        {groups.projects.map(([name, indices]) => {
+          const collapsed = collapsedProjects.has(name);
+          return (
+            <ProjectGroup
+              key={name}
+              name={name}
+              count={indices.length}
+              collapsed={collapsed}
+              active={activeProject === name}
+              onToggle={() => toggleCollapseProject(name)}
+              onSelect={() => setActiveProject(activeProject === name ? null : name)}
+              onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
+              onRename={(n) => renameProject(name, n)}
+              onDelete={() => deleteProject(name)}
+              onDrop={(e) => handleDropOnProject(e, name)}
+              onDragOverProject={() => {}}
+            >
+              {indices.map((i) => (
+                <ChatItem key={conversations[i]?.id ?? i} index={i} />
+              ))}
+            </ProjectGroup>
+          );
+        })}
+
+        {groups.ungrouped.length > 0 && (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setDragOverUngrouped(true);
+            }}
+            onDragLeave={() => setDragOverUngrouped(false)}
+            onDrop={handleDropOnUngrouped}
+            className={cn(
+              "flex flex-col gap-[2px] rounded-md",
+              dragOverUngrouped && "ring-1 ring-primary/30"
+            )}
+          >
+            {groups.ungrouped.map((i) => (
+              <ChatItem key={conversations[i]?.id ?? i} index={i} />
+            ))}
+          </div>
+        )}
+
+        {conversations.length === 0 && (
+          <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">
+            No conversations yet
+          </p>
+        )}
       </div>
+
+      {newProjectInput ? (
+        <div className="shrink-0 border-t border-border px-1 py-2">
+          <input
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            onBlur={handleNewProject}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleNewProject();
+              if (e.key === "Escape") { setNewProjectInput(false); setNewProjectName(""); }
+            }}
+            placeholder="Project name..."
+            autoFocus
+            className="w-full rounded-md bg-card px-3 py-2 text-[0.83rem] text-foreground outline-none ring-1 ring-border placeholder:text-muted-foreground/50"
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setNewProjectInput(true)}
+          className="flex shrink-0 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
+        >
+          <FolderPlus size={14} />
+          New project
+        </button>
+      )}
+
       {selected.size > 0 && <BulkDeleteBar count={selected.size} onDelete={bulkDelete} />}
     </>
   );
