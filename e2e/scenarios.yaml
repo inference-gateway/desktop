@@ -26,12 +26,14 @@ scenarios:
           - { name: Write, args: { file_path: "approved.txt", content: "hello from e2e" } }
       - content: "The file was written."
 
+  # A user rejection ends the agent loop (CLI issue #786), so a denied tool
+  # call never reaches a follow-up turn - the run finishes right after the
+  # denial result.
   - name: write-denied
     match: '(?i)create a file named denied\.txt'
     turns:
       - tool_calls:
           - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
-      - content: "Understood."
 
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
