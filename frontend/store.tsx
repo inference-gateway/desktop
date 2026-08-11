@@ -317,7 +317,6 @@ function useDesktopStore() {
       setActiveId(id);
       activeIdRef.current = id;
       setActiveProject(projects[id] ?? null);
-      // Never overwrite a live in-memory transcript with stale on-disk history.
       if (transcripts[id]) return;
       try {
         const ndjson = await api.getConversation(id);
