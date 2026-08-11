@@ -637,8 +637,8 @@ async fn send_message(
     let bin_path = infer_bin_path();
 
     let mut cmd = std::process::Command::new(&bin_path);
-    cmd.arg("agent")
-        .arg("--output-format")
+    cmd.arg("headless")
+        .arg("--format")
         .arg("ag-ui")
         .arg("--session-id")
         .arg(&session_id)
