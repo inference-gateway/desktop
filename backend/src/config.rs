@@ -88,6 +88,8 @@ pub(crate) struct DesktopConfig {
     /// When both are set, override replaces the default and extra_instructions are
     /// appended after it.
     pub(crate) system_prompt: String,
+    /// Enable local scheduling via `infer channels-manager`.
+    pub(crate) schedule_enabled: bool,
 }
 
 pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
@@ -120,6 +122,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         d1_base_url: "https://api.cloudflare.com/client/v4".into(),
         extra_instructions: String::new(),
         system_prompt: String::new(),
+        schedule_enabled: false,
     }
 }
 
@@ -181,6 +184,12 @@ pub(crate) fn config_from_value(
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
         extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
         system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
+        schedule_enabled: val
+                .get("tools")
+                .and_then(|t| t.get("schedule"))
+                .and_then(|s| s.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
     }
 }
 
@@ -301,6 +310,19 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         cfg.extra_instructions.clone().into(),
     );
     map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
+
+    let tools = map
+            .entry("tools".into())
+            .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(tmap) = tools.as_mapping_mut() {
+            set_section(
+                tmap,
+                "schedule",
+                vec![
+                    ("enabled", cfg.schedule_enabled.into()),
+                ],
+            );
+    }
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }

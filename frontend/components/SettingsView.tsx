@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,6 +251,7 @@ function GeneralTab() {
     d1_base_url: "https://api.cloudflare.com/client/v4",
     extra_instructions: "",
     system_prompt: "",
+    schedule_enabled: false,
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -342,7 +343,7 @@ function GeneralTab() {
               {f.options ? (
                 <select
                   id={f.key}
-                  value={config[f.key]}
+                  value={config[f.key] as string}
                   onChange={(e) => set(f.key, e.target.value)}
                   className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
                 >
@@ -356,7 +357,7 @@ function GeneralTab() {
                 <Input
                   id={f.key}
                   type={f.secret ? "password" : undefined}
-                  value={config[f.key]}
+                  value={config[f.key] as string}
                   onChange={(e) => set(f.key, e.target.value)}
                   placeholder={f.ph}
                 />
@@ -392,6 +393,35 @@ function GeneralTab() {
           ))}
         </select>
       </div>
+
+      {/* Scheduling */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Scheduling</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+            Run <code className="rounded bg-secondary px-1">infer channels-manager</code> as a local daemon for
+            cron-triggered agent jobs (e.g. daily briefings, reminders). Requires{" "}
+            <code className="rounded bg-secondary px-1">tools.schedule.enabled: true</code> in config.
+            The daemon runs while the app is open and stops on quit. For jobs while the laptop is
+            closed, see remote scheduling (Phase 2).
+      </p>
+      <div className="mb-3 flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="schedule-enabled"
+              checked={(config as any).schedule_enabled}
+              onChange={(e) => {
+                const next = { ...config, schedule_enabled: e.target.checked };
+                setConfigs(next);
+                setDirty(true);
+                setSaved(false);
+                setError("");
+              }}
+              className="h-4 w-4 accent-primary"
+            />
+            <Label htmlFor="schedule-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+              Enable local scheduling
+            </Label>
+      </div>
+      <SchedulerLogView />
 
       {/* Gateway */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Gateway</h3>
@@ -890,5 +920,84 @@ function SystemPromptTab() {
         {err && <span role="status" className="text-[0.8rem] text-err">Couldn't save: {err}</span>}
       </div>
     </>
+  );
+}
+
+function SchedulerLogView() {
+  const [log, setLog] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [toggling, setToggling] = useState(false);
+
+  useEffect(() => {
+api.getSchedulerStatus().then(setRunning).catch(() => {});
+  }, []);
+
+  const refreshLog = useCallback(async () => {
+try {
+  setLog(await api.getSchedulerLog());
+} catch {}
+  }, []);
+
+  useEffect(() => {
+if (!open) return;
+refreshLog();
+const t = setInterval(refreshLog, 3000);
+return () => clearInterval(t);
+  }, [open, refreshLog]);
+
+  const toggleScheduler = useCallback(async () => {
+setToggling(true);
+try {
+  if (running) {
+    await api.stopScheduler();
+    setRunning(false);
+  } else {
+    await api.startScheduler();
+    setRunning(true);
+  }
+} catch (e) {
+  console.error("Failed to toggle scheduler:", e);
+} finally {
+  setToggling(false);
+}
+  }, [running]);
+
+  return (
+<div className="mb-3 rounded-md border border-border bg-card">
+  <button
+    onClick={() => setOpen(!open)}
+    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-medium text-muted-foreground hover:text-foreground"
+  >
+    <span className="flex-1">Scheduler daemon</span>
+    {running ? (
+      <span className="flex items-center gap-1 text-emerald-500">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        Running
+      </span>
+    ) : (
+      <span className="text-muted-foreground">Stopped</span>
+    )}
+  </button>
+  {open && (
+    <div className="border-t border-border px-3 pb-3 pt-2">
+      <div className="mb-2 flex items-center gap-2">
+        <Button size="xs" variant={running ? "destructive" : "default"} onClick={toggleScheduler} disabled={toggling}>
+              {toggling ? "..." : running ? "Stop" : "Start"}
+        </Button>
+        <Button size="xs" variant="outline" onClick={refreshLog} disabled={!running}>
+              Refresh
+        </Button>
+      </div>
+      <div className="max-h-[200px] overflow-y-auto rounded bg-secondary p-2 font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
+        {log.length === 0 ? (
+              <span className="italic">No log entries yet.</span>
+        ) : (
+              log.map((line, i) => <div key={i}>{line}</div>)
+        )}
+      </div>
+    </div>
+  )}
+</div>
   );
 }

@@ -9,6 +9,7 @@ mod download;
 mod env;
 mod gateway;
 mod observability;
+mod scheduler;
 mod stt;
 mod updates;
 
@@ -18,6 +19,8 @@ pub(crate) struct AppState {
     running_children: Mutex<std::collections::HashMap<String, std::process::Child>>,
     child_stdins: Mutex<std::collections::HashMap<String, std::process::ChildStdin>>,
     gateway_child: Mutex<Option<std::process::Child>>,
+    scheduler_child: Mutex<Option<std::process::Child>>,
+    scheduler_log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
 }
@@ -33,6 +36,8 @@ pub fn run() {
             running_children: Mutex::new(std::collections::HashMap::new()),
             child_stdins: Mutex::new(std::collections::HashMap::new()),
             gateway_child: Mutex::new(None),
+            scheduler_child: Mutex::new(None),
+            scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             stored_traces,
             stored_metrics,
         })
@@ -53,6 +58,10 @@ pub fn run() {
             config::set_config,
             config::set_default_model,
             gateway::start_gateway,
+            scheduler::start_scheduler,
+            scheduler::stop_scheduler,
+            scheduler::get_scheduler_status,
+            scheduler::get_scheduler_log,
             updates::check_updates,
             updates::install_desktop_update,
             stt::stt_status,
@@ -75,6 +84,12 @@ pub fn run() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app_handle.state::<AppState>();
                 if let Ok(mut guard) = state.gateway_child.lock()
+                    && let Some(mut child) = guard.take()
+                {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+                if let Ok(mut guard) = state.scheduler_child.lock()
                     && let Some(mut child) = guard.take()
                 {
                     let _ = child.kill();

@@ -71,6 +71,8 @@ function useDesktopStore() {
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
+  const [scheduleEnabled, setScheduleEnabledState] = useState(false);
+  const [scheduleRunning, setScheduleRunning] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const initRan = useRef(false);
@@ -83,6 +85,24 @@ function useDesktopStore() {
   const setError = useCallback((t: string) => {
     setStatusText(t);
     setStatusErr(true);
+  }, []);
+
+  const setScheduleEnabled = useCallback(async (enabled: boolean) => {
+        setScheduleEnabledState(enabled);
+        try {
+          const cfg = await api.getConfig();
+          cfg.schedule_enabled = enabled;
+          await api.setConfig(cfg);
+          if (enabled) {
+            await api.startScheduler();
+            setScheduleRunning(true);
+          } else {
+            await api.stopScheduler();
+            setScheduleRunning(false);
+          }
+        } catch (e) {
+          console.error("Failed to toggle scheduling:", e);
+        }
   }, []);
 
   const setModel = useCallback((m: string) => {
@@ -669,6 +689,9 @@ function useDesktopStore() {
   const running = activeId != null && runningIds.has(activeId);
 
   return {
+    scheduleEnabled,
+    scheduleRunning,
+    setScheduleEnabled,
     items: active.items,
     typing: active.typing,
     statusText,
