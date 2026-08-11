@@ -206,7 +206,6 @@ export function ChatList() {
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
-  const [dragOverProject, setDragOverProject] = useState<string | null>(null);
 
   const groups = useMemo(() => {
     const map: Record<string, number[]> = {};
@@ -265,7 +264,7 @@ export function ChatList() {
               onRename={(n) => renameProject(name, n)}
               onDelete={() => deleteProject(name)}
               onDrop={(e) => handleDropOnProject(e, name)}
-              onDragOverProject={(over) => setDragOverProject(over ? name : null)}
+              onDragOverProject={() => {}}
             >
               {indices.map((i) => (
                 <ChatItem key={conversations[i]?.id ?? i} index={i} />

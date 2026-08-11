@@ -594,21 +594,21 @@ pub(crate) fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, Stri
 /// Returns an empty object when the file does not exist yet.
 #[tauri::command]
 pub(crate) fn read_projects() -> Result<String, String> {
-        let path = home_dir().join(".infer").join("projects.json");
-        if !path.exists() {
-            return Ok("{}".into());
-        }
-        std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    let path = home_dir().join(".infer").join("projects.json");
+    if !path.exists() {
+        return Ok("{}".into());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 /// Write ~/.infer/projects.json (entire mapping, atomically replaced).
 #[tauri::command]
 pub(crate) fn write_projects(data: String) -> Result<(), String> {
-        let path = home_dir().join(".infer").join("projects.json");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&path, &data).map_err(|e| e.to_string())
+    let path = home_dir().join(".infer").join("projects.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())
 }
 
 /// Copy a generated image (the absolute path `infer` reported) to the user's

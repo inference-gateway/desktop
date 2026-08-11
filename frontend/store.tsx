@@ -160,19 +160,7 @@ function useDesktopStore() {
     }
   }, []);
 
-  const saveProjects = useCallback(
-    async (map: Record<string, string>) => {
-      const names = new Set(Object.values(map).filter(Boolean));
-      setProjects(map);
-      setProjectNames(Array.from(names));
-      try {
-            await api.writeProjects(JSON.stringify(map));
-      } catch (e) {
-            console.error("Failed to save projects:", e);
-      }
-    },
-    [],
-  );
+
 
   const checkForUpdates = useCallback(async (force = false) => {
     const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
