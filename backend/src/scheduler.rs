@@ -33,7 +33,6 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
         return Ok(());
     }
 
-    // Kill old child under lock, then drop before spawning (no handle to leak).
     let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
     if let Some(mut old) = guard.take() {
         let _ = old.kill();
