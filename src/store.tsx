@@ -218,8 +218,7 @@ function useDesktopStore() {
   useEffect(() => {
     if (initRan.current) return;
     initRan.current = true;
-    // Invalidate the cached update check on launch so a new version is detected,
-    // keeping the stale data as an offline fallback.
+
     const staleRaw = localStorage.getItem(UPDATE_CACHE_KEY);
     if (staleRaw) {
       try {
@@ -229,11 +228,7 @@ function useDesktopStore() {
         localStorage.removeItem(UPDATE_CACHE_KEY);
       }
     }
-    // Restore the persisted default model when localStorage was cleared, so the
-    // choice survives a cache clear or fresh profile. populateModels reads
-    // localStorage live, and this resolves before it (a config file read beats
-    // gateway startup). ponytail: if that ordering ever flips, the model shows
-    // the list default until the next launch - not worth syncing on.
+
     if (!localStorage.getItem(STORAGE_KEY)) {
       api
         .getConfig()
@@ -396,8 +391,6 @@ function useDesktopStore() {
       autoGrow(el);
     }
     setRunningIds((prev) => new Set(prev).add(runId));
-    // The closure captures runId (not activeId) so events always route to their
-    // own session even if the user switches the view mid-stream.
     try {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {

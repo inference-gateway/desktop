@@ -1152,8 +1152,7 @@ fn set_section(
 /// text, returning serialized YAML. `default_model` is owned by
 /// `merge_default_model` (written from the composer too), so it is deliberately
 /// not touched here - otherwise a stale Settings form would clobber a newer
-/// model chosen from the composer. ponytail: serde round-trip drops YAML
-/// comments; the config is app-managed so that is acceptable.
+/// model chosen from the composer.
 fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
     let mut yaml = config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
@@ -1729,10 +1728,6 @@ async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
 
 /// Download, verify and install the desktop app update, then relaunch. Does not
 /// return on success.
-///
-/// ponytail: no download progress events - the bundle is a few tens of MB and
-/// the button already reads "Updating app...". Add a Channel like
-/// check_and_install_cli if that stops being enough.
 #[tauri::command]
 async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
     let update = desktop_updater(&app)?
@@ -1956,7 +1951,6 @@ fn download_whisper_binary(on_event: &Channel<ProgressEvent>) -> Result<PathBuf,
 
 /// Strip whisper's bracketed non-speech markers ([BLANK_AUDIO], (music), ...)
 /// and collapse whitespace. A no-speech clip therefore yields "".
-// ponytail: manual bracket strip — add the regex crate only if markers get complex.
 fn clean_transcript(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let mut sq = 0i32;
@@ -2086,11 +2080,9 @@ async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
 }
 
 // --- OTLP collector ---
-// ponytail: stdlib TCP listener, no server framework. JSON-only OTLP receiver.
+// stdlib TCP listener, no server framework. JSON-only OTLP receiver.
 // Add protobuf support if the CLI/gateway cannot be configured to use
 // OTEL_EXPORTER_OTLP_PROTOCOL=http/json.
-// ponytail: detached collector thread lives for the app lifetime, no shutdown signal.
-// Add a CancellationToken if the collector ever blocks app exit cleanly.
 
 const COLLECTOR_PORT: u16 = 4318;
 const MAX_SPANS: usize = 5000;
@@ -2232,20 +2224,15 @@ fn handle_otlp_request(
     stream: &mut std::net::TcpStream,
     storage: &Arc<Mutex<VecDeque<StoredSpan>>>,
 ) {
-    // ponytail: 64KB stack buffer, enough for any single OTLP export.
-    // Upgrade to a heap-allocated Vec if spans routinely exceed 64KB.
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let mut buf = [0u8; 65536];
     let mut offset = 0;
-    // Read until headers end (double CRLF), or buffer full.
     loop {
         match stream.read(&mut buf[offset..]) {
             Ok(0) => break,
             Ok(n) => {
                 offset += n;
-                // Check if we have the full headers
                 if offset >= 4 && buf[..offset].windows(4).any(|w| w == b"\r\n\r\n") {
-                    // Try to read the full body
                     let request = String::from_utf8_lossy(&buf[..offset]);
                     if let Some(hdr_end) = request.find("\r\n\r\n") {
                         let body_start = hdr_end + 4;
@@ -2275,12 +2262,10 @@ fn handle_otlp_request(
     if !first.starts_with("POST") {
         return;
     }
-    // Send 200 OK response immediately.
     let response =
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}";
     let _ = stream.write_all(response);
     let _ = stream.flush();
-    // Find and parse the JSON body.
     let body_start = request.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
     let body = &request[body_start..];
     let spans = extract_spans(body);
