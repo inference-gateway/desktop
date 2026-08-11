@@ -31,7 +31,7 @@ export function CopyButton({ text }: { text: string }) {
       disabled={status === "copied"}
       aria-label="Copy message text"
       className={cn(
-        "self-end transition-opacity",
+        "self-start transition-opacity",
         status === "copied" && "text-green-600 dark:text-green-500",
         status === "error" && "text-destructive",
       )}
