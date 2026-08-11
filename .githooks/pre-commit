@@ -16,7 +16,7 @@ if command -v bun >/dev/null 2>&1; then
     (cd "$ROOT" && bun install --frozen-lockfile >/dev/null 2>&1 && bun run build >/dev/null)
 fi
 
-cd "$ROOT/src-tauri"
+cd "$ROOT/backend"
 
 # Run typecheck if cargo is available
 if command -v cargo >/dev/null 2>&1; then

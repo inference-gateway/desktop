@@ -82,8 +82,8 @@ impl AppDriver {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
 
-        let src_tauri = repo_root.join("src-tauri");
-        let bin = src_tauri.join("target/debug/inference-gateway-desktop");
+        let backend = repo_root.join("backend");
+        let bin = repo_root.join("target/debug/inference-gateway-desktop");
         if !bin.exists() {
             bail!(
                 "app binary missing at {} - run without --no-build",
@@ -95,7 +95,7 @@ impl AppDriver {
         let log = std::fs::File::create(artifacts.join(format!("{log_name}.log")))?;
 
         let mut cmd = Command::new(&bin);
-        cmd.current_dir(&src_tauri)
+        cmd.current_dir(&backend)
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log));
         if mock {
@@ -212,7 +212,7 @@ impl AppDriver {
     }
 
     /// Resolve a cleanup/assert path against the repo root (the infer child's
-    /// cwd - the app hops out of src-tauri/, see `resolve_agent_cwd`).
+    /// cwd - the app hops out of backend/, see `resolve_agent_cwd`).
     pub fn resolve(&self, p: &Path) -> PathBuf {
         if p.is_absolute() {
             p.to_path_buf()

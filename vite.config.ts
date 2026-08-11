@@ -10,9 +10,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(__dirname, "./frontend"),
     },
   },
+  publicDir: "frontend/public",
   clearScreen: false,
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   server: {
@@ -21,7 +22,7 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
-      ignored: ["**/src-tauri/**", "**/e2e/**", "**/target/**"],
+      ignored: ["**/backend/**", "**/e2e/**", "**/target/**"],
     },
   },
   build: {

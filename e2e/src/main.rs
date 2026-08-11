@@ -57,7 +57,7 @@ fn run() -> Result<bool> {
         println!("building app...");
         let status = Command::new("cargo")
             .arg("build")
-            .current_dir(repo_root.join("src-tauri"))
+            .current_dir(repo_root.join("backend"))
             .status()
             .context("running cargo build (is the flox env active?)")?;
         if !status.success() {

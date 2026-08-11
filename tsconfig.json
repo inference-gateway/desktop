@@ -21,9 +21,9 @@
     "noFallthroughCasesInSwitch": true,
 
     /* shadcn / @ alias */
-    "paths": { "@/*": ["./src/*"] }
+    "paths": { "@/*": ["./frontend/*"] }
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
+  "include": ["frontend"],
+  "exclude": ["frontend/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
