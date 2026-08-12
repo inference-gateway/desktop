@@ -97,7 +97,7 @@ pub(crate) struct ScheduleJob {
     last_error: String,
 }
 
-// ponytail: reads jsonl-backend job files only; other storage backends return
+// Reads jsonl-backend job files only, other storage backends return
 // an empty list until the CLI grows a machine-readable `schedules list`.
 #[tauri::command]
 pub(crate) async fn list_schedules() -> Result<Vec<ScheduleJob>, String> {
