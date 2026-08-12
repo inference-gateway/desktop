@@ -83,21 +83,24 @@ pub(crate) fn find_checksum(checksums_text: &str, asset_name: &str) -> Option<St
     None
 }
 
+pub(crate) fn gh_available() -> bool {
+    std::process::Command::new("gh")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+pub(crate) fn gh_authenticated() -> bool {
+    std::process::Command::new("gh")
+        .args(["auth", "status"])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
 /// Try to download a release asset using `gh` CLI (authenticated).
 /// Returns `Ok(true)` if downloaded, `Ok(false)` to fall back to ureq.
 pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> {
-    let available = std::process::Command::new("gh")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success());
-    if !available {
-        return Ok(false);
-    }
-    let authed = std::process::Command::new("gh")
-        .args(["auth", "status"])
-        .output()
-        .is_ok_and(|o| o.status.success());
-    if !authed {
+    if !gh_available() || !gh_authenticated() {
         return Ok(false);
     }
     let status = std::process::Command::new("gh")

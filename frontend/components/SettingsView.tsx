@@ -227,33 +227,52 @@ const STORAGE_FIELDS: Record<string, readonly StorageField[]> = {
   ],
 };
 
+const DEFAULT_CONFIG: DesktopConfig = {
+  storage_backend: "jsonl",
+  storage_directory: "",
+  gateway_url: "http://localhost:8080",
+  default_model: "",
+  sqlite_path: ".infer/conversations.db",
+  postgres_host: "localhost",
+  postgres_port: "5432",
+  postgres_database: "infer_conversations",
+  postgres_username: "",
+  postgres_password: "",
+  postgres_ssl_mode: "prefer",
+  redis_host: "localhost",
+  redis_port: "6379",
+  redis_password: "",
+  redis_db: "0",
+  d1_account_id: "",
+  d1_database_id: "",
+  d1_api_token: "",
+  d1_base_url: "https://api.cloudflare.com/client/v4",
+  extra_instructions: "",
+  system_prompt: "",
+  schedule_enabled: false,
+  agent_model: "",
+  scheduler_backend: "local",
+  scheduler_github_repository: "",
+  scheduler_github_pull_requests: false,
+  scheduler_github_artifacts_enabled: true,
+  scheduler_github_artifacts_poll_interval: "10m",
+  scheduler_github_artifacts_initial_delay: "1m",
+  scheduler_github_artifacts_max_attempts: "3",
+  scheduler_github_artifacts_rate_limit_backoff: "1h",
+};
+
+// Text inputs for the github scheduling backend; checkboxes are hand-rendered.
+const SCHEDULER_GITHUB_FIELDS: readonly StorageField[] = [
+  { key: "scheduler_github_repository", label: "Repository", ph: "<login>/.routines (auto-created when empty)" },
+  { key: "scheduler_github_artifacts_poll_interval", label: "Artifact poll interval", ph: "10m" },
+  { key: "scheduler_github_artifacts_initial_delay", label: "Artifact poll initial delay", ph: "1m" },
+  { key: "scheduler_github_artifacts_max_attempts", label: "Max download attempts per artifact", ph: "3" },
+  { key: "scheduler_github_artifacts_rate_limit_backoff", label: "Rate-limit backoff", ph: "1h" },
+];
+
 function GeneralTab() {
   const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
-  const [config, setConfigs] = useState<DesktopConfig>({
-    storage_backend: "jsonl",
-    storage_directory: "",
-    gateway_url: "http://localhost:8080",
-    default_model: "",
-    sqlite_path: ".infer/conversations.db",
-    postgres_host: "localhost",
-    postgres_port: "5432",
-    postgres_database: "infer_conversations",
-    postgres_username: "",
-    postgres_password: "",
-    postgres_ssl_mode: "prefer",
-    redis_host: "localhost",
-    redis_port: "6379",
-    redis_password: "",
-    redis_db: "0",
-    d1_account_id: "",
-    d1_database_id: "",
-    d1_api_token: "",
-    d1_base_url: "https://api.cloudflare.com/client/v4",
-    extra_instructions: "",
-    system_prompt: "",
-    schedule_enabled: false,
-    agent_model: "",
-  });
+  const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -416,9 +435,81 @@ function GeneralTab() {
           className="h-4 w-4 accent-primary"
         />
         <Label htmlFor="schedule-enabled" className="cursor-pointer text-[0.8rem] font-medium">
-          Enable local scheduling
+          {config.scheduler_backend === "github"
+            ? "Enable scheduling (daemon pulls run artifacts back)"
+            : "Enable local scheduling"}
         </Label>
       </div>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="scheduler-backend" className="text-[0.8rem] text-muted-foreground">
+          Backend
+        </Label>
+        <select
+          id="scheduler-backend"
+          value={config.scheduler_backend}
+          onChange={(e) => set("scheduler_backend", e.target.value)}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          <option value="local">local</option>
+          <option value="github">github</option>
+        </select>
+      </div>
+      {config.scheduler_backend === "github" && (
+        <>
+          <p className="mb-3 text-[0.75rem] text-muted-foreground">
+            Jobs are deployed as GitHub Actions workflows in your routines repository and run
+            there via infer-action. Schedules fire in UTC with a minimum interval of 5 minutes.
+            Deploy outcomes (push or pull request URL) and cron validation errors appear in the
+            chat when you schedule a job.
+          </p>
+          <div className="mb-3 flex flex-col gap-3">
+            {SCHEDULER_GITHUB_FIELDS.map((f) => (
+              <div key={f.key} className="flex flex-col gap-1">
+                <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
+                  {f.label}
+                </Label>
+                <Input
+                  id={f.key}
+                  value={config[f.key] as string}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  placeholder={f.ph}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="scheduler-github-pull-requests"
+              checked={config.scheduler_github_pull_requests}
+              onChange={(e) => set("scheduler_github_pull_requests", e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            <Label
+              htmlFor="scheduler-github-pull-requests"
+              className="cursor-pointer text-[0.8rem] font-medium"
+            >
+              Open a pull request per change instead of pushing to main
+            </Label>
+          </div>
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="scheduler-github-artifacts-enabled"
+              checked={config.scheduler_github_artifacts_enabled}
+              onChange={(e) => set("scheduler_github_artifacts_enabled", e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            <Label
+              htmlFor="scheduler-github-artifacts-enabled"
+              className="cursor-pointer text-[0.8rem] font-medium"
+            >
+              Pull run conversations back into local storage
+            </Label>
+          </div>
+          <GithubPrereqs repository={config.scheduler_github_repository} />
+        </>
+      )}
       <div className="mb-3 flex items-center justify-between gap-3">
         <Label htmlFor="schedule-model" className="text-[0.8rem] font-medium">
           Default model for scheduled jobs
@@ -775,31 +866,7 @@ function SnippetsTab() {
 }
 
 function SystemPromptTab() {
-  const [config, setConfig] = useState<DesktopConfig>({
-    storage_backend: "jsonl",
-    storage_directory: "",
-    gateway_url: "http://localhost:8080",
-    default_model: "",
-    sqlite_path: ".infer/conversations.db",
-    postgres_host: "localhost",
-    postgres_port: "5432",
-    postgres_database: "infer_conversations",
-    postgres_username: "",
-    postgres_password: "",
-    postgres_ssl_mode: "prefer",
-    redis_host: "localhost",
-    redis_port: "6379",
-    redis_password: "",
-    redis_db: "0",
-    d1_account_id: "",
-    d1_database_id: "",
-    d1_api_token: "",
-    d1_base_url: "https://api.cloudflare.com/client/v4",
-    extra_instructions: "",
-    system_prompt: "",
-    schedule_enabled: false,
-    agent_model: "",
-  });
+  const [config, setConfig] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [overrideEnabled, setOverrideEnabled] = useState(false);
   const [showOverrideWarning, setShowOverrideWarning] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -943,6 +1010,72 @@ function SystemPromptTab() {
         {err && <span role="status" className="text-[0.8rem] text-err">Couldn't save: {err}</span>}
       </div>
     </>
+  );
+}
+
+// Required Actions secrets in the routines repo; the app never writes secret
+// values, it only links to the repo settings page.
+const GITHUB_SCHEDULER_SECRETS = ["APP_CLIENT_ID", "APP_PRIVATE_KEY", "<PROVIDER>_API_KEY"];
+
+function GithubPrereqs({ repository }: { repository: string }) {
+  const [gh, setGh] = useState<{ installed: boolean; authenticated: boolean } | null>(null);
+
+  useEffect(() => {
+    api.githubAuthStatus().then(setGh).catch(() => {});
+  }, []);
+
+  const repoUrl = repository.includes("/") ? `https://github.com/${repository}` : "";
+
+  return (
+    <div className="mb-3 rounded-md border border-border bg-card px-3 py-2">
+      <div className="mb-1 text-[0.8rem] font-medium">Prerequisites</div>
+      <div className="mb-2 flex items-center gap-2 text-[0.75rem]">
+        {gh?.authenticated ? (
+          <>
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-emerald-500">GitHub CLI authenticated</span>
+          </>
+        ) : (
+          <>
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            <span className="text-muted-foreground">
+              {gh?.installed
+                ? "GitHub CLI not authenticated - run "
+                : "GitHub CLI (gh) not found - install it, then run "}
+              <code className="rounded bg-secondary px-1">gh auth login</code>
+            </span>
+          </>
+        )}
+      </div>
+      <p className="mb-2 text-[0.75rem] text-muted-foreground">
+        Workflows run as a GitHub App bot and need these Actions secrets in the routines
+        repository (the app never stores secret values):{" "}
+        {GITHUB_SCHEDULER_SECRETS.map((s, i) => (
+          <span key={s}>
+            {i > 0 && ", "}
+            <code className="rounded bg-secondary px-1">{s}</code>
+          </span>
+        ))}
+      </p>
+      {repoUrl && (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => api.openUrl(`${repoUrl}/settings/secrets/actions`).catch(() => {})}
+          >
+            Repository secrets
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => api.openUrl(`${repoUrl}/actions`).catch(() => {})}
+          >
+            Actions runs
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

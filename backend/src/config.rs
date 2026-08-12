@@ -93,6 +93,15 @@ pub(crate) struct DesktopConfig {
     /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
     /// config). A per-job model set at schedule time takes precedence.
     pub(crate) agent_model: String,
+    /// Scheduling backend: "local" (daemon cron) or "github" (.routines Actions).
+    pub(crate) scheduler_backend: String,
+    pub(crate) scheduler_github_repository: String,
+    pub(crate) scheduler_github_pull_requests: bool,
+    pub(crate) scheduler_github_artifacts_enabled: bool,
+    pub(crate) scheduler_github_artifacts_poll_interval: String,
+    pub(crate) scheduler_github_artifacts_initial_delay: String,
+    pub(crate) scheduler_github_artifacts_max_attempts: String,
+    pub(crate) scheduler_github_artifacts_rate_limit_backoff: String,
 }
 
 pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
@@ -127,6 +136,14 @@ pub(crate) fn default_config() -> DesktopConfig {
         system_prompt: String::new(),
         schedule_enabled: false,
         agent_model: String::new(),
+        scheduler_backend: "local".into(),
+        scheduler_github_repository: String::new(),
+        scheduler_github_pull_requests: false,
+        scheduler_github_artifacts_enabled: true,
+        scheduler_github_artifacts_poll_interval: "10m".into(),
+        scheduler_github_artifacts_initial_delay: "1m".into(),
+        scheduler_github_artifacts_max_attempts: "3".into(),
+        scheduler_github_artifacts_rate_limit_backoff: "1h".into(),
     }
 }
 
@@ -149,6 +166,13 @@ pub(crate) fn config_from_value(
             cur = cur.get(key)?;
         }
         cur.as_i64()
+    };
+    let bool_at = |path: &[&str]| -> Option<bool> {
+        let mut cur = val;
+        for key in path {
+            cur = cur.get(key)?;
+        }
+        cur.as_bool()
     };
     let d = default_config();
     DesktopConfig {
@@ -200,6 +224,47 @@ pub(crate) fn config_from_value(
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         agent_model: str_at(&["agent", "model"]).unwrap_or_default(),
+        scheduler_backend: str_at(&["scheduler", "backend"]).unwrap_or(d.scheduler_backend),
+        scheduler_github_repository: str_at(&["scheduler", "github", "repository"])
+            .unwrap_or(d.scheduler_github_repository),
+        scheduler_github_pull_requests: bool_at(&["scheduler", "github", "pull_requests"])
+            .unwrap_or(d.scheduler_github_pull_requests),
+        scheduler_github_artifacts_enabled: bool_at(&[
+            "scheduler",
+            "github",
+            "artifacts",
+            "enabled",
+        ])
+        .unwrap_or(d.scheduler_github_artifacts_enabled),
+        scheduler_github_artifacts_poll_interval: str_at(&[
+            "scheduler",
+            "github",
+            "artifacts",
+            "poll_interval",
+        ])
+        .unwrap_or(d.scheduler_github_artifacts_poll_interval),
+        scheduler_github_artifacts_initial_delay: str_at(&[
+            "scheduler",
+            "github",
+            "artifacts",
+            "initial_delay",
+        ])
+        .unwrap_or(d.scheduler_github_artifacts_initial_delay),
+        scheduler_github_artifacts_max_attempts: int_at(&[
+            "scheduler",
+            "github",
+            "artifacts",
+            "max_attempts",
+        ])
+        .map(|n| n.to_string())
+        .unwrap_or(d.scheduler_github_artifacts_max_attempts),
+        scheduler_github_artifacts_rate_limit_backoff: str_at(&[
+            "scheduler",
+            "github",
+            "artifacts",
+            "rate_limit_backoff",
+        ])
+        .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
     }
 }
 
@@ -337,6 +402,48 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         "agent",
         vec![("model", cfg.agent_model.clone().into())],
     );
+
+    let scheduler = map
+        .entry("scheduler".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(scmap) = scheduler.as_mapping_mut() {
+        scmap.insert("backend".into(), cfg.scheduler_backend.clone().into());
+        set_section(
+            scmap,
+            "github",
+            vec![
+                ("repository", cfg.scheduler_github_repository.clone().into()),
+                ("pull_requests", cfg.scheduler_github_pull_requests.into()),
+            ],
+        );
+        if let Some(gmap) = scmap.get_mut("github").and_then(|g| g.as_mapping_mut()) {
+            set_section(
+                gmap,
+                "artifacts",
+                vec![
+                    ("enabled", cfg.scheduler_github_artifacts_enabled.into()),
+                    (
+                        "poll_interval",
+                        cfg.scheduler_github_artifacts_poll_interval.clone().into(),
+                    ),
+                    (
+                        "initial_delay",
+                        cfg.scheduler_github_artifacts_initial_delay.clone().into(),
+                    ),
+                    (
+                        "max_attempts",
+                        parse_int_or(&cfg.scheduler_github_artifacts_max_attempts, 3).into(),
+                    ),
+                    (
+                        "rate_limit_backoff",
+                        cfg.scheduler_github_artifacts_rate_limit_backoff
+                            .clone()
+                            .into(),
+                    ),
+                ],
+            );
+        }
+    }
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
@@ -550,6 +657,39 @@ mod tests {
             str_field(&val, &["storage", "d1", "base_url"]),
             Some("https://api.cloudflare.com/client/v4")
         );
+    }
+
+    #[test]
+    fn merge_config_round_trips_scheduler_section() {
+        let mut cfg = default_config();
+        cfg.scheduler_backend = "github".into();
+        cfg.scheduler_github_repository = "alice/.routines".into();
+        cfg.scheduler_github_pull_requests = true;
+        cfg.scheduler_github_artifacts_max_attempts = "5".into();
+        cfg.scheduler_github_artifacts_poll_interval = "15m".into();
+        let val = parse_yaml(&merge_config(None, &cfg).unwrap());
+        assert_eq!(str_field(&val, &["scheduler", "backend"]), Some("github"));
+        assert_eq!(
+            str_field(&val, &["scheduler", "github", "repository"]),
+            Some("alice/.routines")
+        );
+        assert_eq!(
+            val.get("scheduler")
+                .and_then(|s| s.get("github"))
+                .and_then(|g| g.get("artifacts"))
+                .and_then(|a| a.get("max_attempts"))
+                .and_then(|v| v.as_i64()),
+            Some(5)
+        );
+
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert_eq!(cfg2.scheduler_backend, "github");
+        assert_eq!(cfg2.scheduler_github_repository, "alice/.routines");
+        assert!(cfg2.scheduler_github_pull_requests);
+        assert!(cfg2.scheduler_github_artifacts_enabled);
+        assert_eq!(cfg2.scheduler_github_artifacts_max_attempts, "5");
+        assert_eq!(cfg2.scheduler_github_artifacts_poll_interval, "15m");
+        assert_eq!(cfg2.scheduler_github_artifacts_rate_limit_backoff, "1h");
     }
 
     #[test]
