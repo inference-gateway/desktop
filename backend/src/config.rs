@@ -154,9 +154,14 @@ pub(crate) fn config_from_value(
     DesktopConfig {
         storage_backend: str_at(&["storage", "type"]).unwrap_or_else(|| "jsonl".into()),
         storage_directory: str_at(&["storage", "jsonl", "path"])
-            .map(|s| match s.strip_prefix('~') {
-                Some(rest) => format!("{}{}", home.display(), rest),
-                None => s,
+            .map(|s| {
+                if let Some(rest) = s.strip_prefix('~') {
+                    format!("{}{}", home.display(), rest)
+                } else if std::path::Path::new(&s).is_relative() {
+                    home.join(&s).display().to_string()
+                } else {
+                    s
+                }
             })
             .unwrap_or_else(|| default_storage_directory(home)),
         gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
@@ -415,6 +420,14 @@ mod tests {
         assert_eq!(cfg.d1_database_id, "dbid");
         assert_eq!(cfg.d1_api_token, "tok");
         assert_eq!(cfg.d1_base_url, "https://d1.example");
+    }
+
+    #[test]
+    fn config_from_value_resolves_relative_storage_path_against_home() {
+        let home = PathBuf::from("/home/tester");
+        let val = parse_yaml("storage:\n  jsonl:\n    path: .infer/conversations\n");
+        let cfg = config_from_value(&val, &home);
+        assert_eq!(cfg.storage_directory, "/home/tester/.infer/conversations");
     }
 
     #[test]

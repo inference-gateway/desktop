@@ -489,6 +489,7 @@ pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
         let output = std::process::Command::new(infer_bin_path())
             .args(&args)
             .env("HOME", home_dir().to_str().unwrap_or(""))
+            .envs(infer_env())
             .current_dir(agent_cwd())
             .output()
             .map_err(|e| format!("Failed to run infer: {}", e))?;
