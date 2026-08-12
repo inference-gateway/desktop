@@ -145,9 +145,6 @@ function useDesktopStore() {
     }
   }, []);
 
-  // Scheduled jobs write conversations outside the UI, so poll to pick them
-  // up live. ponytail: 10s poll over a filesystem watcher - cross-platform
-  // and one line; switch to a Tauri fs-watch event if polling ever hurts.
   useEffect(() => {
     const t = setInterval(refreshConversations, 10_000);
     return () => clearInterval(t);
