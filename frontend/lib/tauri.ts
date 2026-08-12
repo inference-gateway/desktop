@@ -61,6 +61,16 @@ export type DesktopConfig = {
   system_prompt: string;
   schedule_enabled: boolean;
 };
+export type ScheduleJob = {
+  id: string;
+  name: string;
+  description: string;
+  cron_expression: string;
+  prompt: string;
+  run_once: boolean;
+  last_run: string;
+  last_error: string;
+};
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";
   content?: string;
@@ -117,6 +127,7 @@ export const api = {
   stopScheduler: () => invoke<void>("stop_scheduler"),
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
   getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
+  listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),
   sttStatus: () => invoke<SttStatus>("stt_status"),

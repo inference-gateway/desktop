@@ -7,6 +7,7 @@ import { useDesktop } from "@/store";
 import { renderMarkdown } from "@/lib/markdown";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
+import type { ScheduleJob } from "@/lib/tauri";
 import type { TranscriptItem } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
@@ -211,6 +212,56 @@ function Item({ item, approve }: { item: TranscriptItem; approve: (callId: strin
   }
 }
 
+function ScheduledJobs() {
+  const [jobs, setJobs] = useState<ScheduleJob[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () =>
+      api
+        .listSchedules()
+        .then((j) => {
+          if (!cancelled) setJobs(j);
+        })
+        .catch(() => {});
+    refresh();
+    const t = setInterval(refresh, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+  if (jobs.length === 0) return null;
+  return (
+    <details
+      id="scheduled-jobs"
+      className="disclosure shrink-0 overflow-hidden border-b border-border bg-secondary text-[0.85rem] text-muted-foreground"
+    >
+      <summary className="px-5 py-[0.35rem] hover:text-foreground">
+        Scheduled jobs ({jobs.length})
+      </summary>
+      <div className="border-t border-border">
+        {jobs.map((j) => (
+          <div
+            key={j.id}
+            className="flex items-baseline gap-2 border-b border-border px-5 py-1.5 last:border-b-0"
+            title={j.description || j.prompt}
+          >
+            <span className="font-medium text-foreground">{j.name || j.id}</span>
+            <code className="rounded bg-card px-1 text-[0.75rem]">{j.cron_expression}</code>
+            {j.run_once && <span className="text-[0.75rem]">one-off</span>}
+            <span className="ml-auto min-w-0 truncate text-[0.75rem]">{j.prompt}</span>
+            {j.last_error && (
+              <span className="shrink-0 text-[0.75rem] text-err" title={j.last_error}>
+                failed
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function Transcript() {
   const { items, typing, approve } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
@@ -220,20 +271,23 @@ export function Transcript() {
   }, [items, typing]);
 
   return (
-    <div
-      id="chat-transcript"
-      role="log"
-      aria-label="Chat transcript"
-      ref={ref}
-      className="flex flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
-    >
-      {items.length === 0 && !typing && (
-        <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
-      )}
-      {items.map((item) => (
-        <Item key={item.id} item={item} approve={approve} />
-      ))}
-      {typing && <TypingBubble />}
-    </div>
+    <>
+      <ScheduledJobs />
+      <div
+        id="chat-transcript"
+        role="log"
+        aria-label="Chat transcript"
+        ref={ref}
+        className="flex flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
+      >
+        {items.length === 0 && !typing && (
+          <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
+        )}
+        {items.map((item) => (
+          <Item key={item.id} item={item} approve={approve} />
+        ))}
+        {typing && <TypingBubble />}
+      </div>
+    </>
   );
 }

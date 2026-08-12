@@ -62,6 +62,7 @@ pub fn run() {
             scheduler::stop_scheduler,
             scheduler::get_scheduler_status,
             scheduler::get_scheduler_log,
+            scheduler::list_schedules,
             updates::check_updates,
             updates::install_desktop_update,
             stt::stt_status,

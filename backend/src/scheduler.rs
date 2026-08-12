@@ -84,6 +84,66 @@ pub(crate) async fn get_scheduler_status(
         .is_some_and(|s| s.is_none()))
 }
 
+/// A scheduled job as persisted by the CLI in `<storage parent>/schedules/*.yaml`.
+#[derive(serde::Serialize)]
+pub(crate) struct ScheduleJob {
+    id: String,
+    name: String,
+    description: String,
+    cron_expression: String,
+    prompt: String,
+    run_once: bool,
+    last_run: String,
+    last_error: String,
+}
+
+// ponytail: reads jsonl-backend job files only; other storage backends return
+// an empty list until the CLI grows a machine-readable `schedules list`.
+#[tauri::command]
+pub(crate) async fn list_schedules() -> Result<Vec<ScheduleJob>, String> {
+    let storage = std::path::PathBuf::from(crate::config::read_config().storage_directory);
+    let Some(parent) = storage.parent() else {
+        return Ok(Vec::new());
+    };
+    let Ok(entries) = std::fs::read_dir(parent.join("schedules")) else {
+        return Ok(Vec::new());
+    };
+    let mut jobs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "yaml") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(val) = serde_norway::from_str::<serde_norway::Value>(&text) else {
+            continue;
+        };
+        let s = |k: &str| {
+            val.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        jobs.push(ScheduleJob {
+            id: s("id"),
+            name: s("name"),
+            description: s("description"),
+            cron_expression: s("cron_expression"),
+            prompt: s("prompt"),
+            run_once: val
+                .get("run_once")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            last_run: s("last_run"),
+            last_error: s("last_error"),
+        });
+    }
+    jobs.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    Ok(jobs)
+}
+
 #[tauri::command]
 pub(crate) async fn get_scheduler_log(
     state: tauri::State<'_, AppState>,
