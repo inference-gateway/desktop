@@ -37,7 +37,7 @@ pub(crate) fn installed_version(bin: &std::path::Path, arg: &str) -> Option<Stri
 /// Latest release tag for a repo, via `gh` when it is available and authenticated,
 /// falling back to the public GitHub API.
 pub(crate) fn latest_tag(repo: &str) -> Option<String> {
-    let gh = std::process::Command::new("gh")
+    let gh = std::process::Command::new(crate::download::gh_bin())
         .args([
             "release",
             "list",
