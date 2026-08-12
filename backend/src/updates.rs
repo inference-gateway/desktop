@@ -118,15 +118,31 @@ pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInf
 // `plugins.updater`, swaps it in place and relaunches. Everything runs from
 // Rust, so no updater/process capability is needed in the webview.
 
-/// Updater for the app itself, with the same 10s ceiling the CLI/gateway
-/// version lookups use so a slow endpoint cannot stall an update check.
+/// reqwest's `Display` drops the source chain, so flatten it: without this the
+/// UI shows "error sending request for url (...)" with the actual cause
+/// (timeout, dns, tls) missing.
+pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut msg = e.to_string();
+    let mut src = e.source();
+    while let Some(s) = src {
+        msg.push_str(": ");
+        msg.push_str(&s.to_string());
+        src = s.source();
+    }
+    msg
+}
+
+/// Updater for the app itself. Checks use the same 10s ceiling as the
+/// CLI/gateway version lookups; the install path gets 300s because the
+/// timeout is a total-request deadline that also covers the bundle download.
 pub(crate) fn desktop_updater(
     app: &tauri::AppHandle,
+    timeout_secs: u64,
 ) -> Result<tauri_plugin_updater::Updater, String> {
     app.updater_builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(timeout_secs))
         .build()
-        .map_err(|e| e.to_string())
+        .map_err(|e| error_chain(&e))
 }
 
 /// Version pair for the desktop app. Debug builds report `dev`, so a locally
@@ -137,7 +153,7 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
     } else {
         app.package_info().version.to_string()
     };
-    let latest = match desktop_updater(app) {
+    let latest = match desktop_updater(app, 10) {
         Ok(updater) => match updater.check().await {
             Ok(Some(update)) => update.version,
             Ok(None) => current.clone(),
@@ -157,15 +173,15 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
 /// return on success.
 #[tauri::command]
 pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
-    let update = desktop_updater(&app)?
+    let update = desktop_updater(&app, 300)?
         .check()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| error_chain(&e))?
         .ok_or("Desktop app is already up to date")?;
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| error_chain(&e))?;
     app.restart();
 }
 
@@ -190,6 +206,28 @@ mod tests {
         assert_eq!(parse_version(""), None);
         assert_eq!(parse_version("  \n"), None);
         assert_eq!(parse_version("v\n"), None);
+    }
+
+    #[test]
+    fn test_error_chain() {
+        #[derive(Debug)]
+        struct Outer(std::io::Error);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "error sending request for url")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let e = Outer(std::io::Error::other("operation timed out"));
+        assert_eq!(
+            error_chain(&e),
+            "error sending request for url: operation timed out"
+        );
     }
 
     #[test]
