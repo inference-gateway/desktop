@@ -45,6 +45,7 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
     let bin = infer_bin_path();
     let mut child = std::process::Command::new(&bin)
         .arg("daemon")
+        .current_dir(crate::env::agent_cwd())
         .envs(infer_env())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
