@@ -90,6 +90,9 @@ pub(crate) struct DesktopConfig {
     pub(crate) system_prompt: String,
     /// Enable local scheduling via `infer daemon`.
     pub(crate) schedule_enabled: bool,
+    /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
+    /// config). A per-job model set at schedule time takes precedence.
+    pub(crate) agent_model: String,
 }
 
 pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
@@ -123,6 +126,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         extra_instructions: String::new(),
         system_prompt: String::new(),
         schedule_enabled: false,
+        agent_model: String::new(),
     }
 }
 
@@ -190,6 +194,7 @@ pub(crate) fn config_from_value(
             .and_then(|s| s.get("enabled"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        agent_model: str_at(&["agent", "model"]).unwrap_or_default(),
     }
 }
 
@@ -321,6 +326,12 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
             vec![("enabled", cfg.schedule_enabled.into())],
         );
     }
+
+    set_section(
+        map,
+        "agent",
+        vec![("model", cfg.agent_model.clone().into())],
+    );
 
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }

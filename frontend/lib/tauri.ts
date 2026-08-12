@@ -60,6 +60,7 @@ export type DesktopConfig = {
   extra_instructions: string;
   system_prompt: string;
   schedule_enabled: boolean;
+  agent_model: string;
 };
 export type ScheduleJob = {
   id: string;

@@ -252,6 +252,7 @@ function GeneralTab() {
     extra_instructions: "",
     system_prompt: "",
     schedule_enabled: false,
+    agent_model: "",
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -418,6 +419,29 @@ function GeneralTab() {
           Enable local scheduling
         </Label>
       </div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Label htmlFor="schedule-model" className="text-[0.8rem] font-medium">
+          Default model for scheduled jobs
+        </Label>
+        <select
+          id="schedule-model"
+          value={config.agent_model}
+          onChange={(e) => set("agent_model", e.target.value)}
+          className="w-64 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          <option value="">Not set - each job must specify one</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Used when a scheduled job has no model of its own (writes{" "}
+        <code className="rounded bg-secondary px-1">agent.model</code>). A model chosen when
+        scheduling a job always takes precedence.
+      </p>
       <SchedulerLogView />
 
       {/* Gateway */}
@@ -774,6 +798,7 @@ function SystemPromptTab() {
     extra_instructions: "",
     system_prompt: "",
     schedule_enabled: false,
+    agent_model: "",
   });
   const [overrideEnabled, setOverrideEnabled] = useState(false);
   const [showOverrideWarning, setShowOverrideWarning] = useState(false);
