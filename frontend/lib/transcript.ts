@@ -108,20 +108,27 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyAssistant(state, event);
     case "ToolResult":
       return applyToolResult(state, event.tool_call_id, event.content);
-    case "ApprovalRequest": {
-      let seq = state.seq;
-      const items = [
-        ...state.items,
-        {
-          kind: "approval",
-          id: String(seq++),
-          callId: event.tool_call_id,
-          toolName: event.tool_name,
-          toolArgs: event.tool_args,
-          status: "pending",
-        } as TranscriptItem,
-      ];
-      return { ...state, items, seq, typing: false };
+    case "ApprovalRequest": {                                  
+      let seq = state.seq;                                     
+      let insertAt = state.items.length;                       
+      for (let i = state.items.length - 1; i >= 0; i--) {     
+        if (state.items[i].kind !== "error") break;           
+        insertAt = i;                                          
+      }                                                        
+      const approval: TranscriptItem = {                       
+        kind: "approval",                                      
+        id: String(seq++),                                     
+        callId: event.tool_call_id,                            
+        toolName: event.tool_name,                             
+        toolArgs: event.tool_args,                             
+        status: "pending",                                     
+      };                                                       
+      const items = [                                          
+        ...state.items.slice(0, insertAt),                     
+        approval,                                              
+        ...state.items.slice(insertAt),                        
+      ];                                                       
+      return { ...state, items, seq, typing: false };          
     }
     case "AgentError": {
       let seq = state.seq;

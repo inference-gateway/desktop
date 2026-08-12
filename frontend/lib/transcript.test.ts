@@ -104,6 +104,56 @@ test("Done stops typing and finalizes running tools", () => {
   expect(s.typing).toBe(false);
 });
 
+test("AgentError before ApprovalRequest puts approval before the error", () => {
+      const s = run([
+        { type: "userSend", text: "write" },
+        ev({
+          kind: "AssistantMessage",
+          content: "",
+          reasoning_content: null,
+          tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+        }),
+        ev({ kind: "AgentError", message: "something went wrong" }),
+        ev({
+          kind: "ApprovalRequest",
+          tool_name: "Write",
+          tool_args: '{"path":"a"}',
+          tool_call_id: "c1",
+        }),
+      ]);
+      expect(s.items.map((i) => i.kind)).toEqual([
+        "user",
+        "tool",
+        "approval",
+        "error",
+      ]);
+});
+
+test("ApprovalRequest before AgentError keeps the natural order", () => {
+      const s = run([
+        { type: "userSend", text: "write" },
+        ev({
+          kind: "AssistantMessage",
+          content: "",
+          reasoning_content: null,
+          tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+        }),
+        ev({
+          kind: "ApprovalRequest",
+          tool_name: "Write",
+          tool_args: '{"path":"a"}',
+          tool_call_id: "c1",
+        }),
+        ev({ kind: "AgentError", message: "something went wrong" }),
+      ]);
+      expect(s.items.map((i) => i.kind)).toEqual([
+        "user",
+        "tool",
+        "approval",
+        "error",
+      ]);
+});
+
 test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   const ndjson = [
     JSON.stringify({ role: "user", content: "hello" }),
