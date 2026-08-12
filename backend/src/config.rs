@@ -88,7 +88,7 @@ pub(crate) struct DesktopConfig {
     /// When both are set, override replaces the default and extra_instructions are
     /// appended after it.
     pub(crate) system_prompt: String,
-    /// Enable local scheduling via `infer channels-manager`.
+    /// Enable local scheduling via `infer daemon`.
     pub(crate) schedule_enabled: bool,
 }
 

@@ -38,11 +38,13 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
         let _ = old.kill();
         let _ = old.wait();
     }
-    drop(guard);
+    if let Ok(mut log) = state.scheduler_log.lock() {
+        log.clear();
+    }
 
     let bin = infer_bin_path();
     let mut child = std::process::Command::new(&bin)
-        .args(["channels-manager"])
+        .arg("daemon")
         .envs(infer_env())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -57,7 +59,7 @@ pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result
         pipe_logger(stderr, log);
     }
 
-    *state.scheduler_child.lock().map_err(|e| e.to_string())? = Some(child);
+    *guard = Some(child);
     Ok(())
 }
 
