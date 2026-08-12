@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,6 +251,8 @@ function GeneralTab() {
     d1_base_url: "https://api.cloudflare.com/client/v4",
     extra_instructions: "",
     system_prompt: "",
+    schedule_enabled: false,
+    agent_model: "",
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -265,6 +267,11 @@ function GeneralTab() {
     setSaving(true);
     try {
       await api.setConfig(config);
+      if (config.schedule_enabled) {
+        await api.startScheduler();
+      } else {
+        await api.stopScheduler();
+      }
       setDirty(false);
       setSaved(true);
       setError("");
@@ -275,7 +282,7 @@ function GeneralTab() {
     }
   };
 
-  const set = (k: keyof DesktopConfig, v: string) => {
+  const set = (k: keyof DesktopConfig, v: string | boolean) => {
     setConfigs((c) => ({ ...c, [k]: v }));
     setDirty(true);
     setSaved(false);
@@ -342,7 +349,7 @@ function GeneralTab() {
               {f.options ? (
                 <select
                   id={f.key}
-                  value={config[f.key]}
+                  value={config[f.key] as string}
                   onChange={(e) => set(f.key, e.target.value)}
                   className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
                 >
@@ -356,7 +363,7 @@ function GeneralTab() {
                 <Input
                   id={f.key}
                   type={f.secret ? "password" : undefined}
-                  value={config[f.key]}
+                  value={config[f.key] as string}
                   onChange={(e) => set(f.key, e.target.value)}
                   placeholder={f.ph}
                 />
@@ -392,6 +399,50 @@ function GeneralTab() {
           ))}
         </select>
       </div>
+
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Scheduling</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire
+        scheduled agent jobs (and listen on configured channels like Telegram). Job runs are
+        recorded to your configured storage. The daemon starts on Save, runs while the app is
+        open, and stops on quit.
+      </p>
+      <div className="mb-3 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="schedule-enabled"
+          checked={config.schedule_enabled}
+          onChange={(e) => set("schedule_enabled", e.target.checked)}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="schedule-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Enable local scheduling
+        </Label>
+      </div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Label htmlFor="schedule-model" className="text-[0.8rem] font-medium">
+          Default model for scheduled jobs
+        </Label>
+        <select
+          id="schedule-model"
+          value={config.agent_model}
+          onChange={(e) => set("agent_model", e.target.value)}
+          className="w-64 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          <option value="">Not set - each job must specify one</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Used when a scheduled job has no model of its own (writes{" "}
+        <code className="rounded bg-secondary px-1">agent.model</code>). A model chosen when
+        scheduling a job always takes precedence.
+      </p>
+      <SchedulerLogView />
 
       {/* Gateway */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Gateway</h3>
@@ -746,6 +797,8 @@ function SystemPromptTab() {
     d1_base_url: "https://api.cloudflare.com/client/v4",
     extra_instructions: "",
     system_prompt: "",
+    schedule_enabled: false,
+    agent_model: "",
   });
   const [overrideEnabled, setOverrideEnabled] = useState(false);
   const [showOverrideWarning, setShowOverrideWarning] = useState(false);
@@ -890,5 +943,54 @@ function SystemPromptTab() {
         {err && <span role="status" className="text-[0.8rem] text-err">Couldn't save: {err}</span>}
       </div>
     </>
+  );
+}
+
+function SchedulerLogView() {
+  const [log, setLog] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [running, setRunning] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setRunning(await api.getSchedulerStatus());
+      setLog(await api.getSchedulerLog());
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 3000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  return (
+    <div className="mb-3 rounded-md border border-border bg-card">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-medium text-muted-foreground hover:text-foreground"
+      >
+        <span className="flex-1">Scheduler daemon</span>
+        {running ? (
+          <span className="flex items-center gap-1 text-emerald-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Running
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Stopped</span>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-border px-3 pb-3 pt-2">
+          <div className="max-h-[200px] overflow-y-auto rounded bg-secondary p-2 font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
+            {log.length === 0 ? (
+              <span className="italic">No log entries yet.</span>
+            ) : (
+              log.map((line, i) => <div key={i}>{line}</div>)
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

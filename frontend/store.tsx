@@ -145,6 +145,11 @@ function useDesktopStore() {
     }
   }, []);
 
+  useEffect(() => {
+    const t = setInterval(refreshConversations, 10_000);
+    return () => clearInterval(t);
+  }, [refreshConversations]);
+
   const loadProjects = useCallback(async () => {
     try {
       const raw = await api.readProjects();

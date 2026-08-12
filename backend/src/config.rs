@@ -88,6 +88,11 @@ pub(crate) struct DesktopConfig {
     /// When both are set, override replaces the default and extra_instructions are
     /// appended after it.
     pub(crate) system_prompt: String,
+    /// Enable local scheduling via `infer daemon`.
+    pub(crate) schedule_enabled: bool,
+    /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
+    /// config). A per-job model set at schedule time takes precedence.
+    pub(crate) agent_model: String,
 }
 
 pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
@@ -120,6 +125,8 @@ pub(crate) fn default_config() -> DesktopConfig {
         d1_base_url: "https://api.cloudflare.com/client/v4".into(),
         extra_instructions: String::new(),
         system_prompt: String::new(),
+        schedule_enabled: false,
+        agent_model: String::new(),
     }
 }
 
@@ -147,9 +154,14 @@ pub(crate) fn config_from_value(
     DesktopConfig {
         storage_backend: str_at(&["storage", "type"]).unwrap_or_else(|| "jsonl".into()),
         storage_directory: str_at(&["storage", "jsonl", "path"])
-            .map(|s| match s.strip_prefix('~') {
-                Some(rest) => format!("{}{}", home.display(), rest),
-                None => s,
+            .map(|s| {
+                if let Some(rest) = s.strip_prefix('~') {
+                    format!("{}{}", home.display(), rest)
+                } else if std::path::Path::new(&s).is_relative() {
+                    home.join(&s).display().to_string()
+                } else {
+                    s
+                }
             })
             .unwrap_or_else(|| default_storage_directory(home)),
         gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
@@ -181,6 +193,13 @@ pub(crate) fn config_from_value(
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
         extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
         system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
+        schedule_enabled: val
+            .get("tools")
+            .and_then(|t| t.get("schedule"))
+            .and_then(|s| s.get("enabled"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        agent_model: str_at(&["agent", "model"]).unwrap_or_default(),
     }
 }
 
@@ -302,6 +321,23 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
     );
     map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
 
+    let tools = map
+        .entry("tools".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(tmap) = tools.as_mapping_mut() {
+        set_section(
+            tmap,
+            "schedule",
+            vec![("enabled", cfg.schedule_enabled.into())],
+        );
+    }
+
+    set_section(
+        map,
+        "agent",
+        vec![("model", cfg.agent_model.clone().into())],
+    );
+
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
@@ -387,6 +423,14 @@ mod tests {
     }
 
     #[test]
+    fn config_from_value_resolves_relative_storage_path_against_home() {
+        let home = PathBuf::from("/home/tester");
+        let val = parse_yaml("storage:\n  jsonl:\n    path: .infer/conversations\n");
+        let cfg = config_from_value(&val, &home);
+        assert_eq!(cfg.storage_directory, "/home/tester/.infer/conversations");
+    }
+
+    #[test]
     fn config_from_value_defaults_when_missing() {
         let home = PathBuf::from("/home/tester");
         let cfg = config_from_value(&serde_norway::Value::Mapping(Default::default()), &home);
@@ -405,6 +449,7 @@ mod tests {
         assert_eq!(cfg.redis_port, "6379");
         assert_eq!(cfg.redis_db, "0");
         assert_eq!(cfg.d1_base_url, "https://api.cloudflare.com/client/v4");
+        assert!(!cfg.schedule_enabled);
     }
 
     #[test]
@@ -460,6 +505,13 @@ mod tests {
         assert_eq!(str_field(&val, &["gateway", "url"]), Some("http://gw"));
         assert!(val.get("default_model").is_none());
         assert!(val.get("prompts").is_none());
+        assert_eq!(
+            val.get("tools")
+                .and_then(|t| t.get("schedule"))
+                .and_then(|s| s.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 
     #[test]

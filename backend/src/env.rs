@@ -61,11 +61,19 @@ pub(crate) fn collector_env() -> Vec<(String, String)> {
     )]
 }
 
-/// Extra env vars for spawned infer processes: provider keys, plus the CLI
-/// mock switch when the desktop runs in mock mode.
+/// Extra env vars for spawned infer processes: provider keys, the jsonl
+/// storage path pinned to the absolute directory from Settings (desktop
+/// conversations are machine-global; without this a relative
+/// storage.jsonl.path resolves against each child's cwd, so dev, release,
+/// and the daemon would each read a different directory), plus the CLI mock
+/// switch when the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
     env.extend(collector_env());
+    env.push((
+        "INFER_STORAGE_JSONL_PATH".into(),
+        crate::config::read_config().storage_directory,
+    ));
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }

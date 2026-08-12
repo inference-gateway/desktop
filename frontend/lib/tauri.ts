@@ -59,6 +59,18 @@ export type DesktopConfig = {
   d1_base_url: string;
   extra_instructions: string;
   system_prompt: string;
+  schedule_enabled: boolean;
+  agent_model: string;
+};
+export type ScheduleJob = {
+  id: string;
+  name: string;
+  description: string;
+  cron_expression: string;
+  prompt: string;
+  run_once: boolean;
+  last_run: string;
+  last_error: string;
 };
 export type HistoryLine = {
   role: "user" | "assistant" | "tool";
@@ -112,6 +124,11 @@ export const api = {
   setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
   setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
   startGateway: (force = false) => invoke<void>("start_gateway", { force }),
+  startScheduler: () => invoke<void>("start_scheduler"),
+  stopScheduler: () => invoke<void>("stop_scheduler"),
+  getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
+  getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
+  listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),
   sttStatus: () => invoke<SttStatus>("stt_status"),
