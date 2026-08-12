@@ -29,6 +29,13 @@ fn pipe_logger<R: std::io::Read + Send + 'static>(pipe: R, log: Arc<Mutex<VecDeq
 
 #[tauri::command]
 pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    spawn_daemon(&state)
+}
+
+/// Kill any previous daemon child and spawn a fresh one. Called from the
+/// Settings save flow and from app setup (autostart when scheduling is
+/// enabled), so the daemon survives app restarts.
+pub(crate) fn spawn_daemon(state: &AppState) -> Result<(), String> {
     if mock_mode() {
         return Ok(());
     }

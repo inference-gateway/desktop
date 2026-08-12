@@ -41,6 +41,15 @@ pub fn run() {
             stored_traces,
             stored_metrics,
         })
+        .setup(|app| {
+            if config::read_config().schedule_enabled {
+                let state = app.state::<AppState>();
+                if let Err(e) = scheduler::spawn_daemon(&state) {
+                    eprintln!("scheduler autostart failed: {e}");
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             cli_install::check_and_install_cli,
             agent::send_message,
