@@ -105,8 +105,6 @@ test("Done stops typing and finalizes running tools", () => {
 });
 
 test("AgentError before ApprovalRequest puts approval before the error", () => {
-      // The backend may emit AgentError before ApprovalRequest; the reducer
-      // must still render the approval card BEFORE the error bubble.
       const s = run([
         { type: "userSend", text: "write" },
         ev({
@@ -115,9 +113,7 @@ test("AgentError before ApprovalRequest puts approval before the error", () => {
           reasoning_content: null,
           tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
         }),
-        // AgentError arrives first (out of order)
         ev({ kind: "AgentError", message: "something went wrong" }),
-        // ApprovalRequest arrives second
         ev({
           kind: "ApprovalRequest",
           tool_name: "Write",
@@ -134,7 +130,6 @@ test("AgentError before ApprovalRequest puts approval before the error", () => {
 });
 
 test("ApprovalRequest before AgentError keeps the natural order", () => {
-      // Normal arrival order: approval first, then error — should stay as-is.
       const s = run([
         { type: "userSend", text: "write" },
         ev({

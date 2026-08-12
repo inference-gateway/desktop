@@ -110,9 +110,6 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyToolResult(state, event.tool_call_id, event.content);
     case "ApprovalRequest": {                                  
       let seq = state.seq;                                     
-      // ponytail: insert approval before trailing error items 
-      // so tool_call -> approval -> error ordering is preserved
-      // even when AgentError arrives before ApprovalRequest. 
       let insertAt = state.items.length;                       
       for (let i = state.items.length - 1; i >= 0; i--) {     
         if (state.items[i].kind !== "error") break;           
