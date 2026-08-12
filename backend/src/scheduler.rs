@@ -84,7 +84,7 @@ pub(crate) async fn get_scheduler_status(
         .is_some_and(|s| s.is_none()))
 }
 
-/// A scheduled job as persisted by the CLI in `<storage parent>/schedules/*.yaml`.
+/// A scheduled job as persisted by the CLI in `~/.infer/schedules/*.yaml`.
 #[derive(serde::Serialize)]
 pub(crate) struct ScheduleJob {
     id: String,
@@ -97,16 +97,19 @@ pub(crate) struct ScheduleJob {
     last_error: String,
 }
 
-// Reads jsonl-backend job files only, other storage backends return
-// an empty list until the CLI grows a machine-readable `schedules list`.
+// Schedules are machine-global: the CLI always persists them under
+// ~/.infer/schedules (cli#1053), independent of the conversation storage
+// backend or path.
 #[tauri::command]
 pub(crate) async fn list_schedules() -> Result<Vec<ScheduleJob>, String> {
-    let storage = std::path::PathBuf::from(crate::config::read_config().storage_directory);
-    let Some(parent) = storage.parent() else {
-        return Ok(Vec::new());
-    };
-    let Ok(entries) = std::fs::read_dir(parent.join("schedules")) else {
-        return Ok(Vec::new());
+    Ok(read_schedules_dir(
+        &crate::env::home_dir().join(".infer").join("schedules"),
+    ))
+}
+
+fn read_schedules_dir(dir: &std::path::Path) -> Vec<ScheduleJob> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
     };
     let mut jobs = Vec::new();
     for entry in entries.flatten() {
@@ -141,7 +144,7 @@ pub(crate) async fn list_schedules() -> Result<Vec<ScheduleJob>, String> {
         });
     }
     jobs.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    Ok(jobs)
+    jobs
 }
 
 #[tauri::command]
@@ -150,4 +153,35 @@ pub(crate) async fn get_scheduler_log(
 ) -> Result<Vec<String>, String> {
     let guard = state.scheduler_log.lock().map_err(|e| e.to_string())?;
     Ok(guard.iter().cloned().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_schedules_dir;
+
+    #[test]
+    fn read_schedules_dir_parses_job_yaml() {
+        let dir = std::env::temp_dir().join(format!("sched-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("test-job.yaml"),
+            "id: test-job\nname: fixture\ncron_expression: '@every 3m'\nprompt: say hello\nrun_once: true\ncreated_at: 2026-08-12T09:49:30Z\nupdated_at: 2026-08-12T09:49:30Z\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("ignored.txt"), "not yaml").unwrap();
+
+        let jobs = read_schedules_dir(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, "test-job");
+        assert_eq!(jobs[0].name, "fixture");
+        assert_eq!(jobs[0].cron_expression, "@every 3m");
+        assert!(jobs[0].run_once);
+    }
+
+    #[test]
+    fn read_schedules_dir_missing_dir_is_empty() {
+        assert!(read_schedules_dir(std::path::Path::new("/nonexistent/schedules")).is_empty());
+    }
 }
