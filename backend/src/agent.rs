@@ -579,15 +579,18 @@ pub(crate) fn append_history(line: String) -> Result<(), String> {
 }
 
 /// Validate a generated-image path before copying it out: absolute, under
-/// `home`, inside an `.infer/tmp` dir, no `..` traversal. Split from
-/// `save_image` so the guard is testable without touching the filesystem.
+/// `home`, inside an `.infer/artifacts` dir (or the legacy `.infer/tmp`),
+/// no `..` traversal. Split from `save_image` so the guard is testable
+/// without touching the filesystem.
 pub(crate) fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, String> {
     let p = Path::new(path);
     let ok = p.starts_with(home)
         && !p.components().any(|c| c == Component::ParentDir)
-        && path.contains("/.infer/tmp/");
+        && (path.contains("/.infer/artifacts/") || path.contains("/.infer/tmp/"));
     if !ok {
-        return Err(format!("Refusing to save image outside .infer/tmp: {path}"));
+        return Err(format!(
+            "Refusing to save image outside .infer/artifacts or .infer/tmp: {path}"
+        ));
     }
     Ok(p.to_path_buf())
 }
@@ -776,8 +779,13 @@ mod tests {
         let home = PathBuf::from("/Users/me");
         assert!(safe_image_source("/Users/me/proj/.infer/tmp/cat.png", &home).is_ok());
         assert!(safe_image_source("/Users/me/.infer/tmp/cat.png", &home).is_ok());
+        assert!(safe_image_source("/Users/me/.infer/artifacts/sid-1/cat.png", &home).is_ok());
+        assert!(safe_image_source("/Users/me/proj/.infer/artifacts/sid-1/cat.png", &home).is_ok());
         assert!(safe_image_source("/etc/passwd", &home).is_err());
         assert!(safe_image_source("/Users/me/.infer/tmp/../../../etc/passwd", &home).is_err());
+        assert!(
+            safe_image_source("/Users/me/.infer/artifacts/../../../etc/passwd", &home).is_err()
+        );
         assert!(safe_image_source("/Users/me/Pictures/cat.png", &home).is_err());
     }
 

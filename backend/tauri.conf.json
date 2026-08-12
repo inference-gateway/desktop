@@ -25,7 +25,12 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["$HOME/**/.infer/tmp/**", "$HOME/.infer/tmp/**"]
+        "scope": [
+          "$HOME/**/.infer/tmp/**",
+          "$HOME/.infer/tmp/**",
+          "$HOME/**/.infer/artifacts/**",
+          "$HOME/.infer/artifacts/**"
+        ]
       }
     },
     "withGlobalTauri": true
