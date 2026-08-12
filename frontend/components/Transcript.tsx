@@ -214,6 +214,15 @@ function Item({ item, approve }: { item: TranscriptItem; approve: (callId: strin
 
 function ScheduledJobs() {
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
+  const [githubRepo, setGithubRepo] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .getConfig()
+      .then((c) =>
+        setGithubRepo(c.scheduler_backend === "github" ? c.scheduler_github_repository : null),
+      )
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
@@ -238,6 +247,25 @@ function ScheduledJobs() {
     >
       <summary className="px-5 py-[0.35rem] hover:text-foreground">
         Scheduled jobs ({jobs.length})
+        {githubRepo !== null && (
+          <span className="ml-2 text-[0.75rem]">
+            runs on GitHub Actions (UTC)
+            {githubRepo.includes("/") && (
+              <>
+                {" - "}
+                <button
+                  className="underline hover:text-foreground"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    api.openUrl(`https://github.com/${githubRepo}/actions`).catch(() => {});
+                  }}
+                >
+                  view runs
+                </button>
+              </>
+            )}
+          </span>
+        )}
       </summary>
       <div className="border-t border-border">
         {jobs.map((j) => (

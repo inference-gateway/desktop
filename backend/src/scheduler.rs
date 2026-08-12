@@ -155,6 +155,53 @@ fn read_schedules_dir(dir: &std::path::Path) -> Vec<ScheduleJob> {
     jobs
 }
 
+/// GitHub CLI availability/auth, shown by the Settings scheduling section as a
+/// prerequisite for the github scheduling backend.
+#[derive(serde::Serialize)]
+pub(crate) struct GithubAuthStatus {
+    installed: bool,
+    authenticated: bool,
+}
+
+#[tauri::command]
+pub(crate) async fn github_auth_status() -> Result<GithubAuthStatus, String> {
+    tokio::task::spawn_blocking(|| {
+        let installed = crate::download::gh_available();
+        GithubAuthStatus {
+            installed,
+            authenticated: installed && crate::download::gh_authenticated(),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Open a URL in the default browser. Restricted to http(s) so a malformed
+/// config value can't be used to launch arbitrary schemes.
+#[tauri::command]
+pub(crate) async fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err(format!("refusing to open non-http url: {url}"));
+    }
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(not(target_os = "macos"))]
+    let opener = "xdg-open";
+    tokio::task::spawn_blocking(move || {
+        std::process::Command::new(opener)
+            .arg(&url)
+            .status()
+            .map_err(|e| e.to_string())
+            .and_then(|s| {
+                s.success()
+                    .then_some(())
+                    .ok_or_else(|| format!("{opener} exited with {s}"))
+            })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub(crate) async fn get_scheduler_log(
     state: tauri::State<'_, AppState>,

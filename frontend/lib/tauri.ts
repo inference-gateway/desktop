@@ -61,7 +61,16 @@ export type DesktopConfig = {
   system_prompt: string;
   schedule_enabled: boolean;
   agent_model: string;
+  scheduler_backend: string;
+  scheduler_github_repository: string;
+  scheduler_github_pull_requests: boolean;
+  scheduler_github_artifacts_enabled: boolean;
+  scheduler_github_artifacts_poll_interval: string;
+  scheduler_github_artifacts_initial_delay: string;
+  scheduler_github_artifacts_max_attempts: string;
+  scheduler_github_artifacts_rate_limit_backoff: string;
 };
+export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type ScheduleJob = {
   id: string;
   name: string;
@@ -129,6 +138,8 @@ export const api = {
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
   getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
+  githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),
   sttStatus: () => invoke<SttStatus>("stt_status"),
