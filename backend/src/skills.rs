@@ -21,6 +21,15 @@ pub(crate) async fn install_skill(name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub(crate) async fn uninstall_skill(name: String) -> Result<(), String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid skill name: {name}"));
+    }
+    run_infer(&["skills", "uninstall", &name, "--user"]).await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn list_installed_skills() -> Vec<String> {
     let dir = home_dir().join(".infer").join("skills");
     let Ok(entries) = std::fs::read_dir(dir) else {

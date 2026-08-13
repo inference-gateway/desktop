@@ -163,6 +163,7 @@ export const api = {
   saveUpload: (data: string, mime: string) =>
         invoke<string>("save_upload", { data, mime }),
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
+  uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
   getMetrics: () => invoke<StoredMetric[]>("get_metrics"),

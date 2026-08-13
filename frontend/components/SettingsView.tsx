@@ -1628,11 +1628,11 @@ fetchSkillsCatalog()
 api.listInstalledSkills().then((s) => setInstalled(new Set(s))).catch(() => {});
   }, []);
 
-  const install = async (name: string) => {
+  const runSkillAction = async (name: string, action: (name: string) => Promise<void>) => {
 setInstallingName(name);
 setInstallErr(null);
 try {
-  await api.installSkill(name);
+  await action(name);
   setInstalled(new Set(await api.listInstalledSkills()));
 } catch (e) {
   setInstallErr({ name, msg: String(e) });
@@ -1731,16 +1731,27 @@ return catalog.skills.filter(
                     )}
               </span>
               {isInstalled ? (
-                    <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
-                      installed
-                    </span>
+                    <>
+                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+                        installed
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={installingName !== ""}
+                        onClick={() => runSkillAction(s.name, api.uninstallSkill)}
+                      >
+                        {installingName === s.name ? "Uninstalling..." : "Uninstall"}
+                      </Button>
+                    </>
               ) : (
                     <Button
                       size="sm"
                       variant="outline"
                       className="shrink-0"
                       disabled={installingName !== ""}
-                      onClick={() => install(s.name)}
+                      onClick={() => runSkillAction(s.name, api.installSkill)}
                     >
                       {installingName === s.name ? "Installing..." : "Install"}
                     </Button>

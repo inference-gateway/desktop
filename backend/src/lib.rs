@@ -94,6 +94,7 @@ pub fn run() {
             agent::save_image,
             agent::save_upload,
             skills::install_skill,
+            skills::uninstall_skill,
             skills::list_installed_skills,
             observability::get_traces,
             observability::get_metrics,
