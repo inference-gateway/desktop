@@ -144,6 +144,47 @@ When working on a GitHub issue that belongs to a project board, keep its status 
 
 ### Available Agents
 - **documentation-agent**: Documentation generation and updates.
+- **browser-agent**: AI-driven browser automation via [browser-use](https://github.com/browser-use/browser-use).
+      Runs as an OCI container with Playwright + browser-use, exposing browser actions
+      (navigate, click, fill, extract, screenshot) as A2A tool calls that the infer agent
+      can delegate to.
+
+### Enabling the Browser Agent
+
+The browser-agent is published to the [agents catalog](https://cdn.jsdelivr.net/gh/inference-gateway/agents@main/catalog.json)
+and can be managed from the desktop app's **Settings > Agents** tab or via the `infer` CLI:
+
+```bash
+# Register the browser agent (from the catalog)
+infer agents add browser-agent
+
+# Check its status
+infer agents list
+
+# Set a custom model for browser agent LLM calls
+infer agents update browser-agent --model openai/gpt-4o
+```
+
+Once registered and toggled on, your infer agent can delegate browser tasks:
+
+- **Navigate** to URLs and wait for page load
+- **Click** elements by CSS selector or text content
+- **Fill** input fields and submit forms
+- **Extract** text content or structured data from pages
+- **Screenshot** pages (visible in the transcript as images)
+
+The browser-agent routes its LLM calls through the local inference gateway
+(default `http://localhost:8080`), sharing your configured providers and models.
+
+In the OpenTask CI workflow, add `browser-agent` to the `agents` input to spin
+it up alongside the documentation-agent:
+
+```yaml
+agents: documentation-agent,browser-agent
+```
+
+The browser-agent runs headless by default. Set `BROWSER_HEADLESS=false` in the
+container environment for a visible browser during development.
 
 ### Plugins
 - **ponytail** (`DietrichGebert/ponytail`): Lazy senior dev mode - forces the simplest, most minimal solution.
