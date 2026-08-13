@@ -17,8 +17,8 @@ import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import {
+  DEFAULT_REGISTRY_URL,
   fetchSkillsCatalog,
-  getConfiguredSkills,
   getRegistryUrl,
   setRegistryUrl,
   type SkillsCatalog,
@@ -1616,13 +1616,30 @@ function SkillsTab() {
   const [search, setSearch] = useState("");
   const [registryUrl, setRegistryUrlState] = useState(getRegistryUrl());
   const [urlDirty, setUrlDirty] = useState(false);
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
+  const [installingName, setInstallingName] = useState("");
+  const [installErr, setInstallErr] = useState<{ name: string; msg: string } | null>(null);
 
   useEffect(() => {
 fetchSkillsCatalog()
   .then(setCatalog)
   .catch((e) => setErr(String(e)))
   .finally(() => setLoading(false));
+api.listInstalledSkills().then((s) => setInstalled(new Set(s))).catch(() => {});
   }, []);
+
+  const install = async (name: string) => {
+setInstallingName(name);
+setInstallErr(null);
+try {
+  await api.installSkill(name);
+  setInstalled(new Set(await api.listInstalledSkills()));
+} catch (e) {
+  setInstallErr({ name, msg: String(e) });
+} finally {
+  setInstallingName("");
+}
+  };
 
   const filtered = useMemo(() => {
 if (!catalog) return [];
@@ -1632,8 +1649,6 @@ return catalog.skills.filter(
   (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
 );
   }, [catalog, search]);
-
-  const configured = getConfiguredSkills();
 
   return (
 <>
@@ -1651,7 +1666,7 @@ return catalog.skills.filter(
         setRegistryUrlState(e.target.value);
         setUrlDirty(true);
       }}
-      placeholder="https://registry.inference-gateway.com/skills/"
+      placeholder={DEFAULT_REGISTRY_URL}
       className="flex-1"
     />
     {urlDirty && (
@@ -1694,13 +1709,13 @@ return catalog.skills.filter(
 
       <div className="flex flex-col gap-1">
         {filtered.map((s) => {
-          const isConfigured = configured.has(s.name);
+          const isInstalled = installed.has(s.name);
           return (
             <div
               key={s.name}
               className={cn(
                     "flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-[0.82rem]",
-                    isConfigured ? "border-primary" : "border-border",
+                    isInstalled ? "border-primary" : "border-border",
               )}
             >
               <span className="min-w-0 flex-1">
@@ -1711,11 +1726,24 @@ return catalog.skills.filter(
                     {s.description && (
                       <p className="line-clamp-1 text-[0.73rem] text-muted-foreground">{s.description}</p>
                     )}
+                    {installErr?.name === s.name && (
+                      <p className="text-[0.73rem] text-err">{installErr.msg}</p>
+                    )}
               </span>
-              {!isConfigured && (
+              {isInstalled ? (
                     <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
-                      remote
+                      installed
                     </span>
+              ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={installingName !== ""}
+                      onClick={() => install(s.name)}
+                    >
+                      {installingName === s.name ? "Installing..." : "Install"}
+                    </Button>
               )}
             </div>
           );

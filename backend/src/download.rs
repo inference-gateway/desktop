@@ -124,11 +124,10 @@ pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<boo
     if !gh_available() || !gh_authenticated() {
         return Ok(false);
     }
-    let status = std::process::Command::new(gh_bin())
+    let output = std::process::Command::new(gh_bin())
         .args([
             "release",
             "download",
-            "latest",
             "--repo",
             "inference-gateway/cli",
             "--pattern",
@@ -137,10 +136,14 @@ pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<boo
             dest.to_str().unwrap_or(""),
             "--clobber",
         ])
-        .status()
+        .output()
         .map_err(|e| format!("gh release download failed: {}", e))?;
-    if !status.success() {
-        return Err("gh release download exited with non-zero status".into());
+    if !output.status.success() {
+        eprintln!(
+            "gh release download failed, falling back to direct download: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        return Ok(false);
     }
     Ok(true)
 }

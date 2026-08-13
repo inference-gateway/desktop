@@ -1,9 +1,10 @@
-// Skills registry: fetch & cache the remote skills catalog, track locally-configured skills.
-// ponytail: localStorage-based config - migrate to DesktopConfig when backend persistence matters.
+// Skills registry: fetch the remote skills catalog. Installed state lives on
+// disk (~/.infer/skills) and is read via api.listInstalledSkills().
 
-const DEFAULT_REGISTRY_URL = "https://registry.inference-gateway.com/skills/";
+export const DEFAULT_REGISTRY_URL =
+  "https://cdn.jsdelivr.net/gh/inference-gateway/skills@main/catalog.json";
+const LEGACY_REGISTRY_URL = "https://registry.inference-gateway.com/skills/";
 const REGISTRY_KEY = "skillsRegistryUrl";
-const CONFIGURED_KEY = "configuredSkills";
 
 export type SkillMetadata = {
   name: string;
@@ -12,31 +13,18 @@ export type SkillMetadata = {
 };
 
 export type SkillsCatalog = {
-  version: string;
+  version: number;
   skills: SkillMetadata[];
 };
 
 export function getRegistryUrl(): string {
-  return localStorage.getItem(REGISTRY_KEY) || DEFAULT_REGISTRY_URL;
+  const stored = localStorage.getItem(REGISTRY_KEY);
+  if (!stored || stored === LEGACY_REGISTRY_URL) return DEFAULT_REGISTRY_URL;
+  return stored;
 }
 
 export function setRegistryUrl(url: string): void {
   localStorage.setItem(REGISTRY_KEY, url);
-}
-
-export function getConfiguredSkills(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(CONFIGURED_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-}
-
-export function setConfiguredSkill(name: string, configured: boolean): void {
-  const set = getConfiguredSkills();
-  if (configured) set.add(name);
-  else set.delete(name);
-  localStorage.setItem(CONFIGURED_KEY, JSON.stringify([...set]));
 }
 
 export async function fetchSkillsCatalog(url?: string): Promise<SkillsCatalog> {

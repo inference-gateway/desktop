@@ -6,7 +6,7 @@ import { TokenReadout } from "./TokenReadout";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
-import { fetchSkillsCatalog, getConfiguredSkills, setConfiguredSkill, type SkillMetadata } from "@/lib/skills";
+import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
 import { api } from "@/lib/tauri";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -32,7 +32,9 @@ export function Composer() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingImage[]>([]);
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
-  const [configuredSkills, setConfiguredSkillsState] = useState<Set<string>>(() => getConfiguredSkills());
+  const [installedSkills, setInstalledSkills] = useState<Set<string>>(new Set());
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState("");
   const [showSkills, setShowSkills] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [activeSkillIdx, setActiveSkillIdx] = useState(0);
@@ -43,6 +45,7 @@ export function Composer() {
         try {
           const cat = await fetchSkillsCatalog();
           setSkills(cat.skills);
+          setInstalledSkills(new Set(await api.listInstalledSkills()));
         } catch {}
   }, []);
 
@@ -106,7 +109,8 @@ export function Composer() {
         autoGrow(el);
         setShowSkills(false);
         // If remote skill, prompt download
-        if (!configuredSkills.has(skill.name)) {
+        if (!installedSkills.has(skill.name)) {
+          setInstallError("");
           setPendingDownload(skill);
         }
   };
@@ -244,7 +248,7 @@ export function Composer() {
             className="mx-2 mb-2 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
           >
             {filteredSkills.map((s, i) => {
-              const isConfigured = configuredSkills.has(s.name);
+              const isConfigured = installedSkills.has(s.name);
               return (
                 <button
                   key={s.name}
@@ -272,7 +276,7 @@ export function Composer() {
           </div>
         )}
         {pendingDownload && (
-          <Dialog open onOpenChange={() => setPendingDownload(null)}>
+          <Dialog open onOpenChange={() => !installing && setPendingDownload(null)}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Download skill</DialogTitle>
@@ -281,23 +285,34 @@ export function Composer() {
                   downloaded locally. Would you like to download it now?
                 </DialogDescription>
               </DialogHeader>
+              {installError && (
+                <p className="text-[0.8rem] text-err">{installError}</p>
+              )}
               <DialogFooter>
                 <Button
                   variant="outline"
+                  disabled={installing}
                   onClick={() => setPendingDownload(null)}
                 >
                   Deny
                 </Button>
                 <Button
-                  onClick={() => {
-                    setConfiguredSkill(pendingDownload.name, true);
-                    setConfiguredSkillsState(
-                      new Set(getConfiguredSkills()),
-                    );
-                    setPendingDownload(null);
+                  disabled={installing}
+                  onClick={async () => {
+                    setInstalling(true);
+                    setInstallError("");
+                    try {
+                      await api.installSkill(pendingDownload.name);
+                      setInstalledSkills(new Set(await api.listInstalledSkills()));
+                      setPendingDownload(null);
+                    } catch (e) {
+                      setInstallError(String(e));
+                    } finally {
+                      setInstalling(false);
+                    }
                   }}
                 >
-                  Approve
+                  {installing ? "Installing..." : "Approve"}
                 </Button>
               </DialogFooter>
             </DialogContent>

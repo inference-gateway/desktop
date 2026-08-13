@@ -162,6 +162,8 @@ export const api = {
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveUpload: (data: string, mime: string) =>
         invoke<string>("save_upload", { data, mime }),
+  installSkill: (name: string) => invoke<void>("install_skill", { name }),
+  listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
   getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
