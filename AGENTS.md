@@ -144,6 +144,34 @@ When working on a GitHub issue that belongs to a project board, keep its status 
 
 ### Available Agents
 - **documentation-agent**: Documentation generation and updates.
+- **browser-agent**: Browser automation via browser-use. Navigate web pages, click elements, fill forms, extract text, take screenshots, and scroll. Added as a local OCI container.
+
+### Enabling the Browser Agent
+
+The browser-agent provides AI-driven browser control that the infer agent can delegate to via the A2A protocol.
+
+**From the desktop app:**
+1. Open Settings > Agents tab.
+2. Under "Local A2A Agents (containers)", toggle the **browser-agent** switch to enable it.
+3. (Optional) Select a model for the agent's LLM calls - it reuses the gateway on localhost:8080 by default.
+4. The agent runs as a local OCI container (inference-gateway/browser-agent:latest) on port 8083.
+
+**From the CLI:**
+```bash
+infer agents add browser-agent
+infer agents list
+```
+
+**Browser tasks the agent can perform:**
+- `browser_navigate(url)` - Navigate to a URL
+- `browser_click(selector)` - Click an element by CSS selector
+- `browser_fill(selector, value)` - Fill an input field
+- `browser_extract_text(selector?)` - Extract visible text (page or element)
+- `browser_screenshot(selector?, full_page?)` - Take a screenshot (returns a previewable image in the transcript)
+- `browser_scroll(direction, amount?)` - Scroll the page
+
+**From the OpenTask CI workflow:**
+Trigger the workflow with `@opentask` on an issue or comment. The workflow can spin up a browser-agent container and the desktop app can connect to the running agent via the gateway on port 8080. See the [OpenTask documentation](.github/workflows/tasks.yml) for details.
 
 ### Plugins
 - **ponytail** (`DietrichGebert/ponytail`): Lazy senior dev mode - forces the simplest, most minimal solution.

@@ -61,7 +61,7 @@ export type ChatAction =
   | { type: "error"; text: string }
   | { type: "stopTyping" };
 
-const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
+const IMAGE_TOOL = /^(Image(Generation|Edit|Variation)|browser_screenshot)$/;
 const FAILISH = /fail|error/i;
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {

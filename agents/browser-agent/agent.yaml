@@ -1,0 +1,74 @@
+name: browser-agent
+description: Browser automation agent powered by browser-use. Can navigate web pages, click elements, fill forms, extract text, and take screenshots.
+version: "1.0.0"
+type: local
+oci: inference-gateway/browser-agent:latest
+port: 8083
+url: http://localhost:8083
+
+skills:
+  - name: browser_navigate
+    description: Navigate to a URL
+    args:
+      url:
+        type: string
+        description: The URL to navigate to
+        required: true
+  - name: browser_click
+    description: Click an element on the page
+    args:
+      selector:
+        type: string
+        description: CSS selector for the element to click
+        required: true
+  - name: browser_fill
+    description: Fill an input field with text
+    args:
+      selector:
+        type: string
+        description: CSS selector for the input element
+        required: true
+      value:
+        type: string
+        description: Text to type into the field
+        required: true
+  - name: browser_extract_text
+    description: Extract visible text from a page or element
+    args:
+      selector:
+        type: string
+        description: CSS selector (optional, extracts whole page if omitted)
+        required: false
+  - name: browser_screenshot
+    description: Take a screenshot of the current page or a specific element
+    args:
+      selector:
+        type: string
+        description: CSS selector for element to screenshot (optional, full page if omitted)
+        required: false
+      full_page:
+        type: boolean
+        description: Capture the full scrollable page (default false)
+        required: false
+  - name: browser_scroll
+    description: Scroll the page in a direction
+    args:
+      direction:
+        type: string
+        description: 'Scroll direction: "down", "up", "left", "right"'
+        required: true
+      amount:
+        type: integer
+        description: Pixels to scroll (default 500)
+        required: false
+
+gateway:
+  url: http://localhost:8080
+  auth: shared
+
+sandbox:
+  network: isolated
+  allow:
+    - "*.cdn.*"
+    - "*.googleapis.com"
+    - "*.githubusercontent.com"

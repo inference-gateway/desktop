@@ -1,0 +1,8 @@
+name: browser agent screenshot renders a visible tool card with image
+steps:
+  - new_chat
+  - send: "Take a screenshot of example.com"
+  # The browser_screenshot tool call must appear in the transcript as a tool card.
+  - wait_for: { text: "browser_screenshot", timeout: 60 }
+  # Once the result arrives, a .png image should render in the transcript.
+  - wait_for: { text: ".png", timeout: 30 }
