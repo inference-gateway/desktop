@@ -67,12 +67,12 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-- uses: oven-sh/setup-bun@v2.2.0
-  with:
-    bun-version: latest
+    - uses: oven-sh/setup-bun@v2.2.0
+      with:
+        bun-version: latest
 
-- name: Build frontend
-  run: bun install --frozen-lockfile && bun run build
+    - name: Build frontend
+      run: bun install --frozen-lockfile && bun run build
 
       - uses: inference-gateway/infer-action@v0.48.0
         with:
