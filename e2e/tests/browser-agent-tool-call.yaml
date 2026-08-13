@@ -1,0 +1,8 @@
+name: browser agent tool call renders in transcript
+steps:
+  - new_chat
+  - send: "Navigate to example.com using the browser agent"
+  # The Navigate tool card must appear in the transcript when the infer
+  # agent delegates to the browser-agent via A2A.
+  - wait_for: { text: "Navigate", timeout: 40 }
+  - wait_for: { text: "example.com", timeout: 20 }

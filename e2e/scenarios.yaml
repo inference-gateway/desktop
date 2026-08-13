@@ -100,3 +100,12 @@ scenarios:
       - reasoning: "Let me work through this step by step. First I weigh the options, then the trade-offs. Therefore the answer is 42."
         content: "The answer is 42, plainly."
 
+  - name: browser-agent-demo
+    match: '(?i)navigate.*example\.com|browser.*agent'
+    turns:
+      - tool_calls:
+              - { name: A2A_ExecuteTask, args:
+                  { agent: "browser-agent",
+                    task: "Navigate to https://example.com and extract the heading" } }
+      - content: "I used the browser agent to navigate to example.com. The page heading is: 'Example Domain'. The browser-agent tool card shows 'Navigate' in the transcript."
+
