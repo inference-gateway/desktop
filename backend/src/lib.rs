@@ -10,6 +10,7 @@ mod env;
 mod gateway;
 mod observability;
 mod scheduler;
+mod skills;
 mod stt;
 mod updates;
 
@@ -92,6 +93,9 @@ pub fn run() {
             agent::append_history,
             agent::save_image,
             agent::save_upload,
+            skills::install_skill,
+            skills::uninstall_skill,
+            skills::list_installed_skills,
             observability::get_traces,
             observability::get_metrics,
         ])
