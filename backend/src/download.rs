@@ -83,15 +83,36 @@ pub(crate) fn find_checksum(checksums_text: &str, asset_name: &str) -> Option<St
     None
 }
 
+/// Absolute path to the `gh` CLI. A Finder-launched .app inherits launchd's
+/// minimal PATH (no /opt/homebrew/bin), so probe common install dirs beyond
+/// PATH before falling back to the bare name.
+pub(crate) fn gh_bin() -> &'static std::path::Path {
+    static GH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    GH.get_or_init(|| {
+        crate::stt::find_on_path("gh")
+            .or_else(|| {
+                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                [
+                    std::path::PathBuf::from("/opt/homebrew/bin/gh"),
+                    std::path::PathBuf::from("/usr/local/bin/gh"),
+                ]
+                .into_iter()
+                .chain(home.map(|h| h.join(".local/bin/gh")))
+                .find(|p| p.is_file())
+            })
+            .unwrap_or_else(|| "gh".into())
+    })
+}
+
 pub(crate) fn gh_available() -> bool {
-    std::process::Command::new("gh")
+    std::process::Command::new(gh_bin())
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success())
 }
 
 pub(crate) fn gh_authenticated() -> bool {
-    std::process::Command::new("gh")
+    std::process::Command::new(gh_bin())
         .args(["auth", "status"])
         .output()
         .is_ok_and(|o| o.status.success())
@@ -103,7 +124,7 @@ pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<boo
     if !gh_available() || !gh_authenticated() {
         return Ok(false);
     }
-    let status = std::process::Command::new("gh")
+    let status = std::process::Command::new(gh_bin())
         .args([
             "release",
             "download",

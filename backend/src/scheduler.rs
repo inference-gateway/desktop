@@ -176,6 +176,141 @@ pub(crate) async fn github_auth_status() -> Result<GithubAuthStatus, String> {
     .map_err(|e| e.to_string())
 }
 
+fn gh_output(args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new(crate::download::gh_bin())
+        .args(args)
+        .output()
+        .map_err(|e| format!("gh failed to start: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The user's own login plus the orgs they belong to, for the repository
+/// owner dropdown in Settings.
+#[tauri::command]
+pub(crate) async fn github_owners() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        let user = gh_output(&["api", "user", "--jq", ".login"])?;
+        let orgs = gh_output(&["api", "user/orgs", "--jq", ".[].login"]).unwrap_or_default();
+        let mut owners: Vec<String> = std::iter::once(user.as_str())
+            .chain(orgs.lines())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        owners.dedup();
+        Ok(owners)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn valid_repo(repo: &str) -> bool {
+    let Some((owner, name)) = repo.split_once('/') else {
+        return false;
+    };
+    let ok = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    ok(owner) && ok(name)
+}
+
+fn valid_secret_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+#[tauri::command]
+pub(crate) async fn github_repo_exists(repo: String) -> Result<bool, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        Ok(gh_output(&["repo", "view", &repo, "--json", "name"]).is_ok())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Create the routines repository, private with an initial commit so a
+/// default branch exists - mirrors the CLI's ensureRepo.
+#[tauri::command]
+pub(crate) async fn github_create_repo(repo: String) -> Result<(), String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        gh_output(&["repo", "create", &repo, "--private", "--add-readme"]).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Names of the Actions secrets already set on `repo`.
+#[tauri::command]
+pub(crate) async fn github_list_secrets(repo: String) -> Result<Vec<String>, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let out = gh_output(&[
+            "secret", "list", "--repo", &repo, "--json", "name", "--jq", ".[].name",
+        ])?;
+        Ok(out.lines().map(String::from).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Set an Actions secret on `repo` via `gh secret set`, value piped over
+/// stdin so it never appears in argv. The value is never stored locally.
+#[tauri::command]
+pub(crate) async fn github_set_secret(
+    repo: String,
+    name: String,
+    value: String,
+) -> Result<(), String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    if !valid_secret_name(&name) {
+        return Err(format!("invalid secret name: {name}"));
+    }
+    if value.is_empty() {
+        return Err("secret value is empty".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        use std::io::Write;
+        let mut child = std::process::Command::new(crate::download::gh_bin())
+            .args(["secret", "set", &name, "--repo", &repo])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("gh failed to start: {e}"))?;
+        child
+            .stdin
+            .take()
+            .ok_or("gh stdin unavailable")?
+            .write_all(value.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Open a URL in the default browser. Restricted to http(s) so a malformed
 /// config value can't be used to launch arbitrary schemes.
 #[tauri::command]
@@ -212,7 +347,29 @@ pub(crate) async fn get_scheduler_log(
 
 #[cfg(test)]
 mod tests {
-    use super::read_schedules_dir;
+    use super::{read_schedules_dir, valid_repo, valid_secret_name};
+
+    #[test]
+    fn valid_repo_accepts_owner_slash_name_only() {
+        assert!(valid_repo("edenreich/.routines"));
+        assert!(valid_repo("inference-gateway/desktop"));
+        assert!(!valid_repo("no-slash"));
+        assert!(!valid_repo("/name"));
+        assert!(!valid_repo("owner/"));
+        assert!(!valid_repo("a/b/c"));
+        assert!(!valid_repo("owner/na me"));
+        assert!(!valid_repo("owner/$(rm)"));
+    }
+
+    #[test]
+    fn valid_secret_name_is_upper_snake() {
+        assert!(valid_secret_name("APP_CLIENT_ID"));
+        assert!(valid_secret_name("OPENAI_API_KEY"));
+        assert!(!valid_secret_name(""));
+        assert!(!valid_secret_name("lower"));
+        assert!(!valid_secret_name("1STARTS_WITH_DIGIT"));
+        assert!(!valid_secret_name("HAS-DASH"));
+    }
 
     #[test]
     fn read_schedules_dir_parses_job_yaml() {

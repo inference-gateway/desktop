@@ -274,9 +274,9 @@ function ScheduledJobs() {
             className="flex items-baseline gap-2 border-b border-border px-5 py-1.5 last:border-b-0"
             title={j.description || j.prompt}
           >
-            <span className="font-medium text-foreground">{j.name || j.id}</span>
-            <code className="rounded bg-card px-1 text-[0.75rem]">{j.cron_expression}</code>
-            {j.run_once && <span className="text-[0.75rem]">one-off</span>}
+            <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{j.name || j.id}</span>
+            <code className="shrink-0 whitespace-nowrap rounded bg-card px-1 text-[0.75rem]">{j.cron_expression}</code>
+            {j.run_once && <span className="shrink-0 text-[0.75rem]">one-off</span>}
             <span className="ml-auto min-w-0 truncate text-[0.75rem]">{j.prompt}</span>
             {j.last_error && (
               <span className="shrink-0 text-[0.75rem] text-err" title={j.last_error}>

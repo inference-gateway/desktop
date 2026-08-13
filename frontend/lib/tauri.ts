@@ -63,6 +63,10 @@ export type DesktopConfig = {
   agent_model: string;
   scheduler_backend: string;
   scheduler_github_repository: string;
+  scheduler_github_app_client_id_secret: string;
+  scheduler_github_app_private_key_secret: string;
+  scheduler_github_bot_name: string;
+  scheduler_github_bot_email: string;
   scheduler_github_pull_requests: boolean;
   scheduler_github_artifacts_enabled: boolean;
   scheduler_github_artifacts_poll_interval: string;
@@ -139,6 +143,12 @@ export const api = {
   getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
   githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
+  githubOwners: () => invoke<string[]>("github_owners"),
+  githubRepoExists: (repo: string) => invoke<boolean>("github_repo_exists", { repo }),
+  githubCreateRepo: (repo: string) => invoke<void>("github_create_repo", { repo }),
+  githubListSecrets: (repo: string) => invoke<string[]>("github_list_secrets", { repo }),
+  githubSetSecret: (repo: string, name: string, value: string) =>
+    invoke<void>("github_set_secret", { repo, name, value }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),

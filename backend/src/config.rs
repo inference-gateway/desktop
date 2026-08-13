@@ -96,6 +96,15 @@ pub(crate) struct DesktopConfig {
     /// Scheduling backend: "local" (daemon cron) or "github" (.routines Actions).
     pub(crate) scheduler_backend: String,
     pub(crate) scheduler_github_repository: String,
+    /// Actions secret names the generated workflow reads the GitHub App
+    /// credentials from; configurable so org-level secrets with their own
+    /// naming convention can be referenced.
+    pub(crate) scheduler_github_app_client_id_secret: String,
+    pub(crate) scheduler_github_app_private_key_secret: String,
+    /// Git author/committer identity for the deploy commits the CLI pushes to
+    /// the routines repository.
+    pub(crate) scheduler_github_bot_name: String,
+    pub(crate) scheduler_github_bot_email: String,
     pub(crate) scheduler_github_pull_requests: bool,
     pub(crate) scheduler_github_artifacts_enabled: bool,
     pub(crate) scheduler_github_artifacts_poll_interval: String,
@@ -138,6 +147,10 @@ pub(crate) fn default_config() -> DesktopConfig {
         agent_model: String::new(),
         scheduler_backend: "local".into(),
         scheduler_github_repository: String::new(),
+        scheduler_github_app_client_id_secret: "APP_CLIENT_ID".into(),
+        scheduler_github_app_private_key_secret: "APP_PRIVATE_KEY".into(),
+        scheduler_github_bot_name: "infer".into(),
+        scheduler_github_bot_email: "infer@users.noreply.github.com".into(),
         scheduler_github_pull_requests: false,
         scheduler_github_artifacts_enabled: true,
         scheduler_github_artifacts_poll_interval: "10m".into(),
@@ -227,6 +240,22 @@ pub(crate) fn config_from_value(
         scheduler_backend: str_at(&["scheduler", "backend"]).unwrap_or(d.scheduler_backend),
         scheduler_github_repository: str_at(&["scheduler", "github", "repository"])
             .unwrap_or(d.scheduler_github_repository),
+        scheduler_github_app_client_id_secret: str_at(&[
+            "scheduler",
+            "github",
+            "app_client_id_secret",
+        ])
+        .unwrap_or(d.scheduler_github_app_client_id_secret),
+        scheduler_github_app_private_key_secret: str_at(&[
+            "scheduler",
+            "github",
+            "app_private_key_secret",
+        ])
+        .unwrap_or(d.scheduler_github_app_private_key_secret),
+        scheduler_github_bot_name: str_at(&["scheduler", "github", "bot_name"])
+            .unwrap_or(d.scheduler_github_bot_name),
+        scheduler_github_bot_email: str_at(&["scheduler", "github", "bot_email"])
+            .unwrap_or(d.scheduler_github_bot_email),
         scheduler_github_pull_requests: bool_at(&["scheduler", "github", "pull_requests"])
             .unwrap_or(d.scheduler_github_pull_requests),
         scheduler_github_artifacts_enabled: bool_at(&[
@@ -413,6 +442,16 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
             "github",
             vec![
                 ("repository", cfg.scheduler_github_repository.clone().into()),
+                (
+                    "app_client_id_secret",
+                    cfg.scheduler_github_app_client_id_secret.clone().into(),
+                ),
+                (
+                    "app_private_key_secret",
+                    cfg.scheduler_github_app_private_key_secret.clone().into(),
+                ),
+                ("bot_name", cfg.scheduler_github_bot_name.clone().into()),
+                ("bot_email", cfg.scheduler_github_bot_email.clone().into()),
                 ("pull_requests", cfg.scheduler_github_pull_requests.into()),
             ],
         );
