@@ -82,7 +82,6 @@ export function Composer() {
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
         const el = e.currentTarget;
         autoGrow(el);
-        // Detect /command context at cursor position
         const pos = el.selectionStart;
         const text = el.value;
         let i = pos - 1;
@@ -104,11 +103,9 @@ export function Composer() {
         const text = el.value;
         let i = pos - 1;
         while (i >= 0 && text[i] !== "/") i--;
-        // Replace from / to cursor with /skill-name
         el.value = text.slice(0, i) + "/" + skill.name + " ";
         autoGrow(el);
         setShowSkills(false);
-        // If remote skill, prompt download
         if (!installedSkills.has(skill.name)) {
           setInstallError("");
           setPendingDownload(skill);
