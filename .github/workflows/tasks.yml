@@ -28,7 +28,7 @@ on:
         required: false
         default: ""
       agents:
-        description: A2A agents to spin up (comma-separated, workflow_dispatch only)
+        description: A2A agents to spin up (comma-separated, e.g. documentation-agent,browser-agent; workflow_dispatch only)
         required: false
         default: ""
   issues:
