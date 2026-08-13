@@ -74,7 +74,7 @@ jobs:
       - name: Build frontend
         run: bun install --frozen-lockfile && bun run build
 
-      - uses: inference-gateway/infer-action@v0.48.0
+      - uses: inference-gateway/infer-action@v0.48.1
         with:
           debug: true
           review-inline: "true"
