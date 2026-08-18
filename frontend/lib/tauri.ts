@@ -186,8 +186,8 @@ export const api = {
     invoke<WorkflowRun[]>("github_list_workflow_runs", { repo }),
   githubCreateTaskIssue: (repo: string, title: string, body: string) =>
     invoke<string>("github_create_task_issue", { repo, title, body }),
-  githubRunTaskIssue: (repo: string, number: number) =>
-    invoke<string>("github_run_task_issue", { repo, number }),
+  githubRunTaskIssue: (repo: string, number: number, body: string) =>
+    invoke<string>("github_run_task_issue", { repo, number, body }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
   installDesktopUpdate: () => invoke<void>("install_desktop_update"),
