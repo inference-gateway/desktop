@@ -116,9 +116,9 @@ export function SettingsView() {
                 aria-pressed={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
+                  "relative rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
                   tab === t.id
-                    ? "bg-primary/15 text-foreground"
+                    ? "bg-primary/15 text-primary before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[3px] before:-translate-y-1/2 before:rounded-full before:bg-primary"
                     : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
                 )}
               >
