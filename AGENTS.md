@@ -44,6 +44,7 @@
         ├── gateway.rs            # Gateway binary + lifecycle
         ├── observability.rs      # OTLP collector, traces/metrics
         ├── stt.rs                # Whisper voice input
+        ├── tasks.rs              # infer-action workflow template, version pin, task issue/PR commands
         └── updates.rs            # CLI/gateway/desktop update checks
 ```
 
