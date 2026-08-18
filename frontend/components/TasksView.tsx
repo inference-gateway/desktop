@@ -268,7 +268,7 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
   const [installError, setInstallError] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [apt, setApt] = useState("");
-  const [visionModel, setVisionModel] = useState("");
+  const [visionModel, setVisionModel] = useState("anthropic/claude-haiku-4-5-20251001");
   const [imageModel, setImageModel] = useState("");
 
   useEffect(() => {
@@ -397,7 +397,7 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
             aria-label="Vision model"
             value={visionModel}
             onChange={(e) => setVisionModel(e.target.value)}
-            placeholder="openai/gpt-4o"
+            placeholder="anthropic/claude-haiku-4-5-20251001"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
           <label htmlFor="install-image-model" className="text-[0.75rem] text-muted-foreground">
@@ -408,7 +408,7 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
             aria-label="Image generation model"
             value={imageModel}
             onChange={(e) => setImageModel(e.target.value)}
-            placeholder="openai/gpt-image-1"
+            placeholder="openai/gpt-image-2"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
         </div>
