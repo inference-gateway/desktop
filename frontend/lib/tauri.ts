@@ -75,7 +75,13 @@ export type DesktopConfig = {
   scheduler_github_artifacts_rate_limit_backoff: string;
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
-export type WorkflowStatus = { installed: boolean; url: string | null; sha: string | null };
+export type WorkflowStatus = {
+  installed: boolean;
+  url: string | null;
+  sha: string | null;
+  version: string | null;
+  latest: string | null;
+};
 export type TaskIssue = {
   number: number;
   title: string;
@@ -167,8 +173,14 @@ export const api = {
     invoke<void>("github_set_secret", { repo, name, value }),
   githubListRepos: (owner: string) => invoke<string[]>("github_list_repos", { owner }),
   githubCheckWorkflow: (repo: string) => invoke<WorkflowStatus>("github_check_workflow", { repo }),
-  githubInstallWorkflow: (repo: string, model: string) =>
-    invoke<string>("github_install_workflow", { repo, model }),
+  githubInstallWorkflow: (
+    repo: string,
+    model: string,
+    apt: string,
+    visionModel: string,
+    imageModel: string,
+  ) => invoke<string>("github_install_workflow", { repo, model, apt, visionModel, imageModel }),
+  githubBumpWorkflow: (repo: string) => invoke<string>("github_bump_workflow", { repo }),
   githubListTaskIssues: (repo: string) => invoke<TaskIssue[]>("github_list_task_issues", { repo }),
   githubListWorkflowRuns: (repo: string) =>
     invoke<WorkflowRun[]>("github_list_workflow_runs", { repo }),

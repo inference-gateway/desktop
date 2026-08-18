@@ -263,8 +263,13 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
   const [status, setStatus] = useState<WorkflowStatus | null>(null);
   const [checkError, setCheckError] = useState("");
   const [installing, setInstalling] = useState(false);
+  const [bumping, setBumping] = useState(false);
   const [prUrl, setPrUrl] = useState("");
   const [installError, setInstallError] = useState("");
+  const [showOptions, setShowOptions] = useState(false);
+  const [apt, setApt] = useState("");
+  const [visionModel, setVisionModel] = useState("");
+  const [imageModel, setImageModel] = useState("");
 
   useEffect(() => {
     setStatus(null);
@@ -286,7 +291,7 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
     setInstallError("");
     setPrUrl("");
     try {
-      setPrUrl(await api.githubInstallWorkflow(repository, model));
+      setPrUrl(await api.githubInstallWorkflow(repository, model, apt, visionModel, imageModel));
     } catch (e) {
       setInstallError(String(e));
     } finally {
@@ -294,42 +299,119 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
     }
   };
 
+  const bump = async () => {
+    setBumping(true);
+    setInstallError("");
+    setPrUrl("");
+    try {
+      setPrUrl(await api.githubBumpWorkflow(repository));
+    } catch (e) {
+      setInstallError(String(e));
+    } finally {
+      setBumping(false);
+    }
+  };
+
+  const outdated =
+    status?.installed && status.version && status.latest && status.version !== status.latest;
+
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[0.75rem]">
-      <span
-        className={
-          "h-2 w-2 shrink-0 rounded-full " + (status?.installed ? "bg-emerald-500" : "bg-amber-500")
-        }
-      />
-      <span className="text-muted-foreground">
-        {status === null && !checkError && "Checking infer-action workflow..."}
-        {status?.installed && "infer-action workflow installed."}
-        {status !== null && !status.installed && "infer-action workflow not installed."}
-        {checkError && `Couldn't check workflow: ${checkError}`}
-      </span>
-      {status?.installed && status.url && (
-        <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
-          View workflow
-        </Button>
-      )}
-      {status !== null && (
-        <Button variant="outline" size="xs" disabled={installing} onClick={install}>
-          {installing
-            ? "Installing..."
-            : status.installed
-              ? "Re-install infer-action"
-              : "Install infer-action"}
-        </Button>
-      )}
-      {prUrl && (
-        <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
-          View install PR
-        </Button>
-      )}
-      {installError && (
-        <span role="status" className="text-err">
-          {installError}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-[0.75rem]">
+        <span
+          className={
+            "h-2 w-2 shrink-0 rounded-full " +
+            (status?.installed ? (outdated ? "bg-amber-500" : "bg-emerald-500") : "bg-amber-500")
+          }
+        />
+        <span className="text-muted-foreground">
+          {status === null && !checkError && "Checking infer-action workflow..."}
+          {status?.installed &&
+            !outdated &&
+            `infer-action workflow installed${status.version ? ` (${status.version})` : ""}.`}
+          {status?.installed &&
+            outdated &&
+            `infer-action ${status.version} installed - ${status.latest} available.`}
+          {status !== null && !status.installed && "infer-action workflow not installed."}
+          {checkError && `Couldn't check workflow: ${checkError}`}
         </span>
+        {outdated && (
+          <Button variant="outline" size="xs" disabled={bumping} onClick={bump}>
+            {bumping ? "Opening PR..." : `Bump to ${status.latest}`}
+          </Button>
+        )}
+        {status?.installed && status.url && (
+          <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
+            View workflow
+          </Button>
+        )}
+        {status !== null && (
+          <Button variant="outline" size="xs" disabled={installing} onClick={install}>
+            {installing
+              ? "Installing..."
+              : status.installed
+                ? "Re-install infer-action"
+                : "Install infer-action"}
+          </Button>
+        )}
+        {status !== null && (
+          <button
+            onClick={() => setShowOptions((s) => !s)}
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            {showOptions ? "Hide options" : "Options"}
+          </button>
+        )}
+        {prUrl && (
+          <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
+            View PR
+          </Button>
+        )}
+        {installError && (
+          <span role="status" className="text-err">
+            {installError}
+          </span>
+        )}
+      </div>
+      {showOptions && (
+        <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+          <p className="text-[0.7rem] text-muted-foreground">
+            Written into the workflow on install/re-install. Leave empty to omit.
+          </p>
+          <label htmlFor="install-apt" className="text-[0.75rem] text-muted-foreground">
+            Extra apt packages (space-separated)
+          </label>
+          <input
+            id="install-apt"
+            aria-label="Extra apt packages"
+            value={apt}
+            onChange={(e) => setApt(e.target.value)}
+            placeholder="libwebkit2gtk-4.1-dev ffmpeg"
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
+          />
+          <label htmlFor="install-vision-model" className="text-[0.75rem] text-muted-foreground">
+            Vision model (image analysis)
+          </label>
+          <input
+            id="install-vision-model"
+            aria-label="Vision model"
+            value={visionModel}
+            onChange={(e) => setVisionModel(e.target.value)}
+            placeholder="openai/gpt-4o"
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
+          />
+          <label htmlFor="install-image-model" className="text-[0.75rem] text-muted-foreground">
+            Image generation model
+          </label>
+          <input
+            id="install-image-model"
+            aria-label="Image generation model"
+            value={imageModel}
+            onChange={(e) => setImageModel(e.target.value)}
+            placeholder="openai/gpt-image-1"
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
+          />
+        </div>
       )}
     </div>
   );

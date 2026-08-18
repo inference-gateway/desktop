@@ -82,6 +82,7 @@ pub fn run() {
             scheduler::github_list_repos,
             scheduler::github_check_workflow,
             scheduler::github_install_workflow,
+            scheduler::github_bump_workflow,
             scheduler::github_list_task_issues,
             scheduler::github_list_workflow_runs,
             scheduler::github_create_task_issue,
