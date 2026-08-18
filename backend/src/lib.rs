@@ -12,6 +12,7 @@ mod observability;
 mod scheduler;
 mod skills;
 mod stt;
+mod tasks;
 mod updates;
 
 use observability::{StoredMetric, StoredSpan, start_collector};
@@ -80,13 +81,14 @@ pub fn run() {
             scheduler::github_list_secrets,
             scheduler::github_set_secret,
             scheduler::github_list_repos,
-            scheduler::github_check_workflow,
-            scheduler::github_install_workflow,
-            scheduler::github_bump_workflow,
-            scheduler::github_list_task_issues,
-            scheduler::github_list_workflow_runs,
-            scheduler::github_create_task_issue,
-            scheduler::github_run_task_issue,
+            tasks::github_check_workflow,
+            tasks::github_install_workflow,
+            tasks::github_bump_workflow,
+            tasks::github_list_task_issues,
+            tasks::github_list_task_pulls,
+            tasks::github_list_workflow_runs,
+            tasks::github_create_task_issue,
+            tasks::github_run_task_issue,
             scheduler::open_url,
             updates::check_updates,
             updates::install_desktop_update,

@@ -31,7 +31,7 @@
         "version": "3.48.0"
       },
       "infer": {
-        "flake": "github:inference-gateway/cli/v0.170.0"
+        "flake": "github:inference-gateway/cli/v0.174.0"
       },
       "rustc": {
         "pkg-path": "rustc",
@@ -102,36 +102,6 @@
         "out": "/nix/store/6wnvdw8ps9fi7a1cjbq0d0s736j0rpnr-bun-1.3.13"
       },
       "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "bun",
-      "broken": false,
-      "derivation": "/nix/store/d2xdkj5z0am9q690z71qysvl2ghyw3s9-bun-1.3.13.drv",
-      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
-      "install_id": "bun",
-      "license": "[ MIT, LGPL-2.1-only ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "bun-1.3.13",
-      "pname": "bun",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.268379Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.3.13",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/wn9cggwqflvqryxxb9xinl9iygndm8d9-bun-1.3.13"
-      },
-      "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
@@ -229,36 +199,6 @@
     {
       "attr_path": "cargo",
       "broken": false,
-      "derivation": "/nix/store/ak37pwwiy0k67hzn1skggk2rw6nvg976-cargo-1.95.0.drv",
-      "description": "Downloads your Rust project's dependencies and builds your project",
-      "install_id": "cargo",
-      "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "cargo-1.95.0",
-      "pname": "cargo",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.294203Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.95.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/k2kynrir5rszv6dnx4lm8h39pjmsxr4c-cargo-1.95.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cargo",
-      "broken": false,
       "derivation": "/nix/store/36gfn3aq76gz94brbxyfw35w3fsv570m-cargo-1.95.0.drv",
       "description": "Downloads your Rust project's dependencies and builds your project",
       "install_id": "cargo",
@@ -350,36 +290,6 @@
     {
       "attr_path": "cargo-tauri",
       "broken": false,
-      "derivation": "/nix/store/11dgg61prk6hwdk1p9yqn5w74i9qw5p6-tauri-2.11.4.drv",
-      "description": "Build smaller, faster, and more secure desktop applications with a web frontend",
-      "install_id": "cargo-tauri",
-      "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "tauri-2.11.4",
-      "pname": "cargo-tauri",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.319678Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "2.11.4",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/l80jlhrm3qsd40c1mca5nnjcm5m5wliw-tauri-2.11.4"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cargo-tauri",
-      "broken": false,
       "derivation": "/nix/store/6qk0x4frxd44zprym72si84gdnn624x3-tauri-2.11.4.drv",
       "description": "Build smaller, faster, and more secure desktop applications with a web frontend",
       "install_id": "cargo-tauri",
@@ -464,36 +374,6 @@
         "out": "/nix/store/fm203s00j5ignfgr4f05p2fc7ppmhfy0-claude-code-2.1.201"
       },
       "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/94k99z7q71qjfhf0h1524c9i14b5a8jm-claude-code-2.1.201.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "claude-code-2.1.201",
-      "pname": "claude-code",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.518525Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.201",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/23hm04zk9nn86835a2985p7a5pfd62bb-claude-code-2.1.201"
-      },
-      "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
@@ -591,36 +471,6 @@
     {
       "attr_path": "clippy",
       "broken": false,
-      "derivation": "/nix/store/5m4n31kibssdr3fsch0kyfqr7q291pwj-clippy-1.95.0.drv",
-      "description": "Bunch of lints to catch common mistakes and improve your Rust code",
-      "install_id": "clippy",
-      "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "clippy-1.95.0",
-      "pname": "clippy",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.531006Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.95.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/s871qfwqdcxv8kgv3x7g21wl2s1a6w63-clippy-1.95.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "clippy",
-      "broken": false,
       "derivation": "/nix/store/gyzhc37y760azqsg0jvgr7bcqprgk7dg-clippy-1.95.0.drv",
       "description": "Bunch of lints to catch common mistakes and improve your Rust code",
       "install_id": "clippy",
@@ -712,36 +562,6 @@
     {
       "attr_path": "codex",
       "broken": false,
-      "derivation": "/nix/store/iqlrw9mda9ivkk46gbc77l5f2q6yyvjb-codex-0.142.3.drv",
-      "description": "Lightweight coding agent that runs in your terminal",
-      "install_id": "codex",
-      "license": "Apache-2.0",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "codex-0.142.3",
-      "pname": "codex",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:00.571006Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "0.142.3",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/kwmmw872gbxnkxwapv8sax18iiq21hmi-codex-0.142.3"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "codex",
-      "broken": false,
       "derivation": "/nix/store/vx6vhqc7xmdk9hgs1v36ljb1vfcdlds3-codex-0.142.3.drv",
       "description": "Lightweight coding agent that runs in your terminal",
       "install_id": "codex",
@@ -826,36 +646,6 @@
         "out": "/nix/store/cp9nkcbc9gpx527n258c2bglhc4b82w5-go-task-3.48.0"
       },
       "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "go-task",
-      "broken": false,
-      "derivation": "/nix/store/gfazdxcl13yxiamx60xa9x8wqx57fnr9-go-task-3.48.0.drv",
-      "description": "Task runner / simpler Make alternative written in Go",
-      "install_id": "go-task",
-      "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "go-task-3.48.0",
-      "pname": "go-task",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:09:01.863255Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "3.48.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/q7mxf9b9kcphb3lxrzn4mqazb9nrvlnz-go-task-3.48.0"
-      },
-      "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
@@ -960,39 +750,6 @@
     {
       "attr_path": "rustc",
       "broken": false,
-      "derivation": "/nix/store/7ynqn4zyyxw22zdvbancppzcaca045ci-rustc-wrapper-1.95.0.drv",
-      "description": "Safe, concurrent, practical language (wrapper script)",
-      "install_id": "rustc",
-      "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustc-wrapper-1.95.0",
-      "pname": "rustc",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:11:03.623372Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.95.0",
-      "outputs_to_install": [
-        "man",
-        "out"
-      ],
-      "outputs": {
-        "doc": "/nix/store/750razfy70xi1fh4c18cm1lxipx0mykk-rustc-wrapper-1.95.0-doc",
-        "man": "/nix/store/jywgfsvf67p0ygi5q8dffq2kznrcfj6j-rustc-wrapper-1.95.0-man",
-        "out": "/nix/store/x7c0r6485pgxf2zjf9afhxp584qpdziv-rustc-wrapper-1.95.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "rustc",
-      "broken": false,
       "derivation": "/nix/store/6ag9phi7nq5kbdb6wyad3gg07ap6pjmr-rustc-wrapper-1.95.0.drv",
       "description": "Safe, concurrent, practical language (wrapper script)",
       "install_id": "rustc",
@@ -1088,36 +845,6 @@
     {
       "attr_path": "rustfmt",
       "broken": false,
-      "derivation": "/nix/store/3in2g3ibgbpqm11mm1kcbxa0yfp1g0bk-rustfmt-1.95.0.drv",
-      "description": "Tool for formatting Rust code according to style guidelines",
-      "install_id": "rustfmt",
-      "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustfmt-1.95.0",
-      "pname": "rustfmt",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:11:03.653128Z",
-      "stabilities": [
-        "staging",
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.95.0",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/wqlcilh779m08xc8m0zm0fm1f4p8zw0a-rustfmt-1.95.0"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "rustfmt",
-      "broken": false,
       "derivation": "/nix/store/n5y626lz2qvx1i5r95jxxmsgf7ijf181-rustfmt-1.95.0.drv",
       "description": "Tool for formatting Rust code according to style guidelines",
       "install_id": "rustfmt",
@@ -1147,12 +874,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/f32fc1c0bf10617e685ebedc281257a838b38fc0?narHash=sha256-VAYb4MpjJrPTQ8GENJ5JHGLIgNHiXwvaUpf%2BG8zFD18%3D",
+      "locked-url": "github:inference-gateway/cli/f462f5c7f6062d9bf78bcbab937bb27798a7090b?narHash=sha256-/eP83z5/xNTdUWYfBjZ1rf%2BYcZSTe7jCNW7JMrgjhVk%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-darwin.default",
-      "derivation": "/nix/store/8xcd6nzmxqawai67ilfy1lzpyfmvjlsb-infer-0.170.0.drv",
+      "derivation": "/nix/store/zf4sgn1vhlrpcszhwiwmljknr0g98ikx-infer-0.174.0.drv",
       "outputs": {
-        "out": "/nix/store/hjayadf7wz5f6g81n92f2rvbq77lgbn0-infer-0.170.0"
+        "out": "/nix/store/9ndwz529ywjgm6pf6xhmmiy8s4imq9wz-infer-0.174.0"
       },
       "output-names": [
         "out"
@@ -1163,9 +890,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-darwin",
       "system": "aarch64-darwin",
-      "name": "infer-0.170.0",
+      "name": "infer-0.174.0",
       "pname": "infer",
-      "version": "0.170.0",
+      "version": "0.174.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -1176,12 +903,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/f32fc1c0bf10617e685ebedc281257a838b38fc0?narHash=sha256-VAYb4MpjJrPTQ8GENJ5JHGLIgNHiXwvaUpf%2BG8zFD18%3D",
+      "locked-url": "github:inference-gateway/cli/f462f5c7f6062d9bf78bcbab937bb27798a7090b?narHash=sha256-/eP83z5/xNTdUWYfBjZ1rf%2BYcZSTe7jCNW7JMrgjhVk%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-linux.default",
-      "derivation": "/nix/store/gxniw6xs61asr3m8b5q7idfqkw3iyhgl-infer-0.170.0.drv",
+      "derivation": "/nix/store/gmsra9s75mizhndvsssi75a8nk6vmjnf-infer-0.174.0.drv",
       "outputs": {
-        "out": "/nix/store/sjmvzmplccgmbchl833y53b2jxn3llnx-infer-0.170.0"
+        "out": "/nix/store/fm57qgidhm6ci1c06lzvf12s553bvyi8-infer-0.174.0"
       },
       "output-names": [
         "out"
@@ -1192,9 +919,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-linux",
       "system": "aarch64-linux",
-      "name": "infer-0.170.0",
+      "name": "infer-0.174.0",
       "pname": "infer",
-      "version": "0.170.0",
+      "version": "0.174.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -1205,41 +932,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/f32fc1c0bf10617e685ebedc281257a838b38fc0?narHash=sha256-VAYb4MpjJrPTQ8GENJ5JHGLIgNHiXwvaUpf%2BG8zFD18%3D",
-      "flake-description": "Inference Gateway CLI - infer",
-      "locked-flake-attr-path": "packages.x86_64-darwin.default",
-      "derivation": "/nix/store/kj0sx2xdsnga26vvqr24z1y8d3xvmh3l-infer-0.170.0.drv",
-      "outputs": {
-        "out": "/nix/store/jmxw74x41lg0320v54m9ig0a78vqw5n4-infer-0.170.0"
-      },
-      "output-names": [
-        "out"
-      ],
-      "outputs-to-install": [
-        "out"
-      ],
-      "requested-outputs-to-install": [],
-      "package-system": "x86_64-darwin",
-      "system": "x86_64-darwin",
-      "name": "infer-0.170.0",
-      "pname": "infer",
-      "version": "0.170.0",
-      "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
-      "licenses": [
-        "MIT"
-      ],
-      "broken": false,
-      "unfree": false,
-      "priority": 5
-    },
-    {
-      "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/f32fc1c0bf10617e685ebedc281257a838b38fc0?narHash=sha256-VAYb4MpjJrPTQ8GENJ5JHGLIgNHiXwvaUpf%2BG8zFD18%3D",
+      "locked-url": "github:inference-gateway/cli/f462f5c7f6062d9bf78bcbab937bb27798a7090b?narHash=sha256-/eP83z5/xNTdUWYfBjZ1rf%2BYcZSTe7jCNW7JMrgjhVk%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.x86_64-linux.default",
-      "derivation": "/nix/store/7nwldv9w1038fjc62jac2wqg5w3imdil-infer-0.170.0.drv",
+      "derivation": "/nix/store/8ca245gdn2ialff1s7wj6r3xdqz4pvkz-infer-0.174.0.drv",
       "outputs": {
-        "out": "/nix/store/c3yawhv1a11k6rv8m73mhkfdc8ibrdkq-infer-0.170.0"
+        "out": "/nix/store/fdz9x6zz5bfhs8skxgaza6vijbzyc2fr-infer-0.174.0"
       },
       "output-names": [
         "out"
@@ -1250,9 +948,9 @@
       "requested-outputs-to-install": [],
       "package-system": "x86_64-linux",
       "system": "x86_64-linux",
-      "name": "infer-0.170.0",
+      "name": "infer-0.174.0",
       "pname": "infer",
-      "version": "0.170.0",
+      "version": "0.174.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
