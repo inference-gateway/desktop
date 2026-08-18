@@ -124,23 +124,29 @@ export function SettingsView() {
               >
                 {t.label}
               </button>
-              {t.id === "github" && tab === "github" && (
-                <div className="ml-3 flex flex-col gap-[2px] border-l border-border pl-2">
-                  {GITHUB_SUBTABS.map((s) => (
-                    <button
-                      key={s.id}
-                      aria-pressed={githubSub === s.id}
-                      onClick={() => setGithubSub(s.id)}
-                      className={cn(
-                        "rounded-md px-3 py-[0.35rem] text-left text-[0.8rem]",
-                        githubSub === s.id
-                          ? "bg-primary/15 font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
-                      )}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+              {t.id === "github" && (
+                <div className="ml-4 flex flex-col border-l border-border/60 pl-1">
+                  {GITHUB_SUBTABS.map((s) => {
+                    const active = tab === "github" && githubSub === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        aria-pressed={active}
+                        onClick={() => {
+                          setTab("github");
+                          setGithubSub(s.id);
+                        }}
+                        className={cn(
+                          "relative rounded-md px-3 py-[0.3rem] text-left text-[0.8rem]",
+                          active
+                            ? "font-medium text-primary before:absolute before:-left-[5px] before:top-1/2 before:h-4 before:w-[2px] before:-translate-y-1/2 before:rounded-full before:bg-primary"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
