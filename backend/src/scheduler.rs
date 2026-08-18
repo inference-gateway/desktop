@@ -214,18 +214,33 @@ fn valid_owner(owner: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
-/// Repository names under `owner`, newest first, for the tasks repo dropdown.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct RepoEntry {
+    name: String,
+    open: u64,
+}
+
+/// Repositories under `owner` with their open issue + PR counts, busiest
+/// first, for the tasks repo dropdown.
 /// ponytail: first 100 repos, no pagination - enough for a dropdown.
 #[tauri::command]
-pub(crate) async fn github_list_repos(owner: String) -> Result<Vec<String>, String> {
+pub(crate) async fn github_list_repos(owner: String) -> Result<Vec<RepoEntry>, String> {
     if !valid_owner(&owner) {
         return Err(format!("invalid owner: {owner}"));
     }
     tokio::task::spawn_blocking(move || {
         let out = gh_output(&[
-            "repo", "list", &owner, "--limit", "100", "--json", "name", "--jq", ".[].name",
+            "repo",
+            "list",
+            &owner,
+            "--limit",
+            "100",
+            "--json",
+            "name,issues,pullRequests",
+            "--jq",
+            "[.[] | {name, open: (.issues.totalCount + .pullRequests.totalCount)}] | sort_by(-.open)",
         ])?;
-        Ok(out.lines().map(String::from).collect())
+        serde_json::from_str(&out).map_err(|e| format!("unexpected gh output: {e}"))
     })
     .await
     .map_err(|e| e.to_string())?
