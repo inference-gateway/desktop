@@ -552,6 +552,16 @@ function SchedulingTab() {
           <option value="github">github</option>
         </select>
       </div>
+      <div className="mb-3 flex flex-col gap-1">
+        <p className="text-[0.75rem] text-muted-foreground">
+          Routines repository for the github backend: schedules are deployed there as GitHub
+          Actions workflows by the daemon (auto-created when missing).
+        </p>
+        <RepositoryPicker
+          value={config.scheduler_github_repository}
+          onChange={(v) => set("scheduler_github_repository", v)}
+        />
+      </div>
       {config.scheduler_backend === "github" && (
         <>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
@@ -565,10 +575,6 @@ function SchedulingTab() {
             General tab.
           </p>
           <div className="mb-3 flex flex-col gap-3">
-            <RepositoryPicker
-              value={config.scheduler_github_repository}
-              onChange={(v) => set("scheduler_github_repository", v)}
-            />
             {SCHEDULER_GITHUB_FIELDS.map((f) => (
               <div key={f.key} className="flex flex-col gap-1">
                 <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
