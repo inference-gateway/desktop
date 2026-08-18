@@ -165,6 +165,7 @@ export const api = {
   githubListSecrets: (repo: string) => invoke<string[]>("github_list_secrets", { repo }),
   githubSetSecret: (repo: string, name: string, value: string) =>
     invoke<void>("github_set_secret", { repo, name, value }),
+  githubListRepos: (owner: string) => invoke<string[]>("github_list_repos", { owner }),
   githubCheckWorkflow: (repo: string) => invoke<WorkflowStatus>("github_check_workflow", { repo }),
   githubInstallWorkflow: (repo: string, model: string) =>
     invoke<string>("github_install_workflow", { repo, model }),

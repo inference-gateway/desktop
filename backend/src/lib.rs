@@ -79,6 +79,7 @@ pub fn run() {
             scheduler::github_create_repo,
             scheduler::github_list_secrets,
             scheduler::github_set_secret,
+            scheduler::github_list_repos,
             scheduler::github_check_workflow,
             scheduler::github_install_workflow,
             scheduler::github_list_task_issues,

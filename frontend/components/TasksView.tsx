@@ -1,14 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, RotateCw } from "lucide-react";
-import { api, type TaskIssue, type WorkflowRun } from "@/lib/tauri";
+import { api, type TaskIssue, type WorkflowRun, type WorkflowStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 
-// Long-horizon tasks panel (Settings -> GitHub -> Tasks): create GitHub
-// issues the installed infer-action workflow picks up, and watch the
-// resulting issues and workflow runs.
-export function TasksPanel({ onConfigure }: { onConfigure: () => void }) {
-  const [repo, setRepo] = useState("");
-  const [loaded, setLoaded] = useState(false);
+const TASKS_REPO_KEY = "tasksRepo";
+
+// Long-horizon tasks panel (Settings -> GitHub -> Tasks): pick any repository
+// you own, install the infer-action workflow into it, then create GitHub
+// issues the workflow picks up and watch the resulting issues and runs.
+export function TasksPanel() {
+  const [owners, setOwners] = useState<string[]>([]);
+  const [owner, setOwner] = useState(() => {
+    const saved = localStorage.getItem(TASKS_REPO_KEY) || "";
+    return saved.split("/")[0] || "";
+  });
+  const [repos, setRepos] = useState<string[]>([]);
+  const [name, setName] = useState(() => {
+    const saved = localStorage.getItem(TASKS_REPO_KEY) || "";
+    return saved.split("/")[1] || "";
+  });
+  const [agentModel, setAgentModel] = useState("");
+  const repo = owner && name ? `${owner}/${name}` : "";
+
   const [issues, setIssues] = useState<TaskIssue[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -17,6 +30,36 @@ export function TasksPanel({ onConfigure }: { onConfigure: () => void }) {
   const [creating, setCreating] = useState(false);
   const [createdUrl, setCreatedUrl] = useState("");
   const [createError, setCreateError] = useState("");
+
+  useEffect(() => {
+    api
+      .githubOwners()
+      .then((list) => {
+        setOwners(list);
+        setOwner((o) => (o && list.includes(o) ? o : (list[0] ?? "")));
+      })
+      .catch(() => {});
+    api
+      .getConfig()
+      .then((cfg) => setAgentModel(cfg.agent_model))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!owner) return;
+    setRepos([]);
+    api
+      .githubListRepos(owner)
+      .then((list) => {
+        setRepos(list);
+        setName((n) => (n && list.includes(n) ? n : (list[0] ?? "")));
+      })
+      .catch((e) => setLoadError(String(e)));
+  }, [owner]);
+
+  useEffect(() => {
+    if (repo) localStorage.setItem(TASKS_REPO_KEY, repo);
+  }, [repo]);
 
   const refresh = useCallback((r: string) => {
     if (!r) return;
@@ -30,15 +73,12 @@ export function TasksPanel({ onConfigure }: { onConfigure: () => void }) {
   }, []);
 
   useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => {
-        setRepo(cfg.scheduler_github_repository);
-        setLoaded(true);
-        refresh(cfg.scheduler_github_repository);
-      })
-      .catch(() => setLoaded(true));
-  }, [refresh]);
+    setIssues([]);
+    setRuns([]);
+    setCreatedUrl("");
+    setCreateError("");
+    refresh(repo);
+  }, [repo, refresh]);
 
   const createTask = async () => {
     setCreating(true);
@@ -57,141 +97,240 @@ export function TasksPanel({ onConfigure }: { onConfigure: () => void }) {
     }
   };
 
-  if (loaded && !repo) {
-    return (
-      <p className="text-[0.85rem] text-muted-foreground">
-        No task repository configured.{" "}
-        <button onClick={onConfigure} className="text-primary underline">
-          Pick one in the Repository tab
-        </button>{" "}
-        and install the infer-action workflow.
-      </p>
-    );
-  }
-
   return (
     <>
-      <div className="mb-4 flex items-center gap-3">
-        <p className="text-[0.8rem] text-muted-foreground">
-          Tasks are GitHub issues in{" "}
-          <code className="rounded bg-secondary px-1">{repo}</code> picked up by the installed
-          infer-action workflow.
-        </p>
+      <p className="mb-3 text-[0.8rem] text-muted-foreground">
+        Tasks are GitHub issues the installed infer-action workflow picks up. Pick a repository,
+        install the workflow, then create tasks below.
+      </p>
+      <div className="mb-2 flex items-center gap-2">
+        <select
+          id="tasks-owner"
+          aria-label="Tasks repository owner"
+          value={owner}
+          onChange={(e) => setOwner(e.target.value)}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {owners.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+        <span className="text-muted-foreground">/</span>
+        <select
+          id="tasks-repo"
+          aria-label="Tasks repository"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="min-w-0 flex-1 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          {repos.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
         <Button
           variant="ghost"
           size="icon-sm"
           title="Refresh tasks"
           aria-label="Refresh tasks"
           onClick={() => refresh(repo)}
-          className="ml-auto shrink-0 text-muted-foreground"
+          className="shrink-0 text-muted-foreground"
         >
           <RotateCw size={16} />
         </Button>
       </div>
 
-      <div className="mb-6 flex flex-col gap-2">
-        <label htmlFor="task-title" className="text-[0.8rem] text-muted-foreground">
-          New task
-        </label>
-        <input
-          id="task-title"
-          aria-label="Task title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Task title"
-          className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
-        />
-        <textarea
-          id="task-body"
-          aria-label="Task description"
-          rows={4}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Describe the task for the agent…"
-          className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
-        />
-        <div className="flex items-center gap-3">
-          <Button onClick={createTask} disabled={creating || !title.trim()}>
-            {creating ? "Creating..." : "Create task"}
-          </Button>
-          {createdUrl && (
-            <button
-              onClick={() => api.openUrl(createdUrl)}
-              className="inline-flex items-center gap-1 text-[0.8rem] text-primary underline"
-            >
-              Issue created <ExternalLink size={12} />
-            </button>
-          )}
-          {createError && (
-            <span role="status" className="text-[0.8rem] text-err">
-              {createError}
-            </span>
-          )}
-        </div>
-      </div>
+      {repo && <InferActionInstall repository={repo} model={agentModel} />}
 
-      {loadError && (
-        <p role="status" className="mb-3 text-[0.8rem] text-err">
-          {loadError}
-        </p>
-      )}
-
-      <section className="mb-6">
-        <h3 className="mb-2 text-[0.9rem] font-semibold">Tasks</h3>
-        {issues.length === 0 && (
-          <p className="text-[0.8rem] text-muted-foreground">No task issues yet.</p>
-        )}
-        <ul className="flex flex-col gap-1">
-          {issues.map((i) => (
-            <li key={i.number}>
-              <button
-                onClick={() => api.openUrl(i.html_url)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-left text-[0.85rem] hover:bg-primary/10"
-              >
-                <span
-                  className={
-                    "h-2 w-2 shrink-0 rounded-full " +
-                    (i.state === "open" ? "bg-emerald-500" : "bg-muted-foreground")
-                  }
-                />
-                <span className="text-muted-foreground">#{i.number}</span>
-                <span className="truncate">{i.title}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section>
-        <h3 className="mb-2 text-[0.9rem] font-semibold">Runs</h3>
-        {runs.length === 0 && (
-          <p className="text-[0.8rem] text-muted-foreground">No workflow runs yet.</p>
-        )}
-        <ul className="flex flex-col gap-1">
-          {runs.map((r) => (
-            <li key={r.id}>
-              <button
-                onClick={() => api.openUrl(r.html_url)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-left text-[0.85rem] hover:bg-primary/10"
-              >
-                <span
-                  className={
-                    "h-2 w-2 shrink-0 rounded-full " +
-                    (r.conclusion === "success"
-                      ? "bg-emerald-500"
-                      : r.conclusion === "failure"
-                        ? "bg-red-500"
-                        : "bg-amber-500")
-                  }
-                />
-                <span className="truncate">{r.name}</span>
-                <span className="ml-auto shrink-0 text-[0.75rem] text-muted-foreground">
-                  {r.conclusion ?? r.status}
+      {repo && (
+        <>
+          <div className="mb-6 mt-5 flex flex-col gap-2">
+            <label htmlFor="task-title" className="text-[0.8rem] text-muted-foreground">
+              New task
+            </label>
+            <input
+              id="task-title"
+              aria-label="Task title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Task title"
+              className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
+            />
+            <textarea
+              id="task-body"
+              aria-label="Task description"
+              rows={4}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Describe the task for the agent…"
+              className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
+            />
+            <div className="flex items-center gap-3">
+              <Button onClick={createTask} disabled={creating || !title.trim()}>
+                {creating ? "Creating..." : "Create task"}
+              </Button>
+              {createdUrl && (
+                <button
+                  onClick={() => api.openUrl(createdUrl)}
+                  className="inline-flex items-center gap-1 text-[0.8rem] text-primary underline"
+                >
+                  Issue created <ExternalLink size={12} />
+                </button>
+              )}
+              {createError && (
+                <span role="status" className="text-[0.8rem] text-err">
+                  {createError}
                 </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+              )}
+            </div>
+          </div>
+
+          {loadError && (
+            <p role="status" className="mb-3 text-[0.8rem] text-err">
+              {loadError}
+            </p>
+          )}
+
+          <section className="mb-6">
+            <h3 className="mb-2 text-[0.9rem] font-semibold">Tasks</h3>
+            {issues.length === 0 && (
+              <p className="text-[0.8rem] text-muted-foreground">No task issues yet.</p>
+            )}
+            <ul className="flex flex-col gap-1">
+              {issues.map((i) => (
+                <li key={i.number}>
+                  <button
+                    onClick={() => api.openUrl(i.html_url)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-left text-[0.85rem] hover:bg-primary/10"
+                  >
+                    <span
+                      className={
+                        "h-2 w-2 shrink-0 rounded-full " +
+                        (i.state === "open" ? "bg-emerald-500" : "bg-muted-foreground")
+                      }
+                    />
+                    <span className="text-muted-foreground">#{i.number}</span>
+                    <span className="truncate">{i.title}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3 className="mb-2 text-[0.9rem] font-semibold">Runs</h3>
+            {runs.length === 0 && (
+              <p className="text-[0.8rem] text-muted-foreground">No workflow runs yet.</p>
+            )}
+            <ul className="flex flex-col gap-1">
+              {runs.map((r) => (
+                <li key={r.id}>
+                  <button
+                    onClick={() => api.openUrl(r.html_url)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-left text-[0.85rem] hover:bg-primary/10"
+                  >
+                    <span
+                      className={
+                        "h-2 w-2 shrink-0 rounded-full " +
+                        (r.conclusion === "success"
+                          ? "bg-emerald-500"
+                          : r.conclusion === "failure"
+                            ? "bg-red-500"
+                            : "bg-amber-500")
+                      }
+                    />
+                    <span className="truncate">{r.name}</span>
+                    <span className="ml-auto shrink-0 text-[0.75rem] text-muted-foreground">
+                      {r.conclusion ?? r.status}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
     </>
+  );
+}
+
+// Checks whether the infer-action task workflow exists in the repository and
+// installs/updates it via a pull request (branch + commit + PR), like the
+// opentask extension.
+function InferActionInstall({ repository, model }: { repository: string; model: string }) {
+  const [status, setStatus] = useState<WorkflowStatus | null>(null);
+  const [checkError, setCheckError] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [prUrl, setPrUrl] = useState("");
+  const [installError, setInstallError] = useState("");
+
+  useEffect(() => {
+    setStatus(null);
+    setCheckError("");
+    setPrUrl("");
+    setInstallError("");
+    if (!repository.includes("/")) return;
+    const t = setTimeout(() => {
+      api
+        .githubCheckWorkflow(repository)
+        .then(setStatus)
+        .catch((e) => setCheckError(String(e)));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [repository]);
+
+  const install = async () => {
+    setInstalling(true);
+    setInstallError("");
+    setPrUrl("");
+    try {
+      setPrUrl(await api.githubInstallWorkflow(repository, model));
+    } catch (e) {
+      setInstallError(String(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[0.75rem]">
+      <span
+        className={
+          "h-2 w-2 shrink-0 rounded-full " + (status?.installed ? "bg-emerald-500" : "bg-amber-500")
+        }
+      />
+      <span className="text-muted-foreground">
+        {status === null && !checkError && "Checking infer-action workflow..."}
+        {status?.installed && "infer-action workflow installed."}
+        {status !== null && !status.installed && "infer-action workflow not installed."}
+        {checkError && `Couldn't check workflow: ${checkError}`}
+      </span>
+      {status?.installed && status.url && (
+        <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
+          View workflow
+        </Button>
+      )}
+      {status !== null && (
+        <Button variant="outline" size="xs" disabled={installing} onClick={install}>
+          {installing
+            ? "Installing..."
+            : status.installed
+              ? "Re-install infer-action"
+              : "Install infer-action"}
+        </Button>
+      )}
+      {prUrl && (
+        <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
+          View install PR
+        </Button>
+      )}
+      {installError && (
+        <span role="status" className="text-err">
+          {installError}
+        </span>
+      )}
+    </div>
   );
 }

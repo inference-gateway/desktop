@@ -207,6 +207,30 @@ pub(crate) async fn github_owners() -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+fn valid_owner(owner: &str) -> bool {
+    !owner.is_empty()
+        && owner
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Repository names under `owner`, newest first, for the tasks repo dropdown.
+/// ponytail: first 100 repos, no pagination - enough for a dropdown.
+#[tauri::command]
+pub(crate) async fn github_list_repos(owner: String) -> Result<Vec<String>, String> {
+    if !valid_owner(&owner) {
+        return Err(format!("invalid owner: {owner}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let out = gh_output(&[
+            "repo", "list", &owner, "--limit", "100", "--json", "name", "--jq", ".[].name",
+        ])?;
+        Ok(out.lines().map(String::from).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn valid_repo(repo: &str) -> bool {
     let Some((owner, name)) = repo.split_once('/') else {
         return false;
