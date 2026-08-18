@@ -36,6 +36,14 @@ type Tab =
   | "github"
   | "skills";
 
+type GithubSubTab = "repository" | "scheduling" | "tasks";
+
+const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
+  { id: "repository", label: "General" },
+  { id: "scheduling", label: "Scheduling" },
+  { id: "tasks", label: "Tasks" },
+];
+
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
@@ -65,6 +73,7 @@ export function SettingsView() {
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general"
   );
+  const [githubSub, setGithubSub] = useState<GithubSubTab>("repository");
 
   useEffect(() => {
     setInitialSettingsTab("general");
@@ -102,20 +111,39 @@ export function SettingsView() {
         </span>
         <div className="flex min-h-0 flex-1 flex-col gap-1">
           {TABS.map((t) => (
-            <button
-              key={t.id}
-              aria-pressed={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
-                t.id === "updates" && "mt-auto",
-                tab === t.id
-                  ? "bg-primary/15 text-foreground"
-                  : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+            <div key={t.id} className={cn("flex flex-col gap-1", t.id === "updates" && "mt-auto")}>
+              <button
+                aria-pressed={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
+                  tab === t.id
+                    ? "bg-primary/15 text-foreground"
+                    : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+              {t.id === "github" && tab === "github" && (
+                <div className="ml-3 flex flex-col gap-[2px] border-l border-border pl-2">
+                  {GITHUB_SUBTABS.map((s) => (
+                    <button
+                      key={s.id}
+                      aria-pressed={githubSub === s.id}
+                      onClick={() => setGithubSub(s.id)}
+                      className={cn(
+                        "rounded-md px-3 py-[0.35rem] text-left text-[0.8rem]",
+                        githubSub === s.id
+                          ? "bg-primary/15 font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               )}
-            >
-              {t.label}
-            </button>
+            </div>
           ))}
         </div>
       </nav>
@@ -197,7 +225,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
-          {tab === "github" && <GithubTab />}
+          {tab === "github" && <GithubTab sub={githubSub} />}
           {tab === "projects" && <ProjectsTab />}
           {tab === "snippets" && <SnippetsTab />}
           {tab === "prompt" && <SystemPromptTab />}
@@ -668,36 +696,12 @@ function SchedulingTab() {
   );
 }
 
-type GithubSubTab = "repository" | "scheduling" | "tasks";
-
-const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
-  { id: "repository", label: "General" },
-  { id: "scheduling", label: "Scheduling" },
-  { id: "tasks", label: "Tasks" },
-];
-
-function GithubTab() {
-  const [sub, setSub] = useState<GithubSubTab>("repository");
+function GithubTab({ sub }: { sub: GithubSubTab }) {
   return (
     <>
-      <h2 className="text-[1.05rem] font-semibold">GitHub</h2>
-      <div className="mb-4 mt-2 flex gap-1 border-b border-border">
-        {GITHUB_SUBTABS.map((t) => (
-          <button
-            key={t.id}
-            aria-pressed={sub === t.id}
-            onClick={() => setSub(t.id)}
-            className={cn(
-              "rounded-t-md px-3 py-[0.4rem] text-[0.85rem] font-medium",
-              sub === t.id
-                ? "border-b-2 border-primary text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <h2 className="mb-4 text-[1.05rem] font-semibold">
+        GitHub · {GITHUB_SUBTABS.find((t) => t.id === sub)?.label}
+      </h2>
       {sub === "repository" && <GithubRepositoryPanel />}
       {sub === "scheduling" && <SchedulingTab />}
       {sub === "tasks" && <TasksPanel />}
