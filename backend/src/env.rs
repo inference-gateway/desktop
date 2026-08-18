@@ -70,6 +70,8 @@ pub(crate) fn collector_env() -> Vec<(String, String)> {
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
     env.extend(collector_env());
+    #[cfg(unix)]
+    env.push(("PATH".into(), composed_path()));
     env.push((
         "INFER_STORAGE_JSONL_PATH".into(),
         crate::config::read_config().storage_directory,
@@ -78,6 +80,21 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }
     env
+}
+
+/// PATH for spawned infer children. Finder-launched apps inherit launchd's
+/// minimal PATH (no /opt/homebrew/bin), so tools like `gh` are unresolvable
+/// inside agent bash sessions; prepend the dirs launchd omits, mirroring
+/// download.rs gh_bin(). Duplicates in a dev shell PATH are harmless.
+#[cfg(unix)]
+pub(crate) fn composed_path() -> String {
+    let base = std::env::var("PATH").unwrap_or_default();
+    let home = home_dir();
+    format!(
+        "/opt/homebrew/bin:/usr/local/bin:{}:{}:{base}",
+        home.join(".local/bin").display(),
+        home.join(".infer/bin").display()
+    )
 }
 
 /// Prompt customisation env vars for the spawned agent. The CLI applies these
@@ -117,7 +134,7 @@ pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> Path
     match current {
         Some(dir) if dir.ends_with("backend") => dir.parent().map(Path::to_path_buf).unwrap_or(dir),
         Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
-        _ => home,
+        _ => home.join(".infer").join("workspace"),
     }
 }
 
@@ -125,9 +142,13 @@ pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> Path
 /// app from backend/ regardless of where it was invoked, but agent sessions
 /// should work in the project root - one level up. Finder-launched `.app`
 /// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
-/// storage would land at `/.infer` and panic; fall back to the home dir there.
+/// storage would land at `/.infer` and panic; fall back to ~/.infer/workspace
+/// there ($HOME itself makes the agent scan TCC-protected dirs like
+/// ~/Documents, prompting once per spawned process).
 pub(crate) fn agent_cwd() -> PathBuf {
-    resolve_agent_cwd(std::env::current_dir().ok(), home_dir())
+    let dir = resolve_agent_cwd(std::env::current_dir().ok(), home_dir());
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
 /// Directory for user-uploaded/pasted images, created on first access.
@@ -198,13 +219,14 @@ mod tests {
     /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
 
     #[test]
-    fn test_resolve_agent_cwd_falls_back_to_home_at_root() {
+    fn test_resolve_agent_cwd_falls_back_to_workspace_at_root() {
         let home = PathBuf::from("/Users/x");
+        let workspace = PathBuf::from("/Users/x/.infer/workspace");
         assert_eq!(
             resolve_agent_cwd(Some(PathBuf::from("/")), home.clone()),
-            home
+            workspace
         );
-        assert_eq!(resolve_agent_cwd(None, home.clone()), home);
+        assert_eq!(resolve_agent_cwd(None, home.clone()), workspace);
         assert_eq!(
             resolve_agent_cwd(Some(PathBuf::from("/tmp/work")), home.clone()),
             PathBuf::from("/tmp/work")
@@ -248,6 +270,15 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn composed_path_prepends_launchd_omitted_dirs() {
+        let path = composed_path();
+        assert!(path.starts_with("/opt/homebrew/bin:/usr/local/bin:"));
+        assert!(path.contains("/.local/bin"));
+        assert!(path.contains("/.infer/bin"));
     }
 
     #[test]
