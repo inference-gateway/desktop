@@ -731,7 +731,7 @@ pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssu
     tokio::task::spawn_blocking(move || {
         let out = gh_output(&[
             "api",
-            &format!("repos/{repo}/issues?state=all&per_page=30"),
+            &format!("repos/{repo}/issues?state=open&per_page=30"),
             "--jq",
             "[.[] | select(.pull_request | not) | {number, title, state, html_url, created_at}]",
         ])?;
@@ -798,6 +798,29 @@ pub(crate) async fn github_create_task_issue(
             &format!("title={}", title.trim()),
             "-f",
             &format!("body=@opentask\n\n{}", body.trim()),
+            "--jq",
+            ".html_url",
+        ])
+        .map(|s| s.trim().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Trigger the installed workflow on an issue by posting the trigger-phrase comment.
+#[tauri::command]
+pub(crate) async fn github_run_task_issue(repo: String, number: u64) -> Result<String, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        gh_output(&[
+            "api",
+            "-X",
+            "POST",
+            &format!("repos/{repo}/issues/{number}/comments"),
+            "-f",
+            "body=@opentask Can you work on this?",
             "--jq",
             ".html_url",
         ])

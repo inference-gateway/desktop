@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, RotateCw } from "lucide-react";
+import { ExternalLink, Play, RotateCw } from "lucide-react";
 import { api, type TaskIssue, type WorkflowRun, type WorkflowStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 
@@ -30,6 +30,9 @@ export function TasksPanel() {
   const [creating, setCreating] = useState(false);
   const [createdUrl, setCreatedUrl] = useState("");
   const [createError, setCreateError] = useState("");
+  const [installed, setInstalled] = useState(false);
+  const [runningIssue, setRunningIssue] = useState(0);
+  const [triggeredIssue, setTriggeredIssue] = useState(0);
 
   useEffect(() => {
     api
@@ -77,8 +80,23 @@ export function TasksPanel() {
     setRuns([]);
     setCreatedUrl("");
     setCreateError("");
+    setInstalled(false);
+    setTriggeredIssue(0);
     refresh(repo);
   }, [repo, refresh]);
+
+  const runTask = async (number: number) => {
+    setRunningIssue(number);
+    setTriggeredIssue(0);
+    try {
+      await api.githubRunTaskIssue(repo, number);
+      setTriggeredIssue(number);
+    } catch (e) {
+      setLoadError(String(e));
+    } finally {
+      setRunningIssue(0);
+    }
+  };
 
   const createTask = async () => {
     setCreating(true);
@@ -143,7 +161,13 @@ export function TasksPanel() {
         </Button>
       </div>
 
-      {repo && <InferActionInstall repository={repo} model={agentModel} />}
+      {repo && (
+        <InferActionInstall
+          repository={repo}
+          model={agentModel}
+          onStatus={(s) => setInstalled(s.installed)}
+        />
+      )}
 
       {repo && (
         <>
@@ -201,20 +225,48 @@ export function TasksPanel() {
             )}
             <ul className="flex flex-col gap-1">
               {issues.map((i) => (
-                <li key={i.number}>
-                  <button
-                    onClick={() => api.openUrl(i.html_url)}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-left text-[0.85rem] hover:bg-primary/10"
-                  >
-                    <span
-                      className={
-                        "h-2 w-2 shrink-0 rounded-full " +
-                        (i.state === "open" ? "bg-emerald-500" : "bg-muted-foreground")
-                      }
-                    />
-                    <span className="text-muted-foreground">#{i.number}</span>
-                    <span className="truncate">{i.title}</span>
-                  </button>
+                <li
+                  key={i.number}
+                  className="group flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-[0.85rem] hover:bg-primary/10"
+                >
+                  <span
+                    className={
+                      "h-2 w-2 shrink-0 rounded-full " +
+                      (i.state === "open" ? "bg-emerald-500" : "bg-muted-foreground")
+                    }
+                  />
+                  <span className="text-muted-foreground">#{i.number}</span>
+                  <span className="truncate">{i.title}</span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1">
+                    {triggeredIssue === i.number && (
+                      <span role="status" className="text-[0.7rem] text-muted-foreground">
+                        Triggered
+                      </span>
+                    )}
+                    {installed && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        title="Run task"
+                        aria-label="Run task"
+                        disabled={runningIssue === i.number}
+                        onClick={() => runTask(i.number)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Play size={14} />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Open task"
+                      aria-label="Open task"
+                      onClick={() => api.openUrl(i.html_url)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink size={14} />
+                    </Button>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -259,7 +311,15 @@ export function TasksPanel() {
 // Checks whether the infer-action task workflow exists in the repository and
 // installs/updates it via a pull request (branch + commit + PR), like the
 // opentask extension.
-function InferActionInstall({ repository, model }: { repository: string; model: string }) {
+function InferActionInstall({
+  repository,
+  model,
+  onStatus,
+}: {
+  repository: string;
+  model: string;
+  onStatus?: (s: WorkflowStatus) => void;
+}) {
   const [status, setStatus] = useState<WorkflowStatus | null>(null);
   const [checkError, setCheckError] = useState("");
   const [installing, setInstalling] = useState(false);
@@ -280,7 +340,10 @@ function InferActionInstall({ repository, model }: { repository: string; model: 
     const t = setTimeout(() => {
       api
         .githubCheckWorkflow(repository)
-        .then(setStatus)
+        .then((s) => {
+          setStatus(s);
+          onStatus?.(s);
+        })
         .catch((e) => setCheckError(String(e)));
     }, 500);
     return () => clearTimeout(t);
