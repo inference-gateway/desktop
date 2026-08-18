@@ -335,7 +335,7 @@ export function TasksPanel() {
                       {pull ? (
                         <GitPullRequest
                           size={13}
-                          className="shrink-0 text-purple-400"
+                          className="shrink-0 text-emerald-500"
                         />
                       ) : (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
