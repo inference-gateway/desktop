@@ -809,9 +809,16 @@ pub(crate) async fn github_create_task_issue(
 
 /// Trigger the installed workflow on an issue by posting the trigger-phrase comment.
 #[tauri::command]
-pub(crate) async fn github_run_task_issue(repo: String, number: u64) -> Result<String, String> {
+pub(crate) async fn github_run_task_issue(
+    repo: String,
+    number: u64,
+    body: String,
+) -> Result<String, String> {
     if !valid_repo(&repo) {
         return Err(format!("invalid repository: {repo}"));
+    }
+    if body.trim().is_empty() {
+        return Err("comment is empty".into());
     }
     tokio::task::spawn_blocking(move || {
         gh_output(&[
@@ -820,7 +827,7 @@ pub(crate) async fn github_run_task_issue(repo: String, number: u64) -> Result<S
             "POST",
             &format!("repos/{repo}/issues/{number}/comments"),
             "-f",
-            "body=@opentask Can you work on this?",
+            &format!("body={}", body.trim()),
             "--jq",
             ".html_url",
         ])

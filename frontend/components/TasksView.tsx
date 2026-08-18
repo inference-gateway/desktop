@@ -1,9 +1,34 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ExternalLink, Play, RotateCw } from "lucide-react";
-import { api, type TaskIssue, type WorkflowRun, type WorkflowStatus } from "@/lib/tauri";
+import {
+  api,
+  type TaskIssue,
+  type WorkflowRun,
+  type WorkflowStatus,
+} from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 
 const TASKS_REPO_KEY = "tasksRepo";
+const TEMPLATES_KEY = "taskCommentTemplates";
+// ponytail: templates live in localStorage; move to config.yaml if they ever
+// need to sync across machines.
+const DEFAULT_TEMPLATES = [
+  "@opentask Can you work on this?",
+  "@opentask Can you fix this?",
+  "@opentask Can you review this?",
+  "@opentask Can you implement this?",
+  "@opentask Can you investigate this and report your findings?",
+];
+
+function loadTemplates(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "");
+    if (Array.isArray(saved) && saved.length > 0) return saved;
+  } catch {
+    /* fall through to defaults */
+  }
+  return DEFAULT_TEMPLATES;
+}
 
 // Long-horizon tasks panel (Settings -> GitHub -> Tasks): pick any repository
 // you own, install the infer-action workflow into it, then create GitHub
@@ -33,6 +58,21 @@ export function TasksPanel() {
   const [installed, setInstalled] = useState(false);
   const [runningIssue, setRunningIssue] = useState(0);
   const [triggeredIssue, setTriggeredIssue] = useState(0);
+  const [commentIssue, setCommentIssue] = useState(0);
+  const [comment, setComment] = useState("");
+  const [templates, setTemplates] = useState<string[]>(loadTemplates);
+  const [editingTemplates, setEditingTemplates] = useState(false);
+
+  const saveTemplates = (text: string) => {
+    const list = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    setTemplates(list.length > 0 ? list : DEFAULT_TEMPLATES);
+    if (list.length > 0)
+      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
+    else localStorage.removeItem(TEMPLATES_KEY);
+  };
 
   useEffect(() => {
     api
@@ -82,15 +122,22 @@ export function TasksPanel() {
     setCreateError("");
     setInstalled(false);
     setTriggeredIssue(0);
+    setCommentIssue(0);
     refresh(repo);
   }, [repo, refresh]);
 
+  const openComment = (number: number) => {
+    setCommentIssue(number);
+    setComment(templates[0] ?? DEFAULT_TEMPLATES[0]);
+    setTriggeredIssue(0);
+  };
+
   const runTask = async (number: number) => {
     setRunningIssue(number);
-    setTriggeredIssue(0);
     try {
-      await api.githubRunTaskIssue(repo, number);
+      await api.githubRunTaskIssue(repo, number, comment);
       setTriggeredIssue(number);
+      setCommentIssue(0);
     } catch (e) {
       setLoadError(String(e));
     } finally {
@@ -118,8 +165,8 @@ export function TasksPanel() {
   return (
     <>
       <p className="mb-3 text-[0.8rem] text-muted-foreground">
-        Tasks are GitHub issues the installed infer-action workflow picks up. Pick a repository,
-        install the workflow, then create tasks below.
+        Tasks are GitHub issues the installed infer-action workflow picks up.
+        Pick a repository, install the workflow, then create tasks below.
       </p>
       <div className="mb-2 flex items-center gap-2">
         <select
@@ -172,7 +219,10 @@ export function TasksPanel() {
       {repo && (
         <>
           <div className="mb-6 mt-5 flex flex-col gap-2">
-            <label htmlFor="task-title" className="text-[0.8rem] text-muted-foreground">
+            <label
+              htmlFor="task-title"
+              className="text-[0.8rem] text-muted-foreground"
+            >
               New task
             </label>
             <input
@@ -221,60 +271,132 @@ export function TasksPanel() {
           <section className="mb-6">
             <h3 className="mb-2 text-[0.9rem] font-semibold">Tasks</h3>
             {issues.length === 0 && (
-              <p className="text-[0.8rem] text-muted-foreground">No task issues yet.</p>
+              <p className="text-[0.8rem] text-muted-foreground">
+                No task issues yet.
+              </p>
             )}
             <ul className="flex flex-col gap-1">
               {issues.map((i) => (
-                <li
-                  key={i.number}
-                  className="group flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-[0.85rem] hover:bg-primary/10"
-                >
-                  <span
-                    className={
-                      "h-2 w-2 shrink-0 rounded-full " +
-                      (i.state === "open" ? "bg-emerald-500" : "bg-muted-foreground")
-                    }
-                  />
-                  <span className="text-muted-foreground">#{i.number}</span>
-                  <span className="truncate">{i.title}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1">
-                    {triggeredIssue === i.number && (
-                      <span role="status" className="text-[0.7rem] text-muted-foreground">
-                        Triggered
-                      </span>
-                    )}
-                    {installed && (
+                <Fragment key={i.number}>
+                  <li className="group flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-[0.85rem] hover:bg-primary/10">
+                    <span
+                      className={
+                        "h-2 w-2 shrink-0 rounded-full " +
+                        (i.state === "open"
+                          ? "bg-emerald-500"
+                          : "bg-muted-foreground")
+                      }
+                    />
+                    <span className="text-muted-foreground">#{i.number}</span>
+                    <span className="truncate">{i.title}</span>
+                    <span className="ml-auto flex shrink-0 items-center gap-1">
+                      {triggeredIssue === i.number && (
+                        <span
+                          role="status"
+                          className="text-[0.7rem] text-muted-foreground"
+                        >
+                          Triggered
+                        </span>
+                      )}
+                      {installed && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          title="Run task"
+                          aria-label="Run task"
+                          onClick={() =>
+                            commentIssue === i.number
+                              ? setCommentIssue(0)
+                              : openComment(i.number)
+                          }
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Play size={14} />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        title="Run task"
-                        aria-label="Run task"
-                        disabled={runningIssue === i.number}
-                        onClick={() => runTask(i.number)}
+                        title="Open task"
+                        aria-label="Open task"
+                        onClick={() => api.openUrl(i.html_url)}
                         className="text-muted-foreground hover:text-foreground"
                       >
-                        <Play size={14} />
+                        <ExternalLink size={14} />
                       </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Open task"
-                      aria-label="Open task"
-                      onClick={() => api.openUrl(i.html_url)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <ExternalLink size={14} />
-                    </Button>
-                  </span>
-                </li>
+                    </span>
+                  </li>
+                  {commentIssue === i.number && (
+                    <li className="ml-6 flex flex-col gap-2 pb-2">
+                      <textarea
+                        aria-label="Task comment"
+                        rows={2}
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
+                      />
+                      <div className="flex flex-wrap items-center gap-1">
+                        {templates.map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setComment(t)}
+                            className={
+                              "rounded-full border px-2 py-0.5 text-[0.7rem] " +
+                              (comment === t
+                                ? "border-primary/60 text-primary"
+                                : "border-border text-muted-foreground hover:text-foreground")
+                            }
+                          >
+                            {t.replace(/^@opentask\s*/, "")}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setEditingTemplates((e) => !e)}
+                          className="px-1 text-[0.7rem] text-muted-foreground underline hover:text-foreground"
+                        >
+                          {editingTemplates ? "Done" : "Edit templates"}
+                        </button>
+                      </div>
+                      {editingTemplates && (
+                        <textarea
+                          aria-label="Comment templates"
+                          rows={templates.length + 1}
+                          defaultValue={templates.join("\n")}
+                          onChange={(e) => saveTemplates(e.target.value)}
+                          placeholder="One template per line"
+                          className="rounded-md border border-border bg-background px-3 py-2 text-[0.8rem]"
+                        />
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="xs"
+                          disabled={
+                            runningIssue === i.number || !comment.trim()
+                          }
+                          onClick={() => runTask(i.number)}
+                        >
+                          {runningIssue === i.number ? "Sending..." : "Send"}
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => setCommentIssue(0)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </li>
+                  )}
+                </Fragment>
               ))}
             </ul>
           </section>
           <section>
             <h3 className="mb-2 text-[0.9rem] font-semibold">Runs</h3>
             {runs.length === 0 && (
-              <p className="text-[0.8rem] text-muted-foreground">No workflow runs yet.</p>
+              <p className="text-[0.8rem] text-muted-foreground">
+                No workflow runs yet.
+              </p>
             )}
             <ul className="flex flex-col gap-1">
               {runs.map((r) => (
@@ -328,7 +450,9 @@ function InferActionInstall({
   const [installError, setInstallError] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [apt, setApt] = useState("");
-  const [visionModel, setVisionModel] = useState("anthropic/claude-haiku-4-5-20251001");
+  const [visionModel, setVisionModel] = useState(
+    "anthropic/claude-haiku-4-5-20251001",
+  );
   const [imageModel, setImageModel] = useState("");
 
   useEffect(() => {
@@ -354,7 +478,15 @@ function InferActionInstall({
     setInstallError("");
     setPrUrl("");
     try {
-      setPrUrl(await api.githubInstallWorkflow(repository, model, apt, visionModel, imageModel));
+      setPrUrl(
+        await api.githubInstallWorkflow(
+          repository,
+          model,
+          apt,
+          visionModel,
+          imageModel,
+        ),
+      );
     } catch (e) {
       setInstallError(String(e));
     } finally {
@@ -376,7 +508,10 @@ function InferActionInstall({
   };
 
   const outdated =
-    status?.installed && status.version && status.latest && status.version !== status.latest;
+    status?.installed &&
+    status.version &&
+    status.latest &&
+    status.version !== status.latest;
 
   return (
     <div className="flex flex-col gap-2">
@@ -384,18 +519,26 @@ function InferActionInstall({
         <span
           className={
             "h-2 w-2 shrink-0 rounded-full " +
-            (status?.installed ? (outdated ? "bg-amber-500" : "bg-emerald-500") : "bg-amber-500")
+            (status?.installed
+              ? outdated
+                ? "bg-amber-500"
+                : "bg-emerald-500"
+              : "bg-amber-500")
           }
         />
         <span className="text-muted-foreground">
-          {status === null && !checkError && "Checking infer-action workflow..."}
+          {status === null &&
+            !checkError &&
+            "Checking infer-action workflow..."}
           {status?.installed &&
             !outdated &&
             `infer-action workflow installed${status.version ? ` (${status.version})` : ""}.`}
           {status?.installed &&
             outdated &&
             `infer-action ${status.version} installed - ${status.latest} available.`}
-          {status !== null && !status.installed && "infer-action workflow not installed."}
+          {status !== null &&
+            !status.installed &&
+            "infer-action workflow not installed."}
           {checkError && `Couldn't check workflow: ${checkError}`}
         </span>
         {outdated && (
@@ -404,12 +547,21 @@ function InferActionInstall({
           </Button>
         )}
         {status?.installed && status.url && (
-          <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => api.openUrl(status.url!)}
+          >
             View workflow
           </Button>
         )}
         {status !== null && (
-          <Button variant="outline" size="xs" disabled={installing} onClick={install}>
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={installing}
+            onClick={install}
+          >
             {installing
               ? "Installing..."
               : status.installed
@@ -426,7 +578,11 @@ function InferActionInstall({
           </button>
         )}
         {prUrl && (
-          <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => api.openUrl(prUrl)}
+          >
             View PR
           </Button>
         )}
@@ -439,9 +595,13 @@ function InferActionInstall({
       {showOptions && (
         <div className="flex flex-col gap-2 rounded-md border border-border p-3">
           <p className="text-[0.7rem] text-muted-foreground">
-            Written into the workflow on install/re-install. Leave empty to omit.
+            Written into the workflow on install/re-install. Leave empty to
+            omit.
           </p>
-          <label htmlFor="install-apt" className="text-[0.75rem] text-muted-foreground">
+          <label
+            htmlFor="install-apt"
+            className="text-[0.75rem] text-muted-foreground"
+          >
             Extra apt packages (space-separated)
           </label>
           <input
@@ -452,7 +612,10 @@ function InferActionInstall({
             placeholder="libwebkit2gtk-4.1-dev ffmpeg"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
-          <label htmlFor="install-vision-model" className="text-[0.75rem] text-muted-foreground">
+          <label
+            htmlFor="install-vision-model"
+            className="text-[0.75rem] text-muted-foreground"
+          >
             Vision model (image analysis)
           </label>
           <input
@@ -463,7 +626,10 @@ function InferActionInstall({
             placeholder="anthropic/claude-haiku-4-5-20251001"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
-          <label htmlFor="install-image-model" className="text-[0.75rem] text-muted-foreground">
+          <label
+            htmlFor="install-image-model"
+            className="text-[0.75rem] text-muted-foreground"
+          >
             Image generation model
           </label>
           <input
