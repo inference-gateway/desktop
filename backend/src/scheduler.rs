@@ -337,6 +337,321 @@ pub(crate) async fn open_url(url: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+// infer-action workflow installed into a task repository, modeled on the
+// opentask extension's template. Placeholders filled by str::replace because
+// the YAML is full of `${{ }}` that format! would reject.
+const TASKS_YML: &str = r#"name: Task
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model to use (provider/model, e.g. llamacpp/phi-4)
+        required: false
+        default: {model}
+      prompt:
+        description: Task for the agent (workflow_dispatch only)
+        required: false
+        default: ""
+      enable_git:
+        description: Enable git operations - branch, commit, PR (workflow_dispatch only)
+        required: false
+        default: "true"
+      system_prompt:
+        description: Override the direct-prompt system prompt (workflow_dispatch only)
+        required: false
+        default: ""
+  issues:
+    types:
+      - opened
+      - edited
+  issue_comment:
+    types:
+      - created
+  pull_request_review_comment:
+    types:
+      - created
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  opentask:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/create-github-app-token@v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.{client_id_secret} }}
+          private-key: ${{ secrets.{private_key_secret} }}
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: inference-gateway/infer-action@v0.48.1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          github-app-slug: ${{ steps.app-token.outputs.app-slug }}
+          trigger-phrase: "@opentask"
+          model: ${{ inputs.model || vars.DEFAULT_MODEL || '{model}' }}
+          direct-prompt: ${{ inputs.prompt }}
+          system-prompt-direct: ${{ inputs.system_prompt }}
+          enable-git-operations: "${{ inputs.enable_git || 'true' }}"
+          llamacpp-api-url: ${{ secrets.LLAMACPP_API_URL }}
+          llamacpp-api-key: ${{ secrets.LLAMACPP_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          google-api-key: ${{ secrets.GOOGLE_API_KEY }}
+          deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
+          groq-api-key: ${{ secrets.GROQ_API_KEY }}
+          mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          cohere-api-key: ${{ secrets.COHERE_API_KEY }}
+          ollama-cloud-api-key: ${{ secrets.OLLAMA_CLOUD_API_KEY }}
+"#;
+
+const WORKFLOW_PATH: &str = ".github/workflows/tasks.yml";
+const INSTALL_BRANCH: &str = "infer-agent-install";
+
+#[derive(serde::Serialize)]
+pub(crate) struct WorkflowStatus {
+    installed: bool,
+    url: Option<String>,
+    sha: Option<String>,
+}
+
+fn workflow_status(repo: &str) -> Result<WorkflowStatus, String> {
+    match gh_output(&[
+        "api",
+        &format!("repos/{repo}/contents/{WORKFLOW_PATH}"),
+        "--jq",
+        "[.html_url, .sha] | join(\" \")",
+    ]) {
+        Ok(out) => {
+            let mut parts = out.split_whitespace();
+            Ok(WorkflowStatus {
+                installed: true,
+                url: parts.next().map(String::from),
+                sha: parts.next().map(String::from),
+            })
+        }
+        Err(e) if e.contains("404") || e.contains("Not Found") => Ok(WorkflowStatus {
+            installed: false,
+            url: None,
+            sha: None,
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether the infer-action task workflow exists in `repo`.
+#[tauri::command]
+pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || workflow_status(&repo))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Install (or update) the infer-action task workflow into `repo` via a pull
+/// request: branch, commit tasks.yml, open PR. Returns the PR URL.
+#[tauri::command]
+pub(crate) async fn github_install_workflow(repo: String, model: String) -> Result<String, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    let cfg = crate::config::read_config();
+    if !valid_secret_name(&cfg.scheduler_github_app_client_id_secret)
+        || !valid_secret_name(&cfg.scheduler_github_app_private_key_secret)
+    {
+        return Err("invalid GitHub App secret names in config".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        use base64::Engine as _;
+        let yaml = TASKS_YML
+            .replace("{model}", model.trim())
+            .replace(
+                "{client_id_secret}",
+                &cfg.scheduler_github_app_client_id_secret,
+            )
+            .replace(
+                "{private_key_secret}",
+                &cfg.scheduler_github_app_private_key_secret,
+            );
+        let base = gh_output(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])?
+            .trim()
+            .to_string();
+        let sha = gh_output(&[
+            "api",
+            &format!("repos/{repo}/git/ref/heads/{base}"),
+            "--jq",
+            ".object.sha",
+        ])?
+        .trim()
+        .to_string();
+        if let Err(e) = gh_output(&[
+            "api",
+            "-X",
+            "POST",
+            &format!("repos/{repo}/git/refs"),
+            "-f",
+            &format!("ref=refs/heads/{INSTALL_BRANCH}"),
+            "-f",
+            &format!("sha={sha}"),
+        ]) && !e.contains("already exists")
+        {
+            return Err(e);
+        }
+        let existing = workflow_status(&repo)?;
+        let content = base64::engine::general_purpose::STANDARD.encode(yaml.as_bytes());
+        let message = if existing.installed {
+            "ci: sync infer-action task workflow"
+        } else {
+            "feat: add infer-action task workflow"
+        };
+        let mut put_args: Vec<String> = vec![
+            "api".into(),
+            "-X".into(),
+            "PUT".into(),
+            format!("repos/{repo}/contents/{WORKFLOW_PATH}"),
+            "-f".into(),
+            format!("message={message}"),
+            "-f".into(),
+            format!("branch={INSTALL_BRANCH}"),
+            "-f".into(),
+            format!("content={content}"),
+        ];
+        if let Some(sha) = existing.sha {
+            put_args.push("-f".into());
+            put_args.push(format!("sha={sha}"));
+        }
+        let put_refs: Vec<&str> = put_args.iter().map(String::as_str).collect();
+        gh_output(&put_refs)?;
+        gh_output(&[
+            "api",
+            "-X",
+            "POST",
+            &format!("repos/{repo}/pulls"),
+            "-f",
+            &format!("title={message}"),
+            "-f",
+            &format!("head={INSTALL_BRANCH}"),
+            "-f",
+            &format!("base={base}"),
+            "-f",
+            "body=Installs the infer-action task workflow. Trigger tasks with @opentask in issues and comments, or via workflow dispatch.",
+            "--jq",
+            ".html_url",
+        ])
+        .map(|s| s.trim().to_string())
+        .map_err(|e| {
+            if e.contains("No commits between") {
+                "The workflow is already up to date - nothing to install.".into()
+            } else {
+                e
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct TaskIssue {
+    number: u64,
+    title: String,
+    state: String,
+    html_url: String,
+    created_at: String,
+}
+
+/// Recent issues in the task repository, newest first.
+/// ponytail: newest 30, no pagination - enough for a dashboard.
+#[tauri::command]
+pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssue>, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let out = gh_output(&[
+            "api",
+            &format!("repos/{repo}/issues?state=all&per_page=30"),
+            "--jq",
+            "[.[] | select(.pull_request | not) | {number, title, state, html_url, created_at}]",
+        ])?;
+        serde_json::from_str(&out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct WorkflowRun {
+    id: u64,
+    name: String,
+    status: String,
+    conclusion: Option<String>,
+    html_url: String,
+    created_at: String,
+}
+
+/// Recent runs of the installed task workflow, newest first.
+#[tauri::command]
+pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<WorkflowRun>, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let out = gh_output(&[
+            "api",
+            &format!("repos/{repo}/actions/workflows/tasks.yml/runs?per_page=20"),
+            "--jq",
+            "[.workflow_runs[] | {id, name: .display_title, status, conclusion, html_url, created_at}]",
+        ])?;
+        serde_json::from_str(&out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Create a task issue; the body is prefixed with the @opentask trigger so
+/// the installed workflow always picks it up. Returns the issue URL.
+#[tauri::command]
+pub(crate) async fn github_create_task_issue(
+    repo: String,
+    title: String,
+    body: String,
+) -> Result<String, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    if title.trim().is_empty() {
+        return Err("task title is empty".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        gh_output(&[
+            "api",
+            "-X",
+            "POST",
+            &format!("repos/{repo}/issues"),
+            "-f",
+            &format!("title={}", title.trim()),
+            "-f",
+            &format!("body=@opentask\n\n{}", body.trim()),
+            "--jq",
+            ".html_url",
+        ])
+        .map(|s| s.trim().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub(crate) async fn get_scheduler_log(
     state: tauri::State<'_, AppState>,
@@ -347,7 +662,16 @@ pub(crate) async fn get_scheduler_log(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_schedules_dir, valid_repo, valid_secret_name};
+    use super::{TASKS_YML, read_schedules_dir, valid_repo, valid_secret_name};
+
+    #[test]
+    fn tasks_yml_has_placeholders_and_trigger() {
+        assert!(TASKS_YML.contains("{model}"));
+        assert!(TASKS_YML.contains("{client_id_secret}"));
+        assert!(TASKS_YML.contains("{private_key_secret}"));
+        assert!(TASKS_YML.contains("trigger-phrase: \"@opentask\""));
+        assert!(TASKS_YML.contains("inference-gateway/infer-action@"));
+    }
 
     #[test]
     fn valid_repo_accepts_owner_slash_name_only() {

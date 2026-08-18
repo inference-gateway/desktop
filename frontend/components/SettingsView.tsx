@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { api, type A2aAgent, type DesktopConfig } from "@/lib/tauri";
+import { api, type A2aAgent, type DesktopConfig, type WorkflowStatus } from "@/lib/tauri";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
@@ -701,9 +701,20 @@ function GithubTab() {
     <>
       <h2 className="text-[1.05rem] font-semibold">GitHub</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        GitHub CLI status and the Actions secrets the scheduled workflows need. The routines
-        repository and scheduling options live in the Scheduling tab.
+        Pick the account and repository tasks run in, install the infer-action workflow, and set
+        the Actions secrets it needs. Scheduling options live in the Scheduling tab.
       </p>
+      <h3 className="mb-1 text-[0.9rem] font-semibold">Repository</h3>
+      <p className="mb-2 text-[0.75rem] text-muted-foreground">
+        Owner comes from your gh login (user and orgs). The same repository is used by the
+        Scheduling tab.
+      </p>
+      <RepositoryPicker
+        value={config.scheduler_github_repository}
+        onChange={(v) => set("scheduler_github_repository", v)}
+      />
+      <InferActionInstall repository={config.scheduler_github_repository} model={config.agent_model} />
+
       <GithubPrereqs
         repository={config.scheduler_github_repository}
         clientIdSecret={config.scheduler_github_app_client_id_secret}
@@ -766,6 +777,87 @@ function GithubTab() {
         )}
       </div>
     </>
+  );
+}
+
+// Checks whether the infer-action task workflow exists in the repository and
+// installs/updates it via a pull request (branch + commit + PR), like the
+// opentask extension.
+function InferActionInstall({ repository, model }: { repository: string; model: string }) {
+  const [status, setStatus] = useState<WorkflowStatus | null>(null);
+  const [checkError, setCheckError] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [prUrl, setPrUrl] = useState("");
+  const [installError, setInstallError] = useState("");
+
+  useEffect(() => {
+    setStatus(null);
+    setCheckError("");
+    setPrUrl("");
+    setInstallError("");
+    if (!repository.includes("/")) return;
+    const t = setTimeout(() => {
+      api
+        .githubCheckWorkflow(repository)
+        .then(setStatus)
+        .catch((e) => setCheckError(String(e)));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [repository]);
+
+  const install = async () => {
+    setInstalling(true);
+    setInstallError("");
+    setPrUrl("");
+    try {
+      setPrUrl(await api.githubInstallWorkflow(repository, model));
+    } catch (e) {
+      setInstallError(String(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  if (!repository.includes("/")) return null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.75rem]">
+      <span
+        className={
+          "h-2 w-2 shrink-0 rounded-full " + (status?.installed ? "bg-emerald-500" : "bg-amber-500")
+        }
+      />
+      <span className="text-muted-foreground">
+        {status === null && !checkError && "Checking infer-action workflow..."}
+        {status?.installed && "infer-action workflow installed."}
+        {status !== null && !status.installed && "infer-action workflow not installed."}
+        {checkError && `Couldn't check workflow: ${checkError}`}
+      </span>
+      {status?.installed && status.url && (
+        <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
+          View workflow
+        </Button>
+      )}
+      {status !== null && (
+        <Button variant="outline" size="xs" disabled={installing} onClick={install}>
+          {installing
+            ? "Installing..."
+            : status.installed
+              ? "Re-install infer-action"
+              : "Install infer-action"}
+        </Button>
+      )}
+      {prUrl && (
+        <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
+          View install PR
+        </Button>
+      )}
+      {installError && (
+        <span role="status" className="text-err">
+          {installError}
+        </span>
+      )}
+    </div>
   );
 }
 

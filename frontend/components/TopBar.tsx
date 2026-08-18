@@ -1,10 +1,10 @@
-import { ChartColumn, RotateCw, Settings } from "lucide-react";
+import { ChartColumn, ListTodo, RotateCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
 export function TopBar() {
-  const { versionBadge, showUpdateBanner, updateBannerText, applyUpdates, restartBackend, openSettings, openObservability } = useDesktop();
+  const { versionBadge, showUpdateBanner, updateBannerText, applyUpdates, restartBackend, openSettings, openObservability, openTasks } = useDesktop();
   return (
     <header id="top-bar" className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-[0.6rem]">
       <img src="/logo.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0 rounded-[5px]" />
@@ -34,6 +34,16 @@ export function TopBar() {
           <RotateCw size={16} />
         </Button>
       </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title="Tasks"
+        aria-label="Tasks"
+        onClick={openTasks}
+        className="text-muted-foreground"
+      >
+        <ListTodo size={16} />
+      </Button>
       <Button
         variant="ghost"
         size="icon-sm"

@@ -60,7 +60,9 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "tasks">(
+    "chat",
+  );
   const [history, setHistory] = useState<string[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
@@ -584,6 +586,10 @@ function useDesktopStore() {
     setCurrentView("observability");
   }, []);
 
+  const openTasks = useCallback(() => {
+    setCurrentView("tasks");
+  }, []);
+
   const saveSettings = useCallback(
     async (keys: Record<string, string>) => {
       try {
@@ -705,6 +711,7 @@ function useDesktopStore() {
     currentView,
     openSettings,
     openObservability,
+    openTasks,
     setCurrentView,
     saveSettings,
     getConfig: () => api.getConfig(),
