@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, Download, Loader2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
@@ -290,16 +290,49 @@ function ScheduledJobs() {
   );
 }
 
+const SCROLL_THRESHOLD = 60; // px from bottom to consider "at bottom"
+
 export function Transcript() {
   const { items, typing, approve } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const checkAtBottom = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+    isAtBottomRef.current = atBottom;
+    setShowScrollButton(!atBottom);
+  }, []);
+
+  // Auto-scroll only when user is already at the bottom
   useEffect(() => {
     const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && isAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [items, typing]);
 
+  // Track manual scroll position
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkAtBottom, { passive: true });
+    checkAtBottom(); // initial state
+    return () => el.removeEventListener("scroll", checkAtBottom);
+  }, [checkAtBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    isAtBottomRef.current = true;
+    setShowScrollButton(false);
+  }, []);
+
   return (
-    <>
+    <div className="relative min-h-0 flex-1">
       <ScheduledJobs />
       <div
         id="chat-transcript"
@@ -316,6 +349,15 @@ export function Transcript() {
         ))}
         {typing && <TypingBubble />}
       </div>
-    </>
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest"
+          className="absolute bottom-4 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-secondary"
+        >
+          <ChevronDown className="size-5" />
+        </button>
+      )}
+    </div>
   );
 }
