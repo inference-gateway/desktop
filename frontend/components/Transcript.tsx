@@ -306,7 +306,6 @@ export function Transcript() {
     setShowScrollButton(!atBottom);
   }, []);
 
-  // Auto-scroll only when user is already at the bottom
   useEffect(() => {
     const el = ref.current;
     if (el && isAtBottomRef.current) {
@@ -314,12 +313,11 @@ export function Transcript() {
     }
   }, [items, typing]);
 
-  // Track manual scroll position
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.addEventListener("scroll", checkAtBottom, { passive: true });
-    checkAtBottom(); // initial state
+    checkAtBottom();
     return () => el.removeEventListener("scroll", checkAtBottom);
   }, [checkAtBottom]);
 
