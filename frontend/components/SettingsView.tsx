@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api, type A2aAgent, type DesktopConfig } from "@/lib/tauri";
+import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
@@ -32,9 +33,16 @@ type Tab =
   | "agents"
   | "snippets"
   | "projects"
-  | "scheduling"
   | "github"
   | "skills";
+
+type GithubSubTab = "repository" | "scheduling" | "tasks";
+
+const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
+  { id: "repository", label: "General" },
+  { id: "scheduling", label: "Scheduling" },
+  { id: "tasks", label: "Tasks" },
+];
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
@@ -43,7 +51,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "agents", label: "Agents" },
   { id: "projects", label: "Projects" },
   { id: "snippets", label: "Snippets" },
-  { id: "scheduling", label: "Scheduling" },
   { id: "github", label: "GitHub" },
   { id: "skills", label: "Skills" },
   { id: "updates", label: "Updates" },
@@ -66,6 +73,7 @@ export function SettingsView() {
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general"
   );
+  const [githubSub, setGithubSub] = useState<GithubSubTab>("repository");
 
   useEffect(() => {
     setInitialSettingsTab("general");
@@ -103,20 +111,45 @@ export function SettingsView() {
         </span>
         <div className="flex min-h-0 flex-1 flex-col gap-1">
           {TABS.map((t) => (
-            <button
-              key={t.id}
-              aria-pressed={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
-                t.id === "updates" && "mt-auto",
-                tab === t.id
-                  ? "bg-primary/15 text-foreground"
-                  : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+            <div key={t.id} className={cn("flex flex-col gap-1", t.id === "updates" && "mt-auto")}>
+              <button
+                aria-pressed={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
+                  tab === t.id
+                    ? "bg-primary/15 text-foreground"
+                    : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+              {t.id === "github" && (
+                <div className="ml-4 flex flex-col border-l border-border/60 pl-1">
+                  {GITHUB_SUBTABS.map((s) => {
+                    const active = tab === "github" && githubSub === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        aria-pressed={active}
+                        onClick={() => {
+                          setTab("github");
+                          setGithubSub(s.id);
+                        }}
+                        className={cn(
+                          "relative rounded-md px-3 py-[0.3rem] text-left text-[0.8rem]",
+                          active
+                            ? "font-medium text-primary before:absolute before:-left-[5px] before:top-1/2 before:h-4 before:w-[2px] before:-translate-y-1/2 before:rounded-full before:bg-primary"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            >
-              {t.label}
-            </button>
+            </div>
           ))}
         </div>
       </nav>
@@ -198,8 +231,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
-          {tab === "scheduling" && <SchedulingTab />}
-          {tab === "github" && <GithubTab />}
+          {tab === "github" && <GithubTab sub={githubSub} />}
           {tab === "projects" && <ProjectsTab />}
           {tab === "snippets" && <SnippetsTab />}
           {tab === "prompt" && <SystemPromptTab />}
@@ -520,7 +552,6 @@ function SchedulingTab() {
 
   return (
     <>
-      <h2 className="text-[1.05rem] font-semibold">Scheduling</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire
         scheduled agent jobs (and listen on configured channels like Telegram). Job runs are
@@ -555,6 +586,16 @@ function SchedulingTab() {
           <option value="github">github</option>
         </select>
       </div>
+      <div className="mb-3 flex flex-col gap-1">
+        <p className="text-[0.75rem] text-muted-foreground">
+          Routines repository for the github backend: schedules are deployed there as GitHub
+          Actions workflows by the daemon (auto-created when missing).
+        </p>
+        <RepositoryPicker
+          value={config.scheduler_github_repository}
+          onChange={(v) => set("scheduler_github_repository", v)}
+        />
+      </div>
       {config.scheduler_backend === "github" && (
         <>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
@@ -565,13 +606,9 @@ function SchedulingTab() {
           </p>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
             GitHub CLI status and the Actions secrets the workflows need are managed in the
-            GitHub tab.
+            General tab.
           </p>
           <div className="mb-3 flex flex-col gap-3">
-            <RepositoryPicker
-              value={config.scheduler_github_repository}
-              onChange={(v) => set("scheduler_github_repository", v)}
-            />
             {SCHEDULER_GITHUB_FIELDS.map((f) => (
               <div key={f.key} className="flex flex-col gap-1">
                 <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
@@ -665,7 +702,20 @@ function SchedulingTab() {
   );
 }
 
-function GithubTab() {
+function GithubTab({ sub }: { sub: GithubSubTab }) {
+  return (
+    <>
+      <h2 className="mb-4 text-[1.05rem] font-semibold">
+        GitHub · {GITHUB_SUBTABS.find((t) => t.id === sub)?.label}
+      </h2>
+      {sub === "repository" && <GithubRepositoryPanel />}
+      {sub === "scheduling" && <SchedulingTab />}
+      {sub === "tasks" && <TasksPanel />}
+    </>
+  );
+}
+
+function GithubRepositoryPanel() {
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -699,10 +749,9 @@ function GithubTab() {
 
   return (
     <>
-      <h2 className="text-[1.05rem] font-semibold">GitHub</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        GitHub CLI status and the Actions secrets the scheduled workflows need. The routines
-        repository and scheduling options live in the Scheduling tab.
+        GitHub CLI status, the Actions secrets the workflows need, and the bot identity. The
+        scheduling repository lives in the Scheduling tab; task repositories in the Tasks tab.
       </p>
       <GithubPrereqs
         repository={config.scheduler_github_repository}
