@@ -447,13 +447,12 @@ pub(crate) struct WorkflowStatus {
     sha: Option<String>,
 }
 
-fn workflow_status(repo: &str) -> Result<WorkflowStatus, String> {
-    match gh_output(&[
-        "api",
-        &format!("repos/{repo}/contents/{WORKFLOW_PATH}"),
-        "--jq",
-        "[.html_url, .sha] | join(\" \")",
-    ]) {
+fn workflow_status(repo: &str, git_ref: Option<&str>) -> Result<WorkflowStatus, String> {
+    let path = match git_ref {
+        Some(r) => format!("repos/{repo}/contents/{WORKFLOW_PATH}?ref={r}"),
+        None => format!("repos/{repo}/contents/{WORKFLOW_PATH}"),
+    };
+    match gh_output(&["api", &path, "--jq", "[.html_url, .sha] | join(\" \")"]) {
         Ok(out) => {
             let mut parts = out.split_whitespace();
             Ok(WorkflowStatus {
@@ -477,7 +476,7 @@ pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus
     if !valid_repo(&repo) {
         return Err(format!("invalid repository: {repo}"));
     }
-    tokio::task::spawn_blocking(move || workflow_status(&repo))
+    tokio::task::spawn_blocking(move || workflow_status(&repo, None))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -518,7 +517,13 @@ pub(crate) async fn github_install_workflow(repo: String, model: String) -> Resu
         ])?
         .trim()
         .to_string();
-        if let Err(e) = gh_output(&[
+        let _ = gh_output(&[
+            "api",
+            "-X",
+            "DELETE",
+            &format!("repos/{repo}/git/refs/heads/{INSTALL_BRANCH}"),
+        ]);
+        gh_output(&[
             "api",
             "-X",
             "POST",
@@ -527,11 +532,8 @@ pub(crate) async fn github_install_workflow(repo: String, model: String) -> Resu
             &format!("ref=refs/heads/{INSTALL_BRANCH}"),
             "-f",
             &format!("sha={sha}"),
-        ]) && !e.contains("already exists")
-        {
-            return Err(e);
-        }
-        let existing = workflow_status(&repo)?;
+        ])?;
+        let existing = workflow_status(&repo, Some(&base))?;
         let content = base64::engine::general_purpose::STANDARD.encode(yaml.as_bytes());
         let message = if existing.installed {
             "ci: sync infer-action task workflow"
@@ -636,8 +638,12 @@ pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<Workfl
             &format!("repos/{repo}/actions/workflows/tasks.yml/runs?per_page=20"),
             "--jq",
             "[.workflow_runs[] | {id, name: .display_title, status, conclusion, html_url, created_at}]",
-        ])?;
-        serde_json::from_str(&out).map_err(|e| e.to_string())
+        ]);
+        match out {
+            Ok(out) => serde_json::from_str(&out).map_err(|e| e.to_string()),
+            Err(e) if e.contains("404") || e.contains("Not Found") => Ok(Vec::new()),
+            Err(e) => Err(e),
+        }
     })
     .await
     .map_err(|e| e.to_string())?
