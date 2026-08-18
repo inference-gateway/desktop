@@ -10,25 +10,31 @@ import {
 import { Button } from "@/components/ui/button";
 
 const TASKS_REPO_KEY = "tasksRepo";
-const TEMPLATES_KEY = "taskCommentTemplates";
+const ISSUE_TEMPLATES_KEY = "taskCommentTemplates";
+const PULL_TEMPLATES_KEY = "taskPullCommentTemplates";
 // ponytail: templates live in localStorage; move to config.yaml if they ever
 // need to sync across machines.
-const DEFAULT_TEMPLATES = [
+const DEFAULT_ISSUE_TEMPLATES = [
   "@opentask Can you work on this?",
   "@opentask Can you fix this?",
-  "@opentask Can you review this?",
   "@opentask Can you implement this?",
   "@opentask Can you investigate this and report your findings?",
 ];
+const DEFAULT_PULL_TEMPLATES = [
+  "@opentask Can you review this?",
+  "@opentask CI is failing - can you fix this?",
+  "@opentask Can you address the review comments?",
+  "@opentask Can you resolve the merge conflicts?",
+];
 
-function loadTemplates(): string[] {
+function loadTemplates(key: string, defaults: string[]): string[] {
   try {
-    const saved = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "");
+    const saved = JSON.parse(localStorage.getItem(key) || "");
     if (Array.isArray(saved) && saved.length > 0) return saved;
   } catch {
     /* fall through to defaults */
   }
-  return DEFAULT_TEMPLATES;
+  return defaults;
 }
 
 // Long-horizon tasks panel (Settings -> GitHub -> Tasks): pick any repository
@@ -62,18 +68,30 @@ export function TasksPanel() {
   const [triggeredIssue, setTriggeredIssue] = useState(0);
   const [commentIssue, setCommentIssue] = useState(0);
   const [comment, setComment] = useState("");
-  const [templates, setTemplates] = useState<string[]>(loadTemplates);
+  const [commentIsPull, setCommentIsPull] = useState(false);
+  const [issueTemplates, setIssueTemplates] = useState<string[]>(() =>
+    loadTemplates(ISSUE_TEMPLATES_KEY, DEFAULT_ISSUE_TEMPLATES),
+  );
+  const [pullTemplates, setPullTemplates] = useState<string[]>(() =>
+    loadTemplates(PULL_TEMPLATES_KEY, DEFAULT_PULL_TEMPLATES),
+  );
   const [editingTemplates, setEditingTemplates] = useState(false);
 
+  const templates = commentIsPull ? pullTemplates : issueTemplates;
+
   const saveTemplates = (text: string) => {
+    const key = commentIsPull ? PULL_TEMPLATES_KEY : ISSUE_TEMPLATES_KEY;
+    const defaults = commentIsPull
+      ? DEFAULT_PULL_TEMPLATES
+      : DEFAULT_ISSUE_TEMPLATES;
+    const setList = commentIsPull ? setPullTemplates : setIssueTemplates;
     const list = text
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-    setTemplates(list.length > 0 ? list : DEFAULT_TEMPLATES);
-    if (list.length > 0)
-      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
-    else localStorage.removeItem(TEMPLATES_KEY);
+    setList(list.length > 0 ? list : defaults);
+    if (list.length > 0) localStorage.setItem(key, JSON.stringify(list));
+    else localStorage.removeItem(key);
   };
 
   useEffect(() => {
@@ -136,8 +154,12 @@ export function TasksPanel() {
 
   const openComment = (number: number, pull: boolean) => {
     setCommentIssue(number);
-    const review = templates.find((t) => /review/i.test(t));
-    setComment((pull && review) || templates[0] || DEFAULT_TEMPLATES[0]);
+    setCommentIsPull(pull);
+    setEditingTemplates(false);
+    const list = pull ? pullTemplates : issueTemplates;
+    setComment(
+      list[0] ?? (pull ? DEFAULT_PULL_TEMPLATES : DEFAULT_ISSUE_TEMPLATES)[0],
+    );
     setTriggeredIssue(0);
   };
 
