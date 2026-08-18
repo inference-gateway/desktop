@@ -9,6 +9,26 @@ import {
 import { Button } from "@/components/ui/button";
 
 const TASKS_REPO_KEY = "tasksRepo";
+const TEMPLATES_KEY = "taskCommentTemplates";
+// ponytail: templates live in localStorage; move to config.yaml if they ever
+// need to sync across machines.
+const DEFAULT_TEMPLATES = [
+  "@opentask Can you work on this?",
+  "@opentask Can you fix this?",
+  "@opentask Can you review this?",
+  "@opentask Can you implement this?",
+  "@opentask Can you investigate this and report your findings?",
+];
+
+function loadTemplates(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "");
+    if (Array.isArray(saved) && saved.length > 0) return saved;
+  } catch {
+    /* fall through to defaults */
+  }
+  return DEFAULT_TEMPLATES;
+}
 
 // Long-horizon tasks panel (Settings -> GitHub -> Tasks): pick any repository
 // you own, install the infer-action workflow into it, then create GitHub
@@ -40,6 +60,19 @@ export function TasksPanel() {
   const [triggeredIssue, setTriggeredIssue] = useState(0);
   const [commentIssue, setCommentIssue] = useState(0);
   const [comment, setComment] = useState("");
+  const [templates, setTemplates] = useState<string[]>(loadTemplates);
+  const [editingTemplates, setEditingTemplates] = useState(false);
+
+  const saveTemplates = (text: string) => {
+    const list = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    setTemplates(list.length > 0 ? list : DEFAULT_TEMPLATES);
+    if (list.length > 0)
+      localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
+    else localStorage.removeItem(TEMPLATES_KEY);
+  };
 
   useEffect(() => {
     api
@@ -95,7 +128,7 @@ export function TasksPanel() {
 
   const openComment = (number: number) => {
     setCommentIssue(number);
-    setComment("@opentask Can you work on this?");
+    setComment(templates[0] ?? DEFAULT_TEMPLATES[0]);
     setTriggeredIssue(0);
   };
 
@@ -302,6 +335,38 @@ export function TasksPanel() {
                         onChange={(e) => setComment(e.target.value)}
                         className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
                       />
+                      <div className="flex flex-wrap items-center gap-1">
+                        {templates.map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setComment(t)}
+                            className={
+                              "rounded-full border px-2 py-0.5 text-[0.7rem] " +
+                              (comment === t
+                                ? "border-primary/60 text-primary"
+                                : "border-border text-muted-foreground hover:text-foreground")
+                            }
+                          >
+                            {t.replace(/^@opentask\s*/, "")}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setEditingTemplates((e) => !e)}
+                          className="px-1 text-[0.7rem] text-muted-foreground underline hover:text-foreground"
+                        >
+                          {editingTemplates ? "Done" : "Edit templates"}
+                        </button>
+                      </div>
+                      {editingTemplates && (
+                        <textarea
+                          aria-label="Comment templates"
+                          rows={templates.length + 1}
+                          defaultValue={templates.join("\n")}
+                          onChange={(e) => saveTemplates(e.target.value)}
+                          placeholder="One template per line"
+                          className="rounded-md border border-border bg-background px-3 py-2 text-[0.8rem]"
+                        />
+                      )}
                       <div className="flex items-center gap-2">
                         <Button
                           size="xs"
