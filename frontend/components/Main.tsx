@@ -3,7 +3,6 @@ import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
 import { SettingsView } from "./SettingsView";
 import { ObservabilityView } from "./ObservabilityView";
-import { TasksView } from "./TasksView";
 import { useDesktop } from "@/store";
 
 export function Main() {
@@ -12,13 +11,6 @@ export function Main() {
     return (
       <div id="main" className="flex min-h-0 flex-1">
         <SettingsView />
-      </div>
-    );
-  }
-  if (currentView === "tasks") {
-    return (
-      <div id="main" className="flex min-h-0 flex-1">
-        <TasksView />
       </div>
     );
   }

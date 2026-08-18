@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { api, type A2aAgent, type DesktopConfig, type WorkflowStatus } from "@/lib/tauri";
+import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
@@ -32,7 +33,6 @@ type Tab =
   | "agents"
   | "snippets"
   | "projects"
-  | "scheduling"
   | "github"
   | "skills";
 
@@ -43,7 +43,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "agents", label: "Agents" },
   { id: "projects", label: "Projects" },
   { id: "snippets", label: "Snippets" },
-  { id: "scheduling", label: "Scheduling" },
   { id: "github", label: "GitHub" },
   { id: "skills", label: "Skills" },
   { id: "updates", label: "Updates" },
@@ -198,7 +197,6 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
-          {tab === "scheduling" && <SchedulingTab />}
           {tab === "github" && <GithubTab />}
           {tab === "projects" && <ProjectsTab />}
           {tab === "snippets" && <SnippetsTab />}
@@ -520,7 +518,6 @@ function SchedulingTab() {
 
   return (
     <>
-      <h2 className="text-[1.05rem] font-semibold">Scheduling</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire
         scheduled agent jobs (and listen on configured channels like Telegram). Job runs are
@@ -564,14 +561,10 @@ function SchedulingTab() {
             chat when you schedule a job.
           </p>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
-            GitHub CLI status and the Actions secrets the workflows need are managed in the
-            GitHub tab.
+            The repository, GitHub CLI status, and the Actions secrets the workflows need are
+            managed in the Repository tab.
           </p>
           <div className="mb-3 flex flex-col gap-3">
-            <RepositoryPicker
-              value={config.scheduler_github_repository}
-              onChange={(v) => set("scheduler_github_repository", v)}
-            />
             {SCHEDULER_GITHUB_FIELDS.map((f) => (
               <div key={f.key} className="flex flex-col gap-1">
                 <Label htmlFor={f.key} className="text-[0.8rem] text-muted-foreground">
@@ -665,7 +658,44 @@ function SchedulingTab() {
   );
 }
 
+type GithubSubTab = "repository" | "scheduling" | "tasks";
+
+const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
+  { id: "repository", label: "Repository" },
+  { id: "scheduling", label: "Scheduling" },
+  { id: "tasks", label: "Tasks" },
+];
+
 function GithubTab() {
+  const [sub, setSub] = useState<GithubSubTab>("repository");
+  return (
+    <>
+      <h2 className="text-[1.05rem] font-semibold">GitHub</h2>
+      <div className="mb-4 mt-2 flex gap-1 border-b border-border">
+        {GITHUB_SUBTABS.map((t) => (
+          <button
+            key={t.id}
+            aria-pressed={sub === t.id}
+            onClick={() => setSub(t.id)}
+            className={cn(
+              "rounded-t-md px-3 py-[0.4rem] text-[0.85rem] font-medium",
+              sub === t.id
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {sub === "repository" && <GithubRepositoryPanel />}
+      {sub === "scheduling" && <SchedulingTab />}
+      {sub === "tasks" && <TasksPanel onConfigure={() => setSub("repository")} />}
+    </>
+  );
+}
+
+function GithubRepositoryPanel() {
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -699,15 +729,9 @@ function GithubTab() {
 
   return (
     <>
-      <h2 className="text-[1.05rem] font-semibold">GitHub</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Pick the account and repository tasks run in, install the infer-action workflow, and set
-        the Actions secrets it needs. Scheduling options live in the Scheduling tab.
-      </p>
-      <h3 className="mb-1 text-[0.9rem] font-semibold">Repository</h3>
-      <p className="mb-2 text-[0.75rem] text-muted-foreground">
-        Owner comes from your gh login (user and orgs). The same repository is used by the
-        Scheduling tab.
+        the Actions secrets it needs. Owner comes from your gh login (user and orgs).
       </p>
       <RepositoryPicker
         value={config.scheduler_github_repository}
