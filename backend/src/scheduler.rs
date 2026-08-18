@@ -742,6 +742,34 @@ pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssu
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct TaskPull {
+    number: u64,
+    title: String,
+    html_url: String,
+    body: Option<String>,
+}
+
+/// Open pull requests in the task repository, newest first.
+/// ponytail: newest 30, no pagination - enough for a dashboard.
+#[tauri::command]
+pub(crate) async fn github_list_task_pulls(repo: String) -> Result<Vec<TaskPull>, String> {
+    if !valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let out = gh_output(&[
+            "api",
+            &format!("repos/{repo}/pulls?state=open&per_page=30"),
+            "--jq",
+            "[.[] | {number, title, html_url, body}]",
+        ])?;
+        serde_json::from_str(&out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct WorkflowRun {
     id: u64,
     name: String,

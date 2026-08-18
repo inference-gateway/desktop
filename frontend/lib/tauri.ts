@@ -89,6 +89,12 @@ export type TaskIssue = {
   html_url: string;
   created_at: string;
 };
+export type TaskPull = {
+  number: number;
+  title: string;
+  html_url: string;
+  body: string | null;
+};
 export type WorkflowRun = {
   id: number;
   name: string;
@@ -182,6 +188,7 @@ export const api = {
   ) => invoke<string>("github_install_workflow", { repo, model, apt, visionModel, imageModel }),
   githubBumpWorkflow: (repo: string) => invoke<string>("github_bump_workflow", { repo }),
   githubListTaskIssues: (repo: string) => invoke<TaskIssue[]>("github_list_task_issues", { repo }),
+  githubListTaskPulls: (repo: string) => invoke<TaskPull[]>("github_list_task_pulls", { repo }),
   githubListWorkflowRuns: (repo: string) =>
     invoke<WorkflowRun[]>("github_list_workflow_runs", { repo }),
   githubCreateTaskIssue: (repo: string, title: string, body: string) =>

@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { ExternalLink, Play, RotateCw } from "lucide-react";
+import { ExternalLink, GitPullRequest, Play, RotateCw } from "lucide-react";
 import {
   api,
   type TaskIssue,
+  type TaskPull,
   type WorkflowRun,
   type WorkflowStatus,
 } from "@/lib/tauri";
@@ -48,6 +49,7 @@ export function TasksPanel() {
   const repo = owner && name ? `${owner}/${name}` : "";
 
   const [issues, setIssues] = useState<TaskIssue[]>([]);
+  const [pulls, setPulls] = useState<TaskPull[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loadError, setLoadError] = useState("");
   const [title, setTitle] = useState("");
@@ -107,9 +109,14 @@ export function TasksPanel() {
   const refresh = useCallback((r: string) => {
     if (!r) return;
     setLoadError("");
-    Promise.all([api.githubListTaskIssues(r), api.githubListWorkflowRuns(r)])
-      .then(([i, w]) => {
+    Promise.all([
+      api.githubListTaskIssues(r),
+      api.githubListTaskPulls(r),
+      api.githubListWorkflowRuns(r),
+    ])
+      .then(([i, p, w]) => {
         setIssues(i);
+        setPulls(p);
         setRuns(w);
       })
       .catch((e) => setLoadError(String(e)));
@@ -117,6 +124,7 @@ export function TasksPanel() {
 
   useEffect(() => {
     setIssues([]);
+    setPulls([]);
     setRuns([]);
     setCreatedUrl("");
     setCreateError("");
@@ -126,11 +134,24 @@ export function TasksPanel() {
     refresh(repo);
   }, [repo, refresh]);
 
-  const openComment = (number: number) => {
+  const openComment = (number: number, pull: boolean) => {
     setCommentIssue(number);
-    setComment(templates[0] ?? DEFAULT_TEMPLATES[0]);
+    const review = templates.find((t) => /review/i.test(t));
+    setComment((pull && review) || templates[0] || DEFAULT_TEMPLATES[0]);
     setTriggeredIssue(0);
   };
+
+  const linkedPulls = new Map<number, TaskPull[]>();
+  const unlinkedPulls: TaskPull[] = [];
+  for (const p of pulls) {
+    const refs = [...`${p.title}\n${p.body ?? ""}`.matchAll(/#(\d+)/g)].map(
+      (m) => Number(m[1]),
+    );
+    const target = refs.find((n) => issues.some((i) => i.number === n));
+    if (target)
+      linkedPulls.set(target, [...(linkedPulls.get(target) ?? []), p]);
+    else unlinkedPulls.push(p);
+  }
 
   const runTask = async (number: number) => {
     setRunningIssue(number);
@@ -276,119 +297,149 @@ export function TasksPanel() {
               </p>
             )}
             <ul className="flex flex-col gap-1">
-              {issues.map((i) => (
-                <Fragment key={i.number}>
-                  <li className="group flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-[0.85rem] hover:bg-primary/10">
-                    <span
+              {[
+                ...issues.map((i) => ({
+                  num: i.number,
+                  rowTitle: i.title,
+                  url: i.html_url,
+                  pull: false,
+                  prs: linkedPulls.get(i.number) ?? [],
+                })),
+                ...unlinkedPulls.map((p) => ({
+                  num: p.number,
+                  rowTitle: p.title,
+                  url: p.html_url,
+                  pull: true,
+                  prs: [] as TaskPull[],
+                })),
+              ]
+                .flatMap((row) => [
+                  row,
+                  ...row.prs.map((p) => ({
+                    num: p.number,
+                    rowTitle: p.title,
+                    url: p.html_url,
+                    pull: true,
+                    nested: true,
+                    prs: [] as TaskPull[],
+                  })),
+                ])
+                .map(({ num, rowTitle, url, pull, ...rest }) => (
+                  <Fragment key={num}>
+                    <li
                       className={
-                        "h-2 w-2 shrink-0 rounded-full " +
-                        (i.state === "open"
-                          ? "bg-emerald-500"
-                          : "bg-muted-foreground")
+                        "group flex w-full items-center gap-2 rounded-md px-2 py-[0.4rem] text-[0.85rem] hover:bg-primary/10" +
+                        ("nested" in rest && rest.nested ? " ml-6" : "")
                       }
-                    />
-                    <span className="text-muted-foreground">#{i.number}</span>
-                    <span className="truncate">{i.title}</span>
-                    <span className="ml-auto flex shrink-0 items-center gap-1">
-                      {triggeredIssue === i.number && (
-                        <span
-                          role="status"
-                          className="text-[0.7rem] text-muted-foreground"
-                        >
-                          Triggered
-                        </span>
+                    >
+                      {pull ? (
+                        <GitPullRequest
+                          size={13}
+                          className="shrink-0 text-purple-400"
+                        />
+                      ) : (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
                       )}
-                      {installed && (
+                      <span className="text-muted-foreground">#{num}</span>
+                      <span className="truncate">{rowTitle}</span>
+                      <span className="ml-auto flex shrink-0 items-center gap-1">
+                        {triggeredIssue === num && (
+                          <span
+                            role="status"
+                            className="text-[0.7rem] text-muted-foreground"
+                          >
+                            Triggered
+                          </span>
+                        )}
+                        {installed && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Run task"
+                            aria-label="Run task"
+                            onClick={() =>
+                              commentIssue === num
+                                ? setCommentIssue(0)
+                                : openComment(num, pull)
+                            }
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <Play size={14} />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          title="Run task"
-                          aria-label="Run task"
-                          onClick={() =>
-                            commentIssue === i.number
-                              ? setCommentIssue(0)
-                              : openComment(i.number)
-                          }
+                          title="Open task"
+                          aria-label="Open task"
+                          onClick={() => api.openUrl(url)}
                           className="text-muted-foreground hover:text-foreground"
                         >
-                          <Play size={14} />
+                          <ExternalLink size={14} />
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        title="Open task"
-                        aria-label="Open task"
-                        onClick={() => api.openUrl(i.html_url)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink size={14} />
-                      </Button>
-                    </span>
-                  </li>
-                  {commentIssue === i.number && (
-                    <li className="ml-6 flex flex-col gap-2 pb-2">
-                      <textarea
-                        aria-label="Task comment"
-                        rows={2}
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
-                      />
-                      <div className="flex flex-wrap items-center gap-1">
-                        {templates.map((t) => (
-                          <button
-                            key={t}
-                            onClick={() => setComment(t)}
-                            className={
-                              "rounded-full border px-2 py-0.5 text-[0.7rem] " +
-                              (comment === t
-                                ? "border-primary/60 text-primary"
-                                : "border-border text-muted-foreground hover:text-foreground")
-                            }
-                          >
-                            {t.replace(/^@opentask\s*/, "")}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => setEditingTemplates((e) => !e)}
-                          className="px-1 text-[0.7rem] text-muted-foreground underline hover:text-foreground"
-                        >
-                          {editingTemplates ? "Done" : "Edit templates"}
-                        </button>
-                      </div>
-                      {editingTemplates && (
-                        <textarea
-                          aria-label="Comment templates"
-                          rows={templates.length + 1}
-                          defaultValue={templates.join("\n")}
-                          onChange={(e) => saveTemplates(e.target.value)}
-                          placeholder="One template per line"
-                          className="rounded-md border border-border bg-background px-3 py-2 text-[0.8rem]"
-                        />
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="xs"
-                          disabled={
-                            runningIssue === i.number || !comment.trim()
-                          }
-                          onClick={() => runTask(i.number)}
-                        >
-                          {runningIssue === i.number ? "Sending..." : "Send"}
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() => setCommentIssue(0)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+                      </span>
                     </li>
-                  )}
-                </Fragment>
-              ))}
+                    {commentIssue === num && (
+                      <li className="ml-6 flex flex-col gap-2 pb-2">
+                        <textarea
+                          aria-label="Task comment"
+                          rows={2}
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          className="rounded-md border border-border bg-background px-3 py-2 text-[0.85rem]"
+                        />
+                        <div className="flex flex-wrap items-center gap-1">
+                          {templates.map((t) => (
+                            <button
+                              key={t}
+                              onClick={() => setComment(t)}
+                              className={
+                                "rounded-full border px-2 py-0.5 text-[0.7rem] " +
+                                (comment === t
+                                  ? "border-primary/60 text-primary"
+                                  : "border-border text-muted-foreground hover:text-foreground")
+                              }
+                            >
+                              {t.replace(/^@opentask\s*/, "")}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => setEditingTemplates((e) => !e)}
+                            className="px-1 text-[0.7rem] text-muted-foreground underline hover:text-foreground"
+                          >
+                            {editingTemplates ? "Done" : "Edit templates"}
+                          </button>
+                        </div>
+                        {editingTemplates && (
+                          <textarea
+                            aria-label="Comment templates"
+                            rows={templates.length + 1}
+                            defaultValue={templates.join("\n")}
+                            onChange={(e) => saveTemplates(e.target.value)}
+                            placeholder="One template per line"
+                            className="rounded-md border border-border bg-background px-3 py-2 text-[0.8rem]"
+                          />
+                        )}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="xs"
+                            disabled={runningIssue === num || !comment.trim()}
+                            onClick={() => runTask(num)}
+                          >
+                            {runningIssue === num ? "Sending..." : "Send"}
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setCommentIssue(0)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </li>
+                    )}
+                  </Fragment>
+                ))}
             </ul>
           </section>
           <section>
