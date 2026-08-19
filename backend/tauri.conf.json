@@ -34,6 +34,7 @@
         "resizable": false,
         "skipTaskbar": true,
         "focus": false,
+        "contentProtected": true,
         "dragDropEnabled": false
       },
       {
@@ -44,6 +45,7 @@
         "visible": false,
         "alwaysOnTop": true,
         "resizable": false,
+        "contentProtected": true,
         "dragDropEnabled": false
       }
     ],
