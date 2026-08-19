@@ -17,7 +17,14 @@ import {
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
-import { chatReducer, initialChatState, type ChatAction, type ChatState } from "@/lib/transcript";
+import { emit, listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+import { chatReducer, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
@@ -27,6 +34,22 @@ const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
+
+function setMonitorVisible(visible: boolean) {
+  WebviewWindow.getByLabel("monitor")
+    .then((w) => (visible ? w?.show() : w?.hide()))
+    .catch(() => {});
+}
+
+async function notifyApproval(toolName: string) {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) granted = (await requestPermission()) === "granted";
+    if (granted) sendNotification({ title: "Approval needed", body: toolName });
+  } catch {
+    /* notifications are best-effort */
+  }
+}
 
 export const PROVIDERS = [
   { label: "OpenAI", env: "OPENAI_API_KEY" },
@@ -73,6 +96,7 @@ function useDesktopStore() {
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const monitorShown = useRef(false);
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
 
@@ -100,6 +124,21 @@ function useDesktopStore() {
   const dispatchTo = useCallback((id: string, action: ChatAction) => {
     setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action) }));
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<{ sessionId: string; callId: string; status: "approved" | "denied" }>(
+      "approval-resolved",
+      (e) =>
+        dispatchTo(e.payload.sessionId, {
+          type: "setApproval",
+          callId: e.payload.callId,
+          status: e.payload.status,
+        })
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [dispatchTo]);
 
   const populateModels = useCallback((list: string[]) => {
     setModels(list);
@@ -463,6 +502,15 @@ function useDesktopStore() {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {
         dispatchTo(runId, { type: "event", event });
+        emit("agent-event", { sessionId: runId, name: text, event }).catch(() => {});
+        if (
+          event.kind === "AssistantMessage" &&
+          !monitorShown.current &&
+          event.tool_calls.some((tc) => COMPUTER_USE_TOOLS.has(tc.name))
+        ) {
+          monitorShown.current = true;
+          setMonitorVisible(true);
+        }
         if (event.kind === "TokenUsage") {
           setTokenUsage((prev) => ({
             input: prev.input + event.input,
@@ -474,11 +522,16 @@ function useDesktopStore() {
         switch (event.kind) {
           case "ApprovalRequest":
             if (runId === activeIdRef.current) setStatus("Awaiting approval...");
+            if (!document.hasFocus()) notifyApproval(event.tool_name);
             break;
           case "Done":
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
+              if (next.size === 0 && monitorShown.current) {
+                monitorShown.current = false;
+                setMonitorVisible(false);
+              }
               return next;
             });
             if (runId === activeIdRef.current)
@@ -488,6 +541,10 @@ function useDesktopStore() {
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
+              if (next.size === 0 && monitorShown.current) {
+                monitorShown.current = false;
+                setMonitorVisible(false);
+              }
               return next;
             });
             if (runId === activeIdRef.current) setStatus("Cancelled");
@@ -512,6 +569,10 @@ function useDesktopStore() {
       setRunningIds((prev) => {
         const next = new Set(prev);
         next.delete(runId);
+        if (next.size === 0 && monitorShown.current) {
+          monitorShown.current = false;
+          setMonitorVisible(false);
+        }
         return next;
       });
       if (runId === activeIdRef.current) setStatus("Error");

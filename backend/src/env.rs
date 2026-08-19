@@ -76,6 +76,7 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
         "INFER_STORAGE_JSONL_PATH".into(),
         crate::config::read_config().storage_directory,
     ));
+    env.push(("INFER_COMPUTER_USE_APPROVAL".into(), "destructive".into()));
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }
@@ -210,6 +211,10 @@ mod tests {
         unsafe { std::env::set_var("DESKTOP_MOCK", "true") };
         assert!(mock_mode());
         assert!(infer_env().contains(&("INFER_GATEWAY_MOCK".to_string(), "true".to_string())));
+        assert!(infer_env().contains(&(
+            "INFER_COMPUTER_USE_APPROVAL".to_string(),
+            "destructive".to_string()
+        )));
         unsafe { std::env::set_var("DESKTOP_MOCK", "false") };
         assert!(!mock_mode());
         unsafe { std::env::remove_var("DESKTOP_MOCK") };

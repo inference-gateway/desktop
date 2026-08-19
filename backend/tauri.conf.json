@@ -12,12 +12,24 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Inference Gateway Desktop",
         "width": 1100,
         "height": 760,
         "minWidth": 720,
         "minHeight": 520,
         "center": true,
+        "dragDropEnabled": false
+      },
+      {
+        "label": "monitor",
+        "title": "Computer Use",
+        "url": "monitor.html",
+        "width": 320,
+        "height": 220,
+        "visible": false,
+        "alwaysOnTop": true,
+        "resizable": false,
         "dragDropEnabled": false
       }
     ],

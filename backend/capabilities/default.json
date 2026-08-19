@@ -1,8 +1,14 @@
 {
   "identifier": "default",
-  "description": "Default capability for the main window",
-  "windows": ["main"],
+  "description": "Default capability for the main and monitor windows",
+  "windows": ["main", "monitor"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-position",
+    "core:window:allow-current-monitor",
+    "core:window:allow-outer-size",
+    "notification:default"
   ]
 }

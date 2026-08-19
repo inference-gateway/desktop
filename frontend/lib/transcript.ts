@@ -41,7 +41,18 @@ export type ChatState = {
   currentAssistantId: string | null;
   currentReasoningId: string | null;
   seenImages: string[];
+  paused?: boolean;
 };
+
+export const COMPUTER_USE_TOOLS = new Set([
+  "mouse_move",
+  "mouse_click",
+  "mouse_scroll",
+  "keyboard_type",
+  "get_focused_app",
+  "activate_app",
+  "get_latest_frame",
+]);
 
 export const initialChatState: ChatState = {
   items: [],
@@ -135,15 +146,19 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       const items = [...state.items, { kind: "error", id: String(seq++), text: event.message } as TranscriptItem];
       return { ...state, items, seq, typing: false };
     }
+    case "ComputerUsePaused":
+      return { ...state, paused: true };
+    case "ComputerUseResumed":
+      return { ...state, paused: false };
     case "Done":
-      return { ...finalizeTools(state), typing: false, currentAssistantId: null };
+      return { ...finalizeTools(state), typing: false, currentAssistantId: null, paused: false };
     case "TokenUsage":
       return state;
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
-      return { ...finalized, items, seq, typing: false, currentAssistantId: null };
+      return { ...finalized, items, seq, typing: false, currentAssistantId: null, paused: false };
     }
   }
 }

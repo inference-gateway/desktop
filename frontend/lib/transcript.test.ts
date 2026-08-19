@@ -163,3 +163,28 @@ test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
   expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
 });
+
+test("computer-use tool call renders through the generic tool path", () => {
+  const s = run([
+    { type: "userSend", text: "click it" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "mouse_click", args: '{"x":100,"y":200}' }],
+    }),
+    ev({ kind: "ToolResult", tool_call_id: "c1", content: '{"tool_name":"mouse_click","data":{"output":"clicked"},"success":true}' }),
+  ]);
+  const tool = s.items.find((i) => i.kind === "tool");
+  expect(tool).toMatchObject({ callId: "c1", name: "mouse_click", state: "done", output: "clicked" });
+});
+
+test("computer-use pause and resume toggle the paused flag", () => {
+  let s = run([{ type: "userSend", text: "go" }, ev({ kind: "ComputerUsePaused" })]);
+  expect(s.paused).toBe(true);
+  s = chatReducer(s, ev({ kind: "ComputerUseResumed" }));
+  expect(s.paused).toBe(false);
+  s = chatReducer(s, ev({ kind: "ComputerUsePaused" }));
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.paused).toBe(false);
+});

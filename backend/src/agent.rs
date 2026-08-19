@@ -52,6 +52,8 @@ pub(crate) enum AgentEvent {
     },
     #[allow(dead_code)]
     Cancelled,
+    ComputerUsePaused,
+    ComputerUseResumed,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -224,6 +226,11 @@ impl AgentParser {
                 })
             }
             "CUSTOM" => {
+                match val.get("name").and_then(|v| v.as_str()) {
+                    Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
+                    Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
+                    _ => {}
+                }
                 if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
                     && let Some(data) = val.get("value")
                 {
@@ -447,6 +454,32 @@ pub(crate) async fn send_approval(
     let line = format!(
         "{}\n",
         serde_json::to_string(&response).map_err(|e| e.to_string())?
+    );
+    stdin
+        .write_all(line.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn send_computer_use_control(
+    session_id: String,
+    action: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    if action != "pause" && action != "resume" {
+        return Err(format!("Invalid computer-use control action: {action}"));
+    }
+    let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
+    let stdin = guard.get_mut(&session_id).ok_or("No running agent")?;
+    let message = serde_json::json!({
+        "type": "computer_use_control",
+        "action": action,
+    });
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&message).map_err(|e| e.to_string())?
     );
     stdin
         .write_all(line.as_bytes())
@@ -1090,6 +1123,17 @@ mod tests {
             matches!(&events[0], AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
             if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
         );
+    }
+
+    #[test]
+    fn test_parse_custom_computer_use_pause_resume() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"computer_use_paused","value":{}}"#,
+            r#"{"type":"CUSTOM","name":"computer_use_resumed","value":{}}"#,
+        ]);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], AgentEvent::ComputerUsePaused));
+        assert!(matches!(&events[1], AgentEvent::ComputerUseResumed));
     }
 
     #[test]

@@ -94,6 +94,13 @@ scenarios:
           - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
       - content: "Parallel file written."
 
+  - name: computer-use
+    match: '(?i)click the button on screen'
+    turns:
+      - tool_calls:
+          - { name: mouse_click, args: { x: 100, y: 200 } }
+      - content: "Clicked."
+
   - name: reasoning-demo
     match: '(?i)think out loud'
     turns:

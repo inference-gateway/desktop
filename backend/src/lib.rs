@@ -34,6 +34,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState {
             running_children: Mutex::new(std::collections::HashMap::new()),
             child_stdins: Mutex::new(std::collections::HashMap::new()),
@@ -56,6 +57,7 @@ pub fn run() {
             cli_install::check_and_install_cli,
             agent::send_message,
             agent::send_approval,
+            agent::send_computer_use_control,
             agent::cancel_agent,
             agent::list_conversations,
             agent::get_conversation,
