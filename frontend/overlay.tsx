@@ -20,8 +20,9 @@ import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
 // ponytail: 1024x768 mirrors the CLI's computer_use.yaml screenshot.target_*;
-// read it from config if it ever becomes configurable. Tool-call coords are in
-// that screenshot API space; the CLI scales them to the real screen on execution.
+// read it from config if it ever becomes configurable. The CLI fits the frame
+// inside that box with one uniform scale factor (aspect preserved), so the
+// inverse here is a single factor too.
 const API_WIDTH = 1024;
 const API_HEIGHT = 768;
 
@@ -119,12 +120,8 @@ export default function Overlay() {
         new PhysicalSize(mon.size.width, mon.position.y + mon.size.height - top)
       );
       const f = mon.scaleFactor || 1;
-      mapRef.current = {
-        sx: mon.size.width / f / API_WIDTH,
-        sy: mon.size.height / f / API_HEIGHT,
-        dx: 0,
-        dy: (top - mon.position.y) / f,
-      };
+      const s = Math.max(mon.size.width / f / API_WIDTH, mon.size.height / f / API_HEIGHT, 1);
+      mapRef.current = { sx: s, sy: s, dx: 0, dy: (top - mon.position.y) / f };
       sizedRef.current = true;
     };
     fitToScreen().catch(() => {});
