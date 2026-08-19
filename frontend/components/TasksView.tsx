@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { ExternalLink, GitPullRequest, Play, RotateCw } from "lucide-react";
 import {
   api,
+  type RepoEntry,
   type TaskIssue,
   type TaskPull,
   type WorkflowRun,
@@ -46,7 +47,7 @@ export function TasksPanel() {
     const saved = localStorage.getItem(TASKS_REPO_KEY) || "";
     return saved.split("/")[0] || "";
   });
-  const [repos, setRepos] = useState<string[]>([]);
+  const [repos, setRepos] = useState<RepoEntry[]>([]);
   const [name, setName] = useState(() => {
     const saved = localStorage.getItem(TASKS_REPO_KEY) || "";
     return saved.split("/")[1] || "";
@@ -115,7 +116,9 @@ export function TasksPanel() {
       .githubListRepos(owner)
       .then((list) => {
         setRepos(list);
-        setName((n) => (n && list.includes(n) ? n : (list[0] ?? "")));
+        setName((n) =>
+          n && list.some((r) => r.name === n) ? n : (list[0]?.name ?? ""),
+        );
       })
       .catch((e) => setLoadError(String(e)));
   }, [owner]);
@@ -234,8 +237,8 @@ export function TasksPanel() {
           className="min-w-0 flex-1 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
         >
           {repos.map((r) => (
-            <option key={r} value={r}>
-              {r}
+            <option key={r.name} value={r.name}>
+              {r.open > 0 ? `${r.name} (${r.open})` : r.name}
             </option>
           ))}
         </select>

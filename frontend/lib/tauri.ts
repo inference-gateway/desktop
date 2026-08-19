@@ -82,6 +82,10 @@ export type WorkflowStatus = {
   version: string | null;
   latest: string | null;
 };
+export type RepoEntry = {
+  name: string;
+  open: number;
+};
 export type TaskIssue = {
   number: number;
   title: string;
@@ -177,7 +181,7 @@ export const api = {
   githubListSecrets: (repo: string) => invoke<string[]>("github_list_secrets", { repo }),
   githubSetSecret: (repo: string, name: string, value: string) =>
     invoke<void>("github_set_secret", { repo, name, value }),
-  githubListRepos: (owner: string) => invoke<string[]>("github_list_repos", { owner }),
+  githubListRepos: (owner: string) => invoke<RepoEntry[]>("github_list_repos", { owner }),
   githubCheckWorkflow: (repo: string) => invoke<WorkflowStatus>("github_check_workflow", { repo }),
   githubInstallWorkflow: (
     repo: string,
