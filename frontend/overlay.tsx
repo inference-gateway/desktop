@@ -1,24 +1,39 @@
 // Fullscreen, transparent, click-through overlay that visualizes computer-use
-// actions: a cursor dot glides to each MouseMove/MouseScroll target, a ring
-// ripples on MouseClick, and a key-cast pill at the bottom shows what the
-// agent is typing. Fed by the main window's "agent-event" re-broadcast; all
-// animation is CSS inside this webview, so no per-frame IPC.
+// actions: a rounded border glows at the screen edges while any computer-use
+// session is active, a cursor dot glides to each MouseMove/MouseScroll target,
+// a ring ripples on MouseClick, and a key-cast pill at the bottom shows what
+// the agent is typing. Fed by the main window's "agent-event" re-broadcast;
+// all animation is CSS inside this webview, so no per-frame IPC.
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import {
   getCurrentWindow,
   currentMonitor,
+  primaryMonitor,
   PhysicalPosition,
   PhysicalSize,
 } from "@tauri-apps/api/window";
 import type { AgentEvent } from "@/lib/tauri";
 import { overlayAction } from "@/lib/pointer";
+import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
 
 const STYLE = `
+#frame {
+  position: fixed;
+  inset: 4px;
+  border: 3px solid rgba(${ACCENT}, 0.75);
+  border-radius: 14px;
+  box-shadow: 0 0 18px rgba(${ACCENT}, 0.5), inset 0 0 24px rgba(${ACCENT}, 0.25);
+  animation: breathe 3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes breathe {
+  50% { opacity: 0.45; }
+}
 #cursor {
   position: fixed;
   width: 18px;
@@ -74,35 +89,62 @@ function Overlay() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [ripple, setRipple] = useState<Ripple | null>(null);
   const [keycast, setKeycast] = useState<Keycast | null>(null);
+  const [active, setActive] = useState(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  const activeSessions = useRef<Set<string>>(new Set());
   const seqRef = useRef(0);
   const hideTimer = useRef<number | undefined>(undefined);
+  const sizedRef = useRef(false);
 
   useEffect(() => {
     const win = getCurrentWindow();
     win.setIgnoreCursorEvents(true).catch(() => {});
-    currentMonitor()
-      .then(async (mon) => {
-        if (!mon) return;
-        await win.setPosition(new PhysicalPosition(mon.position.x, mon.position.y));
-        await win.setSize(new PhysicalSize(mon.size.width, mon.size.height));
-      })
-      .catch(() => {});
+
+    const fitToScreen = async () => {
+      if (sizedRef.current) return;
+      const mon =
+        (await primaryMonitor().catch(() => null)) ?? (await currentMonitor().catch(() => null));
+      if (!mon) return;
+      await win.setPosition(new PhysicalPosition(mon.position.x, mon.position.y));
+      await win.setSize(new PhysicalSize(mon.size.width, mon.size.height));
+      sizedRef.current = true;
+    };
+    fitToScreen().catch(() => {});
 
     const wake = () => {
-      win.show().catch(() => {});
+      fitToScreen()
+        .then(() => win.show())
+        .catch(() => {});
       window.clearTimeout(hideTimer.current);
       hideTimer.current = window.setTimeout(() => {
-        win.hide().catch(() => {});
         setKeycast(null);
         setRipple(null);
       }, IDLE_HIDE_MS);
     };
 
+    const endSession = (sessionId: string) => {
+      if (!activeSessions.current.delete(sessionId)) return;
+      if (activeSessions.current.size > 0) return;
+      setActive(false);
+      setCursor(null);
+      setKeycast(null);
+      setRipple(null);
+      cursorRef.current = null;
+      win.hide().catch(() => {});
+    };
+
     const unlisten = listen<{ sessionId: string; event: AgentEvent }>("agent-event", (e) => {
       const ev = e.payload.event;
+      if (ev.kind === "Done" || ev.kind === "Cancelled" || ev.kind === "AgentError") {
+        endSession(e.payload.sessionId);
+        return;
+      }
       if (ev.kind !== "AssistantMessage") return;
       for (const tc of ev.tool_calls) {
+        if (COMPUTER_USE_TOOLS.has(tc.name) && !activeSessions.current.has(e.payload.sessionId)) {
+          activeSessions.current.add(e.payload.sessionId);
+          setActive(true);
+        }
         const action = overlayAction(tc);
         if (!action) continue;
         wake();
@@ -131,6 +173,7 @@ function Overlay() {
   return (
     <>
       <style>{STYLE}</style>
+      {active && <div id="frame" />}
       {cursor && <div id="cursor" style={{ left: cursor.x, top: cursor.y }} />}
       {ripple && <div key={ripple.seq} className="ripple" style={{ left: ripple.x, top: ripple.y }} />}
       {keycast && (

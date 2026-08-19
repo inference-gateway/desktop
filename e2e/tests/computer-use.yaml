@@ -1,5 +1,9 @@
-name: computer-use tool call renders in the transcript
+name: computer-use tool calls render and MouseClick is approval-gated
 steps:
   - new_chat
   - send: "click the button on screen"
-  - wait_for: { text: "MouseClick", timeout: 30 }
+  - wait_for: { text: "MouseMove", timeout: 30 }
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "KeyboardType", timeout: 30 }
+  - wait_for: { text: "Clicked.", timeout: 15 }

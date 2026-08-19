@@ -67,7 +67,7 @@ tasks:
       - cargo tauri dev
 
   e2e:
-    desc: Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/)
+    desc: 'Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/). Filter to specific files with: task e2e -- tests/computer-use.yaml'
     dir: e2e
     deps:
       - web

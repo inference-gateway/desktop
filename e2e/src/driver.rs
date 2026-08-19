@@ -12,6 +12,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(300);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 
 const PROCESS_MATCH: &str = "inference-gateway-desktop";
+const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead.
@@ -52,10 +53,12 @@ on findText(el, needle, depth)
 end findText
 "#;
 
+// The main window is addressed by title: "window 1" is ambiguous now that the
+// app also has the computer-use monitor and overlay windows.
 fn ax_root() -> String {
     format!(
-        "set root to UI element 1 of scroll area 1 of group 1 of group 1 of window 1 of (first process whose name contains \"{}\")",
-        PROCESS_MATCH
+        "set root to UI element 1 of scroll area 1 of group 1 of group 1 of window \"{}\" of (first process whose name contains \"{}\")",
+        MAIN_WINDOW_TITLE, PROCESS_MATCH
     )
 }
 
@@ -286,6 +289,8 @@ var best: (id: Any, area: Int)? = nil
 for w in info {
     let owner = w["kCGWindowOwnerName"] as? String ?? ""
     if owner.contains("inference-gateway"), let b = w["kCGWindowBounds"] as? [String: Int] {
+        let name = w["kCGWindowName"] as? String ?? ""
+        if name != "" && name != "Inference Gateway Desktop" { continue }
         let area = b["Width"]! * b["Height"]!
         if best == nil || area > best!.area {
             best = (w["kCGWindowNumber"]!, area)
