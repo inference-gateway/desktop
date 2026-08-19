@@ -8,6 +8,7 @@ use crate::observability::json_val_i64;
 use std::io::{BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 use tauri::ipc::Channel;
 
 #[derive(Clone, serde::Serialize)]
@@ -304,12 +305,35 @@ impl AgentParser {
     }
 }
 
+/// Fan-out for agent events: the per-run IPC channel streams the ordered
+/// transcript to the invoking (main) webview, and a global "agent-event"
+/// broadcast reaches every window (monitor, overlay) straight from the
+/// backend - no frontend re-broadcast hop.
+struct EventSink {
+    channel: Channel<AgentEvent>,
+    app: tauri::AppHandle,
+    session_id: String,
+    name: String,
+}
+
+impl EventSink {
+    fn send(&self, event: AgentEvent) {
+        let _ = self.app.emit(
+            "agent-event",
+            serde_json::json!({ "sessionId": self.session_id, "name": self.name, "event": event }),
+        );
+        let _ = self.channel.send(event);
+    }
+}
+
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_message(
     prompt: String,
     model: String,
     session_id: String,
     on_event: Channel<AgentEvent>,
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
@@ -353,7 +377,13 @@ pub(crate) async fn send_message(
         guard.insert(session_id.clone(), child_stdin);
     }
 
-    let on_event_clone = on_event.clone();
+    let sink = Arc::new(EventSink {
+        channel: on_event,
+        app,
+        session_id: session_id.clone(),
+        name: prompt.clone(),
+    });
+    let sink_clone = Arc::clone(&sink);
     let had_error = Arc::new(Mutex::new(false));
     let had_error_clone = Arc::clone(&had_error);
     let parser = Arc::new(Mutex::new(AgentParser::new(Some(session_id.clone()))));
@@ -374,7 +404,7 @@ pub(crate) async fn send_message(
                 if matches!(event, AgentEvent::AgentError { .. }) {
                     *had_error_clone.lock().unwrap() = true;
                 }
-                let _ = on_event_clone.send(event);
+                sink_clone.send(event);
             }
         }
     });
@@ -414,8 +444,8 @@ pub(crate) async fn send_message(
 
     let had_error_val = *had_error.lock().unwrap();
     if status.is_none() {
-        let _ = on_event.send(AgentEvent::Cancelled);
-        let _ = on_event.send(AgentEvent::Done {
+        sink.send(AgentEvent::Cancelled);
+        sink.send(AgentEvent::Done {
             exit_code: 0,
             stderr: stderr_text,
         });
@@ -432,10 +462,10 @@ pub(crate) async fn send_message(
                 stderr_text.trim()
             )
         };
-        let _ = on_event.send(AgentEvent::AgentError { message: msg });
+        sink.send(AgentEvent::AgentError { message: msg });
     }
 
-    let _ = on_event.send(AgentEvent::Done {
+    sink.send(AgentEvent::Done {
         exit_code,
         stderr: stderr_text,
     });

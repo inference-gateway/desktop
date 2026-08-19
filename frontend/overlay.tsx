@@ -2,7 +2,7 @@
 // actions: a rounded border glows at the screen edges while any computer-use
 // session is active, a cursor dot glides to each MouseMove/MouseScroll target,
 // a ring ripples on MouseClick, and a key-cast pill at the bottom shows what
-// the agent is typing. Fed by the main window's "agent-event" re-broadcast;
+// the agent is typing. Fed by the backend's global "agent-event" broadcast;
 // all animation is CSS inside this webview, so no per-frame IPC.
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";

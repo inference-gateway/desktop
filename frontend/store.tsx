@@ -17,7 +17,7 @@ import {
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
-import { emit, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   isPermissionGranted,
@@ -502,7 +502,6 @@ function useDesktopStore() {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {
         dispatchTo(runId, { type: "event", event });
-        emit("agent-event", { sessionId: runId, name: text, event }).catch(() => {});
         if (
           event.kind === "AssistantMessage" &&
           !monitorShown.current &&

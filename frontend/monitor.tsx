@@ -1,5 +1,5 @@
 // Compact always-on-top monitor window for computer-use sessions. Fed by the
-// main window's "agent-event" re-broadcast; invokes session-keyed backend
+// backend's global "agent-event" broadcast; invokes session-keyed backend
 // commands directly. Docks itself to the bottom-right screen edge on launch.
 import { useEffect, useReducer, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
