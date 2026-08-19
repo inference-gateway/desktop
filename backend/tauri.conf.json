@@ -22,6 +22,22 @@
         "dragDropEnabled": false
       },
       {
+        "label": "overlay",
+        "title": "Computer Use Overlay",
+        "url": "overlay.html",
+        "width": 200,
+        "height": 200,
+        "visible": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "focus": false,
+        "dragDropEnabled": false
+      },
+      {
         "label": "monitor",
         "title": "Computer Use",
         "url": "monitor.html",
@@ -45,7 +61,8 @@
         ]
       }
     },
-    "withGlobalTauri": true
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

@@ -30,6 +30,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, "index.html"),
         monitor: path.resolve(__dirname, "monitor.html"),
+        overlay: path.resolve(__dirname, "overlay.html"),
       },
     },
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",

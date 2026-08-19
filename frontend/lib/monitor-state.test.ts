@@ -18,10 +18,10 @@ test("computer-use tool call creates a session with the last action", () => {
       kind: "AssistantMessage",
       content: "",
       reasoning_content: null,
-      tool_calls: [{ id: "c1", name: "mouse_click", args: '{"x":1}' }],
+      tool_calls: [{ id: "c1", name: "MouseClick", args: '{"x":1}' }],
     }),
   ]);
-  expect(s.s1).toMatchObject({ status: "running", lastAction: 'mouse_click {"x":1}' });
+  expect(s.s1).toMatchObject({ status: "running", lastAction: 'MouseClick {"x":1}' });
 });
 
 test("non-computer-use events from unknown sessions are ignored", () => {
@@ -43,11 +43,11 @@ test("approval, pause, resume, and done drive the session status", () => {
       kind: "AssistantMessage",
       content: "",
       reasoning_content: null,
-      tool_calls: [{ id: "c1", name: "mouse_click", args: "{}" }],
+      tool_calls: [{ id: "c1", name: "MouseClick", args: "{}" }],
     }),
     msg("s1", {
       kind: "ApprovalRequest",
-      tool_name: "mouse_click",
+      tool_name: "MouseClick",
       tool_args: "{}",
       tool_call_id: "c1",
     }),

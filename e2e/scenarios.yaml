@@ -105,7 +105,7 @@ scenarios:
     match: '(?i)click the button on screen'
     turns:
       - tool_calls:
-          - { name: mouse_click, args: { x: 100, y: 200 } }
+          - { name: MouseClick, args: { x: 100, y: 200 } }
       - content: "Clicked."
 
   - name: reasoning-demo

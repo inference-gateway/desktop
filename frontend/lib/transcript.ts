@@ -45,13 +45,13 @@ export type ChatState = {
 };
 
 export const COMPUTER_USE_TOOLS = new Set([
-  "mouse_move",
-  "mouse_click",
-  "mouse_scroll",
-  "keyboard_type",
-  "get_focused_app",
-  "activate_app",
-  "get_latest_frame",
+  "MouseMove",
+  "MouseClick",
+  "MouseScroll",
+  "KeyboardType",
+  "GetFocusedApp",
+  "ActivateApp",
+  "GetLatestFrame",
 ]);
 
 export const initialChatState: ChatState = {

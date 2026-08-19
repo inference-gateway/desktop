@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for the main and monitor windows",
-  "windows": ["main", "monitor"],
+  "windows": ["main", "monitor", "overlay"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -9,6 +9,8 @@
     "core:window:allow-set-position",
     "core:window:allow-current-monitor",
     "core:window:allow-outer-size",
+    "core:window:allow-set-size",
+    "core:window:allow-set-ignore-cursor-events",
     "notification:default"
   ]
 }

@@ -2,4 +2,4 @@ name: computer-use tool call renders in the transcript
 steps:
   - new_chat
   - send: "click the button on screen"
-  - wait_for: { text: "mouse_click", timeout: 30 }
+  - wait_for: { text: "MouseClick", timeout: 30 }
