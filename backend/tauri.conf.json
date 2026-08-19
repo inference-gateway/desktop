@@ -24,7 +24,6 @@
       {
         "label": "overlay",
         "title": "Computer Use Overlay",
-        "url": "overlay.html",
         "width": 200,
         "height": 200,
         "visible": false,
@@ -40,7 +39,6 @@
       {
         "label": "monitor",
         "title": "Computer Use",
-        "url": "monitor.html",
         "width": 320,
         "height": 220,
         "visible": false,

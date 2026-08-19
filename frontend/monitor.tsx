@@ -2,7 +2,6 @@
 // main window's "agent-event" re-broadcast; invokes session-keyed backend
 // commands directly. Docks itself to the bottom-right screen edge on launch.
 import { useEffect, useReducer, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, currentMonitor, PhysicalPosition } from "@tauri-apps/api/window";
 import { Pause, Play, Square } from "lucide-react";
@@ -15,12 +14,6 @@ import {
   type MonitorSession,
   type MonitorState,
 } from "@/lib/monitor-state";
-import "./index.css";
-
-const mq = window.matchMedia("(prefers-color-scheme: dark)");
-const applyTheme = () => document.documentElement.classList.toggle("dark", mq.matches);
-applyTheme();
-mq.addEventListener("change", applyTheme);
 
 const EDGE_MARGIN = 16;
 
@@ -52,7 +45,7 @@ function reducer(state: MonitorState, action: Action): MonitorState {
     : resolveApproval(state, action.sessionId);
 }
 
-function Monitor() {
+export default function Monitor() {
   const [sessions, dispatch] = useReducer(reducer, {});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -174,6 +167,3 @@ function Monitor() {
     </div>
   );
 }
-
-const el = document.getElementById("monitor");
-if (el) createRoot(el).render(<Monitor />);

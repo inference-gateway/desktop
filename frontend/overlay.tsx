@@ -5,7 +5,6 @@
 // the agent is typing. Fed by the main window's "agent-event" re-broadcast;
 // all animation is CSS inside this webview, so no per-frame IPC.
 import { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import {
   getCurrentWindow,
@@ -85,7 +84,7 @@ const STYLE = `
 type Ripple = { x: number; y: number; seq: number };
 type Keycast = { text: string; seq: number };
 
-function Overlay() {
+export default function Overlay() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [ripple, setRipple] = useState<Ripple | null>(null);
   const [keycast, setKeycast] = useState<Keycast | null>(null);
@@ -97,6 +96,8 @@ function Overlay() {
   const sizedRef = useRef(false);
 
   useEffect(() => {
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
     const win = getCurrentWindow();
     win.setIgnoreCursorEvents(true).catch(() => {});
 
@@ -184,6 +185,3 @@ function Overlay() {
     </>
   );
 }
-
-const el = document.getElementById("overlay");
-if (el) createRoot(el).render(<Overlay />);
