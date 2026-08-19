@@ -337,14 +337,14 @@ export function Transcript() {
   }, []);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <ScheduledJobs />
       <div
         id="chat-transcript"
         role="log"
         aria-label="Chat transcript"
         ref={ref}
-        className="flex flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
       >
         {items.length === 0 && !typing && (
           <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>

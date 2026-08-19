@@ -66,8 +66,9 @@ fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// The infer binary from the dev environment's PATH (the flox-pinned version),
-/// so e2e never silently tests a stale ~/.infer/bin install.
+/// Offline fallback: the infer binary from the dev environment's PATH (the
+/// flox-pinned version), so e2e never silently tests a stale ~/.infer/bin
+/// install. The primary path is the latest release the runner downloads.
 fn which_infer() -> Option<std::path::PathBuf> {
     let out = Command::new("which").arg("infer").output().ok()?;
     if !out.status.success() {
@@ -93,6 +94,7 @@ impl AppDriver {
         log_name: &str,
         mock: bool,
         scenarios: &Path,
+        infer_bin: Option<&Path>,
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
@@ -121,9 +123,9 @@ impl AppDriver {
                 .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
                 .env("HOME", &home);
         }
-        if std::env::var_os("INFER_BIN").is_none()
-            && let Some(infer) = which_infer()
-        {
+        if let Some(infer) = infer_bin {
+            cmd.env("INFER_BIN", infer);
+        } else if let Some(infer) = which_infer() {
             cmd.env("INFER_BIN", infer);
         }
         let child = cmd.spawn().context("spawning app binary")?;
@@ -205,6 +207,24 @@ impl AppDriver {
         osascript(&script)
             .map(|_| ())
             .map_err(|e| anyhow!("clicking {:?}: {}", button, e))
+    }
+
+    /// Layout guard: the named button's bottom edge must sit above the
+    /// composer textarea's top edge. Catches transcript content overflowing
+    /// the conversation area across the composer (regression of PR #127).
+    pub fn button_above_composer(&self, button: &str) -> Result<bool> {
+        let script = format!(
+            "{find}\ntell application \"System Events\"\n{root}\nset b to my findButton(root, \"{name}\", 0)\nif b is missing value then error \"button not found\"\nset bp to position of b\nset bs to size of b\nset ta to text area 1 of root\nset tp to position of ta\nset bBottom to (item 2 of bp) + (item 2 of bs)\nset taTop to item 2 of tp\nreturn (bBottom as text) & \" \" & (taTop as text)\nend tell",
+            find = FIND_BUTTON_FN,
+            root = ax_root(),
+            name = escape(button),
+        );
+        let out = osascript(&script)?;
+        let mut nums = out.split_whitespace().map(|p| p.parse::<f64>());
+        match (nums.next(), nums.next()) {
+            (Some(Ok(bottom)), Some(Ok(top))) => Ok(bottom <= top),
+            _ => bail!("could not parse element positions from {out:?}"),
+        }
     }
 
     pub fn button_exists(&self, button: &str) -> Result<bool> {

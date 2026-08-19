@@ -1,0 +1,19 @@
+name: long transcript scrolls instead of overflowing the conversation area
+cleanup:
+  - summary.txt
+  - s.txt
+steps:
+  - new_chat
+  - send: "show me some markdown"
+  - wait_for: { text: "link to the gateway", timeout: 20 }
+  - send: "inspect the project and write a summary"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Summary written.", timeout: 20 }
+  - send: "think out loud about it"
+  - wait_for: { text: "The answer is 42, plainly.", timeout: 20 }
+  - send: "show me some markdown again"
+  - wait_for: { text: "link to the gateway", timeout: 20 }
+  - send: "create a file named s1.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - assert_above_composer: { button: "Approve" }

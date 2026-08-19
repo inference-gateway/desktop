@@ -26,6 +26,7 @@ pub enum Step {
     WaitFor { wait_for: WaitTarget },
     Click { click: ClickTarget },
     AssertAbsent { assert_absent: FileTarget },
+    AssertAboveComposer { assert_above_composer: ClickTarget },
     AssertModel { assert_model: String },
     Screenshot { screenshot: String },
 }
