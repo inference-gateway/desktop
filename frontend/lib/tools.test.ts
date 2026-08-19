@@ -22,9 +22,23 @@ test("ImageGeneration result path under ~/.infer/artifacts/<session-id> is previ
   expect(parsed?.imagePath).toBe("/Users/x/.infer/artifacts/sid-1/out.png");
 });
 
-test("safeImageSrc rejects uploads paths and non-image extensions", () => {
+test("safeImageSrc rejects uploads paths, non-image extensions, and traversal", () => {
   expect(safeImageSrc("/Users/x/.infer/uploads/a.png")).toBeNull();
   expect(safeImageSrc("/Users/x/.infer/tmp/a.pdf")).toBeNull();
   expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/a.pdf")).toBeNull();
-  expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/nested/a.png")).toBeNull();
+  expect(safeImageSrc("/Users/x/.infer/tmp/../uploads/a.png")).toBeNull();
+});
+
+test("safeImageSrc allows nested computer-use screenshot paths", () => {
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    expect(
+      safeImageSrc("/Users/x/.infer/tmp/screenshots/session-b9fb/frame_001.png")
+    ).not.toBeNull();
+    expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/nested/a.png")).not.toBeNull();
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
 });

@@ -21,7 +21,80 @@ test("computer-use tool call creates a session with the last action", () => {
       tool_calls: [{ id: "c1", name: "MouseClick", args: '{"x":1}' }],
     }),
   ]);
-  expect(s.s1).toMatchObject({ status: "running", lastAction: 'MouseClick {"x":1}' });
+  expect(s.s1).toMatchObject({ status: "running", log: ['▸ MouseClick {"x":1}'] });
+});
+
+test("text deltas append to the last text entry, actions start new entries", () => {
+  const text = (content: string): AgentEvent => ({
+    kind: "AssistantMessage",
+    content,
+    reasoning_content: null,
+    tool_calls: [],
+  });
+  const s = run([
+    msg("s1", {
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "GetLatestFrame", args: "{}" }],
+    }),
+    msg("s1", text("Opening ")),
+    msg("s1", text("the app.")),
+    msg("s1", {
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c2", name: "MouseClick", args: '{"x":1}' }],
+    }),
+    msg("s1", text("Done.")),
+  ]);
+  expect(s.s1.log).toEqual([
+    "▸ GetLatestFrame {}",
+    "Opening the app.",
+    '▸ MouseClick {"x":1}',
+    "Done.",
+  ]);
+});
+
+test("tool result with a base64 frame or image path sets lastFrame", () => {
+  const start = msg("s1", {
+    kind: "AssistantMessage",
+    content: "",
+    reasoning_content: null,
+    tool_calls: [{ id: "c1", name: "GetLatestFrame", args: "{}" }],
+  } as AgentEvent);
+  const frame = JSON.stringify({
+    tool_name: "GetLatestFrame",
+    success: true,
+    data: { source: "screen", width: 1024, height: 768 },
+    images: [{ data: "aGVsbG8=", mime_type: "image/jpeg", display_name: "frame-screen" }],
+  });
+  const generated = JSON.stringify({
+    tool_name: "ImageGeneration",
+    success: true,
+    data: { output: "saved", path: "/Users/x/.infer/tmp/frame.png" },
+  });
+  let s = run([
+    start,
+    msg("s1", { kind: "ToolResult", content: frame, tool_call_id: "c1" }),
+    msg("s1", { kind: "ToolResult", content: "not json", tool_call_id: "c2" }),
+  ]);
+  expect(s.s1.lastFrame).toBe("data:image/jpeg;base64,aGVsbG8=");
+  s = run([start, msg("s1", { kind: "ToolResult", content: generated, tool_call_id: "c3" })]);
+  expect(s.s1.lastFrame).toBe("/Users/x/.infer/tmp/frame.png");
+});
+
+test("log is capped at 100 entries", () => {
+  const click = (i: number): AgentEvent => ({
+    kind: "AssistantMessage",
+    content: "",
+    reasoning_content: null,
+    tool_calls: [{ id: `c${i}`, name: "MouseClick", args: `{"x":${i}}` }],
+  });
+  const s = run(Array.from({ length: 120 }, (_, i) => msg("s1", click(i))));
+  expect(s.s1.log).toHaveLength(100);
+  expect(s.s1.log[99]).toBe('▸ MouseClick {"x":119}');
+  expect(s.s1.log[0]).toBe('▸ MouseClick {"x":20}');
 });
 
 test("non-computer-use events from unknown sessions are ignored", () => {

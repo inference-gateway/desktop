@@ -17,7 +17,7 @@ import {
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   isPermissionGranted,
@@ -472,31 +472,14 @@ function useDesktopStore() {
     setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
   }, []);
 
-  const send = useCallback(async () => {
-    const el = composerRef.current;
-    const text = el?.value.trim() ?? "";
-    if (!text) return;
-    if (activeId && runningIds.has(activeId)) return;
+  const sendPrompt = useCallback(async (runId: string, text: string, projectName?: string) => {
+    if (runningIds.has(runId)) return;
     if (!model) {
       setError("Please select a model first");
       return;
     }
-    if (!activeId && runningIds.size >= maxSessions) {
-      setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
-      return;
-    }
-    const runId = activeId ?? crypto.randomUUID();
-    if (!activeId && activeProject) assignProject(runId, activeProject);
-    setActiveId(runId);
-    activeIdRef.current = runId;
     setStatus("Running...");
     dispatchTo(runId, { type: "userSend", text });
-    api.appendHistory(text).catch(() => {});
-    setHistory((h) => [...h, text]);
-    if (el) {
-      el.value = "";
-      autoGrow(el);
-    }
     setRunningIds((prev) => new Set(prev).add(runId));
     try {
       const ch = new Channel<AgentEvent>();
@@ -527,10 +510,7 @@ function useDesktopStore() {
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
-              if (next.size === 0 && monitorShown.current) {
-                monitorShown.current = false;
-                setMonitorVisible(false);
-              }
+              if (next.size === 0) monitorShown.current = false;
               return next;
             });
             if (runId === activeIdRef.current)
@@ -540,10 +520,7 @@ function useDesktopStore() {
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
-              if (next.size === 0 && monitorShown.current) {
-                monitorShown.current = false;
-                setMonitorVisible(false);
-              }
+              if (next.size === 0) monitorShown.current = false;
               return next;
             });
             if (runId === activeIdRef.current) setStatus("Cancelled");
@@ -551,7 +528,6 @@ function useDesktopStore() {
         }
       };
       const cfg = await api.getConfig();
-      const projectName = activeId ? projects[activeId] : activeProject;
       const projectContext = projectName ? projectContexts[projectName] : undefined;
       await api.sendMessage({
         prompt: text,
@@ -568,15 +544,47 @@ function useDesktopStore() {
       setRunningIds((prev) => {
         const next = new Set(prev);
         next.delete(runId);
-        if (next.size === 0 && monitorShown.current) {
-          monitorShown.current = false;
-          setMonitorVisible(false);
-        }
+        if (next.size === 0) monitorShown.current = false;
         return next;
       });
       if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+  }, [runningIds, model, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+
+  useEffect(() => {
+    const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
+      sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId])
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [sendPrompt, projects]);
+
+  const send = useCallback(async () => {
+    const el = composerRef.current;
+    const text = el?.value.trim() ?? "";
+    if (!text) return;
+    if (activeId && runningIds.has(activeId)) return;
+    if (!model) {
+      setError("Please select a model first");
+      return;
+    }
+    if (!activeId && runningIds.size >= maxSessions) {
+      setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+      return;
+    }
+    const runId = activeId ?? crypto.randomUUID();
+    if (!activeId && activeProject) assignProject(runId, activeProject);
+    setActiveId(runId);
+    activeIdRef.current = runId;
+    api.appendHistory(text).catch(() => {});
+    setHistory((h) => [...h, text]);
+    if (el) {
+      el.value = "";
+      autoGrow(el);
+    }
+    await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
+  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -593,7 +601,9 @@ function useDesktopStore() {
       if (!id) return;
       try {
         await api.sendApproval(id, callId, approved);
-        dispatchTo(id, { type: "setApproval", callId, status: approved ? "approved" : "denied" });
+        const status = approved ? "approved" : "denied";
+        dispatchTo(id, { type: "setApproval", callId, status });
+        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
       }

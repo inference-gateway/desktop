@@ -12,6 +12,8 @@
     "core:window:allow-outer-size",
     "core:window:allow-set-size",
     "core:window:allow-set-ignore-cursor-events",
-    "notification:default"
+    "notification:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
   ]
 }
