@@ -19,6 +19,11 @@ import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
+// ponytail: 1024x768 mirrors the CLI's computer_use.yaml screenshot.target_*;
+// read it from config if it ever becomes configurable. Tool-call coords are in
+// that screenshot API space; the CLI scales them to the real screen on execution.
+const API_WIDTH = 1024;
+const API_HEIGHT = 768;
 
 const STYLE = `
 #frame {
@@ -94,6 +99,7 @@ export default function Overlay() {
   const seqRef = useRef(0);
   const hideTimer = useRef<number | undefined>(undefined);
   const sizedRef = useRef(false);
+  const mapRef = useRef({ sx: 1, sy: 1, dx: 0, dy: 0 });
 
   useEffect(() => {
     document.documentElement.style.background = "transparent";
@@ -106,8 +112,16 @@ export default function Overlay() {
       const mon =
         (await primaryMonitor().catch(() => null)) ?? (await currentMonitor().catch(() => null));
       if (!mon) return;
-      await win.setPosition(new PhysicalPosition(mon.position.x, mon.position.y));
-      await win.setSize(new PhysicalSize(mon.size.width, mon.size.height));
+      const area = mon.workArea;
+      await win.setPosition(new PhysicalPosition(area.position.x, area.position.y));
+      await win.setSize(new PhysicalSize(area.size.width, area.size.height));
+      const f = mon.scaleFactor || 1;
+      mapRef.current = {
+        sx: mon.size.width / f / API_WIDTH,
+        sy: mon.size.height / f / API_HEIGHT,
+        dx: (area.position.x - mon.position.x) / f,
+        dy: (area.position.y - mon.position.y) / f,
+      };
       sizedRef.current = true;
     };
     fitToScreen().catch(() => {});
@@ -153,9 +167,10 @@ export default function Overlay() {
           setKeycast({ text: action.text, seq: seqRef.current++ });
           continue;
         }
+        const m = mapRef.current;
         const target =
           action.x !== null && action.y !== null
-            ? { x: action.x, y: action.y }
+            ? { x: action.x * m.sx - m.dx, y: action.y * m.sy - m.dy }
             : cursorRef.current;
         if (!target) continue;
         cursorRef.current = target;

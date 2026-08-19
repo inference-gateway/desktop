@@ -1,9 +1,7 @@
 // Maps computer-use tool calls to overlay actions: where the agent's cursor
-// moves or clicks, and what it is typing. Coordinates are absolute screen
-// positions from the CLI's tool args.
-// ponytail: coordinates are treated as logical pixels, which matches macOS CG
-// points; if a platform's display provider reports physical pixels, divide by
-// the monitor scale factor here.
+// moves or clicks, and what it is typing. Coordinates are passed through in
+// the CLI's screenshot API space (computer_use.yaml target_width x target_height);
+// the overlay scales them to its own CSS pixels.
 import type { ToolCallInfo } from "./tauri";
 
 export type OverlayAction =
