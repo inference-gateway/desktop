@@ -79,6 +79,32 @@ test("a running tool call resolves by tool_call_id", () => {
   expect(s.currentAssistantId).toBeNull();
 });
 
+test("a mismatched tool_call_id attaches to the unresolved tool card instead of duplicating", () => {
+  const s = run([
+    { type: "userSend", text: "read" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Read", args: '{"file_path":"a"}' }],
+    }),
+    ev({ kind: "ToolResult", tool_call_id: "", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
+  ]);
+  const tools = s.items.filter((i) => i.kind === "tool");
+  expect(tools).toHaveLength(1);
+  expect(tools[0]).toMatchObject({ callId: "c1", state: "done", output: "file" });
+});
+
+test("Done expires pending approvals so their buttons go away", () => {
+  const s = run([
+    { type: "userSend", text: "capture" },
+    ev({ kind: "ApprovalRequest", tool_name: "Bash", tool_args: "{}", tool_call_id: "c1" }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  const approval = s.items.find((i) => i.kind === "approval");
+  expect(approval).toMatchObject({ status: "expired" });
+});
+
 test("approval request then resolution flips status", () => {
   let s = run([
     ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c9" }),

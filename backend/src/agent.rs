@@ -50,7 +50,6 @@ pub(crate) enum AgentEvent {
         cached_read: i64,
         total_tool_calls: i64,
     },
-    #[allow(dead_code)]
     Cancelled,
     ComputerUsePaused,
     ComputerUseResumed,
@@ -414,6 +413,14 @@ pub(crate) async fn send_message(
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
     let had_error_val = *had_error.lock().unwrap();
+    if status.is_none() {
+        let _ = on_event.send(AgentEvent::Cancelled);
+        let _ = on_event.send(AgentEvent::Done {
+            exit_code: 0,
+            stderr: stderr_text,
+        });
+        return Ok(parser.lock().unwrap().take_session_id());
+    }
     let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
     if !status.as_ref().is_some_and(|s| s.success()) && !had_error_val {
         let msg = if stderr_text.is_empty() {

@@ -104,7 +104,9 @@ function ApprovalCard({
           ? "border-tool bg-tool-bg"
           : item.status === "denied"
             ? "border-err-border bg-err-bg"
-            : "border-warn bg-warn-bg"
+            : item.status === "expired"
+              ? "border-border bg-secondary"
+              : "border-warn bg-warn-bg"
       )}
     >
       <div className="mb-2 font-bold text-warn">Tool requires approval</div>
@@ -115,8 +117,13 @@ function ApprovalCard({
         {item.toolArgs}
       </pre>
       {decided ? (
-        <div className={cn("mt-2 text-[0.85rem] font-bold", item.status === "approved" ? "text-tool" : "text-err")}>
-          {item.status === "approved" ? "Approved" : "Denied"}
+        <div
+          className={cn(
+            "mt-2 text-[0.85rem] font-bold",
+            item.status === "approved" ? "text-tool" : item.status === "denied" ? "text-err" : "text-muted-foreground"
+          )}
+        >
+          {item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : "Session ended"}
         </div>
       ) : (
         <div className="flex gap-2">

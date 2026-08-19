@@ -26,7 +26,7 @@ export type TranscriptItem =
       callId: string;
       toolName: string;
       toolArgs: string;
-      status: "pending" | "approved" | "denied";
+      status: "pending" | "approved" | "denied" | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
@@ -224,7 +224,16 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
   let seq = state.seq;
   let seenImages = state.seenImages;
   const parsed = parseToolResult(content);
-  const idx = state.items.findIndex((it) => it.kind === "tool" && it.callId === callId);
+  let idx = state.items.findIndex((it) => it.kind === "tool" && it.callId === callId);
+  if (idx < 0) {
+    for (let i = state.items.length - 1; i >= 0; i--) {
+      const it = state.items[i];
+      if (it.kind === "tool" && it.output === null && (!parsed || it.name === parsed.name)) {
+        idx = i;
+        break;
+      }
+    }
+  }
 
   let items: TranscriptItem[];
   if (idx >= 0) {
@@ -281,6 +290,10 @@ function finalizeTools(state: ChatState): ChatState {
     if (it.kind === "tool" && (it.state === "running" || it.skeleton)) {
       changed = true;
       return { ...it, state: it.state === "running" ? "done" : it.state, skeleton: false };
+    }
+    if (it.kind === "approval" && it.status === "pending") {
+      changed = true;
+      return { ...it, status: "expired" as const };
     }
     return it;
   });
