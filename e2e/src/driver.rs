@@ -63,6 +63,18 @@ fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// The infer binary from the dev environment's PATH (the flox-pinned version),
+/// so e2e never silently tests a stale ~/.infer/bin install.
+fn which_infer() -> Option<std::path::PathBuf> {
+    let out = Command::new("which").arg("infer").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(out.stdout).ok()?;
+    let path = path.trim();
+    (!path.is_empty()).then(|| std::path::PathBuf::from(path))
+}
+
 pub struct AppDriver {
     child: Child,
     repo_root: PathBuf,
@@ -99,8 +111,17 @@ impl AppDriver {
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log));
         if mock {
+            let home = artifacts.join("home");
+            let _ = std::fs::remove_dir_all(&home);
+            std::fs::create_dir_all(&home)?;
             cmd.env("DESKTOP_MOCK", "true")
-                .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios);
+                .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
+                .env("HOME", &home);
+        }
+        if std::env::var_os("INFER_BIN").is_none()
+            && let Some(infer) = which_infer()
+        {
+            cmd.env("INFER_BIN", infer);
         }
         let child = cmd.spawn().context("spawning app binary")?;
 
@@ -235,16 +256,18 @@ impl AppDriver {
         }
     }
 
-    /// Send a single keystroke to the focused element by AX key code.
-    /// Used by e2e tests that need to exercise keyboard shortcuts (ArrowUp/Down).
+    /// Send a single keystroke to the focused element - a named key by AX key
+    /// code, or any single ASCII character. Used by e2e tests that need to
+    /// exercise keyboard shortcuts (ArrowUp/Down, letter keys).
     pub fn keypress(&self, key: &str) -> Result<()> {
-        let code = match key {
-            "up" => "126",
-            "down" => "125",
+        let stroke = match key {
+            "up" => "keystroke (key code 126)".to_string(),
+            "down" => "keystroke (key code 125)".to_string(),
+            k if k.chars().count() == 1 && k.is_ascii() => format!("keystroke \"{}\"", escape(k)),
             _ => bail!("unsupported keypress key: {key:?}"),
         };
         let script = format!(
-            "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\ndelay 0.2\nkeystroke (key code {code})\nreturn \"ok\"\nend tell",
+            "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\ndelay 0.2\n{stroke}\nreturn \"ok\"\nend tell",
             root = ax_root(),
         );
         osascript(&script)

@@ -94,6 +94,13 @@ scenarios:
           - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
       - content: "Parallel file written."
 
+  - name: write-project-test
+    match: '(?i)create a file named project-test\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "project-test.txt", content: "hello from e2e" } }
+      - content: "The file was written."
+
   - name: computer-use
     match: '(?i)click the button on screen'
     turns:
