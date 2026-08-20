@@ -171,6 +171,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   return (
     <div className="group relative my-2 inline-block max-w-full">
       <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
+      {path && (
       <Button
         type="button"
         size="icon-sm"
@@ -186,6 +187,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
       >
         <Icon className={cn(status === "saving" && "animate-spin")} />
       </Button>
+      )}
     </div>
   );
 }

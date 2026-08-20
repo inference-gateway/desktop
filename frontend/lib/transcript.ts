@@ -272,12 +272,13 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     ];
   }
 
-  const src = parsed ? safeImageSrc(parsed.imagePath) : null;
-  if (src && parsed?.imagePath) {
-    const file = imageFilename(parsed.imagePath);
-    if (!seenImages.includes(file)) {
-      seenImages = [...seenImages, file];
-      items = [...items, { kind: "image", id: String(seq++), src, filename: file, path: parsed.imagePath }];
+  const src = parsed ? safeImageSrc(parsed.imagePath) ?? parsed.imageData : null;
+  if (src && parsed) {
+    const file = parsed.imagePath ? imageFilename(parsed.imagePath) : `${parsed.name}.jpeg`;
+    const key = parsed.imagePath ? file : src;
+    if (!seenImages.includes(key)) {
+      seenImages = [...seenImages, key];
+      items = [...items, { kind: "image", id: String(seq++), src, filename: file, path: parsed.imagePath ?? "" }];
     }
   }
 
