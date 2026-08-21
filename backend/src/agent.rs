@@ -619,22 +619,37 @@ pub(crate) async fn list_models() -> Result<Vec<String>, String> {
         .collect();
     Ok(models)
 }
-/// Read ~/.infer/history (line-delimited prompt history shared with the CLI).
-/// Returns an empty vec when the file does not exist yet.
+/// Resolve the history file path. If the canonical `~/.infer/history` is a
+/// directory (as created by some versions of the CLI), fall back to
+/// `~/.infer/history/history`. Returns the path and whether it existed at
+/// the time of checking.
+fn history_path() -> (PathBuf, bool) {
+    let base = home_dir().join(".infer").join("history");
+    if base.is_dir() {
+        let inner = base.join("history");
+        (inner.clone(), inner.exists())
+    } else {
+        (base.clone(), base.exists())
+    }
+}
+
+/// Read prompt history shared with the CLI. Returns an empty vec when no
+/// history file exists yet.
 #[tauri::command]
 pub(crate) fn read_history() -> Result<Vec<String>, String> {
-    let path = home_dir().join(".infer").join("history");
-    if !path.exists() {
+    let (path, exists) = history_path();
+    if !exists {
         return Ok(Vec::new());
     }
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     Ok(content.lines().map(|l| l.to_string()).collect())
 }
 
-/// Append a line to ~/.infer/history (creates the file if missing).
+/// Append a line to the prompt history file (creates the file and parent
+/// directories if missing).
 #[tauri::command]
 pub(crate) fn append_history(line: String) -> Result<(), String> {
-    let path = home_dir().join(".infer").join("history");
+    let (path, _) = history_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
