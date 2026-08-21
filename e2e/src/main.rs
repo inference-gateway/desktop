@@ -65,11 +65,20 @@ fn run() -> Result<bool> {
         }
     }
 
+    let infer_bin = resolve_infer(&artifacts);
+
     let mut failed = Vec::new();
     for file in &files {
         let test = spec::load(file)?;
         println!("\n=== {} ({})", test.name, file.display());
-        match run_test(&test, &repo_root, &artifacts, mock, &scenarios) {
+        match run_test(
+            &test,
+            &repo_root,
+            &artifacts,
+            mock,
+            &scenarios,
+            infer_bin.as_deref(),
+        ) {
             Ok(()) => println!("PASS {}", test.name),
             Err(e) => {
                 println!("FAIL {}: {e:#}", test.name);
@@ -89,12 +98,57 @@ fn run() -> Result<bool> {
     Ok(failed.is_empty())
 }
 
+/// Resolve the infer binary for the whole suite: an explicit INFER_BIN wins,
+/// otherwise download the latest release once (the version users actually
+/// run - a pinned dev binary goes stale the day a new CLI ships), falling
+/// back to the dev environment's PATH when the download fails (offline).
+fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("INFER_BIN") {
+        println!("using INFER_BIN override: {}", PathBuf::from(&p).display());
+        return Some(PathBuf::from(p));
+    }
+    let asset = match std::env::consts::ARCH {
+        "aarch64" => "infer-darwin-arm64",
+        _ => "infer-darwin-amd64",
+    };
+    let url = format!("https://github.com/inference-gateway/cli/releases/latest/download/{asset}");
+    let dir = artifacts.join("infer-latest");
+    let bin = dir.join("infer");
+    let downloaded = std::fs::create_dir_all(&dir).is_ok()
+        && Command::new("curl")
+            .args(["-fsSL", "--retry", "2", "-o"])
+            .arg(&bin)
+            .arg(&url)
+            .status()
+            .is_ok_and(|s| s.success())
+        && Command::new("chmod")
+            .arg("+x")
+            .arg(&bin)
+            .status()
+            .is_ok_and(|s| s.success());
+    if downloaded {
+        let version = Command::new(&bin)
+            .arg("--version")
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        println!("using latest released infer: {version}");
+        return Some(bin);
+    }
+    println!(
+        "warning: could not download the latest infer release - falling back to the dev environment's (possibly stale) binary"
+    );
+    None
+}
+
 fn run_test(
     test: &spec::Test,
     repo_root: &Path,
     artifacts: &Path,
     mock: bool,
     scenarios: &Path,
+    infer_bin: Option<&Path>,
 ) -> Result<()> {
     let slug: String = test
         .name
@@ -102,7 +156,7 @@ fn run_test(
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
-    let app = AppDriver::launch(repo_root, artifacts, &slug, mock, scenarios)?;
+    let app = AppDriver::launch(repo_root, artifacts, &slug, mock, scenarios, infer_bin)?;
     clean(&app, &test.cleanup);
 
     let result = run_steps(test, &app);
@@ -152,6 +206,18 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
             }
             Ok(())
         }
+        Step::AssertAboveComposer {
+            assert_above_composer,
+        } => {
+            if !app.button_above_composer(&assert_above_composer.button)? {
+                bail!(
+                    "button {:?} overflows below the composer - transcript content is \
+                     floating outside the conversation area",
+                    assert_above_composer.button
+                );
+            }
+            Ok(())
+        }
         Step::WaitFor { wait_for } => {
             let timeout = Duration::from_secs(wait_for.timeout);
             let found = if let Some(button) = &wait_for.button {
@@ -183,6 +249,12 @@ fn describe(step: &Step) -> String {
         Step::AssertAbsent { assert_absent } => {
             format!("assert_absent {}", assert_absent.file.display())
         }
+        Step::AssertAboveComposer {
+            assert_above_composer,
+        } => format!(
+            "assert_above_composer button {:?}",
+            assert_above_composer.button
+        ),
         Step::WaitFor { wait_for } => {
             let target = wait_for
                 .button

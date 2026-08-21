@@ -104,7 +104,9 @@ function ApprovalCard({
           ? "border-tool bg-tool-bg"
           : item.status === "denied"
             ? "border-err-border bg-err-bg"
-            : "border-warn bg-warn-bg"
+            : item.status === "expired"
+              ? "border-border bg-secondary"
+              : "border-warn bg-warn-bg"
       )}
     >
       <div className="mb-2 font-bold text-warn">Tool requires approval</div>
@@ -115,8 +117,13 @@ function ApprovalCard({
         {item.toolArgs}
       </pre>
       {decided ? (
-        <div className={cn("mt-2 text-[0.85rem] font-bold", item.status === "approved" ? "text-tool" : "text-err")}>
-          {item.status === "approved" ? "Approved" : "Denied"}
+        <div
+          className={cn(
+            "mt-2 text-[0.85rem] font-bold",
+            item.status === "approved" ? "text-tool" : item.status === "denied" ? "text-err" : "text-muted-foreground"
+          )}
+        >
+          {item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : "Session ended"}
         </div>
       ) : (
         <div className="flex gap-2">
@@ -164,6 +171,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   return (
     <div className="group relative my-2 inline-block max-w-full">
       <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
+      {path && (
       <Button
         type="button"
         size="icon-sm"
@@ -179,6 +187,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
       >
         <Icon className={cn(status === "saving" && "animate-spin")} />
       </Button>
+      )}
     </div>
   );
 }
@@ -330,14 +339,14 @@ export function Transcript() {
   }, []);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <ScheduledJobs />
       <div
         id="chat-transcript"
         role="log"
         aria-label="Chat transcript"
         ref={ref}
-        className="flex flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
       >
         {items.length === 0 && !typing && (
           <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>

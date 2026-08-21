@@ -12,12 +12,40 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Inference Gateway Desktop",
         "width": 1100,
         "height": 760,
         "minWidth": 720,
         "minHeight": 520,
         "center": true,
+        "dragDropEnabled": false
+      },
+      {
+        "label": "overlay",
+        "title": "Computer Use Overlay",
+        "width": 200,
+        "height": 200,
+        "visible": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "focus": false,
+        "contentProtected": true,
+        "dragDropEnabled": false
+      },
+      {
+        "label": "monitor",
+        "title": "Computer Use",
+        "width": 320,
+        "height": 220,
+        "visible": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "contentProtected": true,
         "dragDropEnabled": false
       }
     ],
@@ -33,7 +61,8 @@
         ]
       }
     },
-    "withGlobalTauri": true
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

@@ -26,7 +26,7 @@ export type TranscriptItem =
       callId: string;
       toolName: string;
       toolArgs: string;
-      status: "pending" | "approved" | "denied";
+      status: "pending" | "approved" | "denied" | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
@@ -41,7 +41,10 @@ export type ChatState = {
   currentAssistantId: string | null;
   currentReasoningId: string | null;
   seenImages: string[];
+  paused?: boolean;
 };
+
+export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
 export const initialChatState: ChatState = {
   items: [],
@@ -135,15 +138,19 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       const items = [...state.items, { kind: "error", id: String(seq++), text: event.message } as TranscriptItem];
       return { ...state, items, seq, typing: false };
     }
+    case "ComputerUsePaused":
+      return { ...state, paused: true };
+    case "ComputerUseResumed":
+      return { ...state, paused: false };
     case "Done":
-      return { ...finalizeTools(state), typing: false, currentAssistantId: null };
+      return { ...finalizeTools(state), typing: false, currentAssistantId: null, paused: false };
     case "TokenUsage":
       return state;
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
-      return { ...finalized, items, seq, typing: false, currentAssistantId: null };
+      return { ...finalized, items, seq, typing: false, currentAssistantId: null, paused: false };
     }
   }
 }
@@ -209,7 +216,16 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
   let seq = state.seq;
   let seenImages = state.seenImages;
   const parsed = parseToolResult(content);
-  const idx = state.items.findIndex((it) => it.kind === "tool" && it.callId === callId);
+  let idx = state.items.findIndex((it) => it.kind === "tool" && it.callId === callId);
+  if (idx < 0) {
+    for (let i = state.items.length - 1; i >= 0; i--) {
+      const it = state.items[i];
+      if (it.kind === "tool" && it.output === null && (!parsed || it.name === parsed.name)) {
+        idx = i;
+        break;
+      }
+    }
+  }
 
   let items: TranscriptItem[];
   if (idx >= 0) {
@@ -248,12 +264,13 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     ];
   }
 
-  const src = parsed ? safeImageSrc(parsed.imagePath) : null;
-  if (src && parsed?.imagePath) {
-    const file = imageFilename(parsed.imagePath);
-    if (!seenImages.includes(file)) {
-      seenImages = [...seenImages, file];
-      items = [...items, { kind: "image", id: String(seq++), src, filename: file, path: parsed.imagePath }];
+  const src = parsed ? safeImageSrc(parsed.imagePath) ?? parsed.imageData : null;
+  if (src && parsed) {
+    const file = parsed.imagePath ? imageFilename(parsed.imagePath) : `${parsed.name}.jpeg`;
+    const key = parsed.imagePath ? file : src;
+    if (!seenImages.includes(key)) {
+      seenImages = [...seenImages, key];
+      items = [...items, { kind: "image", id: String(seq++), src, filename: file, path: parsed.imagePath ?? "" }];
     }
   }
 
@@ -266,6 +283,10 @@ function finalizeTools(state: ChatState): ChatState {
     if (it.kind === "tool" && (it.state === "running" || it.skeleton)) {
       changed = true;
       return { ...it, state: it.state === "running" ? "done" : it.state, skeleton: false };
+    }
+    if (it.kind === "approval" && it.status === "pending") {
+      changed = true;
+      return { ...it, status: "expired" as const };
     }
     return it;
   });

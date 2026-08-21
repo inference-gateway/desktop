@@ -1,4 +1,6 @@
 name: project grouping - create project and assign session
+cleanup:
+  - project-test.txt
 steps:
   - new_chat
   - send: "create a file named project-test.txt"

@@ -22,7 +22,9 @@ export type AgentEvent =
   | { kind: "RawLine"; line: string }
   | { kind: "Done"; exit_code: number; stderr: string }
   | { kind: "TokenUsage"; input: number; output: number; cached_read: number; total_tool_calls: number }
-  | { kind: "Cancelled" };
+  | { kind: "Cancelled" }
+  | { kind: "ComputerUsePaused" }
+  | { kind: "ComputerUseResumed" };
 
 export type ProgressEvent =
   | { kind: "Checking" }
@@ -158,6 +160,8 @@ export const api = {
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved }),
+  sendComputerUseControl: (sessionId: string, action: "pause" | "resume") =>
+    invoke<void>("send_computer_use_control", { sessionId, action }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),
   listConversations: () => invoke<string>("list_conversations"),
   getConversation: (sessionId: string) => invoke<string>("get_conversation", { sessionId }),

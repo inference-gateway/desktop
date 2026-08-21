@@ -27,6 +27,22 @@ pub(crate) struct AppState {
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
 }
 
+// Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
+// window-level API, so set NSStatusWindowLevel (25) directly.
+#[cfg(target_os = "macos")]
+fn raise_overlay_above_dock(app: &tauri::App) {
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return;
+    };
+    let Ok(ns_window) = overlay.ns_window() else {
+        return;
+    };
+    unsafe {
+        let win = ns_window as *mut objc2::runtime::AnyObject;
+        let _: () = objc2::msg_send![win, setLevel: 25isize];
+    }
+}
+
 pub fn run() {
     let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stored_metrics: Arc<Mutex<VecDeque<StoredMetric>>> = Arc::new(Mutex::new(VecDeque::new()));
@@ -34,6 +50,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState {
             running_children: Mutex::new(std::collections::HashMap::new()),
             child_stdins: Mutex::new(std::collections::HashMap::new()),
@@ -44,6 +62,8 @@ pub fn run() {
             stored_metrics,
         })
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            raise_overlay_above_dock(app);
             if config::read_config().schedule_enabled {
                 let state = app.state::<AppState>();
                 if let Err(e) = scheduler::spawn_daemon(&state) {
@@ -56,6 +76,7 @@ pub fn run() {
             cli_install::check_and_install_cli,
             agent::send_message,
             agent::send_approval,
+            agent::send_computer_use_control,
             agent::cancel_agent,
             agent::list_conversations,
             agent::get_conversation,

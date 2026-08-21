@@ -12,6 +12,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(300);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 
 const PROCESS_MATCH: &str = "inference-gateway-desktop";
+const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead.
@@ -52,15 +53,30 @@ on findText(el, needle, depth)
 end findText
 "#;
 
+// The main window is addressed by title: "window 1" is ambiguous now that the
+// app also has the computer-use monitor and overlay windows.
 fn ax_root() -> String {
     format!(
-        "set root to UI element 1 of scroll area 1 of group 1 of group 1 of window 1 of (first process whose name contains \"{}\")",
-        PROCESS_MATCH
+        "set root to UI element 1 of scroll area 1 of group 1 of group 1 of window \"{}\" of (first process whose name contains \"{}\")",
+        MAIN_WINDOW_TITLE, PROCESS_MATCH
     )
 }
 
 fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Offline fallback: the infer binary from the dev environment's PATH (the
+/// flox-pinned version), so e2e never silently tests a stale ~/.infer/bin
+/// install. The primary path is the latest release the runner downloads.
+fn which_infer() -> Option<std::path::PathBuf> {
+    let out = Command::new("which").arg("infer").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(out.stdout).ok()?;
+    let path = path.trim();
+    (!path.is_empty()).then(|| std::path::PathBuf::from(path))
 }
 
 pub struct AppDriver {
@@ -78,6 +94,7 @@ impl AppDriver {
         log_name: &str,
         mock: bool,
         scenarios: &Path,
+        infer_bin: Option<&Path>,
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
@@ -99,8 +116,17 @@ impl AppDriver {
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log));
         if mock {
+            let home = artifacts.join("home");
+            let _ = std::fs::remove_dir_all(&home);
+            std::fs::create_dir_all(&home)?;
             cmd.env("DESKTOP_MOCK", "true")
-                .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios);
+                .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
+                .env("HOME", &home);
+        }
+        if let Some(infer) = infer_bin {
+            cmd.env("INFER_BIN", infer);
+        } else if let Some(infer) = which_infer() {
+            cmd.env("INFER_BIN", infer);
         }
         let child = cmd.spawn().context("spawning app binary")?;
 
@@ -183,6 +209,24 @@ impl AppDriver {
             .map_err(|e| anyhow!("clicking {:?}: {}", button, e))
     }
 
+    /// Layout guard: the named button's bottom edge must sit above the
+    /// composer textarea's top edge. Catches transcript content overflowing
+    /// the conversation area across the composer (regression of PR #127).
+    pub fn button_above_composer(&self, button: &str) -> Result<bool> {
+        let script = format!(
+            "{find}\ntell application \"System Events\"\n{root}\nset b to my findButton(root, \"{name}\", 0)\nif b is missing value then error \"button not found\"\nset bp to position of b\nset bs to size of b\nset ta to text area 1 of root\nset tp to position of ta\nset bBottom to (item 2 of bp) + (item 2 of bs)\nset taTop to item 2 of tp\nreturn (bBottom as text) & \" \" & (taTop as text)\nend tell",
+            find = FIND_BUTTON_FN,
+            root = ax_root(),
+            name = escape(button),
+        );
+        let out = osascript(&script)?;
+        let mut nums = out.split_whitespace().map(|p| p.parse::<f64>());
+        match (nums.next(), nums.next()) {
+            (Some(Ok(bottom)), Some(Ok(top))) => Ok(bottom <= top),
+            _ => bail!("could not parse element positions from {out:?}"),
+        }
+    }
+
     pub fn button_exists(&self, button: &str) -> Result<bool> {
         let script = format!(
             "{find}\ntell application \"System Events\"\n{root}\nset b to my findButton(root, \"{name}\", 0)\nif b is missing value then return \"no\"\nreturn \"yes\"\nend tell",
@@ -235,16 +279,18 @@ impl AppDriver {
         }
     }
 
-    /// Send a single keystroke to the focused element by AX key code.
-    /// Used by e2e tests that need to exercise keyboard shortcuts (ArrowUp/Down).
+    /// Send a single keystroke to the focused element - a named key by AX key
+    /// code, or any single ASCII character. Used by e2e tests that need to
+    /// exercise keyboard shortcuts (ArrowUp/Down, letter keys).
     pub fn keypress(&self, key: &str) -> Result<()> {
-        let code = match key {
-            "up" => "126",
-            "down" => "125",
+        let stroke = match key {
+            "up" => "keystroke (key code 126)".to_string(),
+            "down" => "keystroke (key code 125)".to_string(),
+            k if k.chars().count() == 1 && k.is_ascii() => format!("keystroke \"{}\"", escape(k)),
             _ => bail!("unsupported keypress key: {key:?}"),
         };
         let script = format!(
-            "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\ndelay 0.2\nkeystroke (key code {code})\nreturn \"ok\"\nend tell",
+            "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\ndelay 0.2\n{stroke}\nreturn \"ok\"\nend tell",
             root = ax_root(),
         );
         osascript(&script)
@@ -263,6 +309,8 @@ var best: (id: Any, area: Int)? = nil
 for w in info {
     let owner = w["kCGWindowOwnerName"] as? String ?? ""
     if owner.contains("inference-gateway"), let b = w["kCGWindowBounds"] as? [String: Int] {
+        let name = w["kCGWindowName"] as? String ?? ""
+        if name != "" && name != "Inference Gateway Desktop" { continue }
         let area = b["Width"]! * b["Height"]!
         if best == nil || area > best!.area {
             best = (w["kCGWindowNumber"]!, area)

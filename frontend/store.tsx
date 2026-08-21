@@ -17,7 +17,14 @@ import {
   type ProgressEvent,
   type UpdateInfo,
 } from "@/lib/tauri";
-import { chatReducer, initialChatState, type ChatAction, type ChatState } from "@/lib/transcript";
+import { emit, listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
+import { chatReducer, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
@@ -27,6 +34,22 @@ const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
+
+function setMonitorVisible(visible: boolean) {
+  WebviewWindow.getByLabel("monitor")
+    .then((w) => (visible ? w?.show() : w?.hide()))
+    .catch(() => {});
+}
+
+async function notifyApproval(toolName: string) {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) granted = (await requestPermission()) === "granted";
+    if (granted) sendNotification({ title: "Approval needed", body: toolName });
+  } catch {
+    /* notifications are best-effort */
+  }
+}
 
 export const PROVIDERS = [
   { label: "OpenAI", env: "OPENAI_API_KEY" },
@@ -73,6 +96,7 @@ function useDesktopStore() {
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const monitorShown = useRef(false);
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
 
@@ -100,6 +124,21 @@ function useDesktopStore() {
   const dispatchTo = useCallback((id: string, action: ChatAction) => {
     setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action) }));
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<{ sessionId: string; callId: string; status: "approved" | "denied" }>(
+      "approval-resolved",
+      (e) =>
+        dispatchTo(e.payload.sessionId, {
+          type: "setApproval",
+          callId: e.payload.callId,
+          status: e.payload.status,
+        })
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [dispatchTo]);
 
   const populateModels = useCallback((list: string[]) => {
     setModels(list);
@@ -433,6 +472,94 @@ function useDesktopStore() {
     setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
   }, []);
 
+  const sendPrompt = useCallback(async (runId: string, text: string, projectName?: string) => {
+    if (runningIds.has(runId)) return;
+    if (!model) {
+      setError("Please select a model first");
+      return;
+    }
+    setStatus("Running...");
+    dispatchTo(runId, { type: "userSend", text });
+    setRunningIds((prev) => new Set(prev).add(runId));
+    try {
+      const ch = new Channel<AgentEvent>();
+      ch.onmessage = (event) => {
+        dispatchTo(runId, { type: "event", event });
+        if (
+          event.kind === "AssistantMessage" &&
+          !monitorShown.current &&
+          event.tool_calls.some((tc) => COMPUTER_USE_TOOLS.has(tc.name))
+        ) {
+          monitorShown.current = true;
+          setMonitorVisible(true);
+        }
+        if (event.kind === "TokenUsage") {
+          setTokenUsage((prev) => ({
+            input: prev.input + event.input,
+            output: prev.output + event.output,
+            cached_read: prev.cached_read + event.cached_read,
+            total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
+          }));
+        }
+        switch (event.kind) {
+          case "ApprovalRequest":
+            if (runId === activeIdRef.current) setStatus("Awaiting approval...");
+            if (!document.hasFocus()) notifyApproval(event.tool_name);
+            break;
+          case "Done":
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              if (next.size === 0) monitorShown.current = false;
+              return next;
+            });
+            if (runId === activeIdRef.current)
+              setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
+            break;
+          case "Cancelled":
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              if (next.size === 0) monitorShown.current = false;
+              return next;
+            });
+            if (runId === activeIdRef.current) setStatus("Cancelled");
+            break;
+        }
+      };
+      const cfg = await api.getConfig();
+      const projectContext = projectName ? projectContexts[projectName] : undefined;
+      await api.sendMessage({
+        prompt: text,
+        model,
+        sessionId: runId,
+        onEvent: ch,
+        systemPrompt: cfg.system_prompt || undefined,
+        extraInstructions:
+          [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
+      });
+      refreshConversations();
+    } catch (err) {
+      dispatchTo(runId, { type: "error", text: `Error: ${err}` });
+      setRunningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(runId);
+        if (next.size === 0) monitorShown.current = false;
+        return next;
+      });
+      if (runId === activeIdRef.current) setStatus("Error");
+    }
+  }, [runningIds, model, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+
+  useEffect(() => {
+    const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
+      sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId])
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [sendPrompt, projects]);
+
   const send = useCallback(async () => {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";
@@ -450,73 +577,14 @@ function useDesktopStore() {
     if (!activeId && activeProject) assignProject(runId, activeProject);
     setActiveId(runId);
     activeIdRef.current = runId;
-    setStatus("Running...");
-    dispatchTo(runId, { type: "userSend", text });
     api.appendHistory(text).catch(() => {});
     setHistory((h) => [...h, text]);
     if (el) {
       el.value = "";
       autoGrow(el);
     }
-    setRunningIds((prev) => new Set(prev).add(runId));
-    try {
-      const ch = new Channel<AgentEvent>();
-      ch.onmessage = (event) => {
-        dispatchTo(runId, { type: "event", event });
-        if (event.kind === "TokenUsage") {
-          setTokenUsage((prev) => ({
-            input: prev.input + event.input,
-            output: prev.output + event.output,
-            cached_read: prev.cached_read + event.cached_read,
-            total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
-          }));
-        }
-        switch (event.kind) {
-          case "ApprovalRequest":
-            if (runId === activeIdRef.current) setStatus("Awaiting approval...");
-            break;
-          case "Done":
-            setRunningIds((prev) => {
-              const next = new Set(prev);
-              next.delete(runId);
-              return next;
-            });
-            if (runId === activeIdRef.current)
-              setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
-            break;
-          case "Cancelled":
-            setRunningIds((prev) => {
-              const next = new Set(prev);
-              next.delete(runId);
-              return next;
-            });
-            if (runId === activeIdRef.current) setStatus("Cancelled");
-            break;
-        }
-      };
-      const cfg = await api.getConfig();
-      const projectName = activeId ? projects[activeId] : activeProject;
-      const projectContext = projectName ? projectContexts[projectName] : undefined;
-      await api.sendMessage({
-        prompt: text,
-        model,
-        sessionId: runId,
-        onEvent: ch,
-        systemPrompt: cfg.system_prompt || undefined,
-        extraInstructions:
-          [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
-      });
-      refreshConversations();
-    } catch (err) {
-      dispatchTo(runId, { type: "error", text: `Error: ${err}` });
-      setRunningIds((prev) => {
-        const next = new Set(prev);
-        next.delete(runId);
-        return next;
-      });
-      if (runId === activeIdRef.current) setStatus("Error");
-    }
-  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+    await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
+  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -533,7 +601,9 @@ function useDesktopStore() {
       if (!id) return;
       try {
         await api.sendApproval(id, callId, approved);
-        dispatchTo(id, { type: "setApproval", callId, status: approved ? "approved" : "denied" });
+        const status = approved ? "approved" : "denied";
+        dispatchTo(id, { type: "setApproval", callId, status });
+        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
       }

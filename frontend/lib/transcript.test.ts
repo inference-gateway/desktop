@@ -79,6 +79,32 @@ test("a running tool call resolves by tool_call_id", () => {
   expect(s.currentAssistantId).toBeNull();
 });
 
+test("a mismatched tool_call_id attaches to the unresolved tool card instead of duplicating", () => {
+  const s = run([
+    { type: "userSend", text: "read" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Read", args: '{"file_path":"a"}' }],
+    }),
+    ev({ kind: "ToolResult", tool_call_id: "", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
+  ]);
+  const tools = s.items.filter((i) => i.kind === "tool");
+  expect(tools).toHaveLength(1);
+  expect(tools[0]).toMatchObject({ callId: "c1", state: "done", output: "file" });
+});
+
+test("Done expires pending approvals so their buttons go away", () => {
+  const s = run([
+    { type: "userSend", text: "capture" },
+    ev({ kind: "ApprovalRequest", tool_name: "Bash", tool_args: "{}", tool_call_id: "c1" }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  const approval = s.items.find((i) => i.kind === "approval");
+  expect(approval).toMatchObject({ status: "expired" });
+});
+
 test("approval request then resolution flips status", () => {
   let s = run([
     ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c9" }),
@@ -162,4 +188,29 @@ test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   ].join("\n");
   const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
   expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
+});
+
+test("computer-use tool call renders through the generic tool path", () => {
+  const s = run([
+    { type: "userSend", text: "click it" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Computer", args: '{"action":"click","x":100,"y":200}' }],
+    }),
+    ev({ kind: "ToolResult", tool_call_id: "c1", content: '{"tool_name":"Computer","data":{"output":"clicked"},"success":true}' }),
+  ]);
+  const tool = s.items.find((i) => i.kind === "tool");
+  expect(tool).toMatchObject({ callId: "c1", name: "Computer", state: "done", output: "clicked" });
+});
+
+test("computer-use pause and resume toggle the paused flag", () => {
+  let s = run([{ type: "userSend", text: "go" }, ev({ kind: "ComputerUsePaused" })]);
+  expect(s.paused).toBe(true);
+  s = chatReducer(s, ev({ kind: "ComputerUseResumed" }));
+  expect(s.paused).toBe(false);
+  s = chatReducer(s, ev({ kind: "ComputerUsePaused" }));
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.paused).toBe(false);
 });
