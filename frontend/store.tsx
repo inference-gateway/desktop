@@ -185,8 +185,8 @@ function useDesktopStore() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(refreshConversations, 10_000);
-    return () => clearInterval(t);
+    window.addEventListener("focus", refreshConversations);
+    return () => window.removeEventListener("focus", refreshConversations);
   }, [refreshConversations]);
 
   const loadProjects = useCallback(async () => {
