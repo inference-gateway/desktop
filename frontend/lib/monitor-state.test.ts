@@ -18,10 +18,10 @@ test("computer-use tool call creates a session with the last action", () => {
       kind: "AssistantMessage",
       content: "",
       reasoning_content: null,
-      tool_calls: [{ id: "c1", name: "MouseClick", args: '{"x":1}' }],
+      tool_calls: [{ id: "c1", name: "Computer", args: '{"action":"click","x":1}' }],
     }),
   ]);
-  expect(s.s1).toMatchObject({ status: "running", log: ['▸ MouseClick {"x":1}'] });
+  expect(s.s1).toMatchObject({ status: "running", log: ['▸ Computer {"action":"click","x":1}'] });
 });
 
 test("text deltas append to the last text entry, actions start new entries", () => {
@@ -44,14 +44,14 @@ test("text deltas append to the last text entry, actions start new entries", () 
       kind: "AssistantMessage",
       content: "",
       reasoning_content: null,
-      tool_calls: [{ id: "c2", name: "MouseClick", args: '{"x":1}' }],
+      tool_calls: [{ id: "c2", name: "Computer", args: '{"action":"click","x":1}' }],
     }),
     msg("s1", text("Done.")),
   ]);
   expect(s.s1.log).toEqual([
     "▸ GetLatestFrame {}",
     "Opening the app.",
-    '▸ MouseClick {"x":1}',
+    '▸ Computer {"action":"click","x":1}',
     "Done.",
   ]);
 });
@@ -89,12 +89,12 @@ test("log is capped at 100 entries", () => {
     kind: "AssistantMessage",
     content: "",
     reasoning_content: null,
-    tool_calls: [{ id: `c${i}`, name: "MouseClick", args: `{"x":${i}}` }],
+    tool_calls: [{ id: `c${i}`, name: "Computer", args: `{"action":"click","x":${i}}` }],
   });
   const s = run(Array.from({ length: 120 }, (_, i) => msg("s1", click(i))));
   expect(s.s1.log).toHaveLength(100);
-  expect(s.s1.log[99]).toBe('▸ MouseClick {"x":119}');
-  expect(s.s1.log[0]).toBe('▸ MouseClick {"x":20}');
+  expect(s.s1.log[99]).toBe('▸ Computer {"action":"click","x":119}');
+  expect(s.s1.log[0]).toBe('▸ Computer {"action":"click","x":20}');
 });
 
 test("non-computer-use events from unknown sessions are ignored", () => {
@@ -116,11 +116,11 @@ test("approval, pause, resume, and done drive the session status", () => {
       kind: "AssistantMessage",
       content: "",
       reasoning_content: null,
-      tool_calls: [{ id: "c1", name: "MouseClick", args: "{}" }],
+      tool_calls: [{ id: "c1", name: "Computer", args: "{}" }],
     }),
     msg("s1", {
       kind: "ApprovalRequest",
-      tool_name: "MouseClick",
+      tool_name: "Computer",
       tool_args: "{}",
       tool_call_id: "c1",
     }),

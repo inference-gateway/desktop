@@ -1,7 +1,7 @@
 // Fullscreen, transparent, click-through overlay that visualizes computer-use
 // actions: a rounded border glows at the screen edges while any computer-use
-// session is active, a cursor dot glides to each MouseMove/MouseScroll target,
-// a ring ripples on MouseClick, and a key-cast pill at the bottom shows what
+// session is active, a cursor dot glides to each Computer move/scroll target,
+// a ring ripples on a Computer click, and a key-cast pill at the bottom shows what
 // the agent is typing. Fed by the backend's global "agent-event" broadcast;
 // all animation is CSS inside this webview, so no per-frame IPC.
 import { useEffect, useRef, useState } from "react";
@@ -19,10 +19,6 @@ import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
-// ponytail: 1024x768 mirrors the CLI's computer_use.yaml screenshot.target_*;
-// read it from config if it ever becomes configurable. The CLI fits the frame
-// inside that box with one uniform scale factor (aspect preserved), so the
-// inverse here is a single factor too.
 const API_WIDTH = 1024;
 const API_HEIGHT = 768;
 

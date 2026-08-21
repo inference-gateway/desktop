@@ -1,7 +1,8 @@
-// Maps computer-use tool calls to overlay actions: where the agent's cursor
-// moves or clicks, and what it is typing. Coordinates are passed through in
-// the CLI's screenshot API space (computer_use.yaml target_width x target_height);
-// the overlay scales them to its own CSS pixels.
+// Maps Computer tool calls to overlay actions: where the agent's cursor
+// moves or clicks, and what it is typing. Coordinates arrive in the CLI's
+// frame coordinate space (computer_use.yaml screenshot.target_width x
+// target_height, aspect preserved); the overlay scales them to its own CSS
+// pixels.
 import type { ToolCallInfo } from "./tauri";
 
 export type OverlayAction =
@@ -15,24 +16,31 @@ function coord(v: unknown): number | null {
 }
 
 export function overlayAction(tc: ToolCallInfo): OverlayAction | null {
+  if (tc.name !== "Computer") return null;
   let args: Record<string, unknown>;
   try {
     args = JSON.parse(tc.args);
   } catch {
-    args = {};
+    return null;
   }
   const x = coord(args.x);
   const y = coord(args.y);
-  switch (tc.name) {
-    case "MouseMove":
-    case "MouseScroll":
+  switch (args.action) {
+    case "move":
+    case "scroll":
       return x !== null && y !== null ? { kind: "move", x, y } : null;
-    case "MouseClick":
+    case "click":
+    case "double_click":
+    case "triple_click":
       return { kind: "click", x, y };
-    case "KeyboardType": {
-      const text = typeof args.text === "string" ? args.text : null;
-      const combo = typeof args.key_combo === "string" ? args.key_combo : null;
-      const shown = combo ?? text;
+    case "type":
+    case "key": {
+      const shown =
+        typeof args.combo === "string"
+          ? args.combo
+          : typeof args.text === "string"
+            ? args.text
+            : null;
       return shown ? { kind: "type", text: shown } : null;
     }
     default:

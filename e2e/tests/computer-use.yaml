@@ -1,9 +1,8 @@
-name: computer-use tool calls render and MouseClick is approval-gated
+name: Computer tool calls render and input actions are approval-gated
 steps:
   - new_chat
   - send: "click the button on screen"
-  - wait_for: { text: "MouseMove", timeout: 30 }
+  - wait_for: { text: "Computer", timeout: 30 }
   - wait_for: { button: "Approve", timeout: 30 }
   - click: { button: "Approve" }
-  - wait_for: { text: "KeyboardType", timeout: 30 }
   - wait_for: { text: "Clicked.", timeout: 15 }

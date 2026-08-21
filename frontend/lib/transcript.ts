@@ -44,15 +44,7 @@ export type ChatState = {
   paused?: boolean;
 };
 
-export const COMPUTER_USE_TOOLS = new Set([
-  "MouseMove",
-  "MouseClick",
-  "MouseScroll",
-  "KeyboardType",
-  "GetFocusedApp",
-  "ActivateApp",
-  "GetLatestFrame",
-]);
+export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
 export const initialChatState: ChatState = {
   items: [],

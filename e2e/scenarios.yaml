@@ -105,11 +105,9 @@ scenarios:
     match: '(?i)click the button on screen'
     turns:
       - tool_calls:
-          - { name: MouseMove, args: { x: 600, y: 300 } }
+          - { name: Computer, args: { action: cursor } }
       - tool_calls:
-          - { name: MouseClick, args: { x: 640, y: 360 } }
-      - tool_calls:
-          - { name: KeyboardType, args: { text: "hello from the agent" } }
+          - { name: Computer, args: { action: click, x: 640, y: 360 } }
       - content: "Clicked."
 
   - name: reasoning-demo

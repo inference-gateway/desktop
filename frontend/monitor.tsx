@@ -209,7 +209,7 @@ export default function Monitor() {
       {session.pendingApproval && (
         <div className="flex items-center gap-2 rounded-md border border-orange-500/40 bg-orange-500/10 px-2 py-1.5">
           <span className="min-w-0 flex-1 truncate text-xs font-medium">
-            Allow {session.pendingApproval.toolName}?
+            Allow {session.pendingApproval.toolName} {session.pendingApproval.toolArgs}?
           </span>
           <Button size="sm" className="h-6 px-2 text-xs" onClick={() => decide(true)}>
             Approve (A)
