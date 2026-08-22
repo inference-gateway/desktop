@@ -13,6 +13,7 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 
 const PROCESS_MATCH: &str = "inference-gateway-desktop";
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
+const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead.
@@ -253,6 +254,48 @@ impl AppDriver {
             root = ax_root(),
         );
         osascript(&script)
+    }
+
+    /// The overlay starts below the primary screen's menu bar, spans its full
+    /// width, and reaches the physical bottom edge behind the Dock.
+    pub fn overlay_matches_primary_screen(&self) -> Result<bool> {
+        let script = format!(
+            r#"
+import AppKit
+import CoreGraphics
+
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+    as! [[String: Any]]
+guard let overlay = windows.first(where: {{ window in
+    let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+    let title = window[kCGWindowName as String] as? String ?? ""
+    return owner.contains("{process}") && title == "{title}"
+}}), let bounds = overlay[kCGWindowBounds as String] as? [String: CGFloat],
+   let screen = NSScreen.screens.first else {{
+    exit(0)
+}}
+
+let frame = screen.frame
+let visible = screen.visibleFrame
+let expectedTop = frame.maxY - visible.maxY
+print(bounds["X"]!, bounds["Y"]!, bounds["Width"]!, bounds["Height"]!,
+      frame.minX, expectedTop, frame.width, frame.height - expectedTop)
+"#,
+            process = PROCESS_MATCH,
+            title = OVERLAY_WINDOW_TITLE,
+        );
+        let out = run_with_stdin("swift", &["-"], &script)?;
+        let values = out
+            .split_whitespace()
+            .map(str::parse::<f64>)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if values.len() != 8 {
+            return Ok(false);
+        }
+        Ok(values[..4]
+            .iter()
+            .zip(&values[4..])
+            .all(|(actual, expected)| (actual - expected).abs() <= 1.0))
     }
 
     /// Resolve a cleanup/assert path against the repo root (the infer child's
