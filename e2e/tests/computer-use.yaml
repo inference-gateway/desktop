@@ -4,5 +4,6 @@ steps:
   - send: "click the button on screen"
   - wait_for: { text: "Computer", timeout: 30 }
   - wait_for: { button: "Approve", timeout: 30 }
+  - assert_overlay_bounds
   - click: { button: "Approve" }
   - wait_for: { text: "Clicked.", timeout: 15 }

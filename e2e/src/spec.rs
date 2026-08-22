@@ -35,6 +35,7 @@ pub enum Step {
 #[serde(rename_all = "snake_case")]
 pub enum BareStep {
     NewChat,
+    AssertOverlayBounds,
 }
 
 #[derive(Debug, Deserialize)]

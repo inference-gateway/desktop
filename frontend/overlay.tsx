@@ -109,12 +109,11 @@ export default function Overlay() {
       const mon =
         (await primaryMonitor().catch(() => null)) ?? (await currentMonitor().catch(() => null));
       if (!mon) return;
-      // Top stays below the menu bar: macOS shifts any window overlapping it.
       const top = mon.workArea.position.y;
-      await win.setPosition(new PhysicalPosition(mon.position.x, top));
       await win.setSize(
         new PhysicalSize(mon.size.width, mon.position.y + mon.size.height - top)
       );
+      await win.setPosition(new PhysicalPosition(mon.position.x, top));
       const f = mon.scaleFactor || 1;
       const s = Math.max(mon.size.width / f / API_WIDTH, mon.size.height / f / API_HEIGHT, 1);
       mapRef.current = { sx: s, sy: s, dx: 0, dy: (top - mon.position.y) / f };

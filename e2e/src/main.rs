@@ -188,6 +188,17 @@ fn run_steps(test: &spec::Test, app: &AppDriver) -> Result<()> {
 fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
     match step {
         Step::Bare(BareStep::NewChat) => app.new_chat(),
+        Step::Bare(BareStep::AssertOverlayBounds) => {
+            let found = app.poll(Duration::from_secs(5), || {
+                app.overlay_matches_primary_screen()
+            })?;
+            if !found {
+                bail!(
+                    "computer-use overlay does not span the primary screen from the menu bar to the bottom edge"
+                );
+            }
+            Ok(())
+        }
         Step::Send { send } => app.send(send),
         Step::Keypress { keypress } => app.keypress(keypress),
         Step::Click { click } => app.click(&click.button),
@@ -241,6 +252,7 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
 fn describe(step: &Step) -> String {
     match step {
         Step::Bare(BareStep::NewChat) => "new_chat".into(),
+        Step::Bare(BareStep::AssertOverlayBounds) => "assert_overlay_bounds".into(),
         Step::Send { send } => format!("send {send:?}"),
         Step::Keypress { keypress } => format!("keypress {keypress:?}"),
         Step::Click { click } => format!("click {:?}", click.button),
