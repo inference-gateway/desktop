@@ -40,9 +40,6 @@ pub(crate) struct ProcessManager {
     state: Mutex<ProcessState>,
     gateway_lifecycle: Mutex<()>,
     scheduler_lifecycle: Mutex<()>,
-    // Not redundant with `shutting_down`: this makes a second shutdown() caller wait
-    // until the children are actually dead, so RunEvent::Exit cannot return while the
-    // signal handler is still killing.
     shutdown_lifecycle: Mutex<()>,
     shutting_down: AtomicBool,
     gateway_enabled: bool,
@@ -714,7 +711,7 @@ fn terminate_owned_pid(ownership: &GatewayOwnership, _timeout: Duration) -> Resu
     ))
 }
 
-// ponytail: the executable path alone identifies the process. A recycled pid would only
+// A recycled pid would only
 // be mistaken for the gateway if it is also running the gateway binary - which is exactly
 // what we want to terminate anyway - so the start time is not worth a second lookup.
 #[cfg(unix)]
