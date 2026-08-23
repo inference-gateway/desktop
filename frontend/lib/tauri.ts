@@ -14,6 +14,7 @@ export type AgentEvent =
       content: string;
       reasoning_content: string | null;
       tool_calls: ToolCallInfo[];
+      message_id?: string | null;
     }
   | { kind: "ToolResult"; content: string; tool_call_id: string }
   | { kind: "ApprovalRequest"; tool_name: string; tool_args: string; tool_call_id: string }
@@ -157,6 +158,7 @@ export const api = {
     onEvent: Channel<AgentEvent>;
     systemPrompt?: string;
     extraInstructions?: string;
+    autoMode: boolean;
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved }),

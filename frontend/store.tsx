@@ -29,16 +29,19 @@ import { autoGrow } from "@/lib/textarea";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
 const STORAGE_KEY = "selectedModel";
+const AUTO_MODE_KEY = "autoMode";
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
 
-function setMonitorVisible(visible: boolean) {
-  WebviewWindow.getByLabel("monitor")
-    .then((w) => (visible ? w?.show() : w?.hide()))
-    .catch(() => {});
+async function setMonitorVisible(visible: boolean) {
+  const win = await WebviewWindow.getByLabel("monitor");
+  if (!win) return;
+  await win.setIgnoreCursorEvents(!visible);
+  if (visible) await win.show();
+  else await win.hide();
 }
 
 async function notifyApproval(toolName: string) {
@@ -76,6 +79,7 @@ function useDesktopStore() {
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
+  const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [maxSessions, setMaxSessionsState] = useState<number>(() => {
@@ -96,7 +100,7 @@ function useDesktopStore() {
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const monitorShown = useRef(false);
+  const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
 
@@ -113,6 +117,11 @@ function useDesktopStore() {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
     api.setDefaultModel(m).catch(() => {});
+  }, []);
+
+  const setAutoMode = useCallback((enabled: boolean) => {
+    setAutoModeState(enabled);
+    localStorage.setItem(AUTO_MODE_KEY, String(enabled));
   }, []);
 
   const setMaxSessions = useCallback((n: number) => {
@@ -485,14 +494,6 @@ function useDesktopStore() {
       const ch = new Channel<AgentEvent>();
       ch.onmessage = (event) => {
         dispatchTo(runId, { type: "event", event });
-        if (
-          event.kind === "AssistantMessage" &&
-          !monitorShown.current &&
-          event.tool_calls.some((tc) => COMPUTER_USE_TOOLS.has(tc.name))
-        ) {
-          monitorShown.current = true;
-          setMonitorVisible(true);
-        }
         if (event.kind === "TokenUsage") {
           setTokenUsage((prev) => ({
             input: prev.input + event.input,
@@ -503,6 +504,9 @@ function useDesktopStore() {
         }
         switch (event.kind) {
           case "ApprovalRequest":
+            if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
+              computerApprovalsRef.current.set(event.tool_call_id, runId);
+            }
             if (runId === activeIdRef.current) setStatus("Awaiting approval...");
             if (!document.hasFocus()) notifyApproval(event.tool_name);
             break;
@@ -510,9 +514,11 @@ function useDesktopStore() {
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
-              if (next.size === 0) monitorShown.current = false;
               return next;
             });
+            for (const [callId, sessionId] of computerApprovalsRef.current) {
+              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+            }
             if (runId === activeIdRef.current)
               setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
             break;
@@ -520,9 +526,11 @@ function useDesktopStore() {
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
-              if (next.size === 0) monitorShown.current = false;
               return next;
             });
+            for (const [callId, sessionId] of computerApprovalsRef.current) {
+              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+            }
             if (runId === activeIdRef.current) setStatus("Cancelled");
             break;
         }
@@ -537,6 +545,7 @@ function useDesktopStore() {
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
           [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
+        autoMode,
       });
       refreshConversations();
     } catch (err) {
@@ -544,12 +553,11 @@ function useDesktopStore() {
       setRunningIds((prev) => {
         const next = new Set(prev);
         next.delete(runId);
-        if (next.size === 0) monitorShown.current = false;
         return next;
       });
       if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [runningIds, model, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+  }, [runningIds, model, autoMode, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
@@ -600,6 +608,11 @@ function useDesktopStore() {
       const id = activeIdRef.current;
       if (!id) return;
       try {
+        const computerApproval = computerApprovalsRef.current.get(callId) === id;
+        if (computerApproval) {
+          computerApprovalsRef.current.delete(callId);
+          if (approved) await setMonitorVisible(false).catch(() => {});
+        }
         await api.sendApproval(id, callId, approved);
         const status = approved ? "approved" : "denied";
         dispatchTo(id, { type: "setApproval", callId, status });
@@ -754,6 +767,8 @@ function useDesktopStore() {
     models,
     model,
     setModel,
+    autoMode,
+    setAutoMode,
     maxSessions,
     setMaxSessions,
     conversations: displayConversations,

@@ -7,6 +7,7 @@ use crate::env::{
 use crate::observability::json_val_i64;
 use std::io::{BufRead, Read};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tauri::ipc::Channel;
@@ -22,6 +23,7 @@ pub(crate) enum AgentEvent {
         content: String,
         reasoning_content: Option<String>,
         tool_calls: Vec<ToolCallInfo>,
+        message_id: Option<String>,
     },
     ToolResult {
         content: String,
@@ -67,6 +69,7 @@ pub(crate) struct ToolCallInfo {
 pub(crate) struct AgentParser {
     session_id: Option<String>,
     msg_from_user: bool,
+    message_id: Option<String>,
     tc_id: String,
     tc_name: String,
     tc_args: String,
@@ -81,11 +84,19 @@ pub(crate) fn delta_of(val: &serde_json::Value) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn message_id_of(val: &serde_json::Value) -> Option<String> {
+    val.get("messageId")
+        .and_then(|v| v.as_str())
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
 impl AgentParser {
     fn new(session_id: Option<String>) -> Self {
         Self {
             session_id,
             msg_from_user: false,
+            message_id: None,
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
@@ -102,6 +113,7 @@ impl AgentParser {
             content: delta_of(val)?.to_string(),
             reasoning_content: None,
             tool_calls: Vec::new(),
+            message_id: message_id_of(val).or_else(|| self.message_id.clone()),
         })
     }
 
@@ -141,12 +153,14 @@ impl AgentParser {
             }
             "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
             "TEXT_MESSAGE_START" => {
+                self.message_id = message_id_of(&val);
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
                 self.assistant_text(&val)
             }
             "TEXT_MESSAGE_CONTENT" => self.assistant_text(&val),
             "TEXT_MESSAGE_END" => {
                 self.msg_from_user = false;
+                self.message_id = None;
                 None
             }
             // Reasoning/thinking phases are assistant-only; each content event is
@@ -157,16 +171,23 @@ impl AgentParser {
                     content: String::new(),
                     reasoning_content: Some(d.to_string()),
                     tool_calls: Vec::new(),
+                    message_id: message_id_of(&val).or_else(|| self.message_id.clone()),
                 })
             }
             "REASONING_MESSAGE_START"
-            | "REASONING_MESSAGE_END"
             | "REASONING_START"
-            | "REASONING_END"
             | "THINKING_TEXT_MESSAGE_START"
+            | "THINKING_START" => {
+                self.message_id = message_id_of(&val);
+                None
+            }
+            "REASONING_MESSAGE_END"
+            | "REASONING_END"
             | "THINKING_TEXT_MESSAGE_END"
-            | "THINKING_START"
-            | "THINKING_END" => None,
+            | "THINKING_END" => {
+                self.message_id = None;
+                None
+            }
             "TOOL_CALL_START" => {
                 self.tc_id = val
                     .get("toolCallId")
@@ -204,6 +225,7 @@ impl AgentParser {
                         name: std::mem::take(&mut self.tc_name),
                         args: std::mem::take(&mut self.tc_args),
                     }],
+                    message_id: None,
                 })
             }
             "TOOL_CALL_RESULT" => {
@@ -302,6 +324,7 @@ impl AgentParser {
 
     fn flush_message(&mut self) {
         self.msg_from_user = false;
+        self.message_id = None;
     }
 }
 
@@ -314,6 +337,16 @@ struct EventSink {
     app: tauri::AppHandle,
     session_id: String,
     name: String,
+}
+
+const AGENT_MODE_ENV: &str = "INFER_SUBAGENT_AGENT_MODE";
+
+fn apply_approval_mode(command: &mut Command, auto_mode: bool) {
+    if auto_mode {
+        command.env(AGENT_MODE_ENV, "auto");
+    } else {
+        command.env_remove(AGENT_MODE_ENV).arg("--require-approval");
+    }
 }
 
 impl EventSink {
@@ -337,18 +370,18 @@ pub(crate) async fn send_message(
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
+    auto_mode: bool,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
-    let mut cmd = std::process::Command::new(&bin_path);
+    let mut cmd = Command::new(&bin_path);
     cmd.arg("headless")
         .arg("--format")
         .arg("ag-ui")
         .arg("--session-id")
-        .arg(&session_id)
-        .arg("--require-approval")
-        .arg("-m")
-        .arg(&model);
+        .arg(&session_id);
+    apply_approval_mode(&mut cmd, auto_mode);
+    cmd.arg("-m").arg(&model);
 
     let cwd = agent_cwd();
     let extras = compose_extras(extra_instructions.as_deref(), &cwd);
@@ -829,6 +862,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn approval_mode_only_requires_approval_when_auto_mode_is_off() {
+        let mut manual = Command::new("infer");
+        apply_approval_mode(&mut manual, false);
+        let manual_args: Vec<_> = manual
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(manual_args, ["--require-approval"]);
+        assert_eq!(
+            manual
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
+            Some((std::ffi::OsStr::new(AGENT_MODE_ENV), None))
+        );
+
+        let mut automatic = Command::new("infer");
+        apply_approval_mode(&mut automatic, true);
+        assert_eq!(automatic.get_args().count(), 0);
+        assert_eq!(
+            automatic
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
+            Some((
+                std::ffi::OsStr::new(AGENT_MODE_ENV),
+                Some(std::ffi::OsStr::new("auto"))
+            ))
+        );
+    }
+
+    #[test]
     fn safe_image_source_guards_scope() {
         let home = PathBuf::from("/Users/me");
         assert!(safe_image_source("/Users/me/proj/.infer/tmp/cat.png", &home).is_ok());
@@ -901,10 +964,12 @@ mod tests {
             "each content event streams as its own delta"
         );
         assert!(
-            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello.")
+            matches!(&events[0], AgentEvent::AssistantMessage { content, message_id, .. }
+            if content == "Hello." && message_id.as_deref() == Some("msg-1"))
         );
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == " I am an AI.")
+            matches!(&events[1], AgentEvent::AssistantMessage { content, message_id, .. }
+            if content == " I am an AI." && message_id.as_deref() == Some("msg-1"))
         );
     }
 

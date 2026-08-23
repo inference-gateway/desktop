@@ -56,6 +56,28 @@ test("text deltas append to the last text entry, actions start new entries", () 
   ]);
 });
 
+test("distinct streamed assistant messages start new log lines", () => {
+  const text = (content: string, message_id: string): AgentEvent => ({
+    kind: "AssistantMessage",
+    content,
+    reasoning_content: null,
+    tool_calls: [],
+    message_id,
+  });
+  const s = run([
+    msg("s1", {
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "GetLatestFrame", args: "{}" }],
+    }),
+    msg("s1", text("First ", "m1")),
+    msg("s1", text("message.", "m1")),
+    msg("s1", text("Second message.", "m2")),
+  ]);
+  expect(s.s1.log).toEqual(["▸ GetLatestFrame {}", "First message.", "Second message."]);
+});
+
 test("tool result with a base64 frame or image path sets lastFrame", () => {
   const start = msg("s1", {
     kind: "AssistantMessage",

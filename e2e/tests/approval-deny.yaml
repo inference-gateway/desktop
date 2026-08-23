@@ -5,6 +5,6 @@ steps:
   - new_chat
   - send: "create a file named denied.txt"
   - wait_for: { button: "Deny", timeout: 30 }
-  - click: { button: "Deny" }
+  - keypress: "r"
   - wait_for: { text: "Denied", timeout: 15 }
   - assert_absent: { file: denied.txt }

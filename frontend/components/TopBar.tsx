@@ -5,7 +5,15 @@ import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
 export function TopBar() {
-  const { versionBadge, showUpdateBanner, updateBannerText, applyUpdates, restartBackend, openSettings, openObservability } = useDesktop();
+  const {
+    versionBadge,
+    showUpdateBanner,
+    updateBannerText,
+    applyUpdates,
+    restartBackend,
+    openSettings,
+    openObservability,
+  } = useDesktop();
   const [isUpdating, setIsUpdating] = useState(false);
 
   const handleUpdate = async () => {

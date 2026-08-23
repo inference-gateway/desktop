@@ -20,4 +20,8 @@ const roots: Record<string, () => React.JSX.Element> = {
 
 const el = document.getElementById("app");
 const label = getCurrentWindow().label;
+if (label === "monitor" || label === "overlay") {
+  document.documentElement.style.background = "transparent";
+  document.body.style.background = "transparent";
+}
 if (el) createRoot(el).render((roots[label] ?? (() => <App />))());
