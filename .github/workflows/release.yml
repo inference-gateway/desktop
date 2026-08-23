@@ -86,8 +86,6 @@ jobs:
         with:
           bun-version: latest
 
-      # tauri-action runs beforeBuildCommand ("bun run build"); node_modules must
-      # exist first.
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
