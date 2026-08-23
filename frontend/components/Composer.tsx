@@ -25,7 +25,19 @@ const ALLOWED = ["image/png", "image/jpeg", "image/svg+xml", "application/pdf"];
 type PendingImage = { id: string; dataUrl: string; file: File };
 
 export function Composer() {
-  const { composerRef, enabled, running, send, cancel, setStatus, setError, history, activeProject, setActiveProject, currentProject } = useDesktop();
+  const {
+    composerRef,
+    enabled,
+    running,
+    send,
+    cancel,
+    setStatus,
+    setError,
+    history,
+    activeProject,
+    setActiveProject,
+    currentProject,
+  } = useDesktop();
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
   const cursorRef = useRef(-1);
   const draftRef = useRef("");

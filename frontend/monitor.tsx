@@ -38,7 +38,8 @@ import {
 } from "@/lib/monitor-state";
 
 const TOP_MARGIN = 16;
-const COMPACT = { width: 760, height: 300 };
+const COMPACT = { width: 620, height: 102 };
+const COMPACT_APPROVAL = { width: 700, height: 124 };
 const EXPANDED = { width: 840, height: 540 };
 
 async function dockTopCenter() {
@@ -152,11 +153,7 @@ export default function Monitor() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [session?.log, session?.lastFrame]);
 
-  const toggleExpanded = () => {
-    const next = !expanded;
-    setExpanded(next);
-    resizeAndDock(next ? EXPANDED : COMPACT).catch(() => {});
-  };
+  const toggleExpanded = () => setExpanded((value) => !value);
 
   const sendInstruction = () => {
     const el = promptRef.current;
@@ -186,6 +183,11 @@ export default function Monitor() {
 
   const hasPending = Boolean(session?.pendingApproval);
   useEffect(() => {
+    const size = expanded ? EXPANDED : hasPending ? COMPACT_APPROVAL : COMPACT;
+    resizeAndDock(size).catch(() => {});
+  }, [expanded, hasPending]);
+
+  useEffect(() => {
     if (!hasPending) return;
     register("A", (e) => {
       if (e.state === "Pressed") decideRef.current(true);
@@ -200,7 +202,7 @@ export default function Monitor() {
 
   if (!session) {
     return (
-      <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] items-center justify-center rounded-2xl border-2 border-primary/70 bg-background/85 p-4 text-center text-sm text-muted-foreground shadow-[0_18px_60px_rgba(79,70,229,0.3)] backdrop-blur-xl">
+      <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] items-center justify-center rounded-2xl border border-primary/50 bg-background/45 p-3 text-center text-sm text-muted-foreground shadow-[0_10px_32px_rgba(79,70,229,0.18)] backdrop-blur-sm">
         No active computer-use session
       </div>
     );
@@ -210,24 +212,16 @@ export default function Monitor() {
   const frameSrc = session.lastFrame?.startsWith("data:")
     ? session.lastFrame
     : safeImageSrc(session.lastFrame);
+  const latestUpdate = session.log.at(-1) ?? "Waiting for actions...";
 
   return (
-    <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] flex-col gap-2.5 overflow-hidden rounded-2xl border-2 border-primary/70 bg-background/85 p-3 text-sm text-foreground shadow-[0_18px_60px_rgba(79,70,229,0.3)] backdrop-blur-xl">
-      {ids.length > 1 && (
-        <select
-          id="monitor-session-select"
-          aria-label="Session"
-          className="w-full rounded-md border border-primary/30 bg-background/70 px-2 py-1 text-xs"
-          value={id ?? ""}
-          onChange={(e) => setSelectedId(e.target.value)}
-        >
-          {ids.map((sid) => (
-            <option key={sid} value={sid}>
-              {sessions[sid].name.slice(0, 40) || sid.slice(0, 8)}
-            </option>
-          ))}
-        </select>
-      )}
+    <div
+      className={`m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] flex-col overflow-hidden rounded-2xl text-sm text-foreground ${
+        expanded
+          ? "gap-2.5 border-2 border-primary/70 bg-background/85 p-3 shadow-[0_18px_60px_rgba(79,70,229,0.3)] backdrop-blur-xl"
+          : "gap-2 border border-primary/50 bg-background/45 p-2.5 shadow-[0_10px_32px_rgba(79,70,229,0.18)] backdrop-blur-sm"
+      }`}
+    >
       <div className="flex items-center gap-2">
         <Button
           size="sm"
@@ -242,13 +236,64 @@ export default function Monitor() {
           <GripHorizontal className="size-4" />
         </Button>
         <span className={`size-2 shrink-0 rounded-full ${status.dot}`} />
-        <span className="min-w-0 flex-1 truncate font-medium" title={session.name}>
-          {session.name || id}
-        </span>
-        <span className="flex shrink-0 items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-2 py-1 text-[0.68rem] font-medium text-primary">
-          <EyeOff className="size-3" /> Hidden from agent capture
-        </span>
+        {ids.length > 1 ? (
+          <select
+            id="monitor-session-select"
+            aria-label="Session"
+            className="min-w-0 flex-1 rounded-md border border-primary/30 bg-background/70 px-2 py-1 text-xs"
+            value={id ?? ""}
+            onChange={(e) => setSelectedId(e.target.value)}
+          >
+            {ids.map((sid) => (
+              <option key={sid} value={sid}>
+                {sessions[sid].name.slice(0, 40) || sid.slice(0, 8)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="min-w-0 flex-1 truncate font-medium" title={session.name}>
+            {session.name || id}
+          </span>
+        )}
+        {expanded && (
+          <span className="flex shrink-0 items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-2 py-1 text-[0.68rem] font-medium text-primary">
+            <EyeOff className="size-3" /> Hidden from agent capture
+          </span>
+        )}
         <span className="shrink-0 text-xs text-muted-foreground">{status.label}</span>
+        {!expanded && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="size-6 shrink-0 bg-background/55 p-0"
+              aria-label={session.status === "paused" ? "Resume" : "Pause"}
+              disabled={session.status === "done"}
+              onClick={() =>
+                id &&
+                api
+                  .sendComputerUseControl(id, session.status === "paused" ? "resume" : "pause")
+                  .catch(() => {})
+              }
+            >
+              {session.status === "paused" ? (
+                <Play className="size-3.5" />
+              ) : (
+                <Pause className="size-3.5" />
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="size-6 shrink-0 bg-background/55 p-0 text-destructive hover:text-destructive"
+              aria-label="Stop session"
+              disabled={session.status === "done"}
+              onClick={() => id && api.cancelAgent(id).catch(() => {})}
+            >
+              <Square className="size-3.5" />
+            </Button>
+          </>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -272,34 +317,72 @@ export default function Monitor() {
         </Button>
       </div>
       {session.pendingApproval && (
-        <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-primary/60 bg-primary/10 p-3 shadow-[0_0_28px_rgba(99,102,241,0.18)]">
-          <div className="min-w-0">
-            <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-primary">
-              <ShieldAlert className="size-4" />
-              Approval required
-              <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[0.68rem]">
-                {session.pendingApproval.toolName}
-              </span>
-            </div>
-            <pre
-              aria-label={`Arguments for ${session.pendingApproval.toolName}`}
-              className={`${expanded ? "max-h-48" : "max-h-24"} overflow-auto whitespace-pre-wrap break-all rounded-lg border border-primary/25 bg-background/70 px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground`}
-            >
-              {prettyJson(session.pendingApproval.toolArgs) || "{}"}
-            </pre>
-          </div>
-          <div className="flex min-w-28 flex-col justify-center gap-2">
-            <Button
-              size="sm"
-              aria-label="Approve"
-              className="h-9 justify-between gap-3 px-3 text-xs"
-              onClick={() => decide(true)}
-            >
-              Approve
-              <kbd
-                aria-hidden="true"
-                className="rounded border border-white/35 bg-white/15 px-1.5 py-0.5 font-mono text-[0.68rem]"
+        expanded ? (
+          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-primary/60 bg-primary/10 p-3 shadow-[0_0_28px_rgba(99,102,241,0.18)]">
+            <div className="min-w-0">
+              <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-primary">
+                <ShieldAlert className="size-4" />
+                Approval required
+                <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[0.68rem]">
+                  {session.pendingApproval.toolName}
+                </span>
+              </div>
+              <pre
+                aria-label={`Arguments for ${session.pendingApproval.toolName}`}
+                className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-primary/25 bg-background/70 px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground"
               >
+                {prettyJson(session.pendingApproval.toolArgs) || "{}"}
+              </pre>
+            </div>
+            <div className="flex min-w-28 flex-col justify-center gap-2">
+              <Button
+                size="sm"
+                aria-label="Approve"
+                className="h-9 justify-between gap-3 px-3 text-xs"
+                onClick={() => decide(true)}
+              >
+                Approve
+                <kbd
+                  aria-hidden="true"
+                  className="rounded border border-white/35 bg-white/15 px-1.5 py-0.5 font-mono text-[0.68rem]"
+                >
+                  A
+                </kbd>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Deny"
+                className="h-9 justify-between gap-3 border-destructive/40 bg-background/60 px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => decide(false)}
+              >
+                Deny
+                <kbd
+                  aria-hidden="true"
+                  className="rounded border border-current/30 bg-destructive/10 px-1.5 py-0.5 font-mono text-[0.68rem]"
+                >
+                  R
+                </kbd>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-primary/60 bg-background/90 p-2 shadow-[0_0_24px_rgba(99,102,241,0.16)] backdrop-blur-xl">
+            <ShieldAlert className="size-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-primary">
+                Approval required - {session.pendingApproval.toolName}
+              </div>
+              <div
+                className="truncate font-mono text-[0.68rem] text-muted-foreground"
+                title={prettyJson(session.pendingApproval.toolArgs) || "{}"}
+              >
+                {prettyJson(session.pendingApproval.toolArgs) || "{}"}
+              </div>
+            </div>
+            <Button size="sm" aria-label="Approve" onClick={() => decide(true)}>
+              Approve
+              <kbd aria-hidden="true" className="ml-1 rounded border border-white/35 px-1 font-mono text-[0.65rem]">
                 A
               </kbd>
             </Button>
@@ -307,69 +390,83 @@ export default function Monitor() {
               size="sm"
               variant="outline"
               aria-label="Deny"
-              className="h-9 justify-between gap-3 border-destructive/40 bg-background/60 px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="border-destructive/40 bg-background/70 text-destructive hover:text-destructive"
               onClick={() => decide(false)}
             >
               Deny
-              <kbd
-                aria-hidden="true"
-                className="rounded border border-current/30 bg-destructive/10 px-1.5 py-0.5 font-mono text-[0.68rem]"
-              >
+              <kbd aria-hidden="true" className="ml-1 rounded border border-current/30 px-1 font-mono text-[0.65rem]">
                 R
               </kbd>
             </Button>
           </div>
+        )
+      )}
+      {!expanded && !session.pendingApproval && (
+        <div
+          aria-label="Latest action"
+          className="flex min-w-0 items-center gap-2 rounded-lg border border-primary/25 bg-background/90 px-2.5 py-2 shadow-sm backdrop-blur-xl"
+        >
+          <span className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-wide text-primary">
+            Latest
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs" title={latestUpdate}>
+            {latestUpdate}
+          </span>
         </div>
       )}
-      <div className="flex min-h-0 flex-1 gap-2">
-        {frameSrc && (
-          <img
-            src={frameSrc}
-            alt="Latest captured frame"
-            className={`${expanded ? "w-64" : "w-44"} shrink-0 rounded-lg border border-primary/25 bg-background/50 object-contain`}
-          />
-        )}
-        <div
-          ref={logRef}
-          className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-muted/35 px-2.5 py-2 font-mono text-xs text-muted-foreground"
-        >
-          {session.log.length ? session.log.join("\n") : "Waiting for actions..."}
+      {expanded && (
+        <div className="flex min-h-0 flex-1 gap-2">
+          {frameSrc && (
+            <img
+              src={frameSrc}
+              alt="Latest captured frame"
+              className="w-64 shrink-0 rounded-lg border border-primary/25 bg-background/50 object-contain"
+            />
+          )}
+          <div
+            ref={logRef}
+            className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-muted/35 px-2.5 py-2 font-mono text-xs text-muted-foreground"
+          >
+            {session.log.length ? session.log.join("\n") : "Waiting for actions..."}
+          </div>
         </div>
-      </div>
-      <div className="flex gap-2">
-        {session.status === "paused" ? (
+      )}
+      {expanded && (
+        <div className="flex gap-2">
+          {session.status === "paused" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 flex-1 text-xs"
+              aria-label="Resume"
+              onClick={() => id && api.sendComputerUseControl(id, "resume").catch(() => {})}
+            >
+              <Play className="size-3.5" /> Resume
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 flex-1 text-xs"
+              aria-label="Pause"
+              disabled={session.status === "done"}
+              onClick={() => id && api.sendComputerUseControl(id, "pause").catch(() => {})}
+            >
+              <Pause className="size-3.5" /> Pause
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
-            className="h-7 flex-1 text-xs"
-            aria-label="Resume"
-            onClick={() => id && api.sendComputerUseControl(id, "resume").catch(() => {})}
-          >
-            <Play className="size-3.5" /> Resume
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 flex-1 text-xs"
-            aria-label="Pause"
+            className="h-7 flex-1 text-xs text-destructive hover:text-destructive"
+            aria-label="Stop session"
             disabled={session.status === "done"}
-            onClick={() => id && api.sendComputerUseControl(id, "pause").catch(() => {})}
+            onClick={() => id && api.cancelAgent(id).catch(() => {})}
           >
-            <Pause className="size-3.5" /> Pause
+            <Square className="size-3.5" /> Stop
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 flex-1 text-xs text-destructive hover:text-destructive"
-          aria-label="Stop session"
-          disabled={session.status === "done"}
-          onClick={() => id && api.cancelAgent(id).catch(() => {})}
-        >
-          <Square className="size-3.5" /> Stop
-        </Button>
-      </div>
+        </div>
+      )}
       {expanded && (
         <textarea
           ref={promptRef}

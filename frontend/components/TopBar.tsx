@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChartColumn, LoaderCircle, RotateCw, Settings, Zap } from "lucide-react";
+import { ChartColumn, LoaderCircle, RotateCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
@@ -13,8 +13,6 @@ export function TopBar() {
     restartBackend,
     openSettings,
     openObservability,
-    autoMode,
-    setAutoMode,
   } = useDesktop();
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -49,28 +47,6 @@ export function TopBar() {
         </button>
       )}
       <div id="model-controls" className="ml-auto flex items-center gap-2">
-        <Button
-          variant={autoMode ? "default" : "outline"}
-          size="sm"
-          aria-label="Auto mode"
-          aria-pressed={autoMode}
-          title={
-            autoMode
-              ? "Auto mode is on - new runs do not ask for tool approval"
-              : "Auto mode is off - new runs ask before protected tool actions"
-          }
-          onClick={() => setAutoMode(!autoMode)}
-          className="h-8 gap-1.5 px-2.5"
-        >
-          <Zap size={14} />
-          Auto mode
-          <span
-            aria-hidden="true"
-            className="rounded-full border border-current/25 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase leading-none"
-          >
-            {autoMode ? "On" : "Off"}
-          </span>
-        </Button>
         <ModelSelect />
         <Button
           variant="ghost"

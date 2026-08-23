@@ -8,7 +8,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { ScheduleJob } from "@/lib/tauri";
-import type { TranscriptItem } from "@/lib/transcript";
+import { COMPUTER_USE_TOOLS, type TranscriptItem } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
@@ -129,15 +129,21 @@ function ApprovalCard({
         <div className="flex gap-2">
           <button
             onClick={() => approve(item.callId, true)}
-            className="rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
           >
             Approve
+            <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
+              A
+            </kbd>
           </button>
           <button
             onClick={() => approve(item.callId, false)}
-            className="rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
+            className="flex items-center gap-2 rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
           >
             Deny
+            <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
+              R
+            </kbd>
           </button>
         </div>
       )}
@@ -306,6 +312,43 @@ export function Transcript() {
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const pendingApproval = [...items].reverse().find(
+    (item): item is Extract<TranscriptItem, { kind: "approval" }> =>
+      item.kind === "approval" &&
+      item.status === "pending" &&
+      !COMPUTER_USE_TOOLS.has(item.toolName)
+  );
+
+  useEffect(() => {
+    if (!pendingApproval) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          (target instanceof HTMLInputElement && !target.disabled && !target.readOnly) ||
+          (target instanceof HTMLTextAreaElement && !target.disabled && !target.readOnly) ||
+          (target instanceof HTMLSelectElement && !target.disabled))
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "a" && key !== "r") return;
+      event.preventDefault();
+      approve(pendingApproval.callId, key === "a");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [approve, pendingApproval]);
 
   const checkAtBottom = useCallback(() => {
     const el = ref.current;
