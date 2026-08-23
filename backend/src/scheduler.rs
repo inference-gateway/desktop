@@ -29,67 +29,65 @@ fn pipe_logger<R: std::io::Read + Send + 'static>(pipe: R, log: Arc<Mutex<VecDeq
 
 #[tauri::command]
 pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    spawn_daemon(&state)
+    let processes = Arc::clone(&state.processes);
+    let log = Arc::clone(&state.scheduler_log);
+    tokio::task::spawn_blocking(move || restart_daemon(&processes, log))
+        .await
+        .map_err(|error| format!("scheduler startup task failed: {error}"))?
 }
 
 /// Kill any previous daemon child and spawn a fresh one. Called from the
 /// Settings save flow and from app setup (autostart when scheduling is
 /// enabled), so the daemon survives app restarts.
 pub(crate) fn spawn_daemon(state: &AppState) -> Result<(), String> {
+    restart_daemon(&state.processes, Arc::clone(&state.scheduler_log))
+}
+
+fn restart_daemon(
+    processes: &crate::process_manager::ProcessManager,
+    log: Arc<Mutex<VecDeque<String>>>,
+) -> Result<(), String> {
     if mock_mode() {
         return Ok(());
     }
+    processes.restart_scheduler(move || {
+        log.lock()
+            .map_err(|error| format!("scheduler log mutex poisoned: {error}"))?
+            .clear();
 
-    let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
-    if let Some(mut old) = guard.take() {
-        let _ = old.kill();
-        let _ = old.wait();
-    }
-    if let Ok(mut log) = state.scheduler_log.lock() {
-        log.clear();
-    }
+        let bin = infer_bin_path();
+        let mut child = std::process::Command::new(&bin)
+            .arg("daemon")
+            .current_dir(crate::env::agent_cwd())
+            .envs(infer_env())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start scheduler: {e}"))?;
 
-    let bin = infer_bin_path();
-    let mut child = std::process::Command::new(&bin)
-        .arg("daemon")
-        .current_dir(crate::env::agent_cwd())
-        .envs(infer_env())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start scheduler: {}", e))?;
-
-    let log = state.scheduler_log.clone();
-    if let Some(stdout) = child.stdout.take() {
-        pipe_logger(stdout, log.clone());
-    }
-    if let Some(stderr) = child.stderr.take() {
-        pipe_logger(stderr, log);
-    }
-
-    *guard = Some(child);
-    Ok(())
+        if let Some(stdout) = child.stdout.take() {
+            pipe_logger(stdout, Arc::clone(&log));
+        }
+        if let Some(stderr) = child.stderr.take() {
+            pipe_logger(stderr, log);
+        }
+        Ok(child)
+    })
 }
 
 #[tauri::command]
 pub(crate) async fn stop_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = guard.take() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    Ok(())
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.stop_scheduler())
+        .await
+        .map_err(|error| format!("scheduler shutdown task failed: {error}"))?
 }
 
 #[tauri::command]
 pub(crate) async fn get_scheduler_status(
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, String> {
-    let mut guard = state.scheduler_child.lock().map_err(|e| e.to_string())?;
-    Ok(guard
-        .as_mut()
-        .and_then(|c| c.try_wait().ok())
-        .is_some_and(|s| s.is_none()))
+    state.processes.scheduler_running()
 }
 
 /// A scheduled job as persisted by the CLI in `~/.infer/schedules/*.yaml`.

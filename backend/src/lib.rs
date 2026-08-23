@@ -9,6 +9,7 @@ mod download;
 mod env;
 mod gateway;
 mod observability;
+mod process_manager;
 mod scheduler;
 mod skills;
 mod stt;
@@ -18,10 +19,7 @@ mod updates;
 use observability::{StoredMetric, StoredSpan, start_collector};
 
 pub(crate) struct AppState {
-    running_children: Mutex<std::collections::HashMap<String, std::process::Child>>,
-    child_stdins: Mutex<std::collections::HashMap<String, std::process::ChildStdin>>,
-    gateway_child: Mutex<Option<std::process::Child>>,
-    scheduler_child: Mutex<Option<std::process::Child>>,
+    processes: Arc<process_manager::ProcessManager>,
     scheduler_log: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
@@ -47,16 +45,14 @@ pub fn run() {
     let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stored_metrics: Arc<Mutex<VecDeque<StoredMetric>>> = Arc::new(Mutex::new(VecDeque::new()));
     let _collector = start_collector(Arc::clone(&stored_traces), Arc::clone(&stored_metrics));
+    let processes = Arc::new(process_manager::ProcessManager::new());
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState {
-            running_children: Mutex::new(std::collections::HashMap::new()),
-            child_stdins: Mutex::new(std::collections::HashMap::new()),
-            gateway_child: Mutex::new(None),
-            scheduler_child: Mutex::new(None),
+            processes: Arc::clone(&processes),
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
             stored_traces,
             stored_metrics,
@@ -131,28 +127,24 @@ pub fn run() {
             observability::get_metrics,
         ])
         .build(tauri::generate_context!())
-        .expect("error while running tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                let state = app_handle.state::<AppState>();
-                if let Ok(mut guard) = state.gateway_child.lock()
-                    && let Some(mut child) = guard.take()
-                {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-                if let Ok(mut guard) = state.scheduler_child.lock()
-                    && let Some(mut child) = guard.take()
-                {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                }
-                if let Ok(mut children) = state.running_children.lock() {
-                    for (_, mut child) in children.drain() {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                    }
-                }
+        .expect("error while building tauri application");
+
+    let signal_processes = Arc::clone(&processes);
+    let signal_app = app.handle().clone();
+    ctrlc::set_handler(move || {
+        if let Err(error) = signal_processes.shutdown() {
+            eprintln!("process shutdown after signal failed: {error}");
+        }
+        signal_app.exit(0);
+    })
+    .expect("failed to install SIGINT/SIGTERM handler");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let state = app_handle.state::<AppState>();
+            if let Err(error) = state.processes.shutdown() {
+                eprintln!("process shutdown during Tauri exit failed: {error}");
             }
-        });
+        }
+    });
 }

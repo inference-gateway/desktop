@@ -1,8 +1,10 @@
 use crate::AppState;
 use crate::agent::gateway_url;
 use crate::config::auth_env;
-use crate::env::{collector_env, home_dir, mock_mode};
-use std::path::PathBuf;
+use crate::env::{collector_env, home_dir};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 // --- Gateway lifecycle (desktop-owned) ---
 // The desktop downloads and runs the inference-gateway binary itself so /v1/models
@@ -42,7 +44,13 @@ pub(crate) fn gateway_asset_name() -> Option<String> {
 
 pub(crate) fn gateway_reachable() -> bool {
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
-    ureq::get(&url).call().is_ok()
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_millis(750)))
+        .build();
+    ureq::Agent::new_with_config(config)
+        .get(&url)
+        .call()
+        .is_ok()
 }
 
 /// Download and extract the gateway binary if it isn't already present.
@@ -108,6 +116,20 @@ pub(crate) fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
     Ok(bin)
 }
 
+pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
+    std::process::Command::new(bin)
+        .envs(auth_env())
+        .envs(collector_env())
+        .env("TELEMETRY_ENABLED", "true")
+        .env("TELEMETRY_TRACING_ENABLED", "true")
+        .env("ENABLE_IMAGES", "true")
+        .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start gateway: {e}"))
+}
+
 /// Start (or restart) the gateway. `force` re-downloads the binary first, so an
 /// update lands on the next spawn. Images are enabled here via `ENABLE_IMAGES=true`
 /// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
@@ -118,40 +140,8 @@ pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
     force: bool,
 ) -> Result<(), String> {
-    if mock_mode() {
-        return Ok(());
-    }
-    let we_own_one = state
-        .gateway_child
-        .lock()
-        .map_err(|e| e.to_string())?
-        .is_some();
-
-    if !we_own_one && gateway_reachable() {
-        return Ok(());
-    }
-
-    {
-        let mut guard = state.gateway_child.lock().map_err(|e| e.to_string())?;
-        if let Some(mut old) = guard.take() {
-            let _ = old.kill();
-            let _ = old.wait();
-        }
-    }
-
-    let bin = ensure_gateway_binary(force)?;
-    let child = std::process::Command::new(&bin)
-        .envs(auth_env())
-        .envs(collector_env())
-        .env("TELEMETRY_ENABLED", "true")
-        .env("TELEMETRY_TRACING_ENABLED", "true")
-        .env("ENABLE_IMAGES", "true")
-        .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to start gateway: {}", e))?;
-
-    *state.gateway_child.lock().map_err(|e| e.to_string())? = Some(child);
-    Ok(())
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.start_gateway(force))
+        .await
+        .map_err(|error| format!("gateway startup task failed: {error}"))?
 }
