@@ -1,7 +1,7 @@
 use crate::config::auth_env;
 use std::path::{Path, PathBuf};
 
-const COMPUTER_USE_GUIDANCE: &str = "Computer use: bring the intended app to the foreground and prefer the Computer accessibility action with target `frontmost`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
+const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility actions over screenshots. On macOS, target the intended app by its process or bundle name (`app:<name>`) instead of `frontmost` or its display title; for this desktop use `app:inference-gateway-desktop`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
 
 /// Map the running platform to the CLI release asset name.
 /// Returns `None` for unsupported platforms.
@@ -294,8 +294,11 @@ mod tests {
     #[test]
     fn compose_extras_appends_cwd_to_instructions() {
         let cwd = Path::new("/Users/edenreich/project");
+        let desktop_notes = compose_extras(None, cwd);
+        assert!(desktop_notes.contains("`app:inference-gateway-desktop`"));
+        assert!(desktop_notes.contains("instead of `frontmost`"));
         assert_eq!(
-            compose_extras(None, cwd),
+            desktop_notes,
             format!(
                 "{COMPUTER_USE_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
             )
