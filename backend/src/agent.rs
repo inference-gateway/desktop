@@ -477,7 +477,10 @@ pub(crate) async fn send_approval(
         "{}\n",
         serde_json::to_string(&response).map_err(|e| e.to_string())?
     );
-    state.processes.write_agent(&session_id, line.as_bytes())
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
+        .await
+        .map_err(|error| format!("agent write task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -497,7 +500,10 @@ pub(crate) async fn send_computer_use_control(
         "{}\n",
         serde_json::to_string(&message).map_err(|e| e.to_string())?
     );
-    state.processes.write_agent(&session_id, line.as_bytes())
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
+        .await
+        .map_err(|error| format!("agent write task failed: {error}"))?
 }
 
 #[tauri::command]

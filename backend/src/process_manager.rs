@@ -21,13 +21,6 @@ const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
 struct GatewayOwnership {
     pid: u32,
     executable: PathBuf,
-    started_at: String,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct ProcessIdentity {
-    executable: PathBuf,
-    started_at: String,
 }
 
 struct ManagedChild {
@@ -47,6 +40,9 @@ pub(crate) struct ProcessManager {
     state: Mutex<ProcessState>,
     gateway_lifecycle: Mutex<()>,
     scheduler_lifecycle: Mutex<()>,
+    // Not redundant with `shutting_down`: this makes a second shutdown() caller wait
+    // until the children are actually dead, so RunEvent::Exit cannot return while the
+    // signal handler is still killing.
     shutdown_lifecycle: Mutex<()>,
     shutting_down: AtomicBool,
     gateway_enabled: bool,
@@ -126,62 +122,24 @@ impl ProcessManager {
         let bin = crate::gateway::ensure_gateway_binary(force)?;
         self.ensure_running()?;
         let mut child = crate::gateway::spawn_gateway(&bin)?;
+
         let ownership = match ownership_for_child(&child) {
             Ok(ownership) => ownership,
-            Err(error) => {
-                let stop_error = stop_children(
-                    vec![ManagedChild {
-                        name: "gateway".into(),
-                        child,
-                    }],
-                    self.shutdown_timeout,
-                )
-                .err();
-                return Err(with_stop_error(error, stop_error));
-            }
+            Err(error) => return Err(self.abort_start(child, error)),
         };
-
         if let Err(error) = self.write_ownership(&ownership) {
-            let stop_error = stop_children(
-                vec![ManagedChild {
-                    name: "gateway".into(),
-                    child,
-                }],
-                self.shutdown_timeout,
-            )
-            .err();
-            return Err(with_stop_error(error, stop_error));
+            return Err(self.abort_start(child, error));
         }
-
         if let Err(error) = wait_for_gateway_ready(
             &mut child,
             self.readiness_timeout,
             &self.shutting_down,
             crate::gateway::gateway_reachable,
         ) {
-            let stop_error = stop_children(
-                vec![ManagedChild {
-                    name: "gateway".into(),
-                    child,
-                }],
-                self.shutdown_timeout,
-            )
-            .err();
-            let ownership_error = self.clear_stopped_gateway_ownership().err();
-            return Err(with_cleanup_errors(error, stop_error, ownership_error));
+            return Err(self.abort_start(child, error));
         }
-
         if let Err(error) = self.ensure_running() {
-            let stop_error = stop_children(
-                vec![ManagedChild {
-                    name: "gateway".into(),
-                    child,
-                }],
-                self.shutdown_timeout,
-            )
-            .err();
-            let ownership_error = self.clear_stopped_gateway_ownership().err();
-            return Err(with_cleanup_errors(error, stop_error, ownership_error));
+            return Err(self.abort_start(child, error));
         }
 
         match self.store_gateway(child) {
@@ -192,6 +150,22 @@ impl ProcessManager {
                 self.clear_stopped_gateway_ownership().err(),
             )),
         }
+    }
+
+    fn abort_start(&self, child: Child, error: String) -> String {
+        let stop_error = stop_children(
+            vec![ManagedChild {
+                name: "gateway".into(),
+                child,
+            }],
+            self.shutdown_timeout,
+        )
+        .err();
+        with_cleanup_errors(
+            error,
+            stop_error,
+            self.clear_stopped_gateway_ownership().err(),
+        )
     }
 
     pub(crate) fn insert_agent(
@@ -491,15 +465,8 @@ impl ProcessManager {
             return Ok(());
         }
 
-        let Some(identity) = process_identity(ownership.pid)? else {
-            self.remove_ownership()?;
-            return Ok(());
-        };
-        if identity.executable != ownership.executable
-            || identity.started_at != ownership.started_at
-        {
-            self.remove_ownership()?;
-            return Ok(());
+        if !process_matches(&ownership)? {
+            return self.remove_ownership();
         }
 
         terminate_owned_pid(&ownership, self.shutdown_timeout)?;
@@ -586,13 +553,9 @@ impl ProcessManager {
 
 fn ownership_for_child(child: &Child) -> Result<GatewayOwnership, String> {
     let pid = child.id();
-    let identity = process_identity(pid)?
+    let executable = process_executable(pid)?
         .ok_or_else(|| format!("gateway process {pid} exited before ownership was recorded"))?;
-    Ok(GatewayOwnership {
-        pid,
-        executable: identity.executable,
-        started_at: identity.started_at,
-    })
+    Ok(GatewayOwnership { pid, executable })
 }
 
 fn wait_for_gateway_ready<F>(
@@ -728,12 +691,12 @@ fn lock_for_shutdown<'a, T>(mutex: &'a Mutex<T>, name: &str) -> std::sync::Mutex
 fn terminate_owned_pid(ownership: &GatewayOwnership, timeout: Duration) -> Result<(), String> {
     send_unix_signal(ownership.pid, nix::sys::signal::Signal::SIGTERM)
         .map_err(|error| format!("failed to terminate recovered gateway: {error}"))?;
-    if wait_for_owned_pid_exit(ownership, timeout)? {
+    if wait_for_owned_pid_exit(ownership.pid, timeout)? {
         return Ok(());
     }
     send_unix_signal(ownership.pid, nix::sys::signal::Signal::SIGKILL)
         .map_err(|error| format!("failed to force-kill recovered gateway: {error}"))?;
-    if wait_for_owned_pid_exit(ownership, Duration::from_secs(1))? {
+    if wait_for_owned_pid_exit(ownership.pid, Duration::from_secs(1))? {
         Ok(())
     } else {
         Err(format!(
@@ -751,13 +714,14 @@ fn terminate_owned_pid(ownership: &GatewayOwnership, _timeout: Duration) -> Resu
     ))
 }
 
-fn wait_for_owned_pid_exit(
-    ownership: &GatewayOwnership,
-    timeout: Duration,
-) -> Result<bool, String> {
+// ponytail: the executable path alone identifies the process. A recycled pid would only
+// be mistaken for the gateway if it is also running the gateway binary - which is exactly
+// what we want to terminate anyway - so the start time is not worth a second lookup.
+#[cfg(unix)]
+fn wait_for_owned_pid_exit(pid: u32, timeout: Duration) -> Result<bool, String> {
     let deadline = Instant::now() + timeout;
     loop {
-        if !process_matches(ownership)? {
+        if !process_exists(pid)? {
             return Ok(true);
         }
         if Instant::now() >= deadline {
@@ -768,65 +732,28 @@ fn wait_for_owned_pid_exit(
 }
 
 fn process_matches(ownership: &GatewayOwnership) -> Result<bool, String> {
-    Ok(process_identity(ownership.pid)?.is_some_and(|identity| {
-        identity.executable == ownership.executable && identity.started_at == ownership.started_at
-    }))
+    Ok(process_executable(ownership.pid)?
+        .is_some_and(|executable| executable == ownership.executable))
 }
 
 #[cfg(target_os = "linux")]
-fn process_identity(pid: u32) -> Result<Option<ProcessIdentity>, String> {
-    let process_dir = PathBuf::from(format!("/proc/{pid}"));
-    let executable = match std::fs::read_link(process_dir.join("exe")) {
-        Ok(path) => path,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "failed to inspect process {pid} executable: {error}"
-            ));
-        }
-    };
-    let stat = match std::fs::read_to_string(process_dir.join("stat")) {
-        Ok(stat) => stat,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "failed to inspect process {pid} start time: {error}"
-            ));
-        }
-    };
-    let fields = stat
-        .rsplit_once(')')
-        .ok_or_else(|| format!("invalid /proc/{pid}/stat"))?
-        .1
-        .split_whitespace()
-        .collect::<Vec<_>>();
-    let started_at = fields
-        .get(19)
-        .ok_or_else(|| format!("missing start time in /proc/{pid}/stat"))?
-        .to_string();
-    Ok(Some(ProcessIdentity {
-        executable,
-        started_at,
-    }))
+fn process_executable(pid: u32) -> Result<Option<PathBuf>, String> {
+    match std::fs::read_link(format!("/proc/{pid}/exe")) {
+        Ok(path) => Ok(Some(path)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "failed to inspect process {pid} executable: {error}"
+        )),
+    }
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
-fn process_identity(pid: u32) -> Result<Option<ProcessIdentity>, String> {
-    let executable = match ps_field(pid, "comm")? {
-        Some(value) => PathBuf::from(value),
-        None => return Ok(None),
-    };
-    let Some(started_at) = ps_field(pid, "lstart")? else {
-        return Ok(None);
-    };
-    Ok(Some(ProcessIdentity {
-        executable,
-        started_at,
-    }))
+fn process_executable(pid: u32) -> Result<Option<PathBuf>, String> {
+    Ok(ps_field(pid, "comm")?.map(PathBuf::from))
 }
 
 #[cfg(not(unix))]
-fn process_identity(_pid: u32) -> Result<Option<ProcessIdentity>, String> {
+fn process_executable(_pid: u32) -> Result<Option<PathBuf>, String> {
     Ok(None)
 }
 
@@ -850,7 +777,7 @@ fn ps_field(pid: u32, field: &str) -> Result<Option<String>, String> {
     Ok((!value.is_empty()).then_some(value))
 }
 
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(unix)]
 fn process_exists(pid: u32) -> Result<bool, String> {
     let pid = i32::try_from(pid).map_err(|_| format!("process id {pid} exceeds i32"))?;
     match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None) {
@@ -943,7 +870,6 @@ mod tests {
         let ownership = GatewayOwnership {
             pid: 42,
             executable: PathBuf::from("/tmp/gateway"),
-            started_at: "start-token".into(),
         };
 
         manager
@@ -1064,7 +990,7 @@ mod tests {
 
         assert!(started.elapsed() < Duration::from_secs(1));
         assert!(
-            process_identity(pid)
+            process_executable(pid)
                 .expect("process lookup should succeed")
                 .is_none()
         );
@@ -1090,11 +1016,39 @@ mod tests {
             .expect("second shutdown should be a no-op");
 
         assert!(
-            process_identity(pid)
+            process_executable(pid)
                 .expect("process lookup should succeed")
                 .is_none()
         );
         assert!(!manager.ownership_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn agent_insert_is_rejected_during_shutdown() {
+        let manager = test_manager("insert-during-shutdown");
+        manager.shutdown().expect("shutdown should succeed");
+        let mut child = Command::new("sh")
+            .args(["-c", "while :; do sleep 0.01; done"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("test child should spawn");
+        let pid = child.id();
+        let stdin = child
+            .stdin
+            .take()
+            .expect("test child stdin should be piped");
+
+        let error = manager
+            .insert_agent("session".into(), child, stdin)
+            .expect_err("agent insert should be rejected during shutdown");
+
+        assert_eq!(error, "application is shutting down");
+        assert!(
+            process_executable(pid)
+                .expect("process lookup should succeed")
+                .is_none()
+        );
     }
 
     #[cfg(unix)]
