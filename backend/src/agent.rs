@@ -5,7 +5,7 @@ use crate::env::{
     uploads_dir,
 };
 use crate::observability::json_val_i64;
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Read};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
@@ -368,14 +368,9 @@ pub(crate) async fn send_message(
     let stderr = child.stderr.take().unwrap();
     let child_stdin = child.stdin.take().unwrap();
 
-    {
-        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
-        guard.insert(session_id.clone(), child);
-    }
-    {
-        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
-        guard.insert(session_id.clone(), child_stdin);
-    }
+    state
+        .processes
+        .insert_agent(session_id.clone(), child, child_stdin)?;
 
     let sink = Arc::new(EventSink {
         channel: on_event,
@@ -423,10 +418,7 @@ pub(crate) async fn send_message(
         .await
         .map_err(|e| format!("Join error: {}", e))?;
 
-    let child = {
-        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
-        guard.remove(&session_id)
-    };
+    let child = state.processes.remove_agent(&session_id)?;
     let status = match child {
         Some(mut child) => Some(
             child
@@ -435,11 +427,6 @@ pub(crate) async fn send_message(
         ),
         None => None,
     };
-    {
-        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
-        guard.remove(&session_id);
-    }
-
     let stderr_text = stderr_handle.join().unwrap_or_default();
 
     let had_error_val = *had_error.lock().unwrap();
@@ -481,8 +468,6 @@ pub(crate) async fn send_approval(
     approved: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
-    let stdin = guard.get_mut(&session_id).ok_or("No running agent")?;
     let response = serde_json::json!({
         "type": "approval_response",
         "tool_call_id": tool_call_id,
@@ -492,11 +477,7 @@ pub(crate) async fn send_approval(
         "{}\n",
         serde_json::to_string(&response).map_err(|e| e.to_string())?
     );
-    stdin
-        .write_all(line.as_bytes())
-        .map_err(|e| e.to_string())?;
-    stdin.flush().map_err(|e| e.to_string())?;
-    Ok(())
+    state.processes.write_agent(&session_id, line.as_bytes())
 }
 
 #[tauri::command]
@@ -508,8 +489,6 @@ pub(crate) async fn send_computer_use_control(
     if action != "pause" && action != "resume" {
         return Err(format!("Invalid computer-use control action: {action}"));
     }
-    let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
-    let stdin = guard.get_mut(&session_id).ok_or("No running agent")?;
     let message = serde_json::json!({
         "type": "computer_use_control",
         "action": action,
@@ -518,11 +497,7 @@ pub(crate) async fn send_computer_use_control(
         "{}\n",
         serde_json::to_string(&message).map_err(|e| e.to_string())?
     );
-    stdin
-        .write_all(line.as_bytes())
-        .map_err(|e| e.to_string())?;
-    stdin.flush().map_err(|e| e.to_string())?;
-    Ok(())
+    state.processes.write_agent(&session_id, line.as_bytes())
 }
 
 #[tauri::command]
@@ -530,19 +505,7 @@ pub(crate) async fn cancel_agent(
     session_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    {
-        let mut guard = state.child_stdins.lock().map_err(|e| e.to_string())?;
-        guard.remove(&session_id);
-    }
-    let child = {
-        let mut guard = state.running_children.lock().map_err(|e| e.to_string())?;
-        guard.remove(&session_id)
-    };
-    if let Some(mut child) = child {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    Ok(())
+    state.processes.cancel_agent(&session_id)
 }
 
 /// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
