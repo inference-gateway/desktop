@@ -40,10 +40,13 @@
       {
         "label": "monitor",
         "title": "Computer Use",
-        "width": 320,
-        "height": 220,
+        "width": 760,
+        "height": 300,
         "visible": false,
         "alwaysOnTop": true,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
         "resizable": false,
         "contentProtected": true,
         "dragDropEnabled": false

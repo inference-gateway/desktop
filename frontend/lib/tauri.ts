@@ -157,6 +157,7 @@ export const api = {
     onEvent: Channel<AgentEvent>;
     systemPrompt?: string;
     extraInstructions?: string;
+    autoMode: boolean;
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved }),

@@ -1,6 +1,6 @@
 // Compact always-on-top monitor window for computer-use sessions. Fed by the
 // backend's global "agent-event" broadcast; invokes session-keyed backend
-// commands directly. Docks itself to the bottom-right screen edge on launch.
+// commands directly. Docks itself to the top-center screen edge on launch.
 // Expanding grows the window and adds a composer that round-trips follow-up
 // prompts through the main window via the "monitor-send" event, so the main
 // transcript stays the single source of truth.
@@ -13,11 +13,11 @@ import {
   PhysicalPosition,
 } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { Maximize2, Minimize2, Pause, Play, Square, X } from "lucide-react";
+import { EyeOff, Maximize2, Minimize2, Pause, Play, ShieldAlert, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
-import { safeImageSrc } from "@/lib/tools";
+import { prettyJson, safeImageSrc } from "@/lib/tools";
 import {
   monitorReducer,
   resolveApproval,
@@ -26,26 +26,26 @@ import {
   type MonitorState,
 } from "@/lib/monitor-state";
 
-const EDGE_MARGIN = 16;
-const COMPACT = { width: 320, height: 220 };
-const EXPANDED = { width: 460, height: 480 };
+const TOP_MARGIN = 16;
+const COMPACT = { width: 760, height: 300 };
+const EXPANDED = { width: 840, height: 540 };
 
-async function dockBottomRight() {
+async function dockTopCenter() {
   const mon = await currentMonitor();
   if (!mon) return;
   const win = getCurrentWindow();
   const size = await win.outerSize();
   await win.setPosition(
     new PhysicalPosition(
-      mon.position.x + mon.size.width - size.width - EDGE_MARGIN,
-      mon.position.y + mon.size.height - size.height - EDGE_MARGIN
+      mon.workArea.position.x + Math.round((mon.workArea.size.width - size.width) / 2),
+      mon.workArea.position.y + TOP_MARGIN
     )
   );
 }
 
 async function resizeAndDock(size: { width: number; height: number }) {
   await getCurrentWindow().setSize(new LogicalSize(size.width, size.height));
-  await dockBottomRight();
+  await dockTopCenter();
 }
 
 const STATUS_STYLE: Record<MonitorSession["status"], { label: string; dot: string }> = {
@@ -71,7 +71,7 @@ export default function Monitor() {
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    dockBottomRight().catch(() => {});
+    dockTopCenter().catch(() => {});
     const unlisten = listen<MonitorEvent>("agent-event", (e) =>
       dispatch({ type: "event", msg: e.payload })
     );
@@ -140,7 +140,7 @@ export default function Monitor() {
 
   if (!session) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background p-4 text-center text-sm text-muted-foreground">
+      <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] items-center justify-center rounded-2xl border-2 border-primary/70 bg-background/85 p-4 text-center text-sm text-muted-foreground shadow-[0_18px_60px_rgba(79,70,229,0.3)] backdrop-blur-xl">
         No active computer-use session
       </div>
     );
@@ -152,12 +152,12 @@ export default function Monitor() {
     : safeImageSrc(session.lastFrame);
 
   return (
-    <div className="flex h-screen flex-col gap-2.5 bg-background p-3 text-sm text-foreground">
+    <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] flex-col gap-2.5 overflow-hidden rounded-2xl border-2 border-primary/70 bg-background/85 p-3 text-sm text-foreground shadow-[0_18px_60px_rgba(79,70,229,0.3)] backdrop-blur-xl">
       {ids.length > 1 && (
         <select
           id="monitor-session-select"
           aria-label="Session"
-          className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+          className="w-full rounded-md border border-primary/30 bg-background/70 px-2 py-1 text-xs"
           value={id ?? ""}
           onChange={(e) => setSelectedId(e.target.value)}
         >
@@ -173,6 +173,10 @@ export default function Monitor() {
         <span className="min-w-0 flex-1 truncate font-medium" title={session.name}>
           {session.name || id}
         </span>
+        <span className="flex shrink-0 items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-2 py-1 text-[0.68rem] font-medium text-primary">
+          <EyeOff className="size-3" /> Hidden from agent capture
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{status.label}</span>
         <Button
           size="sm"
           variant="ghost"
@@ -192,38 +196,71 @@ export default function Monitor() {
           <X className="size-3.5" />
         </Button>
       </div>
-      <div className="text-xs text-muted-foreground">{status.label}</div>
-      {frameSrc && (
-        <img
-          src={frameSrc}
-          alt="Latest captured frame"
-          className={`w-full shrink-0 rounded-md border object-contain ${expanded ? "max-h-36" : "max-h-20"}`}
-        />
-      )}
-      <div
-        ref={logRef}
-        className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-xs text-muted-foreground"
-      >
-        {session.log.length ? session.log.join("\n") : "Waiting for actions..."}
-      </div>
       {session.pendingApproval && (
-        <div className="flex items-center gap-2 rounded-md border border-orange-500/40 bg-orange-500/10 px-2 py-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs font-medium">
-            Allow {session.pendingApproval.toolName} {session.pendingApproval.toolArgs}?
-          </span>
-          <Button size="sm" className="h-6 px-2 text-xs" onClick={() => decide(true)}>
-            Approve (A)
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() => decide(false)}
-          >
-            Deny (R)
-          </Button>
+        <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-primary/60 bg-primary/10 p-3 shadow-[0_0_28px_rgba(99,102,241,0.18)]">
+          <div className="min-w-0">
+            <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-primary">
+              <ShieldAlert className="size-4" />
+              Approval required
+              <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[0.68rem]">
+                {session.pendingApproval.toolName}
+              </span>
+            </div>
+            <pre
+              aria-label={`Arguments for ${session.pendingApproval.toolName}`}
+              className={`${expanded ? "max-h-48" : "max-h-24"} overflow-auto whitespace-pre-wrap break-all rounded-lg border border-primary/25 bg-background/70 px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground`}
+            >
+              {prettyJson(session.pendingApproval.toolArgs) || "{}"}
+            </pre>
+          </div>
+          <div className="flex min-w-28 flex-col justify-center gap-2">
+            <Button
+              size="sm"
+              aria-label="Approve"
+              className="h-9 justify-between gap-3 px-3 text-xs"
+              onClick={() => decide(true)}
+            >
+              Approve
+              <kbd
+                aria-hidden="true"
+                className="rounded border border-white/35 bg-white/15 px-1.5 py-0.5 font-mono text-[0.68rem]"
+              >
+                A
+              </kbd>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label="Deny"
+              className="h-9 justify-between gap-3 border-destructive/40 bg-background/60 px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => decide(false)}
+            >
+              Deny
+              <kbd
+                aria-hidden="true"
+                className="rounded border border-current/30 bg-destructive/10 px-1.5 py-0.5 font-mono text-[0.68rem]"
+              >
+                R
+              </kbd>
+            </Button>
+          </div>
         </div>
       )}
+      <div className="flex min-h-0 flex-1 gap-2">
+        {frameSrc && (
+          <img
+            src={frameSrc}
+            alt="Latest captured frame"
+            className={`${expanded ? "w-64" : "w-44"} shrink-0 rounded-lg border border-primary/25 bg-background/50 object-contain`}
+          />
+        )}
+        <div
+          ref={logRef}
+          className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-muted/35 px-2.5 py-2 font-mono text-xs text-muted-foreground"
+        >
+          {session.log.length ? session.log.join("\n") : "Waiting for actions..."}
+        </div>
+      </div>
       <div className="flex gap-2">
         {session.status === "paused" ? (
           <Button

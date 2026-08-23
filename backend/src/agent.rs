@@ -7,6 +7,7 @@ use crate::env::{
 use crate::observability::json_val_i64;
 use std::io::{BufRead, Read};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tauri::ipc::Channel;
@@ -316,6 +317,12 @@ struct EventSink {
     name: String,
 }
 
+fn apply_approval_mode(command: &mut Command, auto_mode: bool) {
+    if !auto_mode {
+        command.arg("--require-approval");
+    }
+}
+
 impl EventSink {
     fn send(&self, event: AgentEvent) {
         let _ = self.app.emit(
@@ -337,18 +344,18 @@ pub(crate) async fn send_message(
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
+    auto_mode: bool,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
-    let mut cmd = std::process::Command::new(&bin_path);
+    let mut cmd = Command::new(&bin_path);
     cmd.arg("headless")
         .arg("--format")
         .arg("ag-ui")
         .arg("--session-id")
-        .arg(&session_id)
-        .arg("--require-approval")
-        .arg("-m")
-        .arg(&model);
+        .arg(&session_id);
+    apply_approval_mode(&mut cmd, auto_mode);
+    cmd.arg("-m").arg(&model);
 
     let cwd = agent_cwd();
     let extras = compose_extras(extra_instructions.as_deref(), &cwd);
@@ -827,6 +834,21 @@ pub(crate) async fn set_a2a_agent_model(name: String, model: String) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approval_mode_only_requires_approval_when_auto_mode_is_off() {
+        let mut manual = Command::new("infer");
+        apply_approval_mode(&mut manual, false);
+        let manual_args: Vec<_> = manual
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(manual_args, ["--require-approval"]);
+
+        let mut automatic = Command::new("infer");
+        apply_approval_mode(&mut automatic, true);
+        assert_eq!(automatic.get_args().count(), 0);
+    }
 
     #[test]
     fn safe_image_source_guards_scope() {

@@ -29,6 +29,7 @@ import { autoGrow } from "@/lib/textarea";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
 const STORAGE_KEY = "selectedModel";
+const AUTO_MODE_KEY = "autoMode";
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
@@ -76,6 +77,7 @@ function useDesktopStore() {
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
+  const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [maxSessions, setMaxSessionsState] = useState<number>(() => {
@@ -113,6 +115,11 @@ function useDesktopStore() {
     setModelState(m);
     localStorage.setItem(STORAGE_KEY, m);
     api.setDefaultModel(m).catch(() => {});
+  }, []);
+
+  const setAutoMode = useCallback((enabled: boolean) => {
+    setAutoModeState(enabled);
+    localStorage.setItem(AUTO_MODE_KEY, String(enabled));
   }, []);
 
   const setMaxSessions = useCallback((n: number) => {
@@ -537,6 +544,7 @@ function useDesktopStore() {
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
           [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
+        autoMode,
       });
       refreshConversations();
     } catch (err) {
@@ -549,7 +557,7 @@ function useDesktopStore() {
       });
       if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [runningIds, model, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+  }, [runningIds, model, autoMode, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
@@ -754,6 +762,8 @@ function useDesktopStore() {
     models,
     model,
     setModel,
+    autoMode,
+    setAutoMode,
     maxSessions,
     setMaxSessions,
     conversations: displayConversations,
