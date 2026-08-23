@@ -78,6 +78,12 @@ export type DesktopConfig = {
   scheduler_github_artifacts_rate_limit_backoff: string;
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
+export type OsPermissionState = "granted" | "not_granted" | "unavailable" | "not_applicable";
+export type ComputerUsePermissionStatus = {
+  computer_use_enabled: boolean;
+  accessibility: OsPermissionState;
+  screen_recording: OsPermissionState;
+};
 export type WorkflowStatus = {
   installed: boolean;
   url: string | null;
@@ -180,6 +186,8 @@ export const api = {
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
   getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
+  computerUsePermissionStatus: () =>
+    invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
   githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
   githubOwners: () => invoke<string[]>("github_owners"),
   githubRepoExists: (repo: string) => invoke<boolean>("github_repo_exists", { repo }),
