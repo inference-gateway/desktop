@@ -28,6 +28,37 @@ test("assistant content chunks accumulate into one bubble, then reset on tool ca
   expect(s.typing).toBe(true);
 });
 
+test("distinct streamed assistant messages start new bubbles", () => {
+  const s = run([
+    { type: "userSend", text: "hi" },
+    ev({
+      kind: "AssistantMessage",
+      content: "First ",
+      reasoning_content: null,
+      tool_calls: [],
+      message_id: "m1",
+    }),
+    ev({
+      kind: "AssistantMessage",
+      content: "message.",
+      reasoning_content: null,
+      tool_calls: [],
+      message_id: "m1",
+    }),
+    ev({
+      kind: "AssistantMessage",
+      content: "Second message.",
+      reasoning_content: null,
+      tool_calls: [],
+      message_id: "m2",
+    }),
+  ]);
+  const assistant = s.items.filter((i) => i.kind === "assistant");
+  expect(assistant).toHaveLength(2);
+  expect(assistant[0]).toMatchObject({ chunks: ["First ", "message."] });
+  expect(assistant[1]).toMatchObject({ chunks: ["Second message."] });
+});
+
 test("streamed reasoning deltas accumulate into one block and keep the dots on", () => {
   const s = run([
     { type: "userSend", text: "think" },

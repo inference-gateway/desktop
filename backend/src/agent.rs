@@ -23,6 +23,7 @@ pub(crate) enum AgentEvent {
         content: String,
         reasoning_content: Option<String>,
         tool_calls: Vec<ToolCallInfo>,
+        message_id: Option<String>,
     },
     ToolResult {
         content: String,
@@ -68,6 +69,7 @@ pub(crate) struct ToolCallInfo {
 pub(crate) struct AgentParser {
     session_id: Option<String>,
     msg_from_user: bool,
+    message_id: Option<String>,
     tc_id: String,
     tc_name: String,
     tc_args: String,
@@ -82,11 +84,19 @@ pub(crate) fn delta_of(val: &serde_json::Value) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
+fn message_id_of(val: &serde_json::Value) -> Option<String> {
+    val.get("messageId")
+        .and_then(|v| v.as_str())
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
 impl AgentParser {
     fn new(session_id: Option<String>) -> Self {
         Self {
             session_id,
             msg_from_user: false,
+            message_id: None,
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
@@ -103,6 +113,7 @@ impl AgentParser {
             content: delta_of(val)?.to_string(),
             reasoning_content: None,
             tool_calls: Vec::new(),
+            message_id: message_id_of(val).or_else(|| self.message_id.clone()),
         })
     }
 
@@ -142,12 +153,14 @@ impl AgentParser {
             }
             "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
             "TEXT_MESSAGE_START" => {
+                self.message_id = message_id_of(&val);
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
                 self.assistant_text(&val)
             }
             "TEXT_MESSAGE_CONTENT" => self.assistant_text(&val),
             "TEXT_MESSAGE_END" => {
                 self.msg_from_user = false;
+                self.message_id = None;
                 None
             }
             // Reasoning/thinking phases are assistant-only; each content event is
@@ -158,16 +171,23 @@ impl AgentParser {
                     content: String::new(),
                     reasoning_content: Some(d.to_string()),
                     tool_calls: Vec::new(),
+                    message_id: message_id_of(&val).or_else(|| self.message_id.clone()),
                 })
             }
             "REASONING_MESSAGE_START"
-            | "REASONING_MESSAGE_END"
             | "REASONING_START"
-            | "REASONING_END"
             | "THINKING_TEXT_MESSAGE_START"
+            | "THINKING_START" => {
+                self.message_id = message_id_of(&val);
+                None
+            }
+            "REASONING_MESSAGE_END"
+            | "REASONING_END"
             | "THINKING_TEXT_MESSAGE_END"
-            | "THINKING_START"
-            | "THINKING_END" => None,
+            | "THINKING_END" => {
+                self.message_id = None;
+                None
+            }
             "TOOL_CALL_START" => {
                 self.tc_id = val
                     .get("toolCallId")
@@ -205,6 +225,7 @@ impl AgentParser {
                         name: std::mem::take(&mut self.tc_name),
                         args: std::mem::take(&mut self.tc_args),
                     }],
+                    message_id: None,
                 })
             }
             "TOOL_CALL_RESULT" => {
@@ -303,6 +324,7 @@ impl AgentParser {
 
     fn flush_message(&mut self) {
         self.msg_from_user = false;
+        self.message_id = None;
     }
 }
 
@@ -942,10 +964,12 @@ mod tests {
             "each content event streams as its own delta"
         );
         assert!(
-            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello.")
+            matches!(&events[0], AgentEvent::AssistantMessage { content, message_id, .. }
+            if content == "Hello." && message_id.as_deref() == Some("msg-1"))
         );
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == " I am an AI.")
+            matches!(&events[1], AgentEvent::AssistantMessage { content, message_id, .. }
+            if content == " I am an AI." && message_id.as_deref() == Some("msg-1"))
         );
     }
 

@@ -39,7 +39,9 @@ export type ChatState = {
   typing: boolean;
   seq: number;
   currentAssistantId: string | null;
+  currentAssistantMessageId: string | null;
   currentReasoningId: string | null;
+  currentReasoningMessageId: string | null;
   seenImages: string[];
   paused?: boolean;
 };
@@ -51,7 +53,9 @@ export const initialChatState: ChatState = {
   typing: false,
   seq: 0,
   currentAssistantId: null,
+  currentAssistantMessageId: null,
   currentReasoningId: null,
+  currentReasoningMessageId: null,
   seenImages: [],
 };
 
@@ -76,7 +80,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "userSend": {
       let seq = state.seq;
       const items = [...state.items, { kind: "user", id: String(seq++), text: action.text } as TranscriptItem];
-      return { ...state, items, seq, typing: true, currentAssistantId: null, currentReasoningId: null };
+      return {
+        ...state,
+        items,
+        seq,
+        typing: true,
+        currentAssistantId: null,
+        currentAssistantMessageId: null,
+        currentReasoningId: null,
+        currentReasoningMessageId: null,
+      };
     }
     case "stopTyping":
       return state.typing ? { ...state, typing: false } : state;
@@ -143,14 +156,32 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     case "ComputerUseResumed":
       return { ...state, paused: false };
     case "Done":
-      return { ...finalizeTools(state), typing: false, currentAssistantId: null, paused: false };
+      return {
+        ...finalizeTools(state),
+        typing: false,
+        currentAssistantId: null,
+        currentAssistantMessageId: null,
+        currentReasoningId: null,
+        currentReasoningMessageId: null,
+        paused: false,
+      };
     case "TokenUsage":
       return state;
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
-      return { ...finalized, items, seq, typing: false, currentAssistantId: null, paused: false };
+      return {
+        ...finalized,
+        items,
+        seq,
+        typing: false,
+        currentAssistantId: null,
+        currentAssistantMessageId: null,
+        currentReasoningId: null,
+        currentReasoningMessageId: null,
+        paused: false,
+      };
     }
   }
 }
@@ -162,10 +193,17 @@ function applyAssistant(
   let seq = state.seq;
   let items = state.items;
   let currentAssistantId = state.currentAssistantId;
+  let currentAssistantMessageId = state.currentAssistantMessageId;
   let currentReasoningId = state.currentReasoningId;
+  let currentReasoningMessageId = state.currentReasoningMessageId;
 
   if (event.reasoning_content) {
     const text = event.reasoning_content;
+    if (event.message_id && event.message_id !== currentReasoningMessageId) {
+      currentReasoningId = null;
+    }
+    currentAssistantId = null;
+    currentAssistantMessageId = null;
     if (currentReasoningId) {
       items = items.map((it) =>
         it.kind === "reasoning" && it.id === currentReasoningId
@@ -177,11 +215,16 @@ function applyAssistant(
       items = [...items, { kind: "reasoning", id, paragraphs: [text] }];
       currentReasoningId = id;
     }
+    if (event.message_id) currentReasoningMessageId = event.message_id;
   }
 
   if (event.content) {
     const text = event.content;
+    if (event.message_id && event.message_id !== currentAssistantMessageId) {
+      currentAssistantId = null;
+    }
     currentReasoningId = null;
+    currentReasoningMessageId = null;
     if (currentAssistantId) {
       items = items.map((it) =>
         it.kind === "assistant" && it.id === currentAssistantId ? { ...it, chunks: [...it.chunks, text] } : it
@@ -191,6 +234,7 @@ function applyAssistant(
       items = [...items, { kind: "assistant", id, chunks: [text] }];
       currentAssistantId = id;
     }
+    if (event.message_id) currentAssistantMessageId = event.message_id;
   }
 
   if (event.tool_calls.length) {
@@ -206,10 +250,20 @@ function applyAssistant(
     }));
     items = [...items, ...added];
     currentAssistantId = null;
+    currentAssistantMessageId = null;
     currentReasoningId = null;
+    currentReasoningMessageId = null;
   }
 
-  return { ...state, items, seq, currentAssistantId, currentReasoningId };
+  return {
+    ...state,
+    items,
+    seq,
+    currentAssistantId,
+    currentAssistantMessageId,
+    currentReasoningId,
+    currentReasoningMessageId,
+  };
 }
 
 function applyToolResult(state: ChatState, callId: string, content: string): ChatState {

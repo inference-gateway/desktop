@@ -14,6 +14,7 @@ export type AgentEvent =
       content: string;
       reasoning_content: string | null;
       tool_calls: ToolCallInfo[];
+      message_id?: string | null;
     }
   | { kind: "ToolResult"; content: string; tool_call_id: string }
   | { kind: "ApprovalRequest"; tool_name: string; tool_args: string; tool_call_id: string }
