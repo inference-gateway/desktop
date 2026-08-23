@@ -13,11 +13,22 @@ import {
   PhysicalPosition,
 } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { EyeOff, Maximize2, Minimize2, Pause, Play, ShieldAlert, Square, X } from "lucide-react";
+import {
+  EyeOff,
+  GripHorizontal,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  ShieldAlert,
+  Square,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
 import { prettyJson, safeImageSrc } from "@/lib/tools";
+import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 import {
   monitorReducer,
   resolveApproval,
@@ -48,6 +59,18 @@ async function resizeAndDock(size: { width: number; height: number }) {
   await dockTopCenter();
 }
 
+async function hideForComputerAction() {
+  const win = getCurrentWindow();
+  await win.setIgnoreCursorEvents(true);
+  await win.hide();
+}
+
+async function showInteractive() {
+  const win = getCurrentWindow();
+  await win.setIgnoreCursorEvents(false);
+  await win.show();
+}
+
 const STATUS_STYLE: Record<MonitorSession["status"], { label: string; dot: string }> = {
   running: { label: "Running", dot: "bg-green-500 animate-pulse" },
   paused: { label: "Paused", dot: "bg-yellow-500" },
@@ -69,12 +92,48 @@ export default function Monitor() {
   const [expanded, setExpanded] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const computerCallsRef = useRef<Map<string, string>>(new Map());
+  const computerSessionsRef = useRef<Set<string>>(new Set());
+  const manuallyHiddenRef = useRef(false);
 
   useEffect(() => {
     dockTopCenter().catch(() => {});
-    const unlisten = listen<MonitorEvent>("agent-event", (e) =>
-      dispatch({ type: "event", msg: e.payload })
-    );
+    const unlisten = listen<MonitorEvent>("agent-event", (e) => {
+      const msg = e.payload;
+      const event = msg.event;
+      dispatch({ type: "event", msg });
+      if (event.kind === "AssistantMessage") {
+        const calls = event.tool_calls.filter((call) => COMPUTER_USE_TOOLS.has(call.name));
+        if (calls.length > 0) {
+          if (!computerSessionsRef.current.has(msg.sessionId)) manuallyHiddenRef.current = false;
+          computerSessionsRef.current.add(msg.sessionId);
+          for (const call of calls) computerCallsRef.current.set(call.id, msg.sessionId);
+          hideForComputerAction().catch(() => {});
+        }
+        return;
+      }
+      if (event.kind === "ApprovalRequest" && COMPUTER_USE_TOOLS.has(event.tool_name)) {
+        computerSessionsRef.current.add(msg.sessionId);
+        manuallyHiddenRef.current = false;
+        showInteractive().catch(() => {});
+        return;
+      }
+      if (event.kind === "ToolResult" && computerCallsRef.current.delete(event.tool_call_id)) {
+        if (!manuallyHiddenRef.current) showInteractive().catch(() => {});
+        return;
+      }
+      if (event.kind === "ComputerUsePaused" || event.kind === "ComputerUseResumed") {
+        showInteractive().catch(() => {});
+        return;
+      }
+      if (event.kind === "Done" || event.kind === "Cancelled" || event.kind === "AgentError") {
+        if (!computerSessionsRef.current.delete(msg.sessionId)) return;
+        for (const [callId, sessionId] of computerCallsRef.current) {
+          if (sessionId === msg.sessionId) computerCallsRef.current.delete(callId);
+        }
+        if (!manuallyHiddenRef.current) showInteractive().catch(() => {});
+      }
+    });
     const unlistenResolved = listen<{ sessionId: string }>("approval-resolved", (e) =>
       dispatch({ type: "resolved", sessionId: e.payload.sessionId })
     );
@@ -110,9 +169,10 @@ export default function Monitor() {
     }
   };
 
-  const decide = (approved: boolean) => {
+  const decide = async (approved: boolean) => {
     if (!id || !session?.pendingApproval) return;
     const { callId } = session.pendingApproval;
+    if (approved) await hideForComputerAction().catch(() => {});
     api.sendApproval(id, callId, approved).catch(() => {});
     emit("approval-resolved", {
       sessionId: id,
@@ -169,6 +229,18 @@ export default function Monitor() {
         </select>
       )}
       <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="size-6 shrink-0 cursor-grab p-0 active:cursor-grabbing"
+          aria-label="Move monitor"
+          title="Drag to move"
+          onMouseDown={(event) => {
+            if (event.button === 0) getCurrentWindow().startDragging().catch(() => {});
+          }}
+        >
+          <GripHorizontal className="size-4" />
+        </Button>
         <span className={`size-2 shrink-0 rounded-full ${status.dot}`} />
         <span className="min-w-0 flex-1 truncate font-medium" title={session.name}>
           {session.name || id}
@@ -191,7 +263,10 @@ export default function Monitor() {
           variant="ghost"
           className="size-6 shrink-0 p-0"
           aria-label="Close monitor"
-          onClick={() => getCurrentWindow().hide().catch(() => {})}
+          onClick={() => {
+            manuallyHiddenRef.current = true;
+            getCurrentWindow().hide().catch(() => {});
+          }}
         >
           <X className="size-3.5" />
         </Button>

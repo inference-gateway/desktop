@@ -317,9 +317,13 @@ struct EventSink {
     name: String,
 }
 
+const AGENT_MODE_ENV: &str = "INFER_SUBAGENT_AGENT_MODE";
+
 fn apply_approval_mode(command: &mut Command, auto_mode: bool) {
-    if !auto_mode {
-        command.arg("--require-approval");
+    if auto_mode {
+        command.env(AGENT_MODE_ENV, "auto");
+    } else {
+        command.env_remove(AGENT_MODE_ENV).arg("--require-approval");
     }
 }
 
@@ -844,10 +848,25 @@ mod tests {
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
         assert_eq!(manual_args, ["--require-approval"]);
+        assert_eq!(
+            manual
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
+            Some((std::ffi::OsStr::new(AGENT_MODE_ENV), None))
+        );
 
         let mut automatic = Command::new("infer");
         apply_approval_mode(&mut automatic, true);
         assert_eq!(automatic.get_args().count(), 0);
+        assert_eq!(
+            automatic
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
+            Some((
+                std::ffi::OsStr::new(AGENT_MODE_ENV),
+                Some(std::ffi::OsStr::new("auto"))
+            ))
+        );
     }
 
     #[test]

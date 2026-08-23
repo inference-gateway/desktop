@@ -1,6 +1,8 @@
 use crate::config::auth_env;
 use std::path::{Path, PathBuf};
 
+const COMPUTER_USE_GUIDANCE: &str = "Computer use: bring the intended app to the foreground and prefer the Computer accessibility action with target `frontmost`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
+
 /// Map the running platform to the CLI release asset name.
 /// Returns `None` for unsupported platforms.
 pub(crate) fn asset_name() -> Option<&'static str> {
@@ -119,10 +121,13 @@ pub(crate) fn prompt_env(
 /// Append the agent's actual working directory to the custom instructions so
 /// the model states it instead of guessing (Finder launches land in $HOME).
 pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
-    let cwd_note = format!("Current working directory: {}", cwd.display());
+    let desktop_notes = format!(
+        "{COMPUTER_USE_GUIDANCE}\n\nCurrent working directory: {}",
+        cwd.display()
+    );
     match extra_instructions.filter(|s| !s.trim().is_empty()) {
-        Some(ei) => format!("{ei}\n\n{cwd_note}"),
-        None => cwd_note,
+        Some(ei) => format!("{ei}\n\n{desktop_notes}"),
+        None => desktop_notes,
     }
 }
 
@@ -291,15 +296,21 @@ mod tests {
         let cwd = Path::new("/Users/edenreich/project");
         assert_eq!(
             compose_extras(None, cwd),
-            "Current working directory: /Users/edenreich/project"
+            format!(
+                "{COMPUTER_USE_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
         );
         assert_eq!(
             compose_extras(Some("  "), cwd),
-            "Current working directory: /Users/edenreich/project"
+            format!(
+                "{COMPUTER_USE_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
         );
         assert_eq!(
             compose_extras(Some("be a pirate"), cwd),
-            "be a pirate\n\nCurrent working directory: /Users/edenreich/project"
+            format!(
+                "be a pirate\n\n{COMPUTER_USE_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
         );
     }
 }
