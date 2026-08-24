@@ -32,7 +32,7 @@ export function parseToolResult(content: string): ParsedToolResult | null {
   try {
     const result = JSON.parse(content.slice(brace));
     const data = result.data;
-    const output = data?.output ?? data?.Message ?? (data ? JSON.stringify(data, null, 2) : "");
+    const output = result.error ?? data?.output ?? data?.Message ?? (data ? JSON.stringify(data, null, 2) : "");
     return {
       name: result.tool_name || "tool",
       args: JSON.stringify(result.arguments ?? {}),

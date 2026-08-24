@@ -22,6 +22,17 @@ test("ImageGeneration result path under ~/.infer/artifacts/<session-id> is previ
   expect(parsed?.imagePath).toBe("/Users/x/.infer/artifacts/sid-1/out.png");
 });
 
+test("failed tool result exposes its top-level error", () => {
+  const parsed = parseToolResult(
+    '{"tool_name":"Read","arguments":{"file_path":"/outside/file"},"success":false,"error":"path is outside configured sandbox directories"}'
+  );
+  expect(parsed).toMatchObject({
+    name: "Read",
+    output: "path is outside configured sandbox directories",
+    failed: true,
+  });
+});
+
 test("safeImageSrc rejects uploads paths, non-image extensions, and traversal", () => {
   expect(safeImageSrc("/Users/x/.infer/uploads/a.png")).toBeNull();
   expect(safeImageSrc("/Users/x/.infer/tmp/a.pdf")).toBeNull();
