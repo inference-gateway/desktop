@@ -422,12 +422,8 @@ if let best { print(best.id) }
 
 impl Drop for AppDriver {
     fn drop(&mut self) {
-        // In bundle mode `child` is `open`, not the app - the pkill below is
-        // what actually terminates the app process, don't remove it.
         let _ = self.child.kill();
         let _ = self.child.wait();
-        // ponytail: pkill -f kills any process matching PROCESS_MATCH,
-        // including a dev instance; switch to PID-based kill if that bites.
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
     }
 }
