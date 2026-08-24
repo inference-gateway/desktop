@@ -394,12 +394,24 @@ function GeneralTab() {
           <ComputerUsePermissionSection
             title="Accessibility"
             state={computerUsePermissions.accessibility}
-            warning="Accessibility access is not granted. Computer Use cannot inspect or control other apps. Enable Inference Gateway Desktop in System Settings > Privacy & Security > Accessibility."
+            warning="Accessibility access is not granted. Computer Use cannot inspect or control other apps. Click Grant, then enable Inference Gateway Desktop in the prompt."
+            onGrant={() => {
+              api
+                .requestAccessibilityPermission()
+                .catch(() => {})
+                .then(refreshComputerUsePermissions);
+            }}
           />
           <ComputerUsePermissionSection
             title="Screen Recording"
             state={computerUsePermissions.screen_recording}
-            warning="Screen Recording access is not granted. Computer Use cannot capture the screen. Enable Inference Gateway Desktop in System Settings > Privacy & Security > Screen & System Audio Recording."
+            warning="Screen Recording access is not granted. Computer Use cannot capture the screen. Click Grant to request access - macOS applies Screen Recording after the app restarts."
+            onGrant={() => {
+              api
+                .requestScreenRecordingPermission()
+                .catch(() => {})
+                .then(refreshComputerUsePermissions);
+            }}
           />
         </div>
       )}
@@ -549,10 +561,12 @@ function ComputerUsePermissionSection({
   title,
   state,
   warning,
+  onGrant,
 }: {
   title: string;
   state: OsPermissionState;
   warning: string;
+  onGrant?: () => void;
 }) {
   const isWarning = state === "not_granted" || state === "unavailable";
   const status = {
@@ -585,6 +599,17 @@ function ComputerUsePermissionSection({
         <p role="alert" className="mt-2 text-[0.75rem] text-amber-600 dark:text-amber-400">
           {message}
         </p>
+      )}
+      {state === "not_granted" && onGrant && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2"
+          aria-label={`Grant ${title}`}
+          onClick={onGrant}
+        >
+          Grant
+        </Button>
       )}
     </section>
   );

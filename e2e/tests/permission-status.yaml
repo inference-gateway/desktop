@@ -1,6 +1,11 @@
-name: development build never claims inherited OS permissions are granted
+# Mock mode simulates TCC: statuses start not_granted and flip when the
+# request commands run. Both banners share the "Granted" label, so the flip is
+# asserted for accessibility (the first grant) and screenshotted for the rest.
+name: computer use permissions start not granted and flip after Grant in mock mode
 steps:
   - click: { button: "Settings" }
-  - wait_for: { text: "Unavailable in development", timeout: 10 }
-  - wait_for: { text: "cannot be verified from Desktop dev", timeout: 10 }
-  - screenshot: "development-permission-status"
+  - wait_for: { text: "Not granted", timeout: 10 }
+  - click: { button: "Grant Accessibility" }
+  - wait_for: { text: "Granted", timeout: 10 }
+  - click: { button: "Grant Screen Recording" }
+  - screenshot: "permission-grant-flow"

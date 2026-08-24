@@ -127,6 +127,8 @@ pub fn run() {
             observability::get_traces,
             observability::get_metrics,
             permissions::computer_use_permission_status,
+            permissions::request_accessibility_permission,
+            permissions::request_screen_recording_permission,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

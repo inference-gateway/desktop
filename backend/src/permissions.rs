@@ -1,8 +1,15 @@
-use crate::env::{agent_cwd, home_dir};
+use crate::env::{agent_cwd, home_dir, mock_mode};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const COMPUTER_USE_CONFIG_FILE: &str = "computer_use.yaml";
 const COMPUTER_USE_ENABLED_ENV: &str = "INFER_COMPUTER_USE_ENABLED";
+
+// Mock mode (DESKTOP_MOCK=true) simulates the grant flow so dev sessions and
+// e2e can exercise the Settings UI without touching TCC: statuses start
+// not_granted and flip to granted when the request commands run.
+static MOCK_ACCESSIBILITY_GRANTED: AtomicBool = AtomicBool::new(false);
+static MOCK_SCREEN_RECORDING_GRANTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,21 +83,63 @@ fn runs_from_app_bundle(executable: &Path) -> bool {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    // These declarations mirror Apple's stable, argument-free permission queries.
+    use std::ffi::c_void;
+    use std::ptr;
+
     #[link(name = "ApplicationServices", kind = "framework")]
     unsafe extern "C" {
         fn AXIsProcessTrusted() -> u8;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
+        static kAXTrustedCheckOptionPrompt: *const c_void;
     }
 
     #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
         fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            num_values: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+        static kCFBooleanTrue: *const c_void;
     }
 
     pub(super) fn permission_status() -> (bool, bool) {
         let accessibility = unsafe { AXIsProcessTrusted() != 0 };
         let screen_recording = unsafe { CGPreflightScreenCaptureAccess() };
         (accessibility, screen_recording)
+    }
+
+    pub(super) fn request_accessibility() {
+        unsafe {
+            let keys = [kAXTrustedCheckOptionPrompt];
+            let values = [kCFBooleanTrue];
+            let options = CFDictionaryCreate(
+                ptr::null(),
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                ptr::null(),
+                ptr::null(),
+            );
+            AXIsProcessTrustedWithOptions(options);
+            CFRelease(options);
+        }
+    }
+
+    pub(super) fn request_screen_recording() {
+        unsafe {
+            CGRequestScreenCaptureAccess();
+        }
     }
 }
 
@@ -101,6 +150,13 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
         &home_dir(),
         std::env::var(COMPUTER_USE_ENABLED_ENV).ok().as_deref(),
     );
+    if computer_use_enabled && mock_mode() {
+        return ComputerUsePermissionStatus {
+            computer_use_enabled,
+            accessibility: MOCK_ACCESSIBILITY_GRANTED.load(Ordering::SeqCst).into(),
+            screen_recording: MOCK_SCREEN_RECORDING_GRANTED.load(Ordering::SeqCst).into(),
+        };
+    }
     #[cfg(target_os = "macos")]
     let (accessibility, screen_recording) = if !computer_use_enabled {
         (
@@ -129,6 +185,26 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
         computer_use_enabled,
         accessibility,
         screen_recording,
+    }
+}
+
+#[tauri::command]
+pub(crate) fn request_accessibility_permission() {
+    if mock_mode() {
+        MOCK_ACCESSIBILITY_GRANTED.store(true, Ordering::SeqCst);
+    } else {
+        #[cfg(target_os = "macos")]
+        macos::request_accessibility();
+    }
+}
+
+#[tauri::command]
+pub(crate) fn request_screen_recording_permission() {
+    if mock_mode() {
+        MOCK_SCREEN_RECORDING_GRANTED.store(true, Ordering::SeqCst);
+    } else {
+        #[cfg(target_os = "macos")]
+        macos::request_screen_recording();
     }
 }
 
