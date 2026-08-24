@@ -1460,7 +1460,7 @@ function SystemPromptTab() {
               Override system prompt?
             </DialogTitle>
             <DialogDescription>
-              You are overriding the default system prompt, which provides useful context for the agent about the current
+              You are overriding the default system prompt, which provides useful context for the orchestrator about the current
               project, installed plugins, skills, and memory. Prefer using "Extra instructions" (append mode) instead to
               keep this context.
             </DialogDescription>
