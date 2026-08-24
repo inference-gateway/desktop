@@ -39,6 +39,7 @@ fn raise_overlay_above_dock(app: &tauri::App) {
     unsafe {
         let win = ns_window as *mut objc2::runtime::AnyObject;
         let _: () = objc2::msg_send![win, setLevel: 25isize];
+        let _: () = objc2::msg_send![win, setAccessibilityElement: false];
     }
 }
 
