@@ -548,6 +548,7 @@ function useDesktopStore() {
         autoMode,
       });
       refreshConversations();
+      loadProjects();
     } catch (err) {
       dispatchTo(runId, { type: "error", text: `Error: ${err}` });
       setRunningIds((prev) => {
@@ -557,7 +558,7 @@ function useDesktopStore() {
       });
       if (runId === activeIdRef.current) setStatus("Error");
     }
-  }, [runningIds, model, autoMode, projectContexts, setStatus, setError, refreshConversations, dispatchTo]);
+  }, [runningIds, model, autoMode, projectContexts, setStatus, setError, refreshConversations, loadProjects, dispatchTo]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
