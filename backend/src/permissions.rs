@@ -192,20 +192,20 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
 pub(crate) fn request_accessibility_permission() {
     if mock_mode() {
         MOCK_ACCESSIBILITY_GRANTED.store(true, Ordering::SeqCst);
-        return;
+    } else {
+        #[cfg(target_os = "macos")]
+        macos::request_accessibility();
     }
-    #[cfg(target_os = "macos")]
-    macos::request_accessibility();
 }
 
 #[tauri::command]
 pub(crate) fn request_screen_recording_permission() {
     if mock_mode() {
         MOCK_SCREEN_RECORDING_GRANTED.store(true, Ordering::SeqCst);
-        return;
+    } else {
+        #[cfg(target_os = "macos")]
+        macos::request_screen_recording();
     }
-    #[cfg(target_os = "macos")]
-    macos::request_screen_recording();
 }
 
 #[cfg(test)]
