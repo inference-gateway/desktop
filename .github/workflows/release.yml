@@ -111,6 +111,21 @@ jobs:
             mv tauri.conf.stamped.json backend/tauri.conf.json
           fi
 
+      - name: Trust macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+            /usr/bin/openssl pkcs12 -in cert.p12 -clcerts -nokeys \
+              -passin "pass:$APPLE_CERTIFICATE_PASSWORD" -out cert.pem
+            sudo security add-trusted-cert -d -r trustRoot \
+              -k /Library/Keychains/System.keychain cert.pem
+            rm cert.p12 cert.pem
+          fi
+
       - name: Build Tauri bundles
         uses: tauri-apps/tauri-action@v1.0.0
         env:
