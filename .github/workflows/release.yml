@@ -105,7 +105,6 @@ jobs:
             '.version = $v | .plugins.updater.pubkey = $k' \
             backend/tauri.conf.json > tauri.conf.stamped.json
           mv tauri.conf.stamped.json backend/tauri.conf.json
-          # ponytail: self-signed cert keeps macOS TCC grants stable across releases; Developer ID + notarization is the upgrade path
           if [ "$RUNNER_OS" = "macOS" ] && [ -n "$APPLE_CERTIFICATE" ]; then
             jq '.bundle.macOS.signingIdentity = "Inference Gateway Desktop Signing"' \
               backend/tauri.conf.json > tauri.conf.stamped.json
