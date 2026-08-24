@@ -76,21 +76,63 @@ fn runs_from_app_bundle(executable: &Path) -> bool {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    // These declarations mirror Apple's stable, argument-free permission queries.
+    use std::ffi::c_void;
+    use std::ptr;
+
     #[link(name = "ApplicationServices", kind = "framework")]
     unsafe extern "C" {
         fn AXIsProcessTrusted() -> u8;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
+        static kAXTrustedCheckOptionPrompt: *const c_void;
     }
 
     #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
         fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            num_values: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+        static kCFBooleanTrue: *const c_void;
     }
 
     pub(super) fn permission_status() -> (bool, bool) {
         let accessibility = unsafe { AXIsProcessTrusted() != 0 };
         let screen_recording = unsafe { CGPreflightScreenCaptureAccess() };
         (accessibility, screen_recording)
+    }
+
+    pub(super) fn request_accessibility() {
+        unsafe {
+            let keys = [kAXTrustedCheckOptionPrompt];
+            let values = [kCFBooleanTrue];
+            let options = CFDictionaryCreate(
+                ptr::null(),
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                ptr::null(),
+                ptr::null(),
+            );
+            AXIsProcessTrustedWithOptions(options);
+            CFRelease(options);
+        }
+    }
+
+    pub(super) fn request_screen_recording() {
+        unsafe {
+            CGRequestScreenCaptureAccess();
+        }
     }
 }
 
@@ -130,6 +172,18 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
         accessibility,
         screen_recording,
     }
+}
+
+#[tauri::command]
+pub(crate) fn request_accessibility_permission() {
+    #[cfg(target_os = "macos")]
+    macos::request_accessibility();
+}
+
+#[tauri::command]
+pub(crate) fn request_screen_recording_permission() {
+    #[cfg(target_os = "macos")]
+    macos::request_screen_recording();
 }
 
 #[cfg(test)]

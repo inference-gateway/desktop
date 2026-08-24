@@ -188,6 +188,8 @@ export const api = {
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
   computerUsePermissionStatus: () =>
     invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
+  requestAccessibilityPermission: () => invoke<void>("request_accessibility_permission"),
+  requestScreenRecordingPermission: () => invoke<void>("request_screen_recording_permission"),
   githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
   githubOwners: () => invoke<string[]>("github_owners"),
   githubRepoExists: (repo: string) => invoke<boolean>("github_repo_exists", { repo }),

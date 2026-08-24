@@ -95,6 +95,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
           PUBKEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
           PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
         run: |
           if [ -z "$PUBKEY" ] || [ -z "$PRIVATE_KEY" ]; then
             echo "::error::Updater signing keys are not configured. Generate a pair with 'cargo tauri signer generate', then set the TAURI_SIGNING_PUBLIC_KEY repository variable and the TAURI_SIGNING_PRIVATE_KEY secret (see CONTRIBUTING.md)."
@@ -104,12 +105,20 @@ jobs:
             '.version = $v | .plugins.updater.pubkey = $k' \
             backend/tauri.conf.json > tauri.conf.stamped.json
           mv tauri.conf.stamped.json backend/tauri.conf.json
+          # ponytail: self-signed cert keeps macOS TCC grants stable across releases; Developer ID + notarization is the upgrade path
+          if [ "$RUNNER_OS" = "macOS" ] && [ -n "$APPLE_CERTIFICATE" ]; then
+            jq '.bundle.macOS.signingIdentity = "Inference Gateway Desktop Signing"' \
+              backend/tauri.conf.json > tauri.conf.stamped.json
+            mv tauri.conf.stamped.json backend/tauri.conf.json
+          fi
 
       - name: Build Tauri bundles
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         with:
           projectPath: backend
           args: ${{ matrix.args }}
