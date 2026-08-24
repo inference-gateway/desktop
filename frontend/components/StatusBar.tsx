@@ -24,6 +24,7 @@ export function StatusBar() {
     sessionId,
     conversations,
     openConversation,
+    runningCount,
     autoMode,
     setAutoMode,
   } = useDesktop();
@@ -97,6 +98,14 @@ export function StatusBar() {
           >
             <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[tone])} />
             <span className={isError ? "text-err" : "text-muted-foreground"}>{label}</span>
+            {runningCount > 0 && (
+              <span
+                title={`${runningCount} orchestrator${runningCount === 1 ? "" : "s"} running`}
+                className="min-w-[1.1rem] rounded-full bg-primary/15 px-1 text-center text-[0.65rem] font-semibold text-primary"
+              >
+                {runningCount}
+              </span>
+            )}
           </button>
         )}
         {open && (
