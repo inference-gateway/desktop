@@ -106,7 +106,7 @@ export function StatusBar() {
             className="absolute bottom-full left-0 z-50 mb-1 min-w-[18rem] max-w-[26rem] rounded-md border border-border bg-popover p-1 shadow-md"
           >
             {agents.length === 0 && (
-              <div className="px-2 py-1.5 text-muted-foreground">No agents running</div>
+              <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>
             )}
             {agents.map((a) => (
               <button
