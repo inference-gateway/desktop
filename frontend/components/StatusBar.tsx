@@ -8,6 +8,7 @@ const DOT: Record<string, string> = {
   awaiting: "animate-pulse bg-amber-500",
   running: "animate-pulse bg-primary",
   ready: "bg-emerald-500",
+  stopped: "bg-red-500",
   idle: "bg-muted-foreground",
 };
 
@@ -58,7 +59,9 @@ export function StatusBar() {
           ? "awaiting"
           : isRunning(c.id)
             ? "running"
-            : "ready",
+            : c.status.label === "Stopped"
+              ? "stopped"
+              : "ready",
     }));
 
   const session = !statusError && sessionId ? runLabel(sessionId) : null;
@@ -70,9 +73,11 @@ export function StatusBar() {
       ? "awaiting"
       : running
         ? "running"
-        : ready
-          ? "ready"
-          : "idle";
+        : session?.label === "Stopped"
+          ? "stopped"
+          : ready
+            ? "ready"
+            : "idle";
   const autoModeDescription = autoMode
     ? "Auto approval is on - new runs do not ask before tool actions"
     : "Auto approval is off - new runs ask before protected tool actions";
