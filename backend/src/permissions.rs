@@ -32,8 +32,8 @@ pub(crate) struct ComputerUsePermissionStatus {
 
 fn parse_bool_override(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "t" | "true" => Some(true),
-        "0" | "f" | "false" => Some(false),
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
         _ => None,
     }
 }
@@ -62,6 +62,7 @@ fn computer_use_enabled(agent_dir: &Path, home: &Path, env_override: Option<&str
         .is_some_and(|text| enabled_from_yaml(&text))
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn runs_from_app_bundle(executable: &Path) -> bool {
     executable
         .parent()
@@ -144,10 +145,10 @@ mod tests {
 
     #[test]
     fn parses_cli_boolean_overrides() {
-        for value in ["1", "t", "T", "true", "TRUE", " True "] {
+        for value in ["1", "true", "TRUE", " True "] {
             assert_eq!(parse_bool_override(value), Some(true));
         }
-        for value in ["0", "f", "F", "false", "FALSE", " False "] {
+        for value in ["0", "false", "FALSE", " False "] {
             assert_eq!(parse_bool_override(value), Some(false));
         }
         assert_eq!(parse_bool_override("enabled"), None);

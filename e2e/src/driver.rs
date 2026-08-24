@@ -107,13 +107,11 @@ impl AppDriver {
         let bin = std::env::var_os("DESKTOP_BIN")
             .map(PathBuf::from)
             .unwrap_or_else(|| repo_root.join("target/debug/inference-gateway-desktop"));
-        let executable_exists = app_bundle
-            .as_ref()
-            .map_or_else(|| bin.exists(), |bundle| bundle.exists());
-        if !executable_exists {
+        let executable = app_bundle.as_deref().unwrap_or(&bin);
+        if !executable.exists() {
             bail!(
                 "app executable missing at {} - run without --no-build",
-                app_bundle.as_deref().unwrap_or(&bin).display()
+                executable.display()
             );
         }
 
@@ -424,8 +422,12 @@ if let best { print(best.id) }
 
 impl Drop for AppDriver {
     fn drop(&mut self) {
+        // In bundle mode `child` is `open`, not the app - the pkill below is
+        // what actually terminates the app process, don't remove it.
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // ponytail: pkill -f kills any process matching PROCESS_MATCH,
+        // including a dev instance; switch to PID-based kill if that bites.
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
     }
 }
