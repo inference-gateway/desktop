@@ -332,7 +332,7 @@ export function Composer() {
             id="prompt-input"
             ref={composerRef}
             rows={1}
-            placeholder="Message the agent..."
+            placeholder="Message the orchestrator..."
             disabled={!enabled}
             onPaste={onPaste}
             onInput={handleInput}

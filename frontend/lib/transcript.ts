@@ -65,8 +65,7 @@ export type ChatAction =
   | { type: "userSend"; text: string }
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
-  | { type: "error"; text: string }
-  | { type: "stopTyping" };
+  | { type: "error"; text: string };
 
 const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
 const FAILISH = /fail|error/i;
@@ -91,15 +90,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentReasoningMessageId: null,
       };
     }
-    case "stopTyping":
-      return state.typing ? { ...state, typing: false } : state;
     case "error": {
       let seq = state.seq;
       const items = [...state.items, { kind: "error", id: String(seq++), text: action.text } as TranscriptItem];
       return { ...state, items, seq, typing: false };
     }
-    case "setApproval":
-      // A decision resumes the agent, so the working dots come back on.
+    case "setApproval": {
+      if (!state.items.some((it) => it.kind === "approval" && it.callId === action.callId && it.status === "pending")) {
+        return state;
+      }
       return {
         ...state,
         typing: true,
@@ -107,6 +106,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           it.kind === "approval" && it.callId === action.callId ? { ...it, status: action.status } : it
         ),
       };
+    }
     case "event":
       return applyEvent(state, action.event);
   }
@@ -114,8 +114,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
 function applyEvent(state: ChatState, event: AgentEvent): ChatState {
   switch (event.kind) {
-    // SessionId is handled by the store; Info/RawLine are intentionally dropped
-    // (matches the old behavior).
     case "SessionId":
     case "Info":
     case "RawLine":

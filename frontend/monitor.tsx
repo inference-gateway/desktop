@@ -170,7 +170,11 @@ export default function Monitor() {
     if (!id || !session?.pendingApproval) return;
     const { callId } = session.pendingApproval;
     if (approved) await hideForComputerAction().catch(() => {});
-    api.sendApproval(id, callId, approved).catch(() => {});
+    try {
+      await api.sendApproval(id, callId, approved);
+    } catch {
+      return;
+    }
     emit("approval-resolved", {
       sessionId: id,
       callId,
@@ -471,11 +475,11 @@ export default function Monitor() {
         <textarea
           ref={promptRef}
           id="monitor-prompt-input"
-          aria-label="Instruct the agent"
+          aria-label="Instruct the orchestrator"
           rows={2}
           disabled={session.status !== "done"}
           placeholder={
-            session.status === "done" ? "Instruct the agent..." : "Agent is running..."
+            session.status === "done" ? "Instruct the orchestrator..." : "Orchestrator is running..."
           }
           className="max-h-24 w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring disabled:opacity-50"
           onInput={(e) => autoGrow(e.currentTarget)}
