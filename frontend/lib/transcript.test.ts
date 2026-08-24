@@ -110,6 +110,30 @@ test("a running tool call resolves by tool_call_id", () => {
   expect(s.currentAssistantId).toBeNull();
 });
 
+test("a failed tool call retains its top-level error", () => {
+  const s = run([
+    { type: "userSend", text: "read" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Read", args: '{"file_path":"/outside/file"}' }],
+    }),
+    ev({
+      kind: "ToolResult",
+      tool_call_id: "c1",
+      content:
+        '{"tool_name":"Read","success":false,"error":"path is outside configured sandbox directories"}',
+    }),
+  ]);
+  const tool = s.items.find((i) => i.kind === "tool");
+  expect(tool).toMatchObject({
+    callId: "c1",
+    state: "failed",
+    output: "path is outside configured sandbox directories",
+  });
+});
+
 test("a mismatched tool_call_id attaches to the unresolved tool card instead of duplicating", () => {
   const s = run([
     { type: "userSend", text: "read" },
