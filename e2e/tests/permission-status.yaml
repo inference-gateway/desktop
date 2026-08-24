@@ -1,0 +1,6 @@
+name: development build never claims inherited OS permissions are granted
+steps:
+  - click: { button: "Settings" }
+  - wait_for: { text: "Unavailable in development", timeout: 10 }
+  - wait_for: { text: "cannot be verified from Desktop dev", timeout: 10 }
+  - screenshot: "development-permission-status"

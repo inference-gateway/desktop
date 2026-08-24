@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { api, type A2aAgent, type DesktopConfig } from "@/lib/tauri";
+import {
+  api,
+  type A2aAgent,
+  type ComputerUsePermissionStatus,
+  type DesktopConfig,
+  type OsPermissionState,
+} from "@/lib/tauri";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
@@ -332,6 +338,8 @@ const SCHEDULER_GITHUB_FIELDS: readonly StorageField[] = [
 function GeneralTab() {
   const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
+  const [computerUsePermissions, setComputerUsePermissions] =
+    useState<ComputerUsePermissionStatus | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -340,6 +348,16 @@ function GeneralTab() {
   useEffect(() => {
     api.getConfig().then(setConfigs).catch(() => {});
   }, []);
+
+  const refreshComputerUsePermissions = useCallback(() => {
+    api.computerUsePermissionStatus().then(setComputerUsePermissions).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshComputerUsePermissions();
+    window.addEventListener("focus", refreshComputerUsePermissions);
+    return () => window.removeEventListener("focus", refreshComputerUsePermissions);
+  }, [refreshComputerUsePermissions]);
 
   const apply = async () => {
     setSaving(true);
@@ -370,6 +388,21 @@ function GeneralTab() {
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Agent sessions, storage backend, default model, and gateway settings. Changes take effect on next agent spawn.
       </p>
+
+      {computerUsePermissions?.computer_use_enabled && (
+        <div className="mb-5 flex flex-col gap-3">
+          <ComputerUsePermissionSection
+            title="Accessibility"
+            state={computerUsePermissions.accessibility}
+            warning="Accessibility access is not granted. Computer Use cannot inspect or control other apps. Enable Inference Gateway Desktop in System Settings > Privacy & Security > Accessibility."
+          />
+          <ComputerUsePermissionSection
+            title="Screen Recording"
+            state={computerUsePermissions.screen_recording}
+            warning="Screen Recording access is not granted. Computer Use cannot capture the screen. Enable Inference Gateway Desktop in System Settings > Privacy & Security > Screen & System Audio Recording."
+          />
+        </div>
+      )}
 
       {/* Agent sessions */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Sessions</h3>
@@ -509,6 +542,51 @@ function GeneralTab() {
         )}
       </div>
     </>
+  );
+}
+
+function ComputerUsePermissionSection({
+  title,
+  state,
+  warning,
+}: {
+  title: string;
+  state: OsPermissionState;
+  warning: string;
+}) {
+  const isWarning = state === "not_granted" || state === "unavailable";
+  const status = {
+    granted: "Granted",
+    not_granted: "Not granted",
+    unavailable: "Unavailable in development",
+    not_applicable: "Not required on this OS",
+  }[state];
+  const message =
+    state === "unavailable"
+      ? `${title} status cannot be verified from Desktop dev because macOS grants access to app bundle identities. Build and launch Inference Gateway Desktop.app to check this permission.`
+      : state === "not_granted"
+        ? warning
+        : null;
+
+  return (
+    <section className="rounded-lg border border-border bg-secondary/40 p-3">
+      <div className="flex items-center gap-2">
+        {isWarning ? (
+          <AlertTriangle className="text-amber-500" size={17} aria-hidden="true" />
+        ) : state === "granted" ? (
+          <CheckCircle2 className="text-emerald-500" size={17} aria-hidden="true" />
+        ) : (
+          <CircleMinus className="text-muted-foreground" size={17} aria-hidden="true" />
+        )}
+        <h3 className="text-[0.9rem] font-semibold">{title}</h3>
+        <span className="ml-auto text-[0.75rem] text-muted-foreground">{status}</span>
+      </div>
+      {message && (
+        <p role="alert" className="mt-2 text-[0.75rem] text-amber-600 dark:text-amber-400">
+          {message}
+        </p>
+      )}
+    </section>
   );
 }
 

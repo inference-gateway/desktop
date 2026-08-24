@@ -9,6 +9,7 @@ mod download;
 mod env;
 mod gateway;
 mod observability;
+mod permissions;
 mod process_manager;
 mod scheduler;
 mod skills;
@@ -125,6 +126,7 @@ pub fn run() {
             skills::list_installed_skills,
             observability::get_traces,
             observability::get_metrics,
+            permissions::computer_use_permission_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -58,8 +58,10 @@ end findText
 // app also has the computer-use monitor and overlay windows.
 fn ax_root() -> String {
     format!(
-        "set root to UI element 1 of scroll area 1 of group 1 of group 1 of window \"{}\" of (first process whose name contains \"{}\")",
-        MAIN_WINDOW_TITLE, PROCESS_MATCH
+        "set matches to every process whose name contains \"{PROCESS_MATCH}\"\n\
+         if (count of matches) is 0 then set matches to every process whose name is \"{MAIN_WINDOW_TITLE}\"\n\
+         set appProcess to item 1 of matches\n\
+         set root to UI element 1 of scroll area 1 of group 1 of group 1 of window \"{MAIN_WINDOW_TITLE}\" of appProcess"
     )
 }
 
@@ -101,35 +103,71 @@ impl AppDriver {
         std::thread::sleep(Duration::from_millis(500));
 
         let backend = repo_root.join("backend");
-        let bin = repo_root.join("target/debug/inference-gateway-desktop");
-        if !bin.exists() {
+        let app_bundle = std::env::var_os("DESKTOP_APP").map(PathBuf::from);
+        let bin = std::env::var_os("DESKTOP_BIN")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo_root.join("target/debug/inference-gateway-desktop"));
+        let executable = app_bundle.as_deref().unwrap_or(&bin);
+        if !executable.exists() {
             bail!(
-                "app binary missing at {} - run without --no-build",
-                bin.display()
+                "app executable missing at {} - run without --no-build",
+                executable.display()
             );
         }
 
         std::fs::create_dir_all(artifacts)?;
-        let log = std::fs::File::create(artifacts.join(format!("{log_name}.log")))?;
-
-        let mut cmd = Command::new(&bin);
-        cmd.current_dir(&backend)
-            .stdout(Stdio::from(log.try_clone()?))
-            .stderr(Stdio::from(log));
+        let log_path = artifacts.join(format!("{log_name}.log"));
+        let home = artifacts.join("home");
         if mock {
-            let home = artifacts.join("home");
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(&home)?;
-            cmd.env("DESKTOP_MOCK", "true")
-                .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
-                .env("HOME", &home);
         }
-        if let Some(infer) = infer_bin {
-            cmd.env("INFER_BIN", infer);
-        } else if let Some(infer) = which_infer() {
-            cmd.env("INFER_BIN", infer);
-        }
-        let child = cmd.spawn().context("spawning app binary")?;
+        let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);
+
+        let child = if let Some(app_bundle) = app_bundle {
+            let _ = std::fs::File::create(&log_path)?;
+            let mut cmd = Command::new("open");
+            cmd.args(["-n", "-W", "--stdout"])
+                .arg(&log_path)
+                .arg("--stderr")
+                .arg(&log_path);
+            if mock {
+                cmd.arg("--env")
+                    .arg("DESKTOP_MOCK=true")
+                    .arg("--env")
+                    .arg("INFER_COMPUTER_USE_ENABLED=true")
+                    .arg("--env")
+                    .arg(format!(
+                        "INFER_GATEWAY_MOCK_SCENARIOS={}",
+                        scenarios.display()
+                    ))
+                    .arg("--env")
+                    .arg(format!("HOME={}", home.display()));
+            }
+            if let Some(infer) = resolved_infer {
+                cmd.arg("--env")
+                    .arg(format!("INFER_BIN={}", infer.display()));
+            }
+            cmd.arg(app_bundle)
+                .spawn()
+                .context("launching app bundle")?
+        } else {
+            let log = std::fs::File::create(&log_path)?;
+            let mut cmd = Command::new(&bin);
+            cmd.current_dir(&backend)
+                .stdout(Stdio::from(log.try_clone()?))
+                .stderr(Stdio::from(log));
+            if mock {
+                cmd.env("DESKTOP_MOCK", "true")
+                    .env("INFER_COMPUTER_USE_ENABLED", "true")
+                    .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
+                    .env("HOME", &home);
+            }
+            if let Some(infer) = resolved_infer {
+                cmd.env("INFER_BIN", infer);
+            }
+            cmd.spawn().context("spawning app binary")?
+        };
 
         let driver = Self {
             child,
@@ -351,7 +389,9 @@ let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as! [[Strin
 var best: (id: Any, area: Int)? = nil
 for w in info {
     let owner = w["kCGWindowOwnerName"] as? String ?? ""
-    if owner.contains("inference-gateway"), let b = w["kCGWindowBounds"] as? [String: Int] {
+    let normalizedOwner = owner.lowercased()
+    if (normalizedOwner.contains("inference-gateway") || normalizedOwner.contains("inference gateway")),
+       let b = w["kCGWindowBounds"] as? [String: Int] {
         let name = w["kCGWindowName"] as? String ?? ""
         if name != "" && name != "Inference Gateway Desktop" { continue }
         let area = b["Width"]! * b["Height"]!
@@ -384,6 +424,7 @@ impl Drop for AppDriver {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
     }
 }
 
