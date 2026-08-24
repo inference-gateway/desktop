@@ -93,7 +93,7 @@ function ApprovalCard({
   approve,
 }: {
   item: Extract<TranscriptItem, { kind: "approval" }>;
-  approve: (callId: string, approved: boolean) => void;
+  approve: (callId: string, approved: boolean, scope?: "always") => void;
 }) {
   const decided = item.status !== "pending";
   return (
@@ -136,6 +136,14 @@ function ApprovalCard({
               A
             </kbd>
           </button>
+          {item.toolName === "SandboxAccess" && (
+            <button
+              onClick={() => approve(item.callId, true, "always")}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
+            >
+              Always allow
+            </button>
+          )}
           <button
             onClick={() => approve(item.callId, false)}
             className="flex items-center gap-2 rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
@@ -198,7 +206,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   );
 }
 
-function Item({ item, approve }: { item: TranscriptItem; approve: (callId: string, approved: boolean) => void }) {
+function Item({ item, approve }: { item: TranscriptItem; approve: (callId: string, approved: boolean, scope?: "always") => void }) {
   switch (item.kind) {
     case "user":
       return <UserBubble text={item.text} />;

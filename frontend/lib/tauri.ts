@@ -166,8 +166,8 @@ export const api = {
     extraInstructions?: string;
     autoMode: boolean;
   }) => invoke<string | null>("send_message", args),
-  sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
-    invoke<void>("send_approval", { sessionId, toolCallId, approved }),
+  sendApproval: (sessionId: string, toolCallId: string, approved: boolean, scope?: "always") =>
+    invoke<void>("send_approval", { sessionId, toolCallId, approved, scope: scope ?? null }),
   sendComputerUseControl: (sessionId: string, action: "pause" | "resume") =>
     invoke<void>("send_computer_use_control", { sessionId, action }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),

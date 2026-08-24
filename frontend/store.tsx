@@ -604,7 +604,7 @@ function useDesktopStore() {
   }, [activeId, runningIds]);
 
   const approve = useCallback(
-    async (callId: string, approved: boolean) => {
+    async (callId: string, approved: boolean, scope?: "always") => {
       const id = activeIdRef.current;
       if (!id) return;
       try {
@@ -613,7 +613,7 @@ function useDesktopStore() {
           computerApprovalsRef.current.delete(callId);
           if (approved) await setMonitorVisible(false).catch(() => {});
         }
-        await api.sendApproval(id, callId, approved);
+        await api.sendApproval(id, callId, approved, scope);
         const status = approved ? "approved" : "denied";
         dispatchTo(id, { type: "setApproval", callId, status });
         emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
