@@ -1,23 +1,31 @@
 import { Sidebar } from "./Sidebar";
 import { Transcript } from "./Transcript";
 import { Composer } from "./Composer";
-import { SettingsView } from "./SettingsView";
-import { ObservabilityView } from "./ObservabilityView";
+import { lazy, Suspense } from "react";
 import { useDesktop } from "@/store";
+
+const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
+const ObservabilityView = lazy(() =>
+  import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })),
+);
 
 export function Main() {
   const { currentView } = useDesktop();
   if (currentView === "settings") {
     return (
       <div id="main" className="flex min-h-0 flex-1">
-        <SettingsView />
+        <Suspense>
+          <SettingsView />
+        </Suspense>
       </div>
     );
   }
   if (currentView === "observability") {
     return (
       <div id="main" className="flex min-h-0 flex-1">
-        <ObservabilityView />
+        <Suspense>
+          <ObservabilityView />
+        </Suspense>
       </div>
     );
   }
