@@ -9,6 +9,7 @@ const COMPUTER_USE_ENABLED_ENV: &str = "INFER_COMPUTER_USE_ENABLED";
 pub(crate) enum OsPermissionState {
     Granted,
     NotGranted,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Unavailable,
     NotApplicable,
 }
