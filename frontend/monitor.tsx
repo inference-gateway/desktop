@@ -92,6 +92,7 @@ export default function Monitor() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
+  const logAtBottomRef = useRef(true);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const computerCallsRef = useRef<Map<string, string>>(new Map());
   const computerSessionsRef = useRef<Set<string>>(new Set());
@@ -150,7 +151,7 @@ export default function Monitor() {
 
   useEffect(() => {
     const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && logAtBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [session?.log, session?.lastFrame]);
 
   const toggleExpanded = () => setExpanded((value) => !value);
@@ -429,6 +430,13 @@ export default function Monitor() {
           )}
           <div
             ref={logRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              logAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 2;
+            }}
+            onWheel={(e) => {
+              if (e.deltaY < 0) logAtBottomRef.current = false;
+            }}
             className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-muted/35 px-2.5 py-2 font-mono text-xs text-muted-foreground"
           >
             {session.log.length ? session.log.join("\n") : "Waiting for actions..."}

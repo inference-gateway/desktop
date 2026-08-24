@@ -316,7 +316,7 @@ function ScheduledJobs() {
   );
 }
 
-const SCROLL_THRESHOLD = 60;
+const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
   const { items, typing, approve, runLabel, sessionId } = useDesktop();
@@ -379,9 +379,19 @@ export function Transcript() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        isAtBottomRef.current = false;
+        setShowScrollButton(true);
+      }
+    };
     el.addEventListener("scroll", checkAtBottom, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
     checkAtBottom();
-    return () => el.removeEventListener("scroll", checkAtBottom);
+    return () => {
+      el.removeEventListener("scroll", checkAtBottom);
+      el.removeEventListener("wheel", onWheel);
+    };
   }, [checkAtBottom]);
 
   const scrollToBottom = useCallback(() => {
