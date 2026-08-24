@@ -27,7 +27,7 @@ The gateway binary lands at `~/.infer/bin/inference-gateway`, config lives under
 
 The app updates itself. When a newer release is available the top bar shows an update button (the same one is in Settings under Updates); clicking it reinstalls the `infer` CLI and gateway binaries, then downloads the new app bundle, verifies its signature and relaunches. Checks run at startup and every 6 hours.
 
-Releases are not signed with an Apple Developer or Windows code-signing certificate, so there is some **first-run** friction: macOS marks the downloaded `.dmg` as quarantined, so open the app once with right-click -> Open and confirm, and Windows SmartScreen asks for "More info" -> "Run anyway". Updates applied by the app itself are downloaded by the app rather than a browser, so they are not quarantined and do not repeat that prompt. macOS privacy permissions are separate: without a Developer ID certificate the app's code identity changes with every build, so a permission you grant may need re-approving after an update.
+Releases are not signed with an Apple Developer or Windows code-signing certificate, so there is some **first-run** friction: macOS marks the downloaded `.dmg` as quarantined, so open the app once with right-click -> Open and confirm, and Windows SmartScreen asks for "More info" -> "Run anyway". Updates applied by the app itself are downloaded by the app rather than a browser, so they are not quarantined and do not repeat that prompt. macOS privacy permissions are separate: releases are signed with the project's own **self-signed** certificate (not from Apple, no developer account involved), which gives the app a stable code identity - permissions you grant survive updates. It does not remove the first-run Gatekeeper prompt; only a paid Apple Developer ID certificate would do that.
 
 ### Supported platforms
 
@@ -46,9 +46,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, local setup, and build
 
 ### Testing macOS permission grants locally
 
-macOS ties Accessibility and Screen Recording grants to the app's code-signing identity, so Computer Use permissions can only be verified from a signed `.app` bundle - dev builds (`task dev`) simulate the flow instead. To test the real thing:
+macOS ties Accessibility and Screen Recording grants to the app's code-signing identity, so Computer Use permissions can only be verified from a signed `.app` bundle - dev builds (`task dev`) simulate the flow instead. The project signs with a **self-signed** certificate (created below with `openssl` - nothing from Apple, no developer account). To test the real thing:
 
-1. Create the signing certificate once and trust it (approve the macOS prompt):
+1. Create the self-signed certificate once and trust it (approve the macOS prompt):
 
    ```bash
    openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
@@ -81,4 +81,4 @@ macOS ties Accessibility and Screen Recording grants to the app's code-signing i
 
 4. In Settings > General, click Grant on each permission and approve the OS prompts. Accessibility flips to Granted live; Screen Recording shows Granted after the app restarts.
 
-5. Regression check: rebuild with the same certificate, relaunch, and confirm both permissions stay Granted with no new OS prompt. This is exactly what used to break with ad-hoc signing on every release.
+5. Regression check: rebuild with the same self-signed certificate, relaunch, and confirm both permissions stay Granted with no new OS prompt. This is exactly what used to break with ad-hoc signing on every release.

@@ -111,7 +111,7 @@ jobs:
             mv tauri.conf.stamped.json backend/tauri.conf.json
           fi
 
-      - name: Trust macOS signing certificate
+      - name: Trust self-signed macOS signing certificate
         if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
