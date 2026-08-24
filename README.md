@@ -43,3 +43,42 @@ Releases are not signed with an Apple Developer or Windows code-signing certific
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, local setup, and building.
+
+### Testing macOS permission grants locally
+
+macOS ties Accessibility and Screen Recording grants to the app's code-signing identity, so Computer Use permissions can only be verified from a signed `.app` bundle - dev builds (`task dev`) simulate the flow instead. To test the real thing:
+
+1. Create the signing certificate once and trust it (approve the macOS prompt):
+
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
+     -subj "/CN=Inference Gateway Desktop Signing" \
+     -addext "keyUsage=critical,digitalSignature" \
+     -addext "extendedKeyUsage=critical,codeSigning" \
+     -addext "basicConstraints=critical,CA:FALSE"
+   openssl pkcs12 -export -legacy -out desktop-codesign.p12 -inkey key.pem -in cert.pem
+   security import desktop-codesign.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign
+   security add-trusted-cert -p codeSign -r trustRoot -k ~/Library/Keychains/login.keychain-db cert.pem
+   ```
+
+2. Build the signed bundle and check its identity:
+
+   ```bash
+   export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/desktop.key)"
+   cargo tauri build --config '{"bundle":{"macOS":{"signingIdentity":"Inference Gateway Desktop Signing"}}}'
+   codesign -dr - "target/release/bundle/macos/Inference Gateway Desktop.app"
+   ```
+
+   The designated requirement must say `certificate leaf = H"..."`, not `cdhash` - that is what keeps grants stable across builds.
+
+3. Clear any grants left by older ad-hoc builds, then launch:
+
+   ```bash
+   tccutil reset Accessibility com.inference-gateway.desktop
+   tccutil reset ScreenCapture com.inference-gateway.desktop
+   open "target/release/bundle/macos/Inference Gateway Desktop.app"
+   ```
+
+4. In Settings > General, click Grant on each permission and approve the OS prompts. Accessibility flips to Granted live; Screen Recording shows Granted after the app restarts.
+
+5. Regression check: rebuild with the same certificate, relaunch, and confirm both permissions stay Granted with no new OS prompt. This is exactly what used to break with ad-hoc signing on every release.
