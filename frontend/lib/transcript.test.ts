@@ -169,6 +169,23 @@ test("approval request then resolution flips status", () => {
   expect(s.items[0]).toMatchObject({ kind: "approval", status: "approved" });
 });
 
+test("a duplicate setApproval is a no-op and cannot restart the dots", () => {
+  let s = run([
+    { type: "userSend", text: "write" },
+    ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c1" }),
+    { type: "setApproval", callId: "c1", status: "approved" },
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  expect(s.typing).toBe(false);
+  const echoed = chatReducer(s, { type: "setApproval", callId: "c1", status: "approved" });
+  expect(echoed).toBe(s);
+});
+
+test("setApproval for an unknown callId leaves state untouched", () => {
+  const s = run([{ type: "userSend", text: "write" }]);
+  expect(chatReducer(s, { type: "setApproval", callId: "nope", status: "denied" })).toBe(s);
+});
+
 test("Done stops typing and finalizes running tools", () => {
   const s = run([
     { type: "userSend", text: "x" },

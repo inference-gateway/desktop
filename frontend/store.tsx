@@ -35,6 +35,7 @@ const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
+const LAST_RUN_TTL_MS = 10_000;
 
 async function setMonitorVisible(visible: boolean) {
   const win = await WebviewWindow.getByLabel("monitor");
@@ -76,6 +77,8 @@ function useDesktopStore() {
   const activeIdRef = useRef<string | null>(null);
   const [statusText, setStatusText] = useState("");
   const [statusError, setStatusErr] = useState(false);
+  const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
+  const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
@@ -133,6 +136,26 @@ function useDesktopStore() {
   const dispatchTo = useCallback((id: string, action: ChatAction) => {
     setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action) }));
   }, []);
+
+  const clearTerminal = useCallback((id: string) => {
+    clearTimeout(lastRunTimers.current.get(id));
+    lastRunTimers.current.delete(id);
+    setLastRun((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const recordTerminal = useCallback(
+    (id: string, status: { label: string; error: boolean }, keepExisting = false) => {
+      setLastRun((prev) => (keepExisting && prev[id] ? prev : { ...prev, [id]: status }));
+      clearTimeout(lastRunTimers.current.get(id));
+      lastRunTimers.current.set(id, setTimeout(() => clearTerminal(id), LAST_RUN_TTL_MS));
+    },
+    [clearTerminal]
+  );
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; callId: string; status: "approved" | "denied" }>(
@@ -409,13 +432,14 @@ function useDesktopStore() {
           delete next[id];
           return next;
         });
+        clearTerminal(id);
         if (id === activeId) newChat();
         await refreshConversations();
       } catch (err) {
         setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [runningIds, activeId, newChat, refreshConversations, setError]
+    [runningIds, activeId, newChat, refreshConversations, setError, clearTerminal]
   );
 
   const onChatClick = useCallback(
@@ -487,8 +511,9 @@ function useDesktopStore() {
       setError("Please select a model first");
       return;
     }
-    setStatus("Running...");
+    setStatusErr(false);
     dispatchTo(runId, { type: "userSend", text });
+    clearTerminal(runId);
     setRunningIds((prev) => new Set(prev).add(runId));
     try {
       const ch = new Channel<AgentEvent>();
@@ -507,7 +532,6 @@ function useDesktopStore() {
             if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
               computerApprovalsRef.current.set(event.tool_call_id, runId);
             }
-            if (runId === activeIdRef.current) setStatus("Awaiting approval...");
             if (!document.hasFocus()) notifyApproval(event.tool_name);
             break;
           case "Done":
@@ -519,8 +543,14 @@ function useDesktopStore() {
             for (const [callId, sessionId] of computerApprovalsRef.current) {
               if (sessionId === runId) computerApprovalsRef.current.delete(callId);
             }
-            if (runId === activeIdRef.current)
-              setStatus(event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`);
+            recordTerminal(
+              runId,
+              {
+                label: event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`,
+                error: event.exit_code !== 0,
+              },
+              true
+            );
             break;
           case "Cancelled":
             setRunningIds((prev) => {
@@ -531,7 +561,7 @@ function useDesktopStore() {
             for (const [callId, sessionId] of computerApprovalsRef.current) {
               if (sessionId === runId) computerApprovalsRef.current.delete(callId);
             }
-            if (runId === activeIdRef.current) setStatus("Cancelled");
+            recordTerminal(runId, { label: "Stopped", error: false });
             break;
         }
       };
@@ -551,14 +581,15 @@ function useDesktopStore() {
       loadProjects();
     } catch (err) {
       dispatchTo(runId, { type: "error", text: `Error: ${err}` });
+      dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: -1, stderr: "" } });
       setRunningIds((prev) => {
         const next = new Set(prev);
         next.delete(runId);
         return next;
       });
-      if (runId === activeIdRef.current) setStatus("Error");
+      recordTerminal(runId, { label: "Error", error: true });
     }
-  }, [runningIds, model, autoMode, projectContexts, setStatus, setError, refreshConversations, loadProjects, dispatchTo]);
+  }, [runningIds, model, autoMode, projectContexts, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
@@ -757,6 +788,27 @@ function useDesktopStore() {
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
 
+  const runLabel = useCallback(
+    (id: string): { label: string; error: boolean } | null => {
+      const chat = transcripts[id];
+      if (chat?.items.some((it) => it.kind === "approval" && it.status === "pending")) {
+        return { label: "Awaiting approval...", error: false };
+      }
+      if (runningIds.has(id)) {
+        if (chat?.currentReasoningId) return { label: "Thinking...", error: false };
+        const tool = [...(chat?.items ?? [])]
+          .reverse()
+          .find((it) => it.kind === "tool" && it.state === "running");
+        return {
+          label: tool?.kind === "tool" ? `Running ${tool.name}...` : "Running...",
+          error: false,
+        };
+      }
+      return lastRun[id] ?? null;
+    },
+    [transcripts, runningIds, lastRun]
+  );
+
   return {
     items: active.items,
     typing: active.typing,
@@ -777,6 +829,7 @@ function useDesktopStore() {
     sessionId: activeId,
     isRunning,
     isAwaitingApproval,
+    runLabel,
     runningCount: runningIds.size,
     onChatClick,
     clearSelection,

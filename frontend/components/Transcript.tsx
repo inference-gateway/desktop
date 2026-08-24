@@ -159,12 +159,15 @@ function ApprovalCard({
   );
 }
 
-function TypingBubble() {
+function TypingBubble({ label }: { label: string | null }) {
   return (
-    <div className={cn(BUBBLE, "typing-dots flex items-center gap-[0.35rem] self-start rounded-bl-[4px] bg-assistant")}>
-      <span />
-      <span />
-      <span />
+    <div className={cn(BUBBLE, "flex items-center gap-[0.35rem] self-start rounded-bl-[4px] bg-assistant")}>
+      <div className="typing-dots flex items-center gap-[0.35rem]">
+        <span />
+        <span />
+        <span />
+      </div>
+      {label && <span className="ml-1 text-[0.78rem] text-muted-foreground">{label}</span>}
     </div>
   );
 }
@@ -313,10 +316,10 @@ function ScheduledJobs() {
   );
 }
 
-const SCROLL_THRESHOLD = 60; // px from bottom to consider "at bottom"
+const SCROLL_THRESHOLD = 60;
 
 export function Transcript() {
-  const { items, typing, approve } = useDesktop();
+  const { items, typing, approve, runLabel, sessionId } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -405,7 +408,7 @@ export function Transcript() {
         {items.map((item) => (
           <Item key={item.id} item={item} approve={approve} />
         ))}
-        {typing && <TypingBubble />}
+        {typing && <TypingBubble label={sessionId ? runLabel(sessionId)?.label ?? null : null} />}
       </div>
       {showScrollButton && (
         <button

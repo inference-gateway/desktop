@@ -170,7 +170,11 @@ export default function Monitor() {
     if (!id || !session?.pendingApproval) return;
     const { callId } = session.pendingApproval;
     if (approved) await hideForComputerAction().catch(() => {});
-    api.sendApproval(id, callId, approved).catch(() => {});
+    try {
+      await api.sendApproval(id, callId, approved);
+    } catch {
+      return;
+    }
     emit("approval-resolved", {
       sessionId: id,
       callId,
