@@ -499,13 +499,17 @@ pub(crate) async fn send_approval(
     session_id: String,
     tool_call_id: String,
     approved: bool,
+    scope: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let response = serde_json::json!({
+    let mut response = serde_json::json!({
         "type": "approval_response",
         "tool_call_id": tool_call_id,
         "approved": approved,
     });
+    if let Some(scope) = scope.filter(|s| !s.is_empty()) {
+        response["scope"] = serde_json::Value::String(scope);
+    }
     let line = format!(
         "{}\n",
         serde_json::to_string(&response).map_err(|e| e.to_string())?

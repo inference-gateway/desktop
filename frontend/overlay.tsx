@@ -103,6 +103,7 @@ export default function Overlay() {
     document.body.style.background = "transparent";
     const win = getCurrentWindow();
     win.setIgnoreCursorEvents(true).catch(() => {});
+    win.setFocusable(false).catch(() => {});
 
     const fitToScreen = async () => {
       if (sizedRef.current) return;
@@ -123,7 +124,8 @@ export default function Overlay() {
 
     const wake = () => {
       fitToScreen()
-        .then(() => win.show())
+        .then(() => win.isVisible())
+        .then((visible) => (visible ? undefined : win.show()))
         .catch(() => {});
       window.clearTimeout(hideTimer.current);
       hideTimer.current = window.setTimeout(() => {
