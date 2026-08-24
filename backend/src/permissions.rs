@@ -1,8 +1,15 @@
-use crate::env::{agent_cwd, home_dir};
+use crate::env::{agent_cwd, home_dir, mock_mode};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const COMPUTER_USE_CONFIG_FILE: &str = "computer_use.yaml";
 const COMPUTER_USE_ENABLED_ENV: &str = "INFER_COMPUTER_USE_ENABLED";
+
+// Mock mode (DESKTOP_MOCK=true) simulates the grant flow so dev sessions and
+// e2e can exercise the Settings UI without touching TCC: statuses start
+// not_granted and flip to granted when the request commands run.
+static MOCK_ACCESSIBILITY_GRANTED: AtomicBool = AtomicBool::new(false);
+static MOCK_SCREEN_RECORDING_GRANTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -143,6 +150,13 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
         &home_dir(),
         std::env::var(COMPUTER_USE_ENABLED_ENV).ok().as_deref(),
     );
+    if computer_use_enabled && mock_mode() {
+        return ComputerUsePermissionStatus {
+            computer_use_enabled,
+            accessibility: MOCK_ACCESSIBILITY_GRANTED.load(Ordering::SeqCst).into(),
+            screen_recording: MOCK_SCREEN_RECORDING_GRANTED.load(Ordering::SeqCst).into(),
+        };
+    }
     #[cfg(target_os = "macos")]
     let (accessibility, screen_recording) = if !computer_use_enabled {
         (
@@ -176,12 +190,20 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
 
 #[tauri::command]
 pub(crate) fn request_accessibility_permission() {
+    if mock_mode() {
+        MOCK_ACCESSIBILITY_GRANTED.store(true, Ordering::SeqCst);
+        return;
+    }
     #[cfg(target_os = "macos")]
     macos::request_accessibility();
 }
 
 #[tauri::command]
 pub(crate) fn request_screen_recording_permission() {
+    if mock_mode() {
+        MOCK_SCREEN_RECORDING_GRANTED.store(true, Ordering::SeqCst);
+        return;
+    }
     #[cfg(target_os = "macos")]
     macos::request_screen_recording();
 }
