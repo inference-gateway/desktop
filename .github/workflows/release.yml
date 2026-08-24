@@ -111,7 +111,7 @@ jobs:
             mv tauri.conf.stamped.json backend/tauri.conf.json
           fi
 
-      - name: Trust self-signed macOS signing certificate
+      - name: Import and trust self-signed macOS signing certificate
         if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -121,8 +121,20 @@ jobs:
             echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
             /usr/bin/openssl pkcs12 -in cert.p12 -clcerts -nokeys \
               -passin "pass:$APPLE_CERTIFICATE_PASSWORD" -out cert.pem
-            sudo security add-trusted-cert -d -r trustRoot \
+            sudo security add-trusted-cert -d -r trustRoot -p codeSign \
               -k /Library/Keychains/System.keychain cert.pem
+            KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+            security create-keychain -p ci "$KEYCHAIN"
+            security set-keychain-settings -lut 3600 "$KEYCHAIN"
+            security unlock-keychain -p ci "$KEYCHAIN"
+            security import cert.p12 -k "$KEYCHAIN" \
+              -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S "apple-tool:,apple:,codesign:" \
+              -s -k ci "$KEYCHAIN" > /dev/null
+            security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+            security find-identity -v -p codesigning "$KEYCHAIN" \
+              | grep -q "Inference Gateway Desktop Signing" \
+              || { echo "::error::signing identity did not resolve as valid"; exit 1; }
             rm cert.p12 cert.pem
           fi
 
@@ -131,8 +143,6 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         with:
           projectPath: backend
           args: ${{ matrix.args }}

@@ -59,7 +59,7 @@ Generated once, in Keychain Access: Certificate Assistant > Create a Certificate
 - `APPLE_CERTIFICATE` (secret) - `base64 -i cert.p12` output. The name is Tauri's required env var; despite the name, it holds the self-signed certificate above, nothing from Apple.
 - `APPLE_CERTIFICATE_PASSWORD` (secret) - the export password.
 
-When these secrets are set, `release.yml` stamps `signingIdentity` into `tauri.conf.json`, adds the self-signed certificate to the runner's trust store (codesign refuses untrusted identities), and the Tauri bundler imports it into a temporary keychain. Without them, builds fall back to ad-hoc signing. Rotating the certificate invalidates every user's permission grants once.
+When these secrets are set, `release.yml` stamps `signingIdentity` into `tauri.conf.json`, adds the self-signed certificate to the runner's trust store (codesign refuses untrusted identities), and imports it into a keychain on the runner. The workflow does the import itself because Tauri's own `APPLE_CERTIFICATE` handling only recognizes Apple-issued certificates (it matches names like "Developer ID Application:"); with the env vars unset, the bundler signs through the configured `signingIdentity` instead, which works with any certificate in the keychain. Without the secrets, builds fall back to ad-hoc signing. Rotating the certificate invalidates every user's permission grants once.
 
 ## Project guide
 
