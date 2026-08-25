@@ -7,7 +7,7 @@ export function Sidebar() {
   return (
     <aside
       id="sidebar"
-      className="flex w-[260px] shrink-0 flex-col gap-2 overflow-hidden border-r border-border bg-secondary p-3"
+      className="flex w-[320px] shrink-0 flex-col gap-2 overflow-hidden border-r border-border bg-secondary p-3"
     >
       <button
         onClick={newChat}

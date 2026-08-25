@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chatReducer, initialChatState, type ChatState } from "./transcript";
+import { chatReducer, delegationsFrom, initialChatState, subagentParentId, type ChatState, type TranscriptItem } from "./transcript";
 import type { AgentEvent } from "./tauri";
 
 const ev = (event: AgentEvent): { type: "event"; event: AgentEvent } => ({ type: "event", event });
@@ -285,4 +285,50 @@ test("computer-use pause and resume toggle the paused flag", () => {
   s = chatReducer(s, ev({ kind: "ComputerUsePaused" }));
   s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
   expect(s.paused).toBe(false);
+});
+
+const toolItem = (
+  name: string,
+  args: string,
+  state: "running" | "done" | "failed" = "running"
+): TranscriptItem => ({ kind: "tool", id: "1", callId: "c1", name, args, output: null, state, skeleton: false });
+
+test("delegationsFrom expands a running Agent tasks array into subagent rows", () => {
+  const args = JSON.stringify({
+    tasks: [{ description: "map the repo", label: "repo-overview" }, { description: "a very long description that should be truncated because it exceeds the label limit" }],
+  });
+  const d = delegationsFrom([toolItem("Agent", args)]);
+  expect(d).toHaveLength(2);
+  expect(d[0]).toMatchObject({ label: "repo-overview", kind: "subagent" });
+  expect(d[1].kind).toBe("subagent");
+  expect(d[1].label.endsWith("…")).toBe(true);
+});
+
+test("delegationsFrom handles single-task Agent args and malformed args", () => {
+  expect(delegationsFrom([toolItem("Agent", '{"description":"one task"}')])).toMatchObject([
+    { label: "one task", kind: "subagent" },
+  ]);
+  expect(delegationsFrom([toolItem("Agent", "not json")])).toMatchObject([{ label: "agent", kind: "subagent" }]);
+});
+
+test("delegationsFrom maps A2A tool calls to a2a rows", () => {
+  expect(delegationsFrom([toolItem("A2A_QueryAgent", '{"agent":"docs-agent"}')])).toMatchObject([
+    { label: "docs-agent", kind: "a2a" },
+  ]);
+  expect(delegationsFrom([toolItem("A2A_SubmitTask", "{}")])).toMatchObject([
+    { label: "SubmitTask", kind: "a2a" },
+  ]);
+});
+
+test("delegationsFrom ignores finished delegations and unrelated tools", () => {
+  expect(delegationsFrom([toolItem("Agent", '{"tasks":[{"label":"x"}]}', "done")])).toHaveLength(0);
+  expect(delegationsFrom([toolItem("Read", '{"path":"a"}')])).toHaveLength(0);
+});
+
+test("subagentParentId extracts the orchestrator id from subagent session ids", () => {
+  expect(
+    subagentParentId("subagent-28f1b14b-7b10-4950-9487-8c0e10bf4917-464d7ff2-5da8-4d97-bedb-a3c86e78daff")
+  ).toBe("28f1b14b-7b10-4950-9487-8c0e10bf4917");
+  expect(subagentParentId("28f1b14b-7b10-4950-9487-8c0e10bf4917")).toBeNull();
+  expect(subagentParentId("subagent-not-a-uuid")).toBeNull();
 });

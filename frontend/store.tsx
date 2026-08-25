@@ -24,7 +24,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { chatReducer, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState } from "@/lib/transcript";
+import { chatReducer, delegationsFrom, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState, type Delegation } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
@@ -809,6 +809,11 @@ function useDesktopStore() {
     [transcripts, runningIds, lastRun]
   );
 
+  const delegations = useCallback(
+    (id: string): Delegation[] => delegationsFrom(transcripts[id]?.items ?? []),
+    [transcripts]
+  );
+
   return {
     items: active.items,
     typing: active.typing,
@@ -830,6 +835,7 @@ function useDesktopStore() {
     isRunning,
     isAwaitingApproval,
     runLabel,
+    delegations,
     runningCount: runningIds.size,
     onChatClick,
     clearSelection,
