@@ -128,6 +128,7 @@ pub fn run() {
             observability::get_traces,
             observability::get_metrics,
             permissions::computer_use_permission_status,
+            permissions::set_computer_use_enabled,
             permissions::request_accessibility_permission,
             permissions::request_screen_recording_permission,
         ])

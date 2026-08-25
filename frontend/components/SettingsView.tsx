@@ -389,6 +389,29 @@ function GeneralTab() {
         Agent sessions, storage backend, default model, and gateway settings. Changes take effect on next agent spawn.
       </p>
 
+      <h3 className="text-[0.9rem] font-semibold">Computer Use</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Lets the agent see the screen and control other apps. Off by default; takes effect on
+        the next agent spawn.
+      </p>
+      <div className="mb-5 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="computer-use-enabled"
+          checked={!!computerUsePermissions?.computer_use_enabled}
+          onChange={(e) => {
+            api
+              .setComputerUseEnabled(e.target.checked)
+              .catch(() => {})
+              .then(refreshComputerUsePermissions);
+          }}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="computer-use-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Enable Computer Use
+        </Label>
+      </div>
+
       {computerUsePermissions?.computer_use_enabled && (
         <div className="mb-5 flex flex-col gap-3">
           <ComputerUsePermissionSection
