@@ -377,7 +377,7 @@ export function Composer() {
             {running ? (
               <button
                 aria-label="Stop"
-                title="Stop"
+                title="Stop (Esc)"
                 onClick={cancel}
                 className={cn(ROUND, "bg-destructive text-white hover:bg-danger-hover")}
               >

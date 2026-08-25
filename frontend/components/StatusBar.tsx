@@ -38,7 +38,10 @@ export function StatusBar() {
       if (!dropdownRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -174,7 +177,7 @@ export function StatusBar() {
       <button
         aria-label={autoModeDescription}
         aria-pressed={autoMode}
-        title={autoModeDescription}
+        title={`${autoModeDescription} (Shift+Tab in composer)`}
         onClick={() => setAutoMode(!autoMode)}
         className={cn(
           "ml-auto inline-flex size-7 items-center justify-center rounded-full",
