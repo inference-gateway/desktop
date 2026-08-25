@@ -48,6 +48,62 @@ export type ChatState = {
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
+export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" };
+
+// Subagent sessions are persisted by the CLI as "subagent-<parentId>-<childId>".
+// ponytail: correlation parsed from the id convention - replace with a real
+// parent_session_id field once the CLI exposes one in `conversations list`.
+const SUBAGENT_SESSION = /^subagent-([0-9a-fA-F-]{36})-[0-9a-fA-F-]{36}$/;
+
+export function subagentParentId(sessionId: string): string | null {
+  return SUBAGENT_SESSION.exec(sessionId)?.[1] ?? null;
+}
+
+const DELEGATION_LABEL_MAX = 48;
+
+function delegationLabel(text: unknown): string | null {
+  if (typeof text !== "string" || !text.trim()) return null;
+  const t = text.trim();
+  return t.length > DELEGATION_LABEL_MAX ? `${t.slice(0, DELEGATION_LABEL_MAX)}…` : t;
+}
+
+export function delegationsFrom(items: TranscriptItem[]): Delegation[] {
+  const out: Delegation[] = [];
+  for (const it of items) {
+    if (it.kind !== "tool" || it.state !== "running") continue;
+    const key = it.callId ?? it.id;
+    let args: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(it.args);
+      if (parsed && typeof parsed === "object") args = parsed as Record<string, unknown>;
+    } catch {
+      args = null;
+    }
+    if (it.name === "Agent") {
+      const tasks = Array.isArray(args?.tasks) ? (args.tasks as unknown[]) : args ? [args] : [{}];
+      for (const [i, raw] of tasks.entries()) {
+        const task = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+        out.push({
+          id: `${key}:${i}`,
+          label: delegationLabel(task.label) ?? delegationLabel(task.description) ?? "agent",
+          kind: "subagent",
+        });
+      }
+    } else if (it.name.startsWith("A2A_")) {
+      out.push({
+        id: `${key}:0`,
+        label:
+          delegationLabel(args?.agent) ??
+          delegationLabel(args?.name) ??
+          delegationLabel(args?.url) ??
+          it.name.slice(4),
+        kind: "a2a",
+      });
+    }
+  }
+  return out;
+}
+
 export const initialChatState: ChatState = {
   items: [],
   typing: false,

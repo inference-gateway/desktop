@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
@@ -21,6 +21,7 @@ export function StatusBar() {
     isAwaitingApproval,
     isRunning,
     runLabel,
+    delegations,
     sessionId,
     conversations,
     openConversation,
@@ -54,6 +55,7 @@ export function StatusBar() {
       id: c.id,
       title: c.title || "Orchestrator",
       status: c.status,
+      delegations: delegations(c.id),
       tone: c.status.error
         ? "error"
         : isAwaitingApproval(c.id)
@@ -66,7 +68,11 @@ export function StatusBar() {
     }));
 
   const session = !statusError && sessionId ? runLabel(sessionId) : null;
-  const label = session?.label ?? statusText;
+  const sessionDelegations = sessionId ? delegations(sessionId) : [];
+  const label =
+    session?.label === "Running Agent..." && sessionDelegations.length > 0
+      ? `Running Agent (${sessionDelegations.length})...`
+      : (session?.label ?? statusText);
   const isError = session ? session.error : statusError;
   const tone = isError
     ? "error"
@@ -118,30 +124,49 @@ export function StatusBar() {
               <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>
             )}
             {agents.map((a) => (
-              <button
-                key={a.id}
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  openConversation(a.id);
-                }}
-                className={cn(
-                  "flex w-full items-center gap-[0.4rem] rounded px-2 py-1.5 text-left hover:bg-secondary",
-                  a.id === sessionId && "bg-secondary/60"
-                )}
-              >
-                <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[a.tone])} />
-                <span className="truncate text-foreground">{a.title}</span>
-                <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground/60">{a.id.slice(0, 5)}</span>
-                <span
+              <Fragment key={a.id}>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    openConversation(a.id);
+                  }}
                   className={cn(
-                    "ml-auto shrink-0 pl-3",
-                    a.status.error ? "text-err" : "text-muted-foreground"
+                    "flex w-full items-center gap-[0.4rem] rounded px-2 py-1.5 text-left hover:bg-secondary",
+                    a.id === sessionId && "bg-secondary/60"
                   )}
                 >
-                  {a.status.label}
-                </span>
-              </button>
+                  <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[a.tone])} />
+                  <span className="truncate text-foreground">{a.title}</span>
+                  <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground/60">{a.id.slice(0, 5)}</span>
+                  <span
+                    className={cn(
+                      "ml-auto shrink-0 pl-3",
+                      a.status.error ? "text-err" : "text-muted-foreground"
+                    )}
+                  >
+                    {a.status.label}
+                  </span>
+                </button>
+                {a.delegations.map((d) => (
+                  <button
+                    key={d.id}
+                    role="menuitem"
+                    aria-label={`${d.kind === "a2a" ? "A2A" : "agent"} ${d.label} under ${a.title}`}
+                    onClick={() => {
+                      setOpen(false);
+                      openConversation(a.id);
+                    }}
+                    className="flex w-full items-center gap-[0.4rem] rounded py-1 pl-6 pr-2 text-left hover:bg-secondary"
+                  >
+                    <span className={cn("h-[0.35rem] w-[0.35rem] shrink-0 rounded-full", DOT.running)} />
+                    <span className="truncate text-muted-foreground">{d.label}</span>
+                    <span className="ml-auto shrink-0 rounded-full bg-secondary px-1.5 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                      {d.kind === "a2a" ? "A2A" : "agent"}
+                    </span>
+                  </button>
+                ))}
+              </Fragment>
             ))}
           </div>
         )}

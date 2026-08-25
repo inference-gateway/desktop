@@ -1,6 +1,7 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 
 function ChatItem({ index }: { index: number }) {
@@ -12,11 +13,19 @@ function ChatItem({ index }: { index: number }) {
   const isActive = conv.id === sessionId;
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
+  const parentId = subagentParentId(conv.id);
+  const parentTitle = parentId
+    ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5)
+    : null;
 
   return (
     <div
       role="listitem"
-      title={conv.title || conv.id}
+      title={
+        parentTitle
+          ? `${conv.title || conv.id} - invoked by orchestrator: ${parentTitle}`
+          : `${conv.title || conv.id} - invoked by human`
+      }
       aria-selected={isSelected || undefined}
       onClick={(e) => onChatClick(index, e)}
       draggable
@@ -82,6 +91,37 @@ function BulkDeleteBar({ count, onDelete }: { count: number; onDelete: () => voi
       >
         {armed ? `Click again to delete ${count}` : `Delete ${count} selected`}
       </button>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  count,
+  collapsed,
+  onToggle,
+  className,
+  children,
+}: {
+  title: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={className}>
+      <button
+        onClick={onToggle}
+        aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+        className="flex w-full items-center gap-1 border-b border-border/60 px-[0.4rem] pb-1.5 pt-1 text-[0.82rem] font-semibold text-foreground/90"
+      >
+        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        {title}
+        <span className="ml-1 text-[0.72rem] font-normal text-muted-foreground/60">({count})</span>
+      </button>
+      {!collapsed && <div className="mt-1 flex flex-col gap-[2px] pl-3">{children}</div>}
     </div>
   );
 }
@@ -230,6 +270,8 @@ export function ChatList() {
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
+  const [orchestratorsCollapsed, setOrchestratorsCollapsed] = useState(false);
+  const [agentsCollapsed, setAgentsCollapsed] = useState(false);
 
   const groups = useMemo(() => {
     const map: Record<string, number[]> = {};
@@ -237,7 +279,12 @@ export function ChatList() {
       map[name] = [];
     }
     const ungrouped: number[] = [];
+    const agents: number[] = [];
     conversations.forEach((conv, i) => {
+      if (subagentParentId(conv.id)) {
+        agents.push(i);
+        return;
+      }
       const p = projects[conv.id];
       if (p && map[p]) {
         map[p].push(i);
@@ -248,6 +295,7 @@ export function ChatList() {
     return {
       projects: Object.entries(map),
       ungrouped,
+      agents,
     };
   }, [conversations, projects, projectNames]);
 
@@ -279,51 +327,81 @@ export function ChatList() {
     }
   };
 
+  const orchestratorRows = (
+    <>
+      {groups.projects.map(([name, indices]) => {
+        const collapsed = collapsedProjects.has(name);
+        return (
+          <ProjectGroup
+            key={name}
+            name={name}
+            count={indices.length}
+            collapsed={collapsed}
+            active={activeProject === name}
+            onToggle={() => toggleCollapseProject(name)}
+            onSelect={() => setActiveProject(activeProject === name ? null : name)}
+            onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
+            onRename={(n) => renameProject(name, n)}
+            onDelete={() => deleteProject(name)}
+            onDrop={(e) => handleDropOnProject(e, name)}
+            onDragOverProject={() => {}}
+          >
+            {indices.map((i) => (
+              <ChatItem key={conversations[i]?.id ?? i} index={i} />
+            ))}
+          </ProjectGroup>
+        );
+      })}
+
+      {groups.ungrouped.length > 0 && (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDragOverUngrouped(true);
+          }}
+          onDragLeave={() => setDragOverUngrouped(false)}
+          onDrop={handleDropOnUngrouped}
+          className={cn(
+            "flex flex-col gap-[2px] rounded-md",
+            dragOverUngrouped && "ring-1 ring-primary/30"
+          )}
+        >
+          {groups.ungrouped.map((i) => (
+            <ChatItem key={conversations[i]?.id ?? i} index={i} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto">
-        {groups.projects.map(([name, indices]) => {
-          const collapsed = collapsedProjects.has(name);
-          return (
-            <ProjectGroup
-              key={name}
-              name={name}
-              count={indices.length}
-              collapsed={collapsed}
-              active={activeProject === name}
-              onToggle={() => toggleCollapseProject(name)}
-              onSelect={() => setActiveProject(activeProject === name ? null : name)}
-              onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
-              onRename={(n) => renameProject(name, n)}
-              onDelete={() => deleteProject(name)}
-              onDrop={(e) => handleDropOnProject(e, name)}
-              onDragOverProject={() => {}}
+        {groups.agents.length > 0 ? (
+          <>
+            <Section
+              title="Orchestrators"
+              count={conversations.length - groups.agents.length}
+              collapsed={orchestratorsCollapsed}
+              onToggle={() => setOrchestratorsCollapsed((v) => !v)}
             >
-              {indices.map((i) => (
+              {orchestratorRows}
+            </Section>
+            <Section
+              title="Agents"
+              count={groups.agents.length}
+              collapsed={agentsCollapsed}
+              onToggle={() => setAgentsCollapsed((v) => !v)}
+              className="mt-4"
+            >
+              {groups.agents.map((i) => (
                 <ChatItem key={conversations[i]?.id ?? i} index={i} />
               ))}
-            </ProjectGroup>
-          );
-        })}
-
-        {groups.ungrouped.length > 0 && (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              setDragOverUngrouped(true);
-            }}
-            onDragLeave={() => setDragOverUngrouped(false)}
-            onDrop={handleDropOnUngrouped}
-            className={cn(
-              "flex flex-col gap-[2px] rounded-md",
-              dragOverUngrouped && "ring-1 ring-primary/30"
-            )}
-          >
-            {groups.ungrouped.map((i) => (
-              <ChatItem key={conversations[i]?.id ?? i} index={i} />
-            ))}
-          </div>
+            </Section>
+          </>
+        ) : (
+          orchestratorRows
         )}
 
         {conversations.length === 0 && (
