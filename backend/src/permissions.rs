@@ -143,6 +143,21 @@ mod macos {
     }
 }
 
+fn write_computer_use_enabled(path: &Path, enabled: bool) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(path, format!("enabled: {enabled}\n")).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn set_computer_use_enabled(enabled: bool) -> Result<(), String> {
+    write_computer_use_enabled(
+        &effective_computer_use_config(&agent_cwd(), &home_dir()),
+        enabled,
+    )
+}
+
 #[tauri::command]
 pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
     let computer_use_enabled = computer_use_enabled(
@@ -218,6 +233,18 @@ mod tests {
         assert!(!enabled_from_yaml("---\nenabled: false\n"));
         assert!(!enabled_from_yaml("---\nscreenshot:\n  enabled: true\n"));
         assert!(!enabled_from_yaml("not: valid: yaml: ["));
+    }
+
+    #[test]
+    fn writes_enabled_flag_readable_by_parser() {
+        let path = std::env::temp_dir()
+            .join(format!("inference-gateway-cu-write-{}", std::process::id()))
+            .join(COMPUTER_USE_CONFIG_FILE);
+        write_computer_use_enabled(&path, true).unwrap();
+        assert!(enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
+        write_computer_use_enabled(&path, false).unwrap();
+        assert!(!enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
