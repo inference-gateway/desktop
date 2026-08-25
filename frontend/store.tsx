@@ -26,6 +26,7 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { chatReducer, delegationsFrom, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState, type Delegation } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
+import { matchShortcut } from "@/lib/shortcuts";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 
 const STORAGE_KEY = "selectedModel";
@@ -787,6 +788,33 @@ function useDesktopStore() {
 
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const shortcut = matchShortcut({
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        repeat: e.repeat,
+        defaultPrevented: e.defaultPrevented,
+        inComposer: e.target === composerRef.current,
+      });
+      if (shortcut === "newChat") {
+        e.preventDefault();
+        newChat();
+      } else if (shortcut === "cancel" && running) {
+        e.preventDefault();
+        void cancel();
+      } else if (shortcut === "autoModeToggle") {
+        e.preventDefault();
+        setAutoMode(!autoMode);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [running, cancel, newChat, autoMode, setAutoMode]);
 
   const runLabel = useCallback(
     (id: string): { label: string; error: boolean } | null => {

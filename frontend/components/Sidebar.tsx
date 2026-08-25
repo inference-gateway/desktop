@@ -11,6 +11,7 @@ export function Sidebar() {
     >
       <button
         onClick={newChat}
+        title="New chat (⌘N / Ctrl+N)"
         className="rounded-md bg-primary px-3 py-[0.55rem] text-[0.85rem] font-medium text-primary-foreground hover:bg-primary-hover"
       >
         + New chat
