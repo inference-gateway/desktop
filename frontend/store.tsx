@@ -75,6 +75,8 @@ function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [initAllRunning, setInitAllRunning] = useState(false);
+  const [initSelecting, setInitSelecting] = useState(false);
+  const [initSelection, setInitSelection] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const [statusText, setStatusText] = useState("");
@@ -869,26 +871,48 @@ function useDesktopStore() {
       if (ctx) setProjectContext(name, ctx);
   }, [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
 
+  const startInitSelection = useCallback(() => {
+    setInitSelecting(true);
+    setInitSelection(new Set(projectNames));
+  }, [projectNames]);
+
+  const cancelInitSelection = useCallback(() => {
+    setInitSelecting(false);
+    setInitSelection(new Set());
+  }, []);
+
+  const toggleInitSelection = useCallback((name: string) => {
+    setInitSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
   const initAllProjects = useCallback(async (names: string[]) => {
-      setInitAllRunning(true);
-      try {
-    const skipped: string[] = [];
-    for (const name of names) {
-          const dirOk = await api.projectDirExists(name).catch(() => false);
-          const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
-          if (!dirOk || busy) {
-            skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
-            continue;
-          }
-          while (runningIdsRef.current.size >= maxSessions) {
-            await new Promise((r) => setTimeout(r, 300));
-          }
-          await initProject(name);
-    }
-    if (skipped.length) setStatus(`Init skipped: ${skipped.join(", ")}`);
-      } finally {
-    setInitAllRunning(false);
+    setInitAllRunning(true);
+    try {
+      const skipped: string[] = [];
+      const inFlight = new Set<Promise<void>>();
+      for (const name of names) {
+        const dirOk = await api.projectDirExists(name).catch(() => false);
+        const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
+        if (!dirOk || busy) {
+          skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
+          continue;
+        }
+        // ponytail: bound concurrency on a local set, not runningIdsRef (which lags a React render).
+        while (inFlight.size >= maxSessions) await Promise.race(inFlight);
+        const run = initProject(name).catch(() => {});
+        inFlight.add(run);
+        void run.finally(() => inFlight.delete(run));
       }
+      await Promise.all(inFlight);
+      if (skipped.length) setStatus(`Init skipped: ${skipped.join(", ")}`);
+    } finally {
+      setInitAllRunning(false);
+    }
   }, [projects, maxSessions, initProject, setStatus]);
 
   const setProjectPath = useCallback((name: string, path: string) => {
@@ -1053,6 +1077,11 @@ function useDesktopStore() {
     initProject,
     initAllProjects,
     initAllRunning,
+    initSelecting,
+    initSelection,
+    startInitSelection,
+    cancelInitSelection,
+    toggleInitSelection,
   };
 }
 
