@@ -127,6 +127,8 @@ pub fn run() {
             projects::scan_git_repos,
             projects::clone_github_repo,
             projects::git_project_names,
+            projects::project_dir_exists,
+            projects::refresh_project_context,
             projects::save_project_file,
             projects::list_project_files,
             skills::install_skill,

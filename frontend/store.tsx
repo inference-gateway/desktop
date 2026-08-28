@@ -845,6 +845,25 @@ function useDesktopStore() {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
   }, []);
 
+  // Init a project: run the CLI's /init in a new conversation under the
+  // project (the backend resolves its directory as the run's cwd), then
+  // re-read AGENTS.md/CLAUDE.md so the fresh context takes effect.
+  const initProject = useCallback(async (name: string) => {
+    if (runningIds.size >= maxSessions) {
+          setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+          return;
+    }
+    const runId = crypto.randomUUID();
+    assignProject(runId, name);
+    setActiveProject(name);
+    setActiveId(runId);
+    activeIdRef.current = runId;
+    await sendPrompt(runId, "/init", name);
+    await loadProjects();
+    const ctx = await api.refreshProjectContext(name).catch(() => null);
+    if (ctx) setProjectContext(name, ctx);
+  }, [runningIds, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
+
   const setProjectPath = useCallback((name: string, path: string) => {
     setProjectPaths((prev) => {
       if (!path.trim()) {
@@ -1004,6 +1023,7 @@ function useDesktopStore() {
     deleteProjects,
     renameProject,
     toggleCollapseProject,
+    initProject,
   };
 }
 
