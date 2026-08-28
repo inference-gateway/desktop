@@ -163,9 +163,6 @@ function ProjectGroup({
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(name);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  // Enabled only once the project's directory is confirmed on disk; a stale
-  // import (paths override pointing at a deleted checkout) disables the item
-  // instead of failing cryptically.
   const [dirOk, setDirOk] = useState(false);
 
   const openMenu = (e: React.MouseEvent) => {
