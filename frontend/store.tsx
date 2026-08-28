@@ -74,6 +74,7 @@ export const PROVIDERS = [
 function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
+  const [initAllRunning, setInitAllRunning] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const [statusText, setStatusText] = useState("");
@@ -111,6 +112,10 @@ function useDesktopStore() {
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
+  const runningIdsRef = useRef<Set<string>>(runningIds);
+  useEffect(() => {
+    runningIdsRef.current = runningIds;
+  }, [runningIds]);
 
   const setStatus = useCallback((t: string) => {
     setStatusText(t);
@@ -522,7 +527,7 @@ function useDesktopStore() {
     setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
   }, []);
 
-  const sendPrompt = useCallback(async (runId: string, text: string, projectName?: string) => {
+  const sendPrompt = useCallback(async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
     if (runningIds.has(runId)) return;
     if (!model) {
       setError("Please select a model first");
@@ -594,7 +599,7 @@ function useDesktopStore() {
         onEvent: ch,
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
-          [cfg.extra_instructions, projectGroup, projectContext].filter(Boolean).join("\n\n") || undefined,
+          [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") || undefined,
         autoMode,
         project: projectName,
       });
@@ -845,24 +850,46 @@ function useDesktopStore() {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
   }, []);
 
-  // Init a project: run the CLI's /init in a new conversation under the
-  // project (the backend resolves its directory as the run's cwd), then
-  // re-read AGENTS.md/CLAUDE.md so the fresh context takes effect.
   const initProject = useCallback(async (name: string) => {
-    if (runningIds.size >= maxSessions) {
-          setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
-          return;
+      if (runningIdsRef.current.size >= maxSessions) {
+    setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+    return;
+      }
+      const runId = crypto.randomUUID();
+      assignProject(runId, name);
+      setActiveProject(name);
+      setActiveId(runId);
+      activeIdRef.current = runId;
+      const pr = gitProjects.has(name)
+    ? "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge."
+    : undefined;
+      await sendPrompt(runId, "/init", name, pr);
+      await loadProjects();
+      const ctx = await api.refreshProjectContext(name).catch(() => null);
+      if (ctx) setProjectContext(name, ctx);
+  }, [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
+
+  const initAllProjects = useCallback(async (names: string[]) => {
+      setInitAllRunning(true);
+      try {
+    const skipped: string[] = [];
+    for (const name of names) {
+          const dirOk = await api.projectDirExists(name).catch(() => false);
+          const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
+          if (!dirOk || busy) {
+            skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
+            continue;
+          }
+          while (runningIdsRef.current.size >= maxSessions) {
+            await new Promise((r) => setTimeout(r, 300));
+          }
+          await initProject(name);
     }
-    const runId = crypto.randomUUID();
-    assignProject(runId, name);
-    setActiveProject(name);
-    setActiveId(runId);
-    activeIdRef.current = runId;
-    await sendPrompt(runId, "/init", name);
-    await loadProjects();
-    const ctx = await api.refreshProjectContext(name).catch(() => null);
-    if (ctx) setProjectContext(name, ctx);
-  }, [runningIds, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
+    if (skipped.length) setStatus(`Init skipped: ${skipped.join(", ")}`);
+      } finally {
+    setInitAllRunning(false);
+      }
+  }, [projects, maxSessions, initProject, setStatus]);
 
   const setProjectPath = useCallback((name: string, path: string) => {
     setProjectPaths((prev) => {
@@ -1024,6 +1051,8 @@ function useDesktopStore() {
     renameProject,
     toggleCollapseProject,
     initProject,
+    initAllProjects,
+    initAllRunning,
   };
 }
 

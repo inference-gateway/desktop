@@ -21,14 +21,34 @@ pub struct Test {
 #[serde(untagged, deny_unknown_fields)]
 pub enum Step {
     Bare(BareStep),
-    Send { send: String },
-    Keypress { keypress: String },
-    WaitFor { wait_for: WaitTarget },
-    Click { click: ClickTarget },
-    AssertAbsent { assert_absent: FileTarget },
-    AssertAboveComposer { assert_above_composer: ClickTarget },
-    AssertModel { assert_model: String },
-    Screenshot { screenshot: String },
+    Send {
+        send: String,
+    },
+    Keypress {
+        keypress: String,
+    },
+    Type {
+        #[serde(rename = "type")]
+        text: String,
+    },
+    WaitFor {
+        wait_for: WaitTarget,
+    },
+    Click {
+        click: ClickTarget,
+    },
+    AssertAbsent {
+        assert_absent: FileTarget,
+    },
+    AssertAboveComposer {
+        assert_above_composer: ClickTarget,
+    },
+    AssertModel {
+        assert_model: String,
+    },
+    Screenshot {
+        screenshot: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
