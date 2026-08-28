@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
-import { renderMarkdown } from "@/lib/markdown";
+import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { ScheduleJob } from "@/lib/tauri";
@@ -39,6 +39,9 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
       <div
         ref={ref}
         className={cn(BUBBLE, "md rounded-bl-[4px] bg-assistant text-assistant-foreground")}
+        // Intercepts plain clicks and Cmd/Ctrl+clicks alike: the webview must
+        // never navigate to external pages (no way back once it does).
+        onClick={(e) => handleLinkClick(e, (url) => api.openUrl(url).catch(() => {}))}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(merged) }}
       />
       <CopyButton text={merged} />
