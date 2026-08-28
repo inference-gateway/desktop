@@ -87,7 +87,6 @@ function useDesktopStore() {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
   const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
-  // Per-session overrides; the persisted autoMode above only seeds new sessions (#171).
   const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
