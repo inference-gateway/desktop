@@ -4,6 +4,19 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { Button } from "@/components/ui/button";
+
+function CheckboxGlyph({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-block size-3.5 shrink-0 rounded-[4px] border",
+        checked ? "border-primary bg-primary" : "border-muted-foreground/50"
+      )}
+    />
+  );
+}
 
 function ChatItem({ index }: { index: number }) {
   const { conversations, selected, sessionId, onChatClick, deleteConversation, isRunning, isAwaitingApproval } =
@@ -96,6 +109,35 @@ function BulkDeleteBar({ count, onDelete }: { count: number; onDelete: () => voi
   );
 }
 
+function InitBar({ count, onInit, onCancel }: { count: number; onInit: () => void; onCancel: () => void }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t border-border py-2">
+      <Button
+        disabled={count === 0}
+        onClick={() => {
+          if (!armed) {
+            setArmed(true);
+            return;
+          }
+          onInit();
+        }}
+        onMouseLeave={() => setArmed(false)}
+        className="flex-1 text-[0.83rem]"
+      >
+        {count === 0
+          ? "Select projects to init"
+          : armed
+            ? `Click again to init ${count}`
+            : `Init ${count} project${count === 1 ? "" : "s"}`}
+      </Button>
+      <Button variant="outline" onClick={onCancel} className="text-[0.83rem]">
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 function Section({
   title,
   count,
@@ -129,6 +171,9 @@ function Section({
 
 function ProjectGroup({
   name,
+  selecting,
+  checked,
+  onToggleCheck,
   count,
   isGit,
   busy,
@@ -146,6 +191,9 @@ function ProjectGroup({
   children,
 }: {
   name: string;
+  selecting: boolean;
+  checked: boolean;
+  onToggleCheck: () => void;
   count: number;
   isGit: boolean;
   busy: boolean;
@@ -203,6 +251,16 @@ function ProjectGroup({
           active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
         )}
       >
+        {selecting && (
+          <button
+            aria-label={`Toggle init for project ${name}`}
+            aria-pressed={checked}
+            onClick={(e) => { e.stopPropagation(); onToggleCheck(); }}
+            className="inline-flex shrink-0 items-center"
+          >
+            <CheckboxGlyph checked={checked} />
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
@@ -329,6 +387,11 @@ export function ChatList() {
     toggleCollapseProject,
     createProject,
     initProject,
+    initAllProjects,
+    initSelecting,
+    initSelection,
+    toggleInitSelection,
+    cancelInitSelection,
     isRunning,
     activeProject,
     setActiveProject,
@@ -428,6 +491,9 @@ export function ChatList() {
               <ProjectGroup
                 key={name}
                 name={name}
+                selecting={initSelecting}
+                checked={initSelection.has(name)}
+                onToggleCheck={() => toggleInitSelection(name)}
                 count={indices.length}
                 isGit={gitProjects.has(name)}
                 busy={projectBusy(name)}
@@ -541,6 +607,16 @@ export function ChatList() {
         </button>
       )}
 
+      {initSelecting && (
+        <InitBar
+          count={initSelection.size}
+          onInit={() => {
+            initAllProjects(Array.from(initSelection));
+            cancelInitSelection();
+          }}
+          onCancel={cancelInitSelection}
+        />
+      )}
       {selected.size > 0 && <BulkDeleteBar count={selected.size} onDelete={bulkDelete} />}
     </>
   );

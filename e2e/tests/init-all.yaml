@@ -1,15 +1,13 @@
-name: init all projects - confirmation dialog and fan-out
+name: init all projects - selection mode and fan-out
 steps:
-  # Create a project through the sidebar prompt (auto-focused input; commits on Enter).
+  - new_chat
   - click: { button: "New project" }
   - type: "e2e-init-project"
   - wait_for: { text: "e2e-init-project", timeout: 15 }
-  # Open the confirmation dialog: description + project list + explicit Cancel/Start.
   - click: { button: "Init all projects" }
-  - wait_for: { button: "Start init", timeout: 10 }
-  - wait_for: { text: "One /init conversation per selected project", timeout: 10 }
+  - wait_for: { button: "Init 1 project", timeout: 10 }
   - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Toggle init for project e2e-init-project" }
-  # Confirm: one /init conversation for the project; the mock gateway answers "Done.".
-  - click: { button: "Start init" }
+  - click: { button: "Init 1 project" }
+  - click: { button: "Click again to init 1" }
   - wait_for: { text: "Done.", timeout: 60 }

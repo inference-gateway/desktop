@@ -16,13 +16,14 @@ const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
-/// button lookup walks `UI elements` instead.
+/// button lookup walks `UI elements` instead. Matches AXCheckBox too: buttons
+/// with aria-pressed (toggles/checkboxes) surface as AXCheckBox, not AXButton.
 const FIND_BUTTON_FN: &str = r#"
 on findButton(el, btnName, depth)
 	tell application "System Events"
 		if depth > 8 then return missing value
 		try
-			if role of el is "AXButton" and name of el is btnName then return el
+			if (role of el is "AXButton" or role of el is "AXCheckBox") and name of el is btnName then return el
 		end try
 		try
 			repeat with c in (UI elements of el)
@@ -236,21 +237,17 @@ impl AppDriver {
         self.click("Send")
     }
 
-    /// Sidebar prompt inputs (e.g. "New project") are single-line AXTextFields:
-    /// set the value, verify it stuck, then commit with Return.
+    /// Sidebar prompt inputs (e.g. "New project") auto-focus when revealed but
+    /// aren't reliably reachable by AX path across macOS versions (unlike the
+    /// composer text area). Type into the focused element via keystroke, then
+    /// commit with Return; the caller verifies the result with a `wait_for`.
     pub fn type_text(&self, text: &str) -> Result<()> {
-        let set_and_read = format!(
-            "tell application \"System Events\"\n{root}\nset tf to text field 1 of root\nset value of tf to \"{msg}\"\ndelay 0.3\nreturn value of tf as text\nend tell",
-            root = ax_root(),
+        std::thread::sleep(Duration::from_millis(500)); // let the revealed input mount + focus
+        let script = format!(
+            "tell application \"System Events\"\nkeystroke \"{msg}\"\nend tell",
             msg = escape(text),
         );
-        let got = osascript(&set_and_read)?;
-        if got.trim() != text {
-            bail!(
-                "sidebar text field did not accept the value (got {:?})",
-                got.trim()
-            );
-        }
+        osascript(&script).map_err(|e| anyhow!("typing {text:?}: {}", e))?;
         osascript("tell application \"System Events\"\nkey code 36\nend tell")
             .map(|_| ())
             .map_err(|e| anyhow!("committing {text:?}: {}", e))
