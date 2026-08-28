@@ -5,34 +5,45 @@
 ```
 .
 ├── .github/workflows/tasks.yml   # CI/CD: agent-driven workflow (infer-action)
+├── .releaserc.json               # semantic-release config (conventional commits, release assets)
 ├── README.md                     # Project overview
 ├── AGENTS.md                     # This file - contributor & agent guide
 ├── CLAUDE.md -> AGENTS.md        # Symlink for Claude Code compatibility
+├── CONTRIBUTING.md               # Contributor guidelines
+├── LICENSE                       # Apache-2.0
 ├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
 ├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, bun, infer)
 ├── Taskfile.yml                  # Task runner: common build/test/dev commands
 ├── .agents/skills/               # Agent skill definitions
 ├── .claude/skills -> ../.agents/skills  # Symlink for Claude Code
 ├── package.json                  # Frontend deps + scripts (Bun)
+├── bun.lock                      # Bun lockfile
 ├── vite.config.ts                # Vite (React + Tailwind v4 plugin, @ alias)
 ├── tsconfig.json                 # TypeScript config
+├── tsconfig.node.json            # TypeScript config for Vite tooling
 ├── components.json               # shadcn/ui config
 ├── index.html                    # Vite entry (mounts frontend/main.tsx into #app)
 ├── Cargo.toml                    # Root workspace: members = ["backend", "e2e"]
+├── Cargo.lock                    # Workspace lockfile
 ├── dist/                         # Vite build output, embedded by Tauri (gitignored)
 ├── frontend/                     # React + TypeScript frontend
 │   ├── main.tsx                  # Entry: mounts <App/>, system dark mode
 │   ├── App.tsx  store.tsx        # App shell + state store (context)
-│   ├── components/               # UI (TopBar, Sidebar, Transcript, Composer, ...)
+│   ├── monitor.tsx               # Always-on-top monitor window (computer-use sessions)
+│   ├── overlay.tsx               # Fullscreen computer-use action overlay
+│   ├── index.css                 # Tailwind v4 entry + global styles
+│   ├── components/               # UI (TopBar, Sidebar, Transcript, Composer, Main, SettingsView, ...)
 │   ├── hooks/                    # useVoiceInput (speech-to-text)
-│   ├── lib/                      # tauri client, markdown, tools, audio, transcript
+│   ├── lib/                      # tauri client, markdown, tools, transcript, monitor-state, shortcuts, ...
 │   └── public/                   # Static assets (logo.png)
 ├── e2e/                          # macOS e2e harness (workspace member)
 └── backend/                      # Tauri v2 backend (Rust)
     ├── Cargo.toml
     ├── build.rs
+    ├── Info.plist                # macOS bundle config
     ├── tauri.conf.json
     ├── capabilities/default.json
+    ├── icons/                    # App icons (icns, ico, png)
     └── src/
         ├── lib.rs                # Wiring only: AppState, run(), command registration
         ├── main.rs
@@ -43,6 +54,11 @@
         ├── env.rs                # Paths, env composition, agent cwd
         ├── gateway.rs            # Gateway binary + lifecycle
         ├── observability.rs      # OTLP collector, traces/metrics
+        ├── permissions.rs        # macOS permission states + mock grant flow (e2e)
+        ├── process_manager.rs    # Ownership + shutdown of long-lived child processes
+        ├── projects.rs           # Projects: repo import, per-project cwd/files
+        ├── scheduler.rs          # Background agent runs + log capture
+        ├── skills.rs             # Skill install/list (wraps `infer skills`)
         ├── stt.rs                # Whisper voice input
         ├── tasks.rs              # infer-action workflow template, version pin, task issue/PR commands
         └── updates.rs            # CLI/gateway/desktop update checks
