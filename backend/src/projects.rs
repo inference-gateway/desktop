@@ -376,6 +376,58 @@ pub(crate) fn project_dir_exists(name: String) -> bool {
     project_dir(&name).is_some_and(|dir| dir.is_dir())
 }
 
+/// Platform command that opens a folder in VS Code: `open -a` on macOS, the
+/// `code` CLI elsewhere. Both exit promptly after handing the folder over.
+fn vscode_launch(dir: &Path) -> std::process::Command {
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = std::process::Command::new("code");
+    #[cfg(target_os = "macos")]
+    cmd.arg("-a").arg("Visual Studio Code");
+    cmd.arg(dir);
+    cmd
+}
+
+/// Open `dir` in VS Code via the injected launcher, mirroring `ensure_clone`:
+/// a directory that does not exist fails before the launcher runs and names
+/// the path, so a stale import fails visibly instead of cryptically.
+fn open_in_vs_code_with(
+    launch: impl FnOnce(&Path) -> Result<(), String>,
+    dir: &Path,
+) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Err(format!("Project directory not found: {}", dir.display()));
+    }
+    launch(dir)
+}
+
+/// Open the project's resolved directory in VS Code. Waiting for the
+/// launcher's exit is what makes a missing VS Code a visible error
+/// ("Unable to find application named ...") instead of a silent no-op.
+#[tauri::command]
+pub(crate) async fn open_in_vs_code(name: String) -> Result<(), String> {
+    let dir = project_dir(&name).ok_or("Project directory not resolved")?;
+    tokio::task::spawn_blocking(move || {
+        open_in_vs_code_with(
+            |dir| {
+                let out = vscode_launch(dir)
+                    .output()
+                    .map_err(|e| format!("Failed to launch VS Code: {e}"))?;
+                out.status.success().then_some(()).ok_or_else(|| {
+                    format!(
+                        "Failed to open in VS Code: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    )
+                })
+            },
+            &dir,
+        )
+    })
+    .await
+    .map_err(|e| format!("open task failed: {e}"))?
+}
+
 /// Re-read the project's agent instructions (AGENTS.md, falling back to
 /// CLAUDE.md) from its resolved directory, e.g. after an /init run, so the
 /// new file becomes the project context without restarting the app.
@@ -750,6 +802,49 @@ mod tests {
             Some("fresh agents rules"),
             "AGENTS.md wins over CLAUDE.md"
         );
+    }
+
+    /// The open action checks the resolved directory before launching
+    /// (injected launcher, never spawns) and surfaces launcher failures.
+    #[test]
+    fn open_in_vs_code_checks_the_dir_before_launching() {
+        let name = "VSCode Probe";
+        let dir = project_dir(name).expect("dir resolves");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let mut calls = 0;
+        let err = open_in_vs_code_with(
+            |_d| {
+                calls += 1;
+                Ok(())
+            },
+            &dir,
+        )
+        .unwrap_err();
+        assert_eq!(calls, 0, "a missing directory must not be launched");
+        assert!(err.contains("not found"), "{err}");
+
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut launched_with = None;
+        open_in_vs_code_with(
+            |d| {
+                launched_with = Some(d.to_path_buf());
+                Ok(())
+            },
+            &dir,
+        )
+        .unwrap();
+        assert_eq!(launched_with.as_deref(), Some(dir.as_path()));
+        assert!(
+            open_in_vs_code_with(
+                |_| Err("Unable to find application named 'Visual Studio Code'".into()),
+                &dir,
+            )
+            .unwrap_err()
+            .contains("Unable to find application"),
+            "launcher failures surface"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

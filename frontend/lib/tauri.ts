@@ -246,6 +246,7 @@ export const api = {
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
   gitProjectNames: () => invoke<string[]>("git_project_names"),
   projectDirExists: (name: string) => invoke<boolean>("project_dir_exists", { name }),
+  openInVsCode: (name: string) => invoke<void>("open_in_vs_code", { name }),
   refreshProjectContext: (name: string) => invoke<string | null>("refresh_project_context", { name }),
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),

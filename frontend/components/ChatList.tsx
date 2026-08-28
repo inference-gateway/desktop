@@ -137,6 +137,7 @@ function ProjectGroup({
   onToggle,
   onSelect,
   onInit,
+  onOpenInVsCode,
   onSettings,
   onRename,
   onDelete,
@@ -153,6 +154,7 @@ function ProjectGroup({
   onToggle: () => void;
   onSelect: () => void;
   onInit: () => void;
+  onOpenInVsCode: () => void;
   onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
@@ -278,9 +280,21 @@ function ProjectGroup({
                 }}
               />
               <div
-                style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 48) }}
+                style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 84) }}
                 className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
               >
+                <button
+                  aria-label={`Open project ${name} in VS Code`}
+                  title="Open the project folder in VS Code"
+                  disabled={!dirOk}
+                  onClick={() => {
+                        setMenu(null);
+                        onOpenInVsCode();
+                  }}
+                  className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  Open in VS Code
+                </button>
                 <button
                   aria-label={`Init project ${name}`}
                   title="Run /init to create or update AGENTS.md"
@@ -323,6 +337,7 @@ export function ChatList() {
     setCurrentView,
     gitProjects,
     projectGroups,
+    setError,
   } = useDesktop();
 
   const [newProjectInput, setNewProjectInput] = useState(false);
@@ -421,6 +436,9 @@ export function ChatList() {
                 onToggle={() => toggleCollapseProject(name)}
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
+                onOpenInVsCode={() =>
+                      api.openInVsCode(name).catch((e) => setError(String(e)))
+                }
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);
