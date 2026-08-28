@@ -41,7 +41,7 @@ export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean
 export type Conversation = { id: string; title?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type ProjectFile = { name: string; size: number };
-export type GitRepo = { name: string; path: string; context: string | null };
+export type GitRepo = { name: string; path: string; group: string; context: string | null };
 export type DesktopConfig = {
   storage_backend: string;
   storage_directory: string;

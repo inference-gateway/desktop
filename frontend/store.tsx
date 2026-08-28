@@ -101,6 +101,7 @@ function useDesktopStore() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
+  const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
@@ -249,10 +250,15 @@ function useDesktopStore() {
       for (const [name, p] of Object.entries(parsed?.paths ?? {})) {
         if (typeof p === "string" && p.trim()) paths[name] = p;
       }
+      const groups: Record<string, string> = {};
+      for (const [name, g] of Object.entries(parsed?.groups ?? {})) {
+        if (typeof g === "string" && g.trim()) groups[name] = g;
+      }
       setProjects(map);
       setProjectNames(Array.from(names));
       setProjectContexts(contexts);
       setProjectPaths(paths);
+      setProjectGroups(groups);
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
@@ -504,11 +510,11 @@ function useDesktopStore() {
   useEffect(() => {
     if (!projectsLoaded) return;
     api
-      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths }))
+      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths, groups: projectGroups }))
       .then(() => api.gitProjectNames())
       .then((names) => setGitProjects(new Set(names)))
       .catch(() => {});
-  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths]);
+  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups]);
 
   const assignProject = useCallback((sessionId: string, projectName: string) => {
     setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
@@ -577,6 +583,9 @@ function useDesktopStore() {
       };
       const cfg = await api.getConfig();
       const projectContext = projectName ? projectContexts[projectName] : undefined;
+      const projectGroup = projectName && projectGroups[projectName]
+        ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
+        : undefined;
       await api.sendMessage({
         prompt: text,
         model,
@@ -584,7 +593,7 @@ function useDesktopStore() {
         onEvent: ch,
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
-          [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
+          [cfg.extra_instructions, projectGroup, projectContext].filter(Boolean).join("\n\n") || undefined,
         autoMode,
         project: projectName,
       });
@@ -600,7 +609,7 @@ function useDesktopStore() {
       });
       recordTerminal(runId, { label: "Error", error: true });
     }
-  }, [runningIds, model, autoMode, projectContexts, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
+  }, [runningIds, model, autoMode, projectContexts, projectGroups, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
@@ -754,7 +763,7 @@ function useDesktopStore() {
     api.createProjectDir(name).catch((e) => console.error("Failed to create project directory:", e));
   }, []);
 
-  const importProjects = useCallback((repos: { name: string; path: string; context?: string | null }[]) => {
+  const importProjects = useCallback((repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
     setProjectNames((prev) => {
       const fresh = repos.map((r) => r.name).filter((n) => !prev.includes(n));
       return fresh.length ? [...prev, ...fresh] : prev;
@@ -767,6 +776,11 @@ function useDesktopStore() {
     setProjectContexts((prev) => {
       const next = { ...prev };
       for (const r of repos) if (r.context) next[r.name] ??= r.context;
+      return next;
+    });
+    setProjectGroups((prev) => {
+      const next = { ...prev };
+      for (const r of repos) if (r.group) next[r.name] ??= r.group;
       return next;
     });
   }, []);
@@ -783,6 +797,11 @@ function useDesktopStore() {
       return next;
     });
     setProjectPaths((prev) => {
+      const next = { ...prev };
+      for (const name of gone) delete next[name];
+      return next;
+    });
+    setProjectGroups((prev) => {
       const next = { ...prev };
       for (const name of gone) delete next[name];
       return next;
@@ -805,6 +824,13 @@ function useDesktopStore() {
       return next;
     });
     setProjectPaths((prev) => {
+      if (!(oldName in prev)) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
+    setProjectGroups((prev) => {
       if (!(oldName in prev)) return prev;
       const next = { ...prev };
       next[newName] = next[oldName];
@@ -963,6 +989,7 @@ function useDesktopStore() {
     setProjectContext,
     projectPaths,
     setProjectPath,
+    projectGroups,
     initialSettingsTab,
     setInitialSettingsTab,
     assignProject,

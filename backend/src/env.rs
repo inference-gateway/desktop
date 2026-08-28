@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility actions over screenshots. On macOS, target the intended app by its process or bundle name (`app:<name>`) instead of `frontmost` or its display title; for this desktop use `app:inference-gateway-desktop`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
 
-const PROJECTS_GUIDANCE: &str = "Chat organization: the desktop sidebar groups chats into projects via ~/.infer/projects.json, JSON of the shape {\"assignments\":{\"<conversation-id>\":\"<project>\"},\"names\":[\"<project>\"],\"contexts\":{\"<project>\":\"<extra instructions>\"}}. To organize chats, list them with `infer conversations list --format json` and edit that file (preserve entries you are not changing); the sidebar reloads it after your run. Do not modify the app's source code for this.";
+const PROJECTS_GUIDANCE: &str = "Chat organization: the desktop sidebar groups chats into projects via ~/.infer/projects.json, JSON of the shape {\"assignments\":{\"<conversation-id>\":\"<project>\"},\"names\":[\"<project>\"],\"contexts\":{\"<project>\":\"<extra instructions>\"},\"groups\":{\"<project>\":\"<label grouping sibling projects, e.g. their parent directory>\"}}. To organize chats, list them with `infer conversations list --format json` and edit that file (preserve entries you are not changing); the sidebar reloads it after your run. Do not modify the app's source code for this.";
 
 /// Map the running platform to the CLI release asset name.
 /// Returns `None` for unsupported platforms.

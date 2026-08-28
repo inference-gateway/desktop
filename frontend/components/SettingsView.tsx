@@ -1292,7 +1292,7 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
-  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, deleteProjects } = useDesktop();
+  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, deleteProjects, projectGroups } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1508,19 +1508,27 @@ function ProjectsTab() {
         </p>
       ) : (
         <div className="flex flex-col gap-4">
-          {marked.size > 0 && (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="destructive" onClick={deleteMarked}>
-                Delete {marked.size} selected
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setMarked(new Set())}>
-                Clear selection
-              </Button>
-              <span className="text-[0.75rem] text-muted-foreground">
-                Removes projects from the app only - files on disk are untouched.
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-2 text-[0.8rem] text-muted-foreground">
+              <input
+                type="checkbox"
+                aria-label="Select all projects"
+                checked={marked.size === projectNames.length}
+                onChange={(e) => setMarked(e.target.checked ? new Set(projectNames) : new Set())}
+              />
+              Select all
+            </label>
+            {marked.size > 0 && (
+              <>
+                <Button size="sm" variant="destructive" onClick={deleteMarked}>
+                  Delete {marked.size} selected
+                </Button>
+                <span className="text-[0.75rem] text-muted-foreground">
+                  Removes projects from the app only - files on disk are untouched.
+                </span>
+              </>
+            )}
+          </div>
           {projectNames.map((name) => (
             <div key={name} className="rounded-lg border border-border bg-card p-4">
               <div className="flex flex-col gap-1">
@@ -1538,6 +1546,11 @@ function ProjectsTab() {
                     <span className="inline-flex h-5 items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[0.68rem] text-muted-foreground">
                       <GitBranch size={10} className="shrink-0" />
                       git
+                    </span>
+                  )}
+                  {projectGroups[name] && (
+                    <span className="inline-flex h-5 items-center rounded-md border border-border bg-secondary px-1.5 text-[0.68rem] text-muted-foreground">
+                      {projectGroups[name]}
                     </span>
                   )}
                 </div>

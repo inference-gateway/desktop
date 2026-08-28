@@ -183,6 +183,7 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
 pub(crate) struct GitRepo {
     pub(crate) name: String,
     pub(crate) path: String,
+    pub(crate) group: String,
     pub(crate) context: Option<String>,
 }
 
@@ -196,7 +197,9 @@ fn repo_context(dir: &Path) -> Option<String> {
 }
 
 /// Recursively find git repositories under `root` (a dir with `.git` — file or
-/// dir, so worktrees count). Found repos are not descended into.
+/// dir, so worktrees count). Found repos are not descended into. `group` is
+/// the repo's parent directory relative to `root` ("" for direct children),
+/// used to title clusters of sibling repos in the UI and agent context.
 /// ponytail: depth cap 4 and a two-entry junk skip-list; make configurable if
 /// users have deeper trees.
 fn scan_git_repos_in(root: &Path) -> Vec<GitRepo> {
@@ -217,8 +220,14 @@ fn scan_git_repos_in(root: &Path) -> Vec<GitRepo> {
                 continue;
             }
             if path.join(".git").exists() {
+                let group = path
+                    .parent()
+                    .and_then(|p| p.strip_prefix(root).ok())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 repos.push(GitRepo {
                     name,
+                    group,
                     context: repo_context(&path),
                     path: path.to_string_lossy().into_owned(),
                 });
@@ -648,6 +657,9 @@ mod tests {
         assert_eq!(repos[0].context.as_deref(), Some("agents rules"));
         assert_eq!(repos[1].context.as_deref(), Some("claude rules"));
         assert_eq!(repos[2].context, None);
+        assert_eq!(repos[0].group, "");
+        assert_eq!(repos[1].group, "group");
+        assert_eq!(repos[2].group, "");
     }
 
     #[test]
