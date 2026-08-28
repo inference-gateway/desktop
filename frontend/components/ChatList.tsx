@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
+import { FolderPlus, GitBranch, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
@@ -129,6 +129,7 @@ function Section({
 function ProjectGroup({
   name,
   count,
+  isGit,
   collapsed,
   active,
   onToggle,
@@ -142,6 +143,7 @@ function ProjectGroup({
 }: {
   name: string;
   count: number;
+  isGit: boolean;
   collapsed: boolean;
   active: boolean;
   onToggle: () => void;
@@ -211,6 +213,13 @@ function ProjectGroup({
             </span>
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+          {isGit && (
+            <GitBranch
+              size={11}
+              aria-label="Git repository"
+              className="ml-0.5 shrink-0 text-muted-foreground/60"
+            />
+          )}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
           <button
@@ -265,6 +274,7 @@ export function ChatList() {
     setActiveProject,
     setInitialSettingsTab,
     setCurrentView,
+    gitProjects,
   } = useDesktop();
 
   const [newProjectInput, setNewProjectInput] = useState(false);
@@ -336,6 +346,7 @@ export function ChatList() {
             key={name}
             name={name}
             count={indices.length}
+            isGit={gitProjects.has(name)}
             collapsed={collapsed}
             active={activeProject === name}
             onToggle={() => toggleCollapseProject(name)}

@@ -102,6 +102,7 @@ function useDesktopStore() {
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -504,6 +505,8 @@ function useDesktopStore() {
     if (!projectsLoaded) return;
     api
       .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths }))
+      .then(() => api.gitProjectNames())
+      .then((names) => setGitProjects(new Set(names)))
       .catch(() => {});
   }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths]);
 
@@ -751,23 +754,43 @@ function useDesktopStore() {
     api.createProjectDir(name).catch((e) => console.error("Failed to create project directory:", e));
   }, []);
 
-  const deleteProject = useCallback((name: string) => {
-    setProjects((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([, p]) => p !== name))
-    );
-    setProjectNames((prev) => prev.filter((n) => n !== name));
+  const importProjects = useCallback((repos: { name: string; path: string; context?: string | null }[]) => {
+    setProjectNames((prev) => {
+      const fresh = repos.map((r) => r.name).filter((n) => !prev.includes(n));
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
+    setProjectPaths((prev) => {
+      const next = { ...prev };
+      for (const r of repos) next[r.name] ??= r.path;
+      return next;
+    });
     setProjectContexts((prev) => {
       const next = { ...prev };
-      delete next[name];
+      for (const r of repos) if (r.context) next[r.name] ??= r.context;
+      return next;
+    });
+  }, []);
+
+  const deleteProjects = useCallback((names: string[]) => {
+    const gone = new Set(names);
+    setProjects((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([, p]) => !gone.has(p)))
+    );
+    setProjectNames((prev) => prev.filter((n) => !gone.has(n)));
+    setProjectContexts((prev) => {
+      const next = { ...prev };
+      for (const name of gone) delete next[name];
       return next;
     });
     setProjectPaths((prev) => {
       const next = { ...prev };
-      delete next[name];
+      for (const name of gone) delete next[name];
       return next;
     });
-    setActiveProject((p) => (p === name ? null : p));
+    setActiveProject((p) => (p && gone.has(p) ? null : p));
   }, []);
+
+  const deleteProject = useCallback((name: string) => deleteProjects([name]), [deleteProjects]);
 
   const renameProject = useCallback((oldName: string, newName: string) => {
     setProjects((prev) =>
@@ -945,7 +968,10 @@ function useDesktopStore() {
     assignProject,
     unassignProject,
     createProject,
+    importProjects,
+    gitProjects,
     deleteProject,
+    deleteProjects,
     renameProject,
     toggleCollapseProject,
   };

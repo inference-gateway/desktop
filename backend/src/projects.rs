@@ -177,6 +177,93 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         .cloned()
 }
 
+/// A git repository found under the projects root, with its agent
+/// instructions (AGENTS.md, falling back to CLAUDE.md) when present.
+#[derive(Clone, PartialEq, Debug, serde::Serialize)]
+pub(crate) struct GitRepo {
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) context: Option<String>,
+}
+
+/// Agent instructions from the repo root: AGENTS.md, else CLAUDE.md.
+/// ponytail: 64 KB cap so a runaway file cannot bloat projects.json.
+fn repo_context(dir: &Path) -> Option<String> {
+    ["AGENTS.md", "CLAUDE.md"]
+        .iter()
+        .filter_map(|f| std::fs::read_to_string(dir.join(f)).ok())
+        .find(|text| !text.trim().is_empty() && text.len() <= 64 * 1024)
+}
+
+/// Recursively find git repositories under `root` (a dir with `.git` — file or
+/// dir, so worktrees count). Found repos are not descended into.
+/// ponytail: depth cap 4 and a two-entry junk skip-list; make configurable if
+/// users have deeper trees.
+fn scan_git_repos_in(root: &Path) -> Vec<GitRepo> {
+    const MAX_DEPTH: usize = 4;
+    let mut repos = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !path.is_dir()
+                || name.starts_with('.')
+                || matches!(name.as_str(), "node_modules" | "target")
+            {
+                continue;
+            }
+            if path.join(".git").exists() {
+                repos.push(GitRepo {
+                    name,
+                    context: repo_context(&path),
+                    path: path.to_string_lossy().into_owned(),
+                });
+            } else if depth + 1 < MAX_DEPTH {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+    repos.sort_by(|a, b| a.name.cmp(&b.name));
+    repos
+}
+
+/// Scan a root directory for importable git repositories.
+#[tauri::command]
+pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String> {
+    let raw = root.trim();
+    if raw.is_empty() {
+        return Err("No root directory given".into());
+    }
+    let expanded = raw.strip_prefix('~').map_or_else(
+        || raw.to_string(),
+        |rest| format!("{}{}", crate::env::home_dir().display(), rest),
+    );
+    let path = PathBuf::from(expanded);
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", path.display()));
+    }
+    tokio::task::spawn_blocking(move || scan_git_repos_in(&path))
+        .await
+        .map_err(|e| format!("scan task failed: {e}"))
+}
+
+/// Names of projects whose resolved directory is a git repository; powers the
+/// git indicator in the UI. Derived live from the filesystem, nothing stored.
+#[tauri::command]
+pub(crate) fn git_project_names() -> Vec<String> {
+    let names = project_names();
+    let root = PathBuf::from(read_config().projects_root);
+    resolved_dirs(&root, &names, &project_paths())
+        .into_iter()
+        .filter(|(_, dir)| dir.join(".git").exists())
+        .map(|(name, _)| name)
+        .collect()
+}
+
 /// Create (if needed) and return the files directory for a project.
 #[tauri::command]
 pub(crate) fn create_project_dir(name: String) -> Result<String, String> {
@@ -535,6 +622,32 @@ mod tests {
         assert_eq!(names, ["a.pdf", "b.txt"], "dirs skipped, sorted by name");
         assert_eq!(files[0].size, 5);
         assert_eq!(files[1].size, 3);
+    }
+
+    #[test]
+    fn scan_finds_nested_repos_and_skips_junk() {
+        let root = std::env::temp_dir().join(format!("igd-scan-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("repo-a/.git")).unwrap();
+        std::fs::write(root.join("repo-a/AGENTS.md"), "agents rules").unwrap();
+        std::fs::write(root.join("repo-a/CLAUDE.md"), "claude rules").unwrap();
+        std::fs::create_dir_all(root.join("group/repo-b/.git")).unwrap();
+        std::fs::write(root.join("group/repo-b/CLAUDE.md"), "claude rules").unwrap();
+        std::fs::create_dir_all(root.join("worktree")).unwrap();
+        std::fs::write(root.join("worktree/.git"), "gitdir: /elsewhere").unwrap();
+        std::fs::create_dir_all(root.join("node_modules/dep/.git")).unwrap();
+        std::fs::create_dir_all(root.join(".hidden/repo-c/.git")).unwrap();
+        std::fs::create_dir_all(root.join("repo-a/vendored/.git")).unwrap();
+        std::fs::create_dir_all(root.join("d1/d2/d3/d4/too-deep/.git")).unwrap();
+        std::fs::create_dir_all(root.join("plain")).unwrap();
+        let repos = scan_git_repos_in(&root);
+        let _ = std::fs::remove_dir_all(&root);
+        let names: Vec<&str> = repos.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["repo-a", "repo-b", "worktree"], "{repos:?}");
+        assert!(repos[1].path.ends_with("group/repo-b"), "{repos:?}");
+        assert_eq!(repos[0].context.as_deref(), Some("agents rules"));
+        assert_eq!(repos[1].context.as_deref(), Some("claude rules"));
+        assert_eq!(repos[2].context, None);
     }
 
     #[test]
