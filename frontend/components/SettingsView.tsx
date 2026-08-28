@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import {
   type ComputerUsePermissionStatus,
   type DesktopConfig,
   type OsPermissionState,
+  type ProjectFile,
 } from "@/lib/tauri";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
@@ -1259,6 +1260,36 @@ function AgentsTab() {
   );
 }
 
+// Files stored in a project's directory (local) or repository (github),
+// rendered as attachment-style chips under the project's context.
+function ProjectFiles({ project }: { project: string }) {
+  const [files, setFiles] = useState<ProjectFile[] | null>(null);
+  useEffect(() => {
+    api.listProjectFiles(project).then(setFiles).catch(() => setFiles([]));
+  }, [project]);
+  if (!files?.length) return null;
+  const fmt = (n: number) =>
+    n < 1024
+      ? `${n} B`
+      : n < 1024 * 1024
+        ? `${Math.round(n / 1024)} KB`
+        : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {files.map((f) => (
+        <span
+          key={f.name}
+          className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-[0.72rem] text-muted-foreground"
+        >
+          <Paperclip size={11} className="shrink-0" />
+          <span className="min-w-0 truncate">{f.name}</span>
+          <span className="shrink-0 tabular-nums">{fmt(f.size)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ProjectsTab() {
   const { projectNames, projectContexts, setProjectContext } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
@@ -1385,6 +1416,7 @@ function ProjectsTab() {
                 <Label htmlFor={`project-context-${name}`} className="text-[0.8rem] font-medium">
                   {name}
                 </Label>
+                <ProjectFiles project={name} />
                 <textarea
                   id={`project-context-${name}`}
                   rows={4}

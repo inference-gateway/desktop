@@ -371,6 +371,7 @@ pub(crate) async fn send_message(
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
     auto_mode: bool,
+    project: Option<String>,
 ) -> Result<Option<String>, String> {
     let bin_path = infer_bin_path();
 
@@ -383,7 +384,11 @@ pub(crate) async fn send_message(
     apply_approval_mode(&mut cmd, auto_mode);
     cmd.arg("-m").arg(&model);
 
-    let cwd = agent_cwd();
+    let cwd = project
+        .as_deref()
+        .and_then(crate::projects::project_dir)
+        .filter(|dir| std::fs::create_dir_all(dir).is_ok())
+        .unwrap_or_else(agent_cwd);
     let extras = compose_extras(extra_instructions.as_deref(), &cwd);
     cmd.arg(&prompt)
         .envs(infer_env())

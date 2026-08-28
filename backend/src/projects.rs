@@ -118,21 +118,87 @@ pub(crate) fn sandbox_allowed_dirs() -> Option<String> {
     Some(value)
 }
 
+/// Files directory for a project: the same deterministic mapping the sandbox
+/// grant, dir creation, uploads and the agent cwd resolve through. None when
+/// the name cannot be mapped.
+pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
+    let mut names = project_names();
+    if !names.iter().any(|n| n == name) {
+        names.push(name.to_string());
+    }
+    let root = PathBuf::from(read_config().projects_root);
+    assign_dirs(&root, &names).get(name).cloned()
+}
+
 /// Create (if needed) and return the files directory for a project.
 #[tauri::command]
 pub(crate) fn create_project_dir(name: String) -> Result<String, String> {
-    let mut names = project_names();
-    if !names.iter().any(|n| n == &name) {
-        names.push(name.clone());
-    }
-    let root = PathBuf::from(read_config().projects_root);
-    let dir = assign_dirs(&root, &names)
-        .get(&name)
-        .ok_or("project directory not resolved")?
-        .clone();
+    let dir = project_dir(&name).ok_or("project directory not resolved")?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create project directory: {e}"))?;
     Ok(dir.to_string_lossy().to_string())
+}
+
+/// One file entry of a project's files summary.
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct ProjectFile {
+    pub(crate) name: String,
+    pub(crate) size: u64,
+}
+
+/// Summary of a project's stored files for the Projects tab: the local files
+/// directory, or the project folder in the configured GitHub repository.
+#[tauri::command]
+pub(crate) async fn list_project_files(project: String) -> Result<Vec<ProjectFile>, String> {
+    let cfg = read_config();
+    if cfg.projects_backend == "github" {
+        tokio::task::spawn_blocking(move || list_github_files(&cfg, &project))
+            .await
+            .map_err(|e| format!("list task failed: {e}"))?
+    } else {
+        Ok(list_local_files(
+            &project_dir(&project).ok_or("project directory not resolved")?,
+        ))
+    }
+}
+
+fn list_local_files(dir: &Path) -> Vec<ProjectFile> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<ProjectFile> = entries
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            meta.is_file().then_some(ProjectFile {
+                name: e.file_name().to_string_lossy().into_owned(),
+                size: meta.len(),
+            })
+        })
+        .collect();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+fn list_github_files(cfg: &DesktopConfig, project: &str) -> Result<Vec<ProjectFile>, String> {
+    let full = github_full_repo(cfg)?;
+    let out = crate::scheduler::gh_output(&[
+        "api",
+        &format!("repos/{full}/contents/{}", sanitize_name(project)),
+    ])?;
+    let val: serde_json::Value = serde_json::from_str(&out).map_err(|e| e.to_string())?;
+    Ok(val
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|f| {
+            (f.get("type").and_then(|v| v.as_str()) == Some("file")).then_some(ProjectFile {
+                name: f.get("name")?.as_str()?.to_string(),
+                size: f.get("size")?.as_u64()?,
+            })
+        })
+        .collect())
 }
 
 fn mime_for_ext(ext: &str) -> Option<&'static str> {
@@ -235,27 +301,14 @@ pub(crate) async fn save_project_file(
 
     tokio::task::spawn_blocking(move || match cfg.projects_backend.as_str() {
         "github" => save_to_github(&cfg, &project, fname, bytes),
-        _ => save_to_local(&cfg, &project, fname, bytes),
+        _ => save_to_local(&project, fname, bytes),
     })
     .await
     .map_err(|e| format!("upload task failed: {e}"))?
 }
 
-fn save_to_local(
-    cfg: &DesktopConfig,
-    project: &str,
-    fname: String,
-    bytes: Vec<u8>,
-) -> Result<String, String> {
-    let mut names = project_names();
-    if !names.iter().any(|n| n == project) {
-        names.push(project.to_string());
-    }
-    let root = PathBuf::from(&cfg.projects_root);
-    let dir = assign_dirs(&root, &names)
-        .get(project)
-        .ok_or("project directory not resolved")?
-        .clone();
+fn save_to_local(project: &str, fname: String, bytes: Vec<u8>) -> Result<String, String> {
+    let dir = project_dir(project).ok_or("project directory not resolved")?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create project directory: {e}"))?;
     let dest = dir.join(&fname);
@@ -296,23 +349,27 @@ fn ensure_github_repo(full: &str) -> Result<(), String> {
     crate::scheduler::gh_output(&["repo", "create", full, "--private", "--add-readme"]).map(|_| ())
 }
 
+/// Resolved `owner/name` of the configured projects repository.
+fn github_full_repo(cfg: &DesktopConfig) -> Result<String, String> {
+    let name = cfg.projects_github_repository.trim().trim_matches('/');
+    if name.is_empty() {
+        return Err("No GitHub repository configured for projects".into());
+    }
+    if name.contains('/') {
+        return Ok(name.to_string());
+    }
+    let owner = crate::scheduler::gh_output(&["api", "user", "--jq", ".login"])
+        .map_err(|e| format!("Cannot resolve GitHub owner: {e}"))?;
+    Ok(format!("{}/{}", owner.trim(), name))
+}
+
 fn save_to_github(
     cfg: &DesktopConfig,
     project: &str,
     fname: String,
     bytes: Vec<u8>,
 ) -> Result<String, String> {
-    let name = cfg.projects_github_repository.trim().trim_matches('/');
-    if name.is_empty() {
-        return Err("No GitHub repository configured for projects".into());
-    }
-    let full = if name.contains('/') {
-        name.to_string()
-    } else {
-        let owner = crate::scheduler::gh_output(&["api", "user", "--jq", ".login"])
-            .map_err(|e| format!("Cannot resolve GitHub owner: {e}"))?;
-        format!("{}/{}", owner.trim(), name)
-    };
+    let full = github_full_repo(cfg)?;
     ensure_github_repo(&full)?;
     let path = format!("{}/{fname}", sanitize_name(project));
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -395,6 +452,27 @@ mod tests {
         validate_upload(1, "notes.md", "", "10", "pdf,md").unwrap();
         let err = validate_upload(1, "run.sh", "", "10", "pdf,md").unwrap_err();
         assert!(err.contains("run.sh is not allowed"), "{err}");
+    }
+
+    #[test]
+    fn project_dir_maps_the_sanitized_name_under_the_root() {
+        let dir = project_dir("Weird/Name").expect("dir resolves");
+        assert!(dir.ends_with("Weird-Name"), "{dir:?}");
+    }
+
+    #[test]
+    fn list_local_files_lists_regular_files_sorted_with_sizes() {
+        let dir = std::env::temp_dir().join(format!("igd-list-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("b.txt"), "hey").unwrap();
+        std::fs::write(dir.join("a.pdf"), [0u8; 5]).unwrap();
+        let files = list_local_files(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["a.pdf", "b.txt"], "dirs skipped, sorted by name");
+        assert_eq!(files[0].size, 5);
+        assert_eq!(files[1].size, 3);
     }
 
     #[test]

@@ -577,6 +577,7 @@ function useDesktopStore() {
         extraInstructions:
           [cfg.extra_instructions, projectContext].filter(Boolean).join("\n\n") || undefined,
         autoMode,
+        project: projectName,
       });
       refreshConversations();
       loadProjects();

@@ -125,6 +125,7 @@ pub fn run() {
             agent::save_upload,
             projects::create_project_dir,
             projects::save_project_file,
+            projects::list_project_files,
             skills::install_skill,
             skills::uninstall_skill,
             skills::list_installed_skills,

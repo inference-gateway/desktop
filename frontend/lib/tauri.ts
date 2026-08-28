@@ -40,6 +40,7 @@ export type UpdateInfo = { name: string; current: string; latest: string | null;
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type Conversation = { id: string; title?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
+export type ProjectFile = { name: string; size: number };
 export type DesktopConfig = {
   storage_backend: string;
   storage_directory: string;
@@ -170,6 +171,7 @@ export const api = {
     systemPrompt?: string;
     extraInstructions?: string;
     autoMode: boolean;
+    project?: string;
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean, scope?: "always") =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved, scope: scope ?? null }),
@@ -238,6 +240,7 @@ export const api = {
   createProjectDir: (name: string) => invoke<string>("create_project_dir", { name }),
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
         invoke<string>("save_project_file", { project, filename, mime, data }),
+  listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
