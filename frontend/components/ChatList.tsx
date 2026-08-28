@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { FolderPlus, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
+import { FolderPlus, GitBranch, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
@@ -129,6 +129,7 @@ function Section({
 function ProjectGroup({
   name,
   count,
+  isGit,
   collapsed,
   active,
   onToggle,
@@ -142,6 +143,7 @@ function ProjectGroup({
 }: {
   name: string;
   count: number;
+  isGit: boolean;
   collapsed: boolean;
   active: boolean;
   onToggle: () => void;
@@ -211,6 +213,13 @@ function ProjectGroup({
             </span>
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+          {isGit && (
+            <GitBranch
+              size={11}
+              aria-label="Git repository"
+              className="ml-0.5 shrink-0 text-muted-foreground/60"
+            />
+          )}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
           <button
@@ -265,6 +274,8 @@ export function ChatList() {
     setActiveProject,
     setInitialSettingsTab,
     setCurrentView,
+    gitProjects,
+    projectGroups,
   } = useDesktop();
 
   const [newProjectInput, setNewProjectInput] = useState(false);
@@ -327,31 +338,50 @@ export function ChatList() {
     }
   };
 
+  const projectClusters = useMemo(() => {
+    const clusters = new Map<string, [string, number[]][]>();
+    for (const entry of groups.projects) {
+      const label = projectGroups[entry[0]] ?? "";
+      (clusters.get(label) ?? clusters.set(label, []).get(label)!).push(entry);
+    }
+    return Array.from(clusters.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [groups.projects, projectGroups]);
+
   const orchestratorRows = (
     <>
-      {groups.projects.map(([name, indices]) => {
-        const collapsed = collapsedProjects.has(name);
-        return (
-          <ProjectGroup
-            key={name}
-            name={name}
-            count={indices.length}
-            collapsed={collapsed}
-            active={activeProject === name}
-            onToggle={() => toggleCollapseProject(name)}
-            onSelect={() => setActiveProject(activeProject === name ? null : name)}
-            onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
-            onRename={(n) => renameProject(name, n)}
-            onDelete={() => deleteProject(name)}
-            onDrop={(e) => handleDropOnProject(e, name)}
-            onDragOverProject={() => {}}
-          >
-            {indices.map((i) => (
-              <ChatItem key={conversations[i]?.id ?? i} index={i} />
-            ))}
-          </ProjectGroup>
-        );
-      })}
+      {projectClusters.map(([label, entries]) => (
+        <div key={label || "(ungrouped)"} className="flex flex-col gap-[2px]">
+          {label && (
+            <div className="mt-1 px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase">
+              {label}
+            </div>
+          )}
+          {entries.map(([name, indices]) => {
+            const collapsed = collapsedProjects.has(name);
+            return (
+              <ProjectGroup
+                key={name}
+                name={name}
+                count={indices.length}
+                isGit={gitProjects.has(name)}
+                collapsed={collapsed}
+                active={activeProject === name}
+                onToggle={() => toggleCollapseProject(name)}
+                onSelect={() => setActiveProject(activeProject === name ? null : name)}
+                onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
+                onRename={(n) => renameProject(name, n)}
+                onDelete={() => deleteProject(name)}
+                onDrop={(e) => handleDropOnProject(e, name)}
+                onDragOverProject={() => {}}
+              >
+                {indices.map((i) => (
+                  <ChatItem key={conversations[i]?.id ?? i} index={i} />
+                ))}
+              </ProjectGroup>
+            );
+          })}
+        </div>
+      ))}
 
       {groups.ungrouped.length > 0 && (
         <div

@@ -137,7 +137,9 @@ export function Composer() {
       for (const img of pending) {
         try {
           const base64 = img.dataUrl.split(",")[1];
-          const saved = await api.saveUpload(base64, img.file.type);
+          const saved = currentProject
+                ? await api.saveProjectFile(currentProject, img.file.name, img.file.type, base64)
+                : await api.saveUpload(base64, img.file.type);
           paths.push(saved);
         } catch (e) {
           setError(`Failed to save image: ${e}`);
