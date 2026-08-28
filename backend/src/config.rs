@@ -61,7 +61,7 @@ pub(crate) async fn set_auth(
 /// Desktop-facing config fields read from ~/.infer/config.yaml.
 /// Only the fields the Settings UI manages are exposed; the rest of the
 /// config (gateway.run, gateway.standalone_binary, etc.) passes through.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopConfig {
     pub(crate) storage_backend: String,
     pub(crate) storage_directory: String,
@@ -111,6 +111,16 @@ pub(crate) struct DesktopConfig {
     pub(crate) scheduler_github_artifacts_initial_delay: String,
     pub(crate) scheduler_github_artifacts_max_attempts: String,
     pub(crate) scheduler_github_artifacts_rate_limit_backoff: String,
+    /// Root under which every project gets its own files directory.
+    pub(crate) projects_root: String,
+    /// Projects files backend: "local" (filesystem) or "github" (repo).
+    pub(crate) projects_backend: String,
+    /// GitHub repository holding project files when the backend is github.
+    pub(crate) projects_github_repository: String,
+    /// Max upload size per file, in MB.
+    pub(crate) projects_max_file_size_mb: String,
+    /// Comma-separated extension allowlist for uploaded files.
+    pub(crate) projects_allowed_mimes: String,
 }
 
 pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
@@ -157,6 +167,11 @@ pub(crate) fn default_config() -> DesktopConfig {
         scheduler_github_artifacts_initial_delay: "1m".into(),
         scheduler_github_artifacts_max_attempts: "3".into(),
         scheduler_github_artifacts_rate_limit_backoff: "1h".into(),
+        projects_root: crate::projects::default_projects_root(&home_dir()),
+        projects_backend: "local".into(),
+        projects_github_repository: ".projects".into(),
+        projects_max_file_size_mb: "10".into(),
+        projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".into(),
     }
 }
 
@@ -238,6 +253,16 @@ pub(crate) fn config_from_value(
             .unwrap_or(false),
         agent_model: str_at(&["agent", "model"]).unwrap_or_default(),
         scheduler_backend: str_at(&["scheduler", "backend"]).unwrap_or(d.scheduler_backend),
+        projects_root: str_at(&["projects", "root"])
+            .unwrap_or_else(|| crate::projects::default_projects_root(home)),
+        projects_backend: str_at(&["projects", "backend"]).unwrap_or(d.projects_backend),
+        projects_github_repository: str_at(&["projects", "github", "repository"])
+            .unwrap_or(d.projects_github_repository),
+        projects_max_file_size_mb: int_at(&["projects", "max_file_size_mb"])
+            .map(|p| p.to_string())
+            .unwrap_or(d.projects_max_file_size_mb),
+        projects_allowed_mimes: str_at(&["projects", "allowed_mimes"])
+            .unwrap_or(d.projects_allowed_mimes),
         scheduler_github_repository: str_at(&["scheduler", "github", "repository"])
             .unwrap_or(d.scheduler_github_repository),
         scheduler_github_app_client_id_secret: str_at(&[
@@ -484,6 +509,27 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         }
     }
 
+    let projects = map
+        .entry("projects".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(pmap) = projects.as_mapping_mut() {
+        pmap.insert("root".into(), cfg.projects_root.clone().into());
+        pmap.insert("backend".into(), cfg.projects_backend.clone().into());
+        pmap.insert(
+            "max_file_size_mb".into(),
+            parse_int_or(&cfg.projects_max_file_size_mb, 10).into(),
+        );
+        pmap.insert(
+            "allowed_mimes".into(),
+            cfg.projects_allowed_mimes.clone().into(),
+        );
+        set_section(
+            pmap,
+            "github",
+            vec![("repository", cfg.projects_github_repository.clone().into())],
+        );
+    }
+
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
@@ -596,6 +642,10 @@ mod tests {
         assert_eq!(cfg.redis_db, "0");
         assert_eq!(cfg.d1_base_url, "https://api.cloudflare.com/client/v4");
         assert!(!cfg.schedule_enabled);
+        assert_eq!(cfg.projects_backend, "local");
+        assert_eq!(cfg.projects_max_file_size_mb, "10");
+        assert_eq!(cfg.projects_github_repository, ".projects");
+        assert!(cfg.projects_root.ends_with("Inference Gateway Desktop"));
     }
 
     #[test]
@@ -729,6 +779,43 @@ mod tests {
         assert_eq!(cfg2.scheduler_github_artifacts_max_attempts, "5");
         assert_eq!(cfg2.scheduler_github_artifacts_poll_interval, "15m");
         assert_eq!(cfg2.scheduler_github_artifacts_rate_limit_backoff, "1h");
+    }
+
+    #[test]
+    fn merge_config_round_trips_projects_section() {
+        let mut cfg = default_config();
+        cfg.projects_root = "/data/projects".into();
+        cfg.projects_backend = "github".into();
+        cfg.projects_github_repository = "alice/.projects".into();
+        cfg.projects_max_file_size_mb = "25".into();
+        cfg.projects_allowed_mimes = "pdf,txt".into();
+        let val = parse_yaml(&merge_config(None, &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["projects", "root"]),
+            Some("/data/projects")
+        );
+        assert_eq!(str_field(&val, &["projects", "backend"]), Some("github"));
+        assert_eq!(
+            str_field(&val, &["projects", "github", "repository"]),
+            Some("alice/.projects")
+        );
+        assert_eq!(
+            val.get("projects")
+                .and_then(|p| p.get("max_file_size_mb"))
+                .and_then(|v| v.as_i64()),
+            Some(25)
+        );
+        assert_eq!(
+            str_field(&val, &["projects", "allowed_mimes"]),
+            Some("pdf,txt")
+        );
+
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert_eq!(cfg2.projects_root, "/data/projects");
+        assert_eq!(cfg2.projects_backend, "github");
+        assert_eq!(cfg2.projects_github_repository, "alice/.projects");
+        assert_eq!(cfg2.projects_max_file_size_mb, "25");
+        assert_eq!(cfg2.projects_allowed_mimes, "pdf,txt");
     }
 
     #[test]

@@ -80,6 +80,9 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
         "INFER_STORAGE_JSONL_PATH".into(),
         crate::config::read_config().storage_directory,
     ));
+    if let Some(dirs) = crate::projects::sandbox_allowed_dirs() {
+        env.push(("INFER_TOOLS_SANDBOX_DIRECTORIES".into(), dirs));
+    }
     env.push(("INFER_COMPUTER_USE_APPROVAL".into(), "destructive".into()));
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
