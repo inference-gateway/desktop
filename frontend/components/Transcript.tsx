@@ -39,8 +39,6 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
       <div
         ref={ref}
         className={cn(BUBBLE, "md rounded-bl-[4px] bg-assistant text-assistant-foreground")}
-        // Intercepts plain clicks and Cmd/Ctrl+clicks alike: the webview must
-        // never navigate to external pages (no way back once it does).
         onClick={(e) => handleLinkClick(e, (url) => api.openUrl(url).catch(() => {}))}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(merged) }}
       />
