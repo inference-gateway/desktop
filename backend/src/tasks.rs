@@ -2,7 +2,11 @@ use crate::scheduler::{gh_output, valid_repo, valid_secret_name};
 
 // infer-action workflow installed into a task repository, modeled on the
 // opentask extension's template. Placeholders filled by str::replace because
-// the YAML is full of `${{ }}` that format! would reject.
+// the YAML is full of `${{ }}` that format! would reject. The `model` dispatch
+// input deliberately defaults to empty: GitHub substitutes a declared default
+// for any input a dispatch omits, so a non-empty one makes `inputs.model` always
+// truthy and shadows the repository's DEFAULT_MODEL variable. The install-time
+// model stays as the literal last-resort fallback on the action's `model:` line.
 const TASKS_YML: &str = r#"name: Task
 
 on:
@@ -11,7 +15,7 @@ on:
       model:
         description: Model to use (provider/model, e.g. llamacpp/phi-4)
         required: false
-        default: {model}
+        default: ""
       prompt:
         description: Task for the agent (workflow_dispatch only)
         required: false
@@ -511,6 +515,8 @@ mod tests {
     #[test]
     fn tasks_yml_has_placeholders_and_trigger() {
         assert!(TASKS_YML.contains("{model}"));
+        assert!(TASKS_YML.contains("${{ inputs.model || vars.DEFAULT_MODEL || '{model}' }}"));
+        assert!(!TASKS_YML.contains("default: {model}"));
         assert!(TASKS_YML.contains("{version}"));
         assert!(TASKS_YML.contains("{extras}"));
         assert!(TASKS_YML.contains("{client_id_secret}"));
