@@ -324,6 +324,11 @@ const DEFAULT_CONFIG: DesktopConfig = {
   scheduler_github_artifacts_initial_delay: "1m",
   scheduler_github_artifacts_max_attempts: "3",
   scheduler_github_artifacts_rate_limit_backoff: "1h",
+  projects_root: "",
+  projects_backend: "local",
+  projects_github_repository: ".projects",
+  projects_max_file_size_mb: "10",
+  projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv",
 };
 
 // Text inputs for the github scheduling backend; the repository picker and
@@ -1256,6 +1261,36 @@ function AgentsTab() {
 
 function ProjectsTab() {
   const { projectNames, projectContexts, setProjectContext } = useDesktop();
+  const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.getConfig().then(setConfigs).catch(() => {});
+  }, []);
+
+  const set = (k: keyof DesktopConfig, v: string) => {
+    setConfigs((c) => ({ ...c, [k]: v }));
+    setDirty(true);
+    setSaved(false);
+    setError("");
+  };
+
+  const apply = async () => {
+    setSaving(true);
+    try {
+      await api.setConfig(config);
+      setDirty(false);
+      setSaved(true);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <>
@@ -1263,6 +1298,81 @@ function ProjectsTab() {
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Per-project context sent as extra instructions with every message in that project. Changes save automatically.
       </p>
+
+      <h3 className="text-[0.9rem] font-semibold">Files</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Every project gets its own directory under the root below, pre-authorized in the agent sandbox. Applies to newly created projects.
+      </p>
+      <div className="mb-4 flex flex-col gap-[0.7rem]">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="projects-root" className="text-[0.8rem] text-muted-foreground">
+            Projects root directory
+          </Label>
+          <Input
+            id="projects-root"
+            value={config.projects_root}
+            placeholder="~/Documents/Inference Gateway Desktop"
+            onChange={(e) => set("projects_root", e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="projects-backend" className="text-[0.8rem] text-muted-foreground">
+            Storage backend
+          </Label>
+          <select
+            id="projects-backend"
+            value={config.projects_backend}
+            onChange={(e) => set("projects_backend", e.target.value)}
+            className="h-9 rounded-md border border-input bg-transparent px-3 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
+          >
+            <option value="local">Local filesystem</option>
+            <option value="github">GitHub repository</option>
+          </select>
+        </div>
+        {config.projects_backend === "github" && (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="projects-repo" className="text-[0.8rem] text-muted-foreground">
+              Repository (one folder per project; created if missing)
+            </Label>
+            <Input
+              id="projects-repo"
+              value={config.projects_github_repository}
+              placeholder=".projects"
+              onChange={(e) => set("projects_github_repository", e.target.value)}
+            />
+          </div>
+        )}
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="projects-max-size" className="text-[0.8rem] text-muted-foreground">
+            Max file size (MB)
+          </Label>
+          <Input
+            id="projects-max-size"
+            value={config.projects_max_file_size_mb}
+            placeholder="10"
+            onChange={(e) => set("projects_max_file_size_mb", e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="projects-allowed-mimes" className="text-[0.8rem] text-muted-foreground">
+            Allowed file types (comma-separated extensions)
+          </Label>
+          <Input
+            id="projects-allowed-mimes"
+            value={config.projects_allowed_mimes}
+            placeholder="pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv"
+            onChange={(e) => set("projects_allowed_mimes", e.target.value)}
+          />
+        </div>
+        {error && <div role="status" className="text-[0.75rem] text-err">{error}</div>}
+        <div className="flex items-center gap-2">
+          <Button size="sm" disabled={saving} onClick={apply}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          {saved && !dirty && <span className="text-[0.75rem] text-muted-foreground">Saved</span>}
+        </div>
+      </div>
+
       {projectNames.length === 0 ? (
         <p className="text-[0.8rem] text-muted-foreground">
           No projects yet. Create one from the sidebar with "New project".

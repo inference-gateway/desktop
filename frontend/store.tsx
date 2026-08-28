@@ -741,6 +741,7 @@ function useDesktopStore() {
 
   const createProject = useCallback((name: string) => {
     setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    api.createProjectDir(name).catch((e) => console.error("Failed to create project directory:", e));
   }, []);
 
   const deleteProject = useCallback((name: string) => {

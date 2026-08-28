@@ -76,6 +76,11 @@ export type DesktopConfig = {
   scheduler_github_artifacts_initial_delay: string;
   scheduler_github_artifacts_max_attempts: string;
   scheduler_github_artifacts_rate_limit_backoff: string;
+  projects_root: string;
+  projects_backend: string;
+  projects_github_repository: string;
+  projects_max_file_size_mb: string;
+  projects_allowed_mimes: string;
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type OsPermissionState = "granted" | "not_granted" | "unavailable" | "not_applicable";
@@ -230,6 +235,9 @@ export const api = {
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveUpload: (data: string, mime: string) =>
         invoke<string>("save_upload", { data, mime }),
+  createProjectDir: (name: string) => invoke<string>("create_project_dir", { name }),
+  saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
+        invoke<string>("save_project_file", { project, filename, mime, data }),
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
