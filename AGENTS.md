@@ -74,7 +74,7 @@ Activate the pre-commit hook before making any changes:
 git config core.hooksPath .githooks
 ```
 
-The hook runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo test` on every commit. It is **inert until you run the above command** - the committed file is a script, not an active hook.
+The hook checks that every tracked text file ends with a final newline (`.editorconfig`), then runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo test` on every commit. It is **inert until you run the above command** - the committed file is a script, not an active hook.
 
 ## Build / Test / Dev Commands
 
