@@ -105,6 +105,7 @@ function useDesktopStore() {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
+  const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
@@ -992,6 +993,8 @@ function useDesktopStore() {
     projectGroups,
     initialSettingsTab,
     setInitialSettingsTab,
+    initialProjectFilter,
+    setInitialProjectFilter,
     assignProject,
     unassignProject,
     createProject,

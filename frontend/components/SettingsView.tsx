@@ -78,6 +78,7 @@ export function SettingsView() {
     statusError,
     initialSettingsTab,
     setInitialSettingsTab,
+    setInitialProjectFilter,
   } = useDesktop();
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general"
@@ -86,7 +87,8 @@ export function SettingsView() {
 
   useEffect(() => {
     setInitialSettingsTab("general");
-  }, [setInitialSettingsTab]);
+    setInitialProjectFilter("");
+  }, [setInitialSettingsTab, setInitialProjectFilter]);
   const [values, setValues] = useState<Record<string, string>>({});
   const [checking, setChecking] = useState(false);
 
@@ -1293,7 +1295,7 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
-  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, deleteProjects, projectGroups } = useDesktop();
+  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, deleteProjects, projectGroups, initialProjectFilter } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1311,6 +1313,7 @@ function ProjectsTab() {
   const [ghRepos, setGhRepos] = useState<RepoEntry[]>([]);
   const [ghSelected, setGhSelected] = useState<Set<string>>(() => new Set());
   const [cloning, setCloning] = useState("");
+  const [filter, setFilter] = useState(initialProjectFilter);
 
   const importedPaths = new Set(Object.values(projectPaths));
   const isImported = (r: GitRepo) => projectNames.includes(r.name) || importedPaths.has(r.path);
@@ -1391,6 +1394,8 @@ function ProjectsTab() {
   };
 
   const [marked, setMarked] = useState<Set<string>>(() => new Set());
+  const query = filter.trim().toLowerCase();
+  const visible = query ? projectNames.filter((n) => n.toLowerCase().includes(query)) : projectNames;
   const toggleMarked = (name: string, on: boolean) =>
     setMarked((prev) => {
       const next = new Set(prev);
@@ -1657,13 +1662,24 @@ function ProjectsTab() {
         </p>
       ) : (
         <div className="flex flex-col gap-4">
+          <Input
+            id="project-search"
+            aria-label="Search projects"
+            value={filter}
+            placeholder="Search projects"
+            className="max-w-sm"
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setMarked(new Set());
+            }}
+          />
           <div className="flex items-center gap-2">
             <label className="flex cursor-pointer items-center gap-2 text-[0.8rem] text-muted-foreground">
               <input
                 type="checkbox"
                 aria-label="Select all projects"
-                checked={marked.size === projectNames.length}
-                onChange={(e) => setMarked(e.target.checked ? new Set(projectNames) : new Set())}
+                checked={visible.length > 0 && visible.every((n) => marked.has(n))}
+                onChange={(e) => setMarked(e.target.checked ? new Set(visible) : new Set())}
               />
               Select all
             </label>
@@ -1678,7 +1694,10 @@ function ProjectsTab() {
               </>
             )}
           </div>
-          {projectNames.map((name) => (
+          {visible.length === 0 && (
+            <p className="text-[0.8rem] text-muted-foreground">No projects match "{filter}".</p>
+          )}
+          {visible.map((name) => (
             <div key={name} className="rounded-lg border border-border bg-card p-4">
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
