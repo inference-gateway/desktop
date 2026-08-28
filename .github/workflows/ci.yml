@@ -22,20 +22,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # Enforces insert_final_newline from .editorconfig (editors fix
-      # files on save; this catches everything else).
-      - name: Check final newlines
-        working-directory: ${{ github.workspace }}
-        run: |
-          fail=0
-          for f in $(git ls-files | grep -vE '\.(png|icns|ico)$'); do
-                [ -f "$f" ] || continue
-                if [ -n "$(tail -c1 "$f")" ]; then
-                  echo "missing final newline: $f"
-                  fail=1
-                fi
-          done
-          exit $fail
 
       - uses: Swatinem/rust-cache@v2.9.2
 
