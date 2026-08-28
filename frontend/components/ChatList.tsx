@@ -1,6 +1,7 @@
 import { useMemo, useState, type DragEvent } from "react";
 import { FolderPlus, GitBranch, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 
@@ -130,10 +131,12 @@ function ProjectGroup({
   name,
   count,
   isGit,
+  busy,
   collapsed,
   active,
   onToggle,
   onSelect,
+  onInit,
   onSettings,
   onRename,
   onDelete,
@@ -144,10 +147,12 @@ function ProjectGroup({
   name: string;
   count: number;
   isGit: boolean;
+  busy: boolean;
   collapsed: boolean;
   active: boolean;
   onToggle: () => void;
   onSelect: () => void;
+  onInit: () => void;
   onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
@@ -157,6 +162,18 @@ function ProjectGroup({
 }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(name);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Enabled only once the project's directory is confirmed on disk; a stale
+  // import (paths override pointing at a deleted checkout) disables the item
+  // instead of failing cryptically.
+  const [dirOk, setDirOk] = useState(false);
+
+  const openMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDirOk(false);
+    setMenu({ x: e.clientX, y: e.clientY });
+    api.projectDirExists(name).then(setDirOk).catch(() => {});
+  };
 
   const handleSubmit = () => {
     const trimmed = editValue.trim();
@@ -180,6 +197,7 @@ function ProjectGroup({
     >
       <div
         onClick={onSelect}
+        onContextMenu={openMenu}
         aria-label={`Select project ${name}`}
         className={cn(
           "flex cursor-pointer items-center gap-1 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
@@ -252,6 +270,35 @@ function ProjectGroup({
         </div>
       </div>
       {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
+      {menu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setMenu(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu(null);
+                }}
+              />
+              <div
+                style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 48) }}
+                className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
+              >
+                <button
+                  aria-label={`Init project ${name}`}
+                  title="Run /init to create or update AGENTS.md"
+                  disabled={busy || !dirOk}
+                  onClick={() => {
+                    setMenu(null);
+                    onInit();
+                  }}
+                  className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  Init
+                </button>
+              </div>
+            </>
+      )}
     </div>
   );
 }
@@ -270,6 +317,8 @@ export function ChatList() {
     renameProject,
     toggleCollapseProject,
     createProject,
+    initProject,
+    isRunning,
     activeProject,
     setActiveProject,
     setInitialSettingsTab,
@@ -339,6 +388,10 @@ export function ChatList() {
     }
   };
 
+  // A run in flight anywhere in the project (an init included) blocks another.
+  const projectBusy = (name: string) =>
+    conversations.some((c) => projects[c.id] === name && isRunning(c.id));
+
   const projectClusters = useMemo(() => {
     const clusters = new Map<string, [string, number[]][]>();
     for (const entry of groups.projects) {
@@ -365,10 +418,12 @@ export function ChatList() {
                 name={name}
                 count={indices.length}
                 isGit={gitProjects.has(name)}
+                busy={projectBusy(name)}
                 collapsed={collapsed}
                 active={activeProject === name}
                 onToggle={() => toggleCollapseProject(name)}
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
+                onInit={() => initProject(name)}
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);

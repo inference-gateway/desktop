@@ -369,6 +369,22 @@ pub(crate) fn git_project_names() -> Vec<String> {
         .collect()
 }
 
+/// Whether the project's resolved directory exists on disk; gates the Init
+/// action so a stale import fails visibly instead of cryptically.
+#[tauri::command]
+pub(crate) fn project_dir_exists(name: String) -> bool {
+    project_dir(&name).is_some_and(|dir| dir.is_dir())
+}
+
+/// Re-read the project's agent instructions (AGENTS.md, falling back to
+/// CLAUDE.md) from its resolved directory, e.g. after an /init run, so the
+/// new file becomes the project context without restarting the app.
+#[tauri::command]
+pub(crate) fn refresh_project_context(name: String) -> Result<Option<String>, String> {
+    let dir = project_dir(&name).ok_or("project directory not resolved")?;
+    Ok(repo_context(&dir))
+}
+
 /// Create (if needed) and return the files directory for a project.
 #[tauri::command]
 pub(crate) fn create_project_dir(name: String) -> Result<String, String> {
@@ -712,6 +728,28 @@ mod tests {
     fn project_dir_maps_the_sanitized_name_under_the_root() {
         let dir = project_dir("Weird/Name").expect("dir resolves");
         assert!(dir.ends_with("Weird-Name"), "{dir:?}");
+    }
+
+    /// The init wiring: the dir check gates the action, and the context
+    /// refresh reads AGENTS.md (not CLAUDE.md) from the resolved directory.
+    #[test]
+    fn init_dir_check_and_context_refresh_read_the_project_dir() {
+        let name = "Init Probe";
+        let dir = project_dir(name).expect("dir resolves");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!project_dir_exists(name.into()), "missing dir is absent");
+
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("AGENTS.md"), "fresh agents rules").unwrap();
+        std::fs::write(dir.join("CLAUDE.md"), "stale claude rules").unwrap();
+        assert!(project_dir_exists(name.into()), "present dir exists");
+        let ctx = refresh_project_context(name.into()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            ctx.as_deref(),
+            Some("fresh agents rules"),
+            "AGENTS.md wins over CLAUDE.md"
+        );
     }
 
     #[test]
