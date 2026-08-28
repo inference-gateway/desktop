@@ -1,0 +1,23 @@
+name: auto mode is scoped to its session
+# Regression for #171: the auto-approval toggle is carried per conversation,
+# not globally. Session A runs one manual turn (default off - deny), then flips
+# auto mode on; its next run must write the file without an Approve prompt.
+# A fresh session must still stop at Approve because the default stayed off.
+# The status-bar toggle is clicked via its aria-label, which flips with the
+# mode ("Auto approval is off/on - ...").
+cleanup:
+  - denied.txt
+  - s.txt
+steps:
+  - new_chat
+  - send: "create a file named denied.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "r"
+  - click: { button: "Auto approval is off - new runs ask before protected tool actions" }
+  - wait_for: { button: "Auto approval is on - new runs do not ask before tool actions", timeout: 15 }
+  - send: "create a file named denied.txt"
+  - wait_for: { file: "denied.txt", timeout: 30 }
+  - new_chat
+  - send: "create a file named s8.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "a"
