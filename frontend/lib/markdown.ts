@@ -16,3 +16,17 @@ export function normalizeImageUrls(text: string): string {
 export function renderMarkdown(text: string): string {
   return md.render(normalizeImageUrls(text));
 }
+
+// Clicks on generated links must never navigate the webview away from the
+// app (there is no back affordance); route http(s) links to the system
+// browser instead. Backend open_url refuses non-http schemes, so anything
+// else keeps default behavior.
+export function handleLinkClick(
+  event: { target: unknown; preventDefault: () => void },
+  open: (url: string) => void,
+): void {
+  const href = (event.target as Element | null)?.closest?.("a[href]")?.getAttribute("href") ?? "";
+  if (!/^https?:\/\//.test(href)) return;
+  event.preventDefault();
+  open(href);
+}
