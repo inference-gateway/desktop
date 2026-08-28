@@ -804,7 +804,7 @@ mod tests {
         );
     }
 
-    /// #165: the open action checks the resolved directory before launching
+    /// The open action checks the resolved directory before launching
     /// (injected launcher, never spawns) and surfaces launcher failures.
     #[test]
     fn open_in_vs_code_checks_the_dir_before_launching() {
