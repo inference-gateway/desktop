@@ -1314,9 +1314,7 @@ function ProjectsTab() {
 
   const importedPaths = new Set(Object.values(projectPaths));
   const isImported = (r: GitRepo) => projectNames.includes(r.name) || importedPaths.has(r.path);
-  const ghImported = (name: string) =>
-        projectNames.includes(name) ||
-        importedPaths.has(`${config.projects_root.replace(/\/+$/, "")}/${name}`);
+  const ghImported = (name: string) => projectNames.includes(name);
 
   const scan = async () => {
     setScanning(true);
@@ -1342,15 +1340,15 @@ function ProjectsTab() {
     setGhOwner(owner);
     setGhLoading(true);
     try {
-          const found = await api.githubListRepos(owner);
-          setGhRepos(found);
-          setGhSelected(new Set(found.filter((r) => !ghImported(r.name)).map((r) => r.name)));
+      const found = await api.githubListRepos(owner);
+      setGhRepos(found);
+      setGhSelected(new Set());
     } catch (e) {
-          setGhRepos([]);
-          setGhSelected(new Set());
-          setError(String(e));
+      setGhRepos([]);
+      setGhSelected(new Set());
+      setError(String(e));
     } finally {
-          setGhLoading(false);
+      setGhLoading(false);
     }
   };
 
@@ -1359,16 +1357,16 @@ function ProjectsTab() {
     setGhHint("");
     setGhOpen(true);
     try {
-          const status = await api.githubAuthStatus();
-          if (!status.installed || !status.authenticated) {
-            setGhHint("Install and authenticate the GitHub CLI in Settings > Tasks.");
-            return;
-          }
-          const owners = await api.githubOwners();
-          setGhOwners(owners);
-          if (owners.length > 0) await loadGhRepos(owners[0]);
+      const status = await api.githubAuthStatus();
+      if (!status.installed || !status.authenticated) {
+        setGhHint("Install and authenticate the GitHub CLI in Settings > Tasks.");
+        return;
+      }
+      const owners = await api.githubOwners();
+      setGhOwners(owners);
+      if (owners.length > 0) await loadGhRepos(owners[0]);
     } catch (e) {
-          setError(String(e));
+      setError(String(e));
     }
   };
 
@@ -1377,13 +1375,13 @@ function ProjectsTab() {
     const cloned: GitRepo[] = [];
     setError("");
     for (let i = 0; i < names.length; i++) {
-          setCloning(`${i + 1}/${names.length}`);
-          try {
-            cloned.push(await api.cloneGithubRepo(`${ghOwner}/${names[i]}`));
-          } catch (e) {
-            setError(String(e));
-            break;
-          }
+      setCloning(`${i + 1}/${names.length}`);
+      try {
+        cloned.push(await api.cloneGithubRepo(`${ghOwner}/${names[i]}`));
+      } catch (e) {
+        setError(String(e));
+        break;
+      }
     }
     setCloning("");
     if (cloned.length > 0) importProjects(cloned);
@@ -1572,85 +1570,85 @@ function ProjectsTab() {
       </Dialog>
 
       <Dialog open={ghOpen} onOpenChange={setGhOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Import GitHub repositories</DialogTitle>
-                <DialogDescription>
-                  {ghHint
-                    ? ghHint
-                    : `Repositories owned by ${ghOwner || "your GitHub account"} are cloned into the projects root and added as projects.`}
-                </DialogDescription>
-              </DialogHeader>
-              {!ghHint && (
-                <>
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor="gh-owner" className="text-[0.8rem] text-muted-foreground">
-                      Owner
-                    </Label>
-                    <select
-                      id="gh-owner"
-                      value={ghOwner}
-                      onChange={(e) => loadGhRepos(e.target.value)}
-                      className="h-9 rounded-md border border-input bg-transparent px-3 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
-                    >
-                      {ghOwners.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import GitHub repositories</DialogTitle>
+            <DialogDescription>
+              {ghHint
+                ? ghHint
+                : `Repositories owned by ${ghOwner || "your GitHub account"} are cloned into the projects root and added as projects.`}
+            </DialogDescription>
+          </DialogHeader>
+          {!ghHint && (
+            <>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="gh-owner" className="text-[0.8rem] text-muted-foreground">
+                  Owner
+                </Label>
+                <select
+                  id="gh-owner"
+                  value={ghOwner}
+                  onChange={(e) => loadGhRepos(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-transparent px-3 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
+                >
+                  {ghOwners.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!ghLoading &&
+                (ghRepos.length === 0 ? (
+                  <p className="text-[0.8rem] text-muted-foreground">No repositories found for {ghOwner}.</p>
+                ) : (
+                  <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                    {ghRepos.map((r) => {
+                      const done = ghImported(r.name);
+                      return (
+                        <label
+                          key={r.name}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem]",
+                            done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={done}
+                            checked={done || ghSelected.has(r.name)}
+                            onChange={(e) =>
+                              setGhSelected((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(r.name);
+                                else next.delete(r.name);
+                                return next;
+                              })
+                            }
+                          />
+                          <GitBranch size={12} className="shrink-0" />
+                          <span className="shrink-0">{r.name}</span>
+                          {done && <span className="ml-auto shrink-0 text-[0.7rem]">imported</span>}
+                        </label>
+                      );
+                    })}
                   </div>
-                  {!ghLoading &&
-                    (ghRepos.length === 0 ? (
-                      <p className="text-[0.8rem] text-muted-foreground">No repositories found for {ghOwner}.</p>
-                    ) : (
-                      <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-                        {ghRepos.map((r) => {
-                          const done = ghImported(r.name);
-                          return (
-                            <label
-                              key={r.name}
-                              className={cn(
-                                "flex items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem]",
-                                done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary"
-                              )}
-                            >
-                              <input
-                                type="checkbox"
-                                disabled={done}
-                                checked={done || ghSelected.has(r.name)}
-                                onChange={(e) =>
-                                  setGhSelected((prev) => {
-                                    const next = new Set(prev);
-                                    if (e.target.checked) next.add(r.name);
-                                    else next.delete(r.name);
-                                    return next;
-                                  })
-                                }
-                              />
-                              <GitBranch size={12} className="shrink-0" />
-                              <span className="shrink-0">{r.name}</span>
-                              {done && <span className="ml-auto shrink-0 text-[0.7rem]">imported</span>}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  {error && <div role="status" className="text-[0.75rem] text-err">{error}</div>}
-                </>
-              )}
-              <DialogFooter showCloseButton>
-                {!ghHint && (
-                  <Button
-                    size="sm"
-                    disabled={ghLoading || ghSelected.size === 0 || cloning !== ""}
-                    onClick={importGithub}
-                  >
-                    {cloning ? `Cloning ${cloning}...` : `Import ${ghSelected.size} selected`}
-                  </Button>
-                )}
-              </DialogFooter>
-            </DialogContent>
+                ))}
+              {error && <div role="status" className="text-[0.75rem] text-err">{error}</div>}
+            </>
+          )}
+          <DialogFooter showCloseButton>
+            {!ghHint && (
+              <Button
+                size="sm"
+                disabled={ghLoading || ghSelected.size === 0 || cloning !== ""}
+                onClick={importGithub}
+              >
+                {cloning ? `Cloning ${cloning}...` : `Import ${ghSelected.size} selected`}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {projectNames.length === 0 ? (
