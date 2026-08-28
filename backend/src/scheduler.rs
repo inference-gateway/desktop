@@ -1,8 +1,9 @@
 use crate::AppState;
 use crate::env::{infer_bin_path, infer_env, mock_mode};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::BufRead;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 /// Max log lines kept in memory.
 const MAX_LOG: usize = 200;
@@ -185,21 +186,72 @@ pub(crate) fn gh_output(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// How long a `gh` dropdown lookup stays fresh. The owner list and the repo
+/// list are rebuilt on every mount of the Tasks panel, the repository picker
+/// and the project import dialog, and `gh repo list` with issue/PR counts is a
+/// GraphQL round-trip per call.
+const GH_TTL: Duration = Duration::from_secs(600);
+
+/// Keyed `gh` results, each stamped with the instant it was fetched.
+type Entries<T> = Mutex<HashMap<String, (Instant, T)>>;
+type Cache<T> = LazyLock<Entries<T>>;
+
+static OWNERS_CACHE: Cache<Vec<String>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static REPOS_CACHE: Cache<Vec<RepoEntry>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Memoized `gh` lookup: `fetch` runs only on a miss or an expired entry.
+/// Errors are never cached, so a failed `gh` call retries on the next invoke.
+/// The lock is released before `fetch` runs - never hold it across a
+/// subprocess. A poisoned mutex degrades to always-miss rather than panicking.
+/// ponytail: concurrent misses both fetch (single-flight would mean holding a
+/// lock across `gh`) and entries are never evicted - one per owner the user
+/// opens. Revisit only if either shows up in practice.
+fn cached<T: Clone>(
+    store: &Entries<T>,
+    key: &str,
+    ttl: Duration,
+    fetch: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let fresh = store
+        .lock()
+        .ok()
+        .and_then(|entries| entries.get(key).cloned())
+        .filter(|(at, _)| at.elapsed() < ttl);
+    if let Some((_, value)) = fresh {
+        return Ok(value);
+    }
+    let value = fetch()?;
+    if let Ok(mut entries) = store.lock() {
+        entries.insert(key.to_string(), (Instant::now(), value.clone()));
+    }
+    Ok(value)
+}
+
+/// Drop the cached repo list for `owner` so a repo created from the UI shows up
+/// without waiting out the TTL.
+pub(crate) fn forget_repos(owner: &str) {
+    if let Ok(mut entries) = REPOS_CACHE.lock() {
+        entries.remove(owner);
+    }
+}
+
 /// The user's own login plus the orgs they belong to, for the repository
 /// owner dropdown in Settings.
 #[tauri::command]
 pub(crate) async fn github_owners() -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(|| {
-        let user = gh_output(&["api", "user", "--jq", ".login"])?;
-        let orgs = gh_output(&["api", "user/orgs", "--jq", ".[].login"]).unwrap_or_default();
-        let mut owners: Vec<String> = std::iter::once(user.as_str())
-            .chain(orgs.lines())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        owners.dedup();
-        Ok(owners)
+        cached(&OWNERS_CACHE, "owners", GH_TTL, || {
+            let user = gh_output(&["api", "user", "--jq", ".login"])?;
+            let orgs = gh_output(&["api", "user/orgs", "--jq", ".[].login"]).unwrap_or_default();
+            let mut owners: Vec<String> = std::iter::once(user.as_str())
+                .chain(orgs.lines())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            owners.dedup();
+            Ok(owners)
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -212,7 +264,7 @@ fn valid_owner(owner: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RepoEntry {
     name: String,
     open: u64,
@@ -227,18 +279,20 @@ pub(crate) async fn github_list_repos(owner: String) -> Result<Vec<RepoEntry>, S
         return Err(format!("invalid owner: {owner}"));
     }
     tokio::task::spawn_blocking(move || {
-        let out = gh_output(&[
-            "repo",
-            "list",
-            &owner,
-            "--limit",
-            "100",
-            "--json",
-            "name,issues,pullRequests",
-            "--jq",
-            "[.[] | {name, open: (.issues.totalCount + .pullRequests.totalCount)}] | sort_by(-.open)",
-        ])?;
-        serde_json::from_str(&out).map_err(|e| format!("unexpected gh output: {e}"))
+        cached(&REPOS_CACHE, &owner, GH_TTL, || {
+            let out = gh_output(&[
+                "repo",
+                "list",
+                &owner,
+                "--limit",
+                "100",
+                "--json",
+                "name,issues,pullRequests",
+                "--jq",
+                "[.[] | {name, open: (.issues.totalCount + .pullRequests.totalCount)}] | sort_by(-.open)",
+            ])?;
+            serde_json::from_str(&out).map_err(|e| format!("unexpected gh output: {e}"))
+        })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -284,7 +338,9 @@ pub(crate) async fn github_create_repo(repo: String) -> Result<(), String> {
         return Err(format!("invalid repository: {repo}"));
     }
     tokio::task::spawn_blocking(move || {
-        gh_output(&["repo", "create", &repo, "--private", "--add-readme"]).map(|_| ())
+        gh_output(&["repo", "create", &repo, "--private", "--add-readme"]).map(|_| ())?;
+        forget_repos(repo.split_once('/').map_or("", |(owner, _)| owner));
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -384,7 +440,11 @@ pub(crate) async fn get_scheduler_log(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_schedules_dir, valid_repo, valid_secret_name};
+    use super::{Entries, GH_TTL, cached, read_schedules_dir, valid_repo, valid_secret_name};
+    use std::cell::Cell;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::Duration;
 
     #[test]
     fn valid_repo_accepts_owner_slash_name_only() {
@@ -432,5 +492,48 @@ mod tests {
     #[test]
     fn read_schedules_dir_missing_dir_is_empty() {
         assert!(read_schedules_dir(std::path::Path::new("/nonexistent/schedules")).is_empty());
+    }
+
+    #[test]
+    fn cached_serves_a_fresh_entry_without_refetching() {
+        let store = Mutex::new(HashMap::new());
+        let calls = Cell::new(0);
+        let fetch = || {
+            calls.set(calls.get() + 1);
+            Ok(vec![format!("call-{}", calls.get())])
+        };
+        let first = cached(&store, "owner", GH_TTL, fetch).unwrap();
+        let second = cached(&store, "owner", GH_TTL, fetch).unwrap();
+        assert_eq!(first, vec!["call-1".to_string()]);
+        assert_eq!(second, first, "second call must be served from the cache");
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn cached_refetches_once_the_ttl_has_passed() {
+        let store = Mutex::new(HashMap::new());
+        cached(&store, "owner", GH_TTL, || Ok(vec!["stale".to_string()])).unwrap();
+        let got = cached(&store, "owner", Duration::ZERO, || {
+            Ok(vec!["fresh".to_string()])
+        })
+        .unwrap();
+        assert_eq!(got, vec!["fresh".to_string()]);
+    }
+
+    #[test]
+    fn cached_does_not_store_errors() {
+        let store: Entries<Vec<String>> = Mutex::new(HashMap::new());
+        assert!(cached(&store, "owner", GH_TTL, || Err("gh blew up".into())).is_err());
+        assert!(store.lock().unwrap().is_empty());
+        let got = cached(&store, "owner", GH_TTL, || Ok(vec!["retried".to_string()])).unwrap();
+        assert_eq!(got, vec!["retried".to_string()]);
+    }
+
+    #[test]
+    fn cached_keys_are_independent() {
+        let store = Mutex::new(HashMap::new());
+        cached(&store, "alice", GH_TTL, || Ok(vec!["a".to_string()])).unwrap();
+        let got = cached(&store, "bob", GH_TTL, || Ok(vec!["b".to_string()])).unwrap();
+        assert_eq!(got, vec!["b".to_string()]);
     }
 }

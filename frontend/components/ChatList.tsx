@@ -273,6 +273,7 @@ export function ChatList() {
     activeProject,
     setActiveProject,
     setInitialSettingsTab,
+    setInitialProjectFilter,
     setCurrentView,
     gitProjects,
     projectGroups,
@@ -368,7 +369,11 @@ export function ChatList() {
                 active={activeProject === name}
                 onToggle={() => toggleCollapseProject(name)}
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
-                onSettings={() => { setInitialSettingsTab("projects"); setCurrentView("settings"); }}
+                onSettings={() => {
+                  setInitialSettingsTab("projects");
+                  setInitialProjectFilter(name);
+                  setCurrentView("settings");
+                }}
                 onRename={(n) => renameProject(name, n)}
                 onDelete={() => deleteProject(name)}
                 onDrop={(e) => handleDropOnProject(e, name)}

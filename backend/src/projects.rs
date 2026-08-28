@@ -16,6 +16,14 @@ fn document_dir(home: &Path) -> PathBuf {
     dirs::document_dir().unwrap_or_else(|| home.join("Documents"))
 }
 
+/// `~`-expanded path; config values may start with `~`.
+fn expand_home(raw: &str) -> String {
+    raw.strip_prefix('~').map_or_else(
+        || raw.to_string(),
+        |rest| format!("{}{}", crate::env::home_dir().display(), rest),
+    )
+}
+
 /// Default projects root: <Documents>/Inference Gateway Desktop.
 pub(crate) fn default_projects_root(home: &Path) -> String {
     document_dir(home)
@@ -117,11 +125,7 @@ fn project_paths() -> BTreeMap<String, PathBuf> {
         .iter()
         .filter_map(|(name, v)| {
             let raw = v.as_str()?.trim();
-            let expanded = raw.strip_prefix('~').map_or_else(
-                || raw.to_string(),
-                |rest| format!("{}{}", crate::env::home_dir().display(), rest),
-            );
-            let p = PathBuf::from(expanded);
+            let p = PathBuf::from(expand_home(raw));
             p.is_absolute().then(|| (name.clone(), p))
         })
         .collect()
@@ -240,6 +244,102 @@ fn scan_git_repos_in(root: &Path) -> Vec<GitRepo> {
     repos
 }
 
+/// Clone destination for a validated `owner/name` repo under the projects
+/// root: the sanitized repo name. Sanitizing (dots trimmed, `..` falls back
+/// to "project") guarantees the destination stays under the root.
+fn clone_dest(root: &Path, repo: &str) -> PathBuf {
+    let name = repo.split_once('/').map_or("", |(_, n)| n);
+    root.join(sanitize_name(name))
+}
+
+/// The importable repo entry for a checkout on disk: name from the directory,
+/// flat (no group), context from AGENTS.md/CLAUDE.md.
+fn cloned_repo(dest: &Path) -> GitRepo {
+    GitRepo {
+        name: dest
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path: dest.to_string_lossy().into_owned(),
+        group: String::new(),
+        context: repo_context(dest),
+    }
+}
+
+/// Whether the checkout at `dest` is `owner/name`, by looking for its remote in
+/// `.git/config`. The `/` or `:` boundary keeps "acme/api" from matching
+/// "acme/api-client" or "notacme/api"; the comparison is case-insensitive
+/// because GitHub owner and repo names are. A `.git` file (worktree, submodule)
+/// has no config to read and reads as "not this repo", which fails safe.
+fn checkout_is(dest: &Path, repo: &str) -> bool {
+    let want = repo.to_lowercase();
+    std::fs::read_to_string(dest.join(".git").join("config")).is_ok_and(|config| {
+        config.lines().any(|line| {
+            let url = line.trim().to_lowercase();
+            let url = url.strip_suffix(".git").unwrap_or(&url);
+            url.strip_suffix(&want)
+                .is_some_and(|prefix| prefix.ends_with(['/', ':']))
+        })
+    })
+}
+
+/// Clone via `clone()` unless `dest` already holds a checkout of the same repo
+/// (idempotent re-import), then return the entry for the existing import flow.
+/// A checkout of a *different* repo is an error rather than a silent adoption -
+/// the destination drops the owner, so two owners' "desktop" collide, as does
+/// any repo the user cloned there by hand. A directory this call created is
+/// removed when the clone fails, so a half-finished clone cannot wedge the
+/// destination; one that already existed is left alone. `clone` is injected so
+/// both paths are testable without network.
+fn ensure_clone(
+    clone: impl FnOnce() -> Result<(), String>,
+    dest: &Path,
+    repo: &str,
+) -> Result<GitRepo, String> {
+    if dest.join(".git").exists() {
+        if !checkout_is(dest, repo) {
+            return Err(format!(
+                "{} already holds a different repository - remove or rename it first",
+                dest.display()
+            ));
+        }
+        return Ok(cloned_repo(dest));
+    }
+    let existed = dest.exists();
+    std::fs::create_dir_all(dest.parent().unwrap_or(dest))
+        .map_err(|e| format!("Failed to create projects root: {e}"))?;
+    clone().inspect_err(|_| {
+        if !existed {
+            let _ = std::fs::remove_dir_all(dest);
+        }
+    })?;
+    Ok(cloned_repo(dest))
+}
+
+/// Clone a GitHub repository under the projects root and return it ready for
+/// importProjects. `gh repo clone` handles auth and protocol; on failure its
+/// stderr is the error.
+#[tauri::command]
+pub(crate) async fn clone_github_repo(repo: String) -> Result<GitRepo, String> {
+    if !crate::scheduler::valid_repo(&repo) {
+        return Err(format!("invalid repository: {repo}"));
+    }
+    let dest = clone_dest(
+        &PathBuf::from(expand_home(&read_config().projects_root)),
+        &repo,
+    );
+    let target = dest.to_string_lossy().into_owned();
+    tokio::task::spawn_blocking(move || {
+        ensure_clone(
+            || crate::scheduler::gh_output(&["repo", "clone", &repo, &target]).map(|_| ()),
+            &dest,
+            &repo,
+        )
+    })
+    .await
+    .map_err(|e| format!("clone task failed: {e}"))?
+}
+
 /// Scan a root directory for importable git repositories.
 #[tauri::command]
 pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String> {
@@ -247,11 +347,7 @@ pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String>
     if raw.is_empty() {
         return Err("No root directory given".into());
     }
-    let expanded = raw.strip_prefix('~').map_or_else(
-        || raw.to_string(),
-        |rest| format!("{}{}", crate::env::home_dir().display(), rest),
-    );
-    let path = PathBuf::from(expanded);
+    let path = PathBuf::from(expand_home(raw));
     if !path.is_dir() {
         return Err(format!("Not a directory: {}", path.display()));
     }
@@ -667,5 +763,134 @@ mod tests {
         for ext in "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".split(',') {
             assert!(mime_for_ext(ext).is_some(), "{ext}");
         }
+    }
+
+    #[test]
+    fn clone_dest_keeps_the_repo_name_under_the_root() {
+        let root = Path::new("/tmp/projects-root");
+        assert_eq!(clone_dest(root, "owner/my-repo"), root.join("my-repo"));
+        assert_eq!(
+            clone_dest(root, "inference-gateway/desktop"),
+            root.join("desktop")
+        );
+        assert_eq!(clone_dest(root, "owner/.."), root.join("project"));
+    }
+
+    /// A checkout of `repo` at `dest`, with the remote `.git/config` git writes.
+    fn fake_checkout(dest: &Path, repo: &str) {
+        std::fs::create_dir_all(dest.join(".git")).unwrap();
+        std::fs::write(
+            dest.join(".git").join("config"),
+            format!("[remote \"origin\"]\n\turl = https://github.com/{repo}.git\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn ensure_clone_skips_an_existing_checkout() {
+        let root = std::env::temp_dir().join(format!("igd-clone-skip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = clone_dest(&root, "owner/repo-a");
+        fake_checkout(&dest, "owner/repo-a");
+        std::fs::write(dest.join("AGENTS.md"), "agents rules").unwrap();
+        let mut cloned = false;
+        let repo = ensure_clone(
+            || {
+                cloned = true;
+                Ok(())
+            },
+            &dest,
+            "owner/repo-a",
+        )
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!cloned, "existing checkout must not be re-cloned");
+        assert_eq!(repo.name, "repo-a");
+        assert_eq!(repo.path, dest.to_string_lossy());
+        assert_eq!(repo.group, "");
+        assert_eq!(repo.context.as_deref(), Some("agents rules"));
+    }
+
+    #[test]
+    fn ensure_clone_refuses_a_checkout_of_a_different_repo() {
+        let root = std::env::temp_dir().join(format!("igd-clone-other-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = clone_dest(&root, "owner/desktop");
+
+        for squatter in ["someone-else/desktop", "owner/desktop-legacy"] {
+            fake_checkout(&dest, squatter);
+            let mut cloned = false;
+            let err = ensure_clone(
+                || {
+                    cloned = true;
+                    Ok(())
+                },
+                &dest,
+                "owner/desktop",
+            )
+            .unwrap_err();
+            assert!(!cloned, "{squatter} must not be adopted or overwritten");
+            assert!(err.contains("different repository"), "{err}");
+        }
+
+        std::fs::write(
+            dest.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = git@github.com:owner/desktop.git\n",
+        )
+        .unwrap();
+        assert!(
+            ensure_clone(|| Ok(()), &dest, "owner/desktop").is_ok(),
+            "the ssh remote form is the same repo"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ensure_clone_clones_missing_and_surfaces_failures() {
+        let root = std::env::temp_dir().join(format!("igd-clone-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = clone_dest(&root, "owner/repo-b");
+        let err = ensure_clone(
+            || {
+                std::fs::create_dir_all(dest.join("half-written")).unwrap();
+                Err("gh blew up".into())
+            },
+            &dest,
+            "owner/repo-b",
+        )
+        .unwrap_err();
+        assert_eq!(err, "gh blew up");
+        assert!(
+            !dest.exists(),
+            "a partial clone must not wedge the destination"
+        );
+        let repo = ensure_clone(
+            || {
+                fake_checkout(&dest, "owner/repo-b");
+                Ok(())
+            },
+            &dest,
+            "owner/repo-b",
+        )
+        .unwrap();
+        assert!(dest.join(".git").exists());
+        assert_eq!(repo.name, "repo-b");
+        assert_eq!(repo.context, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ensure_clone_keeps_a_directory_it_did_not_create() {
+        let root = std::env::temp_dir().join(format!("igd-clone-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = clone_dest(&root, "owner/repo-c");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("notes.txt"), "the user's own file").unwrap();
+        assert!(ensure_clone(|| Err("clone refused".into()), &dest, "owner/repo-c").is_err());
+        assert!(
+            dest.join("notes.txt").exists(),
+            "a pre-existing directory must never be removed"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

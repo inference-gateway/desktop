@@ -243,6 +243,7 @@ export const api = {
         invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
+  cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
   gitProjectNames: () => invoke<string[]>("git_project_names"),
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
