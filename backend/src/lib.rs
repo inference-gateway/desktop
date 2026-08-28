@@ -128,6 +128,7 @@ pub fn run() {
             projects::clone_github_repo,
             projects::git_project_names,
             projects::project_dir_exists,
+            projects::open_in_vs_code,
             projects::refresh_project_context,
             projects::save_project_file,
             projects::list_project_files,
