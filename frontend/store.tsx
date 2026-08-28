@@ -112,8 +112,6 @@ function useDesktopStore() {
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
-  // Live mirror of runningIds: async fan-out loops hold closures whose captured
-  // state is stale, so they read the ref instead.
   const runningIdsRef = useRef<Set<string>>(runningIds);
   useEffect(() => {
     runningIdsRef.current = runningIds;
@@ -852,9 +850,6 @@ function useDesktopStore() {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
   }, []);
 
-  // Init a project: run the CLI's /init in a new conversation under the
-  // project (the backend resolves its directory as the run's cwd), then
-  // re-read AGENTS.md/CLAUDE.md so the fresh context takes effect.
   const initProject = useCallback(async (name: string) => {
       if (runningIdsRef.current.size >= maxSessions) {
     setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
@@ -865,8 +860,6 @@ function useDesktopStore() {
       setActiveProject(name);
       setActiveId(runId);
       activeIdRef.current = runId;
-      // Git-backed projects finish /init with a pull request so a human reviews
-      // the docs changes; without a repo there is nothing to raise a PR against.
       const pr = gitProjects.has(name)
     ? "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge."
     : undefined;
@@ -876,9 +869,6 @@ function useDesktopStore() {
       if (ctx) setProjectContext(name, ctx);
   }, [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
 
-  // Fan /init out over the chosen projects one at a time, so the concurrent
-  // session cap is queued into instead of hit mid-fan-out. Projects with a
-  // running conversation or a missing folder are skipped and reported.
   const initAllProjects = useCallback(async (names: string[]) => {
       setInitAllRunning(true);
       try {
@@ -890,7 +880,6 @@ function useDesktopStore() {
             skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
             continue;
           }
-          // ponytail: poll for a free session slot; an event-driven queue is overkill at maxSessions scale
           while (runningIdsRef.current.size >= maxSessions) {
             await new Promise((r) => setTimeout(r, 300));
           }

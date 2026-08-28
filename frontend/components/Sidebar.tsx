@@ -36,7 +36,6 @@ function InitAllDialog({
   onConfirm: (projectNames: string[]) => void;
 }) {
   const { projectNames, projectGroups } = useDesktop();
-  // null = freshly opened dialog, every project selected by default.
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const selected = picked ?? new Set(projectNames);
 
@@ -49,7 +48,6 @@ function InitAllDialog({
     });
   const toggleGroup = (names: string[]) => flip(names, !names.every((n) => selected.has(n)));
 
-  // Projects grouped by their group label ("" = ungrouped), like the sidebar.
   const clusters = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const name of projectNames) {
