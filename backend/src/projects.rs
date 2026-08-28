@@ -99,6 +99,51 @@ fn project_names() -> Vec<String> {
     names.into_iter().collect()
 }
 
+/// Per-project directory overrides from the `paths` object in projects.json:
+/// trimmed, `~`-expanded, and only absolute paths (a relative override would
+/// grant a meaningless relative sandbox entry).
+fn project_paths() -> BTreeMap<String, PathBuf> {
+    let path = crate::env::home_dir().join(".infer").join("projects.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return BTreeMap::new();
+    };
+    let Some(paths) = val.get("paths").and_then(|v| v.as_object()) else {
+        return BTreeMap::new();
+    };
+    paths
+        .iter()
+        .filter_map(|(name, v)| {
+            let raw = v.as_str()?.trim();
+            let expanded = raw.strip_prefix('~').map_or_else(
+                || raw.to_string(),
+                |rest| format!("{}{}", crate::env::home_dir().display(), rest),
+            );
+            let p = PathBuf::from(expanded);
+            p.is_absolute().then(|| (name.clone(), p))
+        })
+        .collect()
+}
+
+/// Default name->dir mapping with per-project overrides applied on top.
+/// ponytail: two projects may point at the same dir; harmless (duplicate
+/// grant, shared files) - validate only if users hit it.
+fn resolved_dirs(
+    root: &Path,
+    names: &[String],
+    overrides: &BTreeMap<String, PathBuf>,
+) -> BTreeMap<String, PathBuf> {
+    let mut dirs = assign_dirs(root, names);
+    for (name, dir) in overrides {
+        if dirs.contains_key(name) {
+            dirs.insert(name.clone(), dir.clone());
+        }
+    }
+    dirs
+}
+
 /// Comma-separated value for INFER_TOOLS_SANDBOX_DIRECTORIES covering every
 /// project directory, so agent runs can read and write project files without
 /// approval prompts. None when no projects exist, leaving the CLI default
@@ -109,7 +154,7 @@ pub(crate) fn sandbox_allowed_dirs() -> Option<String> {
         return None;
     }
     let root = PathBuf::from(read_config().projects_root);
-    let dirs = assign_dirs(&root, &names);
+    let dirs = resolved_dirs(&root, &names, &project_paths());
     let mut value = String::from(CLI_DEFAULT_SANDBOX_DIRS);
     for dir in dirs.values() {
         value.push(',');
@@ -127,7 +172,9 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         names.push(name.to_string());
     }
     let root = PathBuf::from(read_config().projects_root);
-    assign_dirs(&root, &names).get(name).cloned()
+    resolved_dirs(&root, &names, &project_paths())
+        .get(name)
+        .cloned()
 }
 
 /// Create (if needed) and return the files directory for a project.
@@ -423,6 +470,21 @@ mod tests {
         assert_eq!(dirs["A:B"], root.join("A-B-2"));
         let again = assign_dirs(root, &names);
         assert_eq!(dirs, again);
+    }
+
+    #[test]
+    fn resolved_dirs_prefers_override_and_keeps_defaults() {
+        let root = Path::new("/tmp/projects-root");
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        let overrides = BTreeMap::from([(
+            "A".to_string(),
+            PathBuf::from("/elsewhere/repo with spaces"),
+        )]);
+        let dirs = resolved_dirs(root, &names, &overrides);
+        assert_eq!(dirs["A"], PathBuf::from("/elsewhere/repo with spaces"));
+        assert_eq!(dirs["B"], root.join("B"));
+        let unknown = BTreeMap::from([("Ghost".to_string(), PathBuf::from("/x"))]);
+        assert!(!resolved_dirs(root, &names, &unknown).contains_key("Ghost"));
     }
 
     #[test]

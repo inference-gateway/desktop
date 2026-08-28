@@ -1291,7 +1291,7 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
-  const { projectNames, projectContexts, setProjectContext } = useDesktop();
+  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1417,6 +1417,15 @@ function ProjectsTab() {
                   {name}
                 </Label>
                 <ProjectFiles project={name} />
+                <Label htmlFor={`project-path-${name}`} className="text-[0.8rem] text-muted-foreground">
+                  Directory (blank = default under the projects root)
+                </Label>
+                <Input
+                  id={`project-path-${name}`}
+                  value={projectPaths[name] ?? ""}
+                  placeholder="/path/to/existing/repo"
+                  onChange={(e) => setProjectPath(name, e.target.value)}
+                />
                 <textarea
                   id={`project-context-${name}`}
                   rows={4}

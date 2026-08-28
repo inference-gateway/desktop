@@ -100,6 +100,7 @@ function useDesktopStore() {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
+  const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
 
@@ -243,9 +244,14 @@ function useDesktopStore() {
       for (const [name, ctx] of Object.entries(parsed?.contexts ?? {})) {
         if (typeof ctx === "string" && ctx.trim()) contexts[name] = ctx;
       }
+      const paths: Record<string, string> = {};
+      for (const [name, p] of Object.entries(parsed?.paths ?? {})) {
+        if (typeof p === "string" && p.trim()) paths[name] = p;
+      }
       setProjects(map);
       setProjectNames(Array.from(names));
       setProjectContexts(contexts);
+      setProjectPaths(paths);
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
@@ -497,9 +503,9 @@ function useDesktopStore() {
   useEffect(() => {
     if (!projectsLoaded) return;
     api
-      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts }))
+      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths }))
       .catch(() => {});
-  }, [projectsLoaded, projects, projectNames, projectContexts]);
+  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths]);
 
   const assignProject = useCallback((sessionId: string, projectName: string) => {
     setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
@@ -755,6 +761,11 @@ function useDesktopStore() {
       delete next[name];
       return next;
     });
+    setProjectPaths((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     setActiveProject((p) => (p === name ? null : p));
   }, []);
 
@@ -770,11 +781,29 @@ function useDesktopStore() {
       delete next[oldName];
       return next;
     });
+    setProjectPaths((prev) => {
+      if (!(oldName in prev)) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
     setActiveProject((p) => (p === oldName ? newName : p));
   }, []);
 
   const setProjectContext = useCallback((name: string, context: string) => {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
+  }, []);
+
+  const setProjectPath = useCallback((name: string, path: string) => {
+    setProjectPaths((prev) => {
+      if (!path.trim()) {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      }
+      return { ...prev, [name]: path };
+    });
   }, []);
 
   const toggleCollapseProject = useCallback((name: string) => {
@@ -909,6 +938,8 @@ function useDesktopStore() {
     currentProject,
     projectContexts,
     setProjectContext,
+    projectPaths,
+    setProjectPath,
     initialSettingsTab,
     setInitialSettingsTab,
     assignProject,
