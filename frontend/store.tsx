@@ -596,7 +596,6 @@ function useDesktopStore() {
             break;
         }
       };
-      // First send freezes this session's mode from the user default (#171).
       if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: autoMode }));
       const cfg = await api.getConfig();
       const projectContext = projectName ? projectContexts[projectName] : undefined;
