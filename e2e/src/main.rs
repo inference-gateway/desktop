@@ -200,6 +200,7 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
             Ok(())
         }
         Step::Send { send } => app.send(send),
+        Step::Type { text } => app.type_text(text),
         Step::Keypress { keypress } => app.keypress(keypress),
         Step::Click { click } => app.click(&click.button),
         Step::Screenshot { screenshot } => app.screenshot(screenshot).map(|_| ()),
@@ -254,6 +255,7 @@ fn describe(step: &Step) -> String {
         Step::Bare(BareStep::NewChat) => "new_chat".into(),
         Step::Bare(BareStep::AssertOverlayBounds) => "assert_overlay_bounds".into(),
         Step::Send { send } => format!("send {send:?}"),
+        Step::Type { text } => format!("type {text:?}"),
         Step::Keypress { keypress } => format!("keypress {keypress:?}"),
         Step::Click { click } => format!("click {:?}", click.button),
         Step::Screenshot { screenshot } => format!("screenshot {screenshot}"),

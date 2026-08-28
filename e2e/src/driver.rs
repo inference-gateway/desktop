@@ -236,6 +236,26 @@ impl AppDriver {
         self.click("Send")
     }
 
+    /// Sidebar prompt inputs (e.g. "New project") are single-line AXTextFields:
+    /// set the value, verify it stuck, then commit with Return.
+    pub fn type_text(&self, text: &str) -> Result<()> {
+        let set_and_read = format!(
+            "tell application \"System Events\"\n{root}\nset tf to text field 1 of root\nset value of tf to \"{msg}\"\ndelay 0.3\nreturn value of tf as text\nend tell",
+            root = ax_root(),
+            msg = escape(text),
+        );
+        let got = osascript(&set_and_read)?;
+        if got.trim() != text {
+            bail!(
+                "sidebar text field did not accept the value (got {:?})",
+                got.trim()
+            );
+        }
+        osascript("tell application \"System Events\"\nkey code 36\nend tell")
+            .map(|_| ())
+            .map_err(|e| anyhow!("committing {text:?}: {}", e))
+    }
+
     pub fn click(&self, button: &str) -> Result<()> {
         let script = format!(
             "{find}\ntell application \"System Events\"\n{root}\nset b to my findButton(root, \"{name}\", 0)\nif b is missing value then error \"button not found\"\nclick b\nreturn \"clicked\"\nend tell",
