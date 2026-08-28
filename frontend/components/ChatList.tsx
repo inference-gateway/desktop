@@ -407,7 +407,7 @@ export function ChatList() {
 
   return (
     <>
-      <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto">
+      <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto select-none">
         {groups.agents.length > 0 ? (
           <>
             <Section
