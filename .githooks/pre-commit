@@ -10,8 +10,6 @@ ROOT="$(git rev-parse --show-toplevel)"
 
 echo "==> Running pre-commit checks..."
 
-# Enforce a final newline on every tracked text file (.editorconfig only
-# fixes files in editors; this catches everything else).
 fail=0
 for f in $(git ls-files | grep -vE '\.(png|icns|ico)$'); do
     [ -f "$f" ] || continue
