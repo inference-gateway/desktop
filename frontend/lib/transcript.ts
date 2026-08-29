@@ -342,6 +342,11 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     const failed = parsed ? parsed.failed : FAILISH.test(content);
     items = state.items.slice();
     items[idx] = { ...tool, output, state: failed ? "failed" : "done", skeleton: false };
+    const apprIdx = items.findIndex((it) => it.kind === "approval" && it.callId === callId);
+    if (apprIdx > idx) {
+          const [approval] = items.splice(apprIdx, 1);
+          items.splice(idx, 0, approval);
+    }
   } else if (parsed) {
     items = [
       ...state.items,
