@@ -252,6 +252,43 @@ test("ApprovalRequest before AgentError keeps the natural order", () => {
       ]);
 });
 
+test("approval record renders above its tool card once the result arrives", () => {
+  // Approval decision precedes the tool run; both stream orders must read
+  // approval → tool after the ToolResult updates the card in place.
+  const actions = (assistantFirst: boolean) => [
+    { type: "userSend", text: "write" },
+    ...(assistantFirst
+      ? [
+          ev({
+            kind: "AssistantMessage",
+            content: "",
+            reasoning_content: null,
+            tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+          }),
+          ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: '{"path":"a"}', tool_call_id: "c1" }),
+        ]
+      : [ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: '{"path":"a"}', tool_call_id: "c1" })]),
+    { type: "setApproval", callId: "c1", status: "approved" as const },
+    ...(assistantFirst
+      ? []
+      : [
+          ev({
+            kind: "AssistantMessage",
+            content: "",
+            reasoning_content: null,
+            tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+          }),
+        ]),
+    ev({ kind: "ToolResult", tool_call_id: "c1", content: '{"tool_name":"Write","success":false,"error":"nope"}' }),
+  ];
+  for (const assistantFirst of [false, true]) {
+    const s = run(actions(assistantFirst));
+    expect(s.items.map((i) => i.kind)).toEqual(["user", "approval", "tool"]);
+    expect(s.items[1]).toMatchObject({ status: "approved", toolName: "Write" });
+    expect(s.items[2]).toMatchObject({ callId: "c1", state: "failed" });
+  }
+});
+
 test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   const ndjson = [
     JSON.stringify({ role: "user", content: "hello" }),

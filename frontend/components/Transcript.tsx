@@ -96,20 +96,21 @@ function ApprovalCard({
   item: Extract<TranscriptItem, { kind: "approval" }>;
   approve: (callId: string, approved: boolean, scope?: "always") => void;
 }) {
-  const decided = item.status !== "pending";
+  if (item.status !== "pending") {
+    // Decided approvals only need to answer "was it approved or not"; the
+    // neighbouring tool card already shows the tool name and args.
+    const label =
+      item.status === "approved" ? "✓ Approved" : item.status === "denied" ? "✕ Denied" : "Session ended";
+    const color =
+      item.status === "approved" ? "text-tool" : item.status === "denied" ? "text-err" : "text-muted-foreground";
+    return (
+      <div className={cn("self-start text-[0.8rem]", color)}>
+        {label} {item.toolName}
+      </div>
+    );
+  }
   return (
-    <div
-      className={cn(
-        "self-stretch rounded-xl border p-3 text-[0.85rem]",
-        item.status === "approved"
-          ? "border-tool bg-tool-bg"
-          : item.status === "denied"
-            ? "border-err-border bg-err-bg"
-            : item.status === "expired"
-              ? "border-border bg-secondary"
-              : "border-warn bg-warn-bg"
-      )}
-    >
+    <div className="self-stretch rounded-xl border border-warn bg-warn-bg p-3 text-[0.85rem]">
       <div className="mb-2 font-bold text-warn">Tool requires approval</div>
       <div className="mb-1">
         <span className="font-bold text-tool">{item.toolName}</span>
@@ -117,17 +118,7 @@ function ApprovalCard({
       <pre className="mb-2 mt-1 max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-card p-2 font-mono text-[0.8rem]">
         {item.toolArgs}
       </pre>
-      {decided ? (
-        <div
-          className={cn(
-            "mt-2 text-[0.85rem] font-bold",
-            item.status === "approved" ? "text-tool" : item.status === "denied" ? "text-err" : "text-muted-foreground"
-          )}
-        >
-          {item.status === "approved" ? "Approved" : item.status === "denied" ? "Denied" : "Session ended"}
-        </div>
-      ) : (
-        <div className="flex gap-2">
+      <div className="flex gap-2">
           <button
             onClick={() => approve(item.callId, true)}
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
@@ -155,7 +146,6 @@ function ApprovalCard({
             </kbd>
           </button>
         </div>
-      )}
     </div>
   );
 }

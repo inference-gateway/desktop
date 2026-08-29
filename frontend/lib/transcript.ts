@@ -342,6 +342,15 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     const failed = parsed ? parsed.failed : FAILISH.test(content);
     items = state.items.slice();
     items[idx] = { ...tool, output, state: failed ? "failed" : "done", skeleton: false };
+    // The approval request may be appended below the tool card (it follows
+    // the assistant's tool_calls in the stream), but the decision precedes
+    // the tool run - keep the record above the card so reading order
+    // matches chronology.
+    const apprIdx = items.findIndex((it) => it.kind === "approval" && it.callId === callId);
+    if (apprIdx > idx) {
+          const [approval] = items.splice(apprIdx, 1);
+          items.splice(idx, 0, approval);
+    }
   } else if (parsed) {
     items = [
       ...state.items,
