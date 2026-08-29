@@ -97,8 +97,6 @@ function ApprovalCard({
   approve: (callId: string, approved: boolean, scope?: "always") => void;
 }) {
   if (item.status !== "pending") {
-    // Decided approvals only need to answer "was it approved or not"; the
-    // neighbouring tool card already shows the tool name and args.
     const label =
       item.status === "approved" ? "✓ Approved" : item.status === "denied" ? "✕ Denied" : "Session ended";
     const color =
