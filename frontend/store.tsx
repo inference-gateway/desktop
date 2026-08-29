@@ -981,7 +981,6 @@ function useDesktopStore() {
 
   const startInitSelection = useCallback(() => {
     setInitSelecting(true);
-    // ponytail: default to all only when nothing was restored/left over, so a persisted selection survives re-entry.
     setInitSelection((prev) => (prev.size === 0 ? new Set(projectNames) : prev));
   }, [projectNames]);
 
