@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { FolderPlus, GitBranch, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
+import { FolderPlus, GitBranch, RefreshCw, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
@@ -176,6 +176,7 @@ function ProjectGroup({
   onToggleCheck,
   count,
   isGit,
+  dirty,
   busy,
   collapsed,
   active,
@@ -196,6 +197,7 @@ function ProjectGroup({
   onToggleCheck: () => void;
   count: number;
   isGit: boolean;
+  dirty: boolean;
   busy: boolean;
   collapsed: boolean;
   active: boolean;
@@ -292,7 +294,7 @@ function ProjectGroup({
             <GitBranch
               size={11}
               aria-label="Git repository"
-              className="ml-0.5 shrink-0 text-muted-foreground/60"
+              className={cn("ml-0.5 shrink-0", dirty ? "text-amber-500" : "text-muted-foreground/60")}
             />
           )}
         </span>
@@ -399,6 +401,8 @@ export function ChatList() {
     setInitialProjectFilter,
     setCurrentView,
     gitProjects,
+    dirtyProjects,
+    refreshGitProjects,
     projectGroups,
     setError,
   } = useDesktop();
@@ -496,6 +500,7 @@ export function ChatList() {
                 onToggleCheck={() => toggleInitSelection(name)}
                 count={indices.length}
                 isGit={gitProjects.has(name)}
+                dirty={dirtyProjects.has(name)}
                 busy={projectBusy(name)}
                 collapsed={collapsed}
                 active={activeProject === name}
@@ -598,13 +603,23 @@ export function ChatList() {
           />
         </div>
       ) : (
-        <button
-          onClick={() => setNewProjectInput(true)}
-          className="flex shrink-0 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
-        >
-          <FolderPlus size={14} />
-          New project
-        </button>
+        <div className="flex shrink-0 items-center border-t border-border">
+          <button
+                onClick={() => setNewProjectInput(true)}
+                className="flex flex-1 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
+          >
+                <FolderPlus size={14} />
+                New project
+          </button>
+          <button
+                aria-label="Refresh projects"
+                title="Refresh git status for all projects"
+                onClick={refreshGitProjects}
+                className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
+          >
+                <RefreshCw size={14} />
+          </button>
+        </div>
       )}
 
       {initSelecting && (

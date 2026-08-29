@@ -108,6 +108,7 @@ function useDesktopStore() {
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
+  const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -522,14 +523,21 @@ function useDesktopStore() {
     Promise.all(ids.map((id) => deleteConversation(id)));
   }, [selected, clearSelection, deleteConversation]);
 
+  const fetchGitProjects = useCallback(async () => {
+    const status = await api.gitProjectStatus();
+    setGitProjects(new Set(status.git));
+    setDirtyProjects(new Set(status.dirty));
+  }, []);
+
   useEffect(() => {
     if (!projectsLoaded) return;
     api
       .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths, groups: projectGroups }))
-      .then(() => api.gitProjectNames())
-      .then((names) => setGitProjects(new Set(names)))
+      .then(() => fetchGitProjects())
       .catch(() => {});
-  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups]);
+  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups, fetchGitProjects]);
+
+  const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
 
   const assignProject = useCallback((sessionId: string, projectName: string) => {
     setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
@@ -1080,6 +1088,8 @@ function useDesktopStore() {
     createProject,
     importProjects,
     gitProjects,
+    dirtyProjects,
+    refreshGitProjects,
     deleteProject,
     deleteProjects,
     renameProject,
