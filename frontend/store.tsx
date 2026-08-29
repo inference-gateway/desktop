@@ -71,6 +71,9 @@ export const PROVIDERS = [
   { label: "Ollama Cloud", env: "OLLAMA_CLOUD_API_KEY" },
 ] as const;
 
+const INIT_PR_INSTRUCTION =
+  "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge.";
+
 function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
@@ -116,6 +119,7 @@ function useDesktopStore() {
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
+  const gitSigRef = useRef("");
   const runningIdsRef = useRef<Set<string>>(runningIds);
   useEffect(() => {
     runningIdsRef.current = runningIds;
@@ -270,11 +274,18 @@ function useDesktopStore() {
       for (const [name, g] of Object.entries(parsed?.groups ?? {})) {
         if (typeof g === "string" && g.trim()) groups[name] = g;
       }
+      const selected = new Set<string>();
+      if (Array.isArray(parsed?.selected)) {
+        for (const n of parsed.selected) {
+          if (typeof n === "string" && names.has(n)) selected.add(n);
+        }
+      }
       setProjects(map);
       setProjectNames(Array.from(names));
       setProjectContexts(contexts);
       setProjectPaths(paths);
       setProjectGroups(groups);
+      setInitSelection(selected);
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
@@ -531,11 +542,24 @@ function useDesktopStore() {
 
   useEffect(() => {
     if (!projectsLoaded) return;
+    // ponytail: only rescan git when a git-relevant field changed - a checkbox toggle persists `selected` without a full `git status` sweep.
+    const sig = JSON.stringify([projectNames, projectPaths, projectGroups]);
+    const gitChanged = sig !== gitSigRef.current;
+    gitSigRef.current = sig;
     api
-      .writeProjects(JSON.stringify({ assignments: projects, names: projectNames, contexts: projectContexts, paths: projectPaths, groups: projectGroups }))
-      .then(() => fetchGitProjects())
+      .writeProjects(
+        JSON.stringify({
+          assignments: projects,
+          names: projectNames,
+          contexts: projectContexts,
+          paths: projectPaths,
+          groups: projectGroups,
+          selected: Array.from(initSelection),
+        })
+      )
+      .then(() => (gitChanged ? fetchGitProjects() : undefined))
       .catch(() => {});
-  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups, fetchGitProjects]);
+  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups, initSelection, fetchGitProjects]);
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
 
@@ -636,6 +660,54 @@ function useDesktopStore() {
     }
   }, [runningIds, model, autoMode, autoModes, projectContexts, projectGroups, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
 
+  const runOnProjects = useCallback(
+    async (names: string[], runOne: (name: string) => Promise<void>) => {
+      setInitAllRunning(true);
+      try {
+        const skipped: string[] = [];
+        const inFlight = new Set<Promise<void>>();
+        for (const name of names) {
+          const dirOk = await api.projectDirExists(name).catch(() => false);
+          const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
+          if (!dirOk || busy) {
+            skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
+            continue;
+          }
+          while (inFlight.size >= maxSessions) await Promise.race(inFlight);
+          const run = runOne(name).catch(() => {});
+          inFlight.add(run);
+          void run.finally(() => inFlight.delete(run));
+        }
+        await Promise.all(inFlight);
+        if (skipped.length) setStatus(`Skipped: ${skipped.join(", ")}`);
+      } finally {
+        setInitAllRunning(false);
+      }
+    },
+    [projects, maxSessions, setStatus]
+  );
+
+  const broadcastPrompt = useCallback(
+    async (names: string[], text: string) => {
+      const isInit = /^\/init(\s|$)/.test(text);
+      let first = true;
+      await runOnProjects(names, async (name) => {
+        const runId = crypto.randomUUID();
+        assignProject(runId, name);
+        if (first) {
+          // Surface the first spawned session so its progress/approvals are visible; the rest run in the sidebar.
+          first = false;
+          setActiveProject(name);
+          setActiveId(runId);
+          activeIdRef.current = runId;
+        }
+        const extra = isInit && gitProjects.has(name) ? INIT_PR_INSTRUCTION : undefined;
+        await sendPrompt(runId, text, name, extra);
+      });
+    },
+    [runOnProjects, assignProject, gitProjects, sendPrompt]
+  );
+
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
       sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId])
@@ -649,6 +721,27 @@ function useDesktopStore() {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";
     if (!text) return;
+    if (initSelecting) {
+      if (initSelection.size === 0) {
+        setError("Select at least one project to broadcast to");
+        return;
+      }
+      if (!model) {
+        setError("Please select a model first");
+        return;
+      }
+      const names = Array.from(initSelection);
+      if (el) {
+        el.value = "";
+        autoGrow(el);
+      }
+      api.appendHistory(text).catch(() => {});
+      setHistory((h) => [...h, text]);
+      setInitSelecting(false);
+      setInitSelection(new Set());
+      await broadcastPrompt(names, text);
+      return;
+    }
     if (activeId && runningIds.has(activeId)) return;
     if (!model) {
       setError("Please select a model first");
@@ -669,7 +762,7 @@ function useDesktopStore() {
       autoGrow(el);
     }
     await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
-  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError]);
+  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError, initSelecting, initSelection, broadcastPrompt]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -879,9 +972,7 @@ function useDesktopStore() {
       setActiveProject(name);
       setActiveId(runId);
       activeIdRef.current = runId;
-      const pr = gitProjects.has(name)
-    ? "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge."
-    : undefined;
+      const pr = gitProjects.has(name) ? INIT_PR_INSTRUCTION : undefined;
       await sendPrompt(runId, "/init", name, pr);
       await loadProjects();
       const ctx = await api.refreshProjectContext(name).catch(() => null);
@@ -890,7 +981,7 @@ function useDesktopStore() {
 
   const startInitSelection = useCallback(() => {
     setInitSelecting(true);
-    setInitSelection(new Set(projectNames));
+    setInitSelection((prev) => (prev.size === 0 ? new Set(projectNames) : prev));
   }, [projectNames]);
 
   const cancelInitSelection = useCallback(() => {
@@ -907,30 +998,30 @@ function useDesktopStore() {
     });
   }, []);
 
-  const initAllProjects = useCallback(async (names: string[]) => {
-    setInitAllRunning(true);
-    try {
-      const skipped: string[] = [];
-      const inFlight = new Set<Promise<void>>();
-      for (const name of names) {
-        const dirOk = await api.projectDirExists(name).catch(() => false);
-        const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
-        if (!dirOk || busy) {
-          skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
-          continue;
+  const selectAllProjects = useCallback(() => setInitSelection(new Set(projectNames)), [projectNames]);
+
+  const clearProjectSelection = useCallback(() => setInitSelection(new Set()), []);
+
+  const selectProjectsInGroup = useCallback(
+    (group: string) => {
+      setInitSelection((prev) => {
+        const next = new Set(prev);
+        const inGroup = projectNames.filter((n) => projectGroups[n] === group);
+        const allIn = inGroup.length > 0 && inGroup.every((n) => next.has(n));
+        for (const n of inGroup) {
+          if (allIn) next.delete(n);
+          else next.add(n);
         }
-        // ponytail: bound concurrency on a local set, not runningIdsRef (which lags a React render).
-        while (inFlight.size >= maxSessions) await Promise.race(inFlight);
-        const run = initProject(name).catch(() => {});
-        inFlight.add(run);
-        void run.finally(() => inFlight.delete(run));
-      }
-      await Promise.all(inFlight);
-      if (skipped.length) setStatus(`Init skipped: ${skipped.join(", ")}`);
-    } finally {
-      setInitAllRunning(false);
-    }
-  }, [projects, maxSessions, initProject, setStatus]);
+        return next;
+      });
+    },
+    [projectNames, projectGroups]
+  );
+
+  const initAllProjects = useCallback(
+    (names: string[]) => runOnProjects(names, initProject),
+    [runOnProjects, initProject]
+  );
 
   const setProjectPath = useCallback((name: string, path: string) => {
     setProjectPaths((prev) => {
@@ -1096,12 +1187,16 @@ function useDesktopStore() {
     toggleCollapseProject,
     initProject,
     initAllProjects,
+    broadcastPrompt,
     initAllRunning,
     initSelecting,
     initSelection,
     startInitSelection,
     cancelInitSelection,
     toggleInitSelection,
+    selectAllProjects,
+    clearProjectSelection,
+    selectProjectsInGroup,
   };
 }
 

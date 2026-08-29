@@ -109,31 +109,58 @@ function BulkDeleteBar({ count, onDelete }: { count: number; onDelete: () => voi
   );
 }
 
-function InitBar({ count, onInit, onCancel }: { count: number; onInit: () => void; onCancel: () => void }) {
+function InitBar({
+  count,
+  total,
+  onInit,
+  onCancel,
+  onSelectAll,
+  onClear,
+}: {
+  count: number;
+  total: number;
+  onInit: () => void;
+  onCancel: () => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+}) {
   const [armed, setArmed] = useState(false);
+  const allSelected = total > 0 && count >= total;
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-border py-2">
-      <Button
-        disabled={count === 0}
-        onClick={() => {
-          if (!armed) {
-            setArmed(true);
-            return;
-          }
-          onInit();
-        }}
-        onMouseLeave={() => setArmed(false)}
-        className="flex-1 text-[0.83rem]"
-      >
-        {count === 0
-          ? "Select projects to init"
-          : armed
-            ? `Click again to init ${count}`
-            : `Init ${count} project${count === 1 ? "" : "s"}`}
-      </Button>
-      <Button variant="outline" onClick={onCancel} className="text-[0.83rem]">
-        Cancel
-      </Button>
+    <div className="flex shrink-0 flex-col gap-2 border-t border-border py-2">
+      <div className="flex items-center justify-between px-0.5 text-[0.78rem] text-muted-foreground">
+        <span>{count} selected</span>
+        <button
+          onClick={allSelected ? onClear : onSelectAll}
+          aria-label={allSelected ? "Deselect all projects" : "Select all projects"}
+          className="rounded px-1 py-0.5 hover:text-foreground"
+        >
+          {allSelected ? "Deselect all" : "Select all"}
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={count === 0}
+          onClick={() => {
+            if (!armed) {
+              setArmed(true);
+              return;
+            }
+            onInit();
+          }}
+          onMouseLeave={() => setArmed(false)}
+          className="flex-1 text-[0.83rem]"
+        >
+          {count === 0
+            ? "Select projects to init"
+            : armed
+              ? `Click again to init ${count}`
+              : `Init ${count} project${count === 1 ? "" : "s"}`}
+        </Button>
+        <Button variant="outline" onClick={onCancel} className="text-[0.83rem]">
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }
@@ -394,6 +421,9 @@ export function ChatList() {
     initSelection,
     toggleInitSelection,
     cancelInitSelection,
+    selectAllProjects,
+    clearProjectSelection,
+    selectProjectsInGroup,
     isRunning,
     activeProject,
     setActiveProject,
@@ -485,8 +515,17 @@ export function ChatList() {
       {projectClusters.map(([label, entries]) => (
         <div key={label || "(ungrouped)"} className="flex flex-col gap-[2px]">
           {label && (
-            <div className="mt-1 px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase">
-              {label}
+            <div className="mt-1 flex items-center justify-between px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase">
+              <span>{label}</span>
+              {initSelecting && (
+                <button
+                  onClick={() => selectProjectsInGroup(label)}
+                  aria-label={`Toggle selection for group ${label}`}
+                  className="rounded px-1 normal-case hover:text-foreground"
+                >
+                  Select
+                </button>
+              )}
             </div>
           )}
           {entries.map(([name, indices]) => {
@@ -625,11 +664,14 @@ export function ChatList() {
       {initSelecting && (
         <InitBar
           count={initSelection.size}
+          total={projectNames.length}
           onInit={() => {
             initAllProjects(Array.from(initSelection));
             cancelInitSelection();
           }}
           onCancel={cancelInitSelection}
+          onSelectAll={selectAllProjects}
+          onClear={clearProjectSelection}
         />
       )}
       {selected.size > 0 && <BulkDeleteBar count={selected.size} onDelete={bulkDelete} />}
