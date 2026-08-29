@@ -596,7 +596,6 @@ function useDesktopStore() {
             break;
         }
       };
-      // /init is non-destructive and runs unattended: auto-approve this run only.
       const isInit = /^\/init(\s|$)/.test(text);
       if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: autoMode }));
       const cfg = await api.getConfig();
