@@ -175,12 +175,16 @@ fn read_projects_in(home: &Path) -> serde_json::Value {
 
 // --- Collecting the export ---------------------------------------------------
 
-/// Secrets must not appear in exported files: backend passwords and tokens are
-/// blanked (`auth.json` provider keys are never read for the export at all).
+/// Secrets must not appear in exported files: backend passwords, tokens, and
+/// the GitHub App secret references are blanked (`auth.json` provider keys are
+/// never read for the export at all). This is the allowlist the "no secrets"
+/// guarantee rests on - add any new secret-bearing field here.
 fn scrub_credentials(cfg: &mut DesktopConfig) {
     cfg.postgres_password.clear();
     cfg.redis_password.clear();
     cfg.d1_api_token.clear();
+    cfg.scheduler_github_app_client_id_secret.clear();
+    cfg.scheduler_github_app_private_key_secret.clear();
 }
 
 /// The portable state rooted at `home`. `agents` comes from the `infer` CLI
@@ -323,6 +327,14 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     }
     if cfg.d1_api_token.is_empty() {
         cfg.d1_api_token = local.d1_api_token.clone();
+    }
+    if cfg.scheduler_github_app_client_id_secret.is_empty() {
+        cfg.scheduler_github_app_client_id_secret =
+            local.scheduler_github_app_client_id_secret.clone();
+    }
+    if cfg.scheduler_github_app_private_key_secret.is_empty() {
+        cfg.scheduler_github_app_private_key_secret =
+            local.scheduler_github_app_private_key_secret.clone();
     }
     let config_path = home.join(".infer").join("config.yaml");
     if let Some(parent) = config_path.parent() {
@@ -739,7 +751,7 @@ mod tests {
         std::fs::write(
             infer.join("config.yaml"),
             format!(
-                "storage:\n  type: jsonl\n  jsonl:\n    path: {h}/conv\n  sqlite:\n    path: {h}/conv.db\n  postgres:\n    host: db\n    password: hunter2\n  redis:\n    password: rpw2\n  d1:\n    api_token: tok\ngateway:\n  url: http://gw:9999\ndefault_model: m-x\nextra_instructions: be brief\nsystem_prompt: sys\ntools:\n  schedule:\n    enabled: true\nscheduler:\n  backend: github\n  github:\n    repository: alice/.routines\nprojects:\n  root: {h}/code\n  backend: local\n"
+                "storage:\n  type: jsonl\n  jsonl:\n    path: {h}/conv\n  sqlite:\n    path: {h}/conv.db\n  postgres:\n    host: db\n    password: hunter2\n  redis:\n    password: rpw2\n  d1:\n    api_token: d1-secret\ngateway:\n  url: http://gw:9999\ndefault_model: m-x\nextra_instructions: be brief\nsystem_prompt: sys\ntools:\n  schedule:\n    enabled: true\nscheduler:\n  backend: github\n  github:\n    repository: alice/.routines\n    app_client_id_secret: gh-client-secret\n    app_private_key_secret: gh-key-secret\nprojects:\n  root: {h}/code\n  backend: local\n"
             ),
         )
         .unwrap();
@@ -831,6 +843,8 @@ mod tests {
         assert!(!text.contains("hunter2"));
         assert!(!text.contains("rpw2"));
         assert!(!text.contains("d1-secret"));
+        assert!(!text.contains("gh-client-secret"));
+        assert!(!text.contains("gh-key-secret"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
