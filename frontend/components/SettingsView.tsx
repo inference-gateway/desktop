@@ -626,7 +626,6 @@ function ConfigTransfer() {
         target === "file"
           ? await api.exportDesktopFile(format)
           : await api.exportDesktopGithub(repo.trim(), format, token.trim());
-      // A null location means the native save dialog was cancelled.
       if (r.location) setMessage(asNotice(`Exported to ${r.location}`, r.warnings));
     } catch (e) {
       setError(String(e));
