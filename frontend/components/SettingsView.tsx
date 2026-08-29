@@ -1295,7 +1295,7 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
-  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, deleteProjects, projectGroups, initialProjectFilter } = useDesktop();
+  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, dirtyProjects, deleteProjects, projectGroups, initialProjectFilter } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1712,7 +1712,7 @@ function ProjectsTab() {
                   </Label>
                   {gitProjects.has(name) && (
                     <span className="inline-flex h-5 items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[0.68rem] text-muted-foreground">
-                      <GitBranch size={10} className="shrink-0" />
+                      <GitBranch size={10} className={cn("shrink-0", dirtyProjects.has(name) && "text-amber-500")} />
                       git
                     </span>
                   )}

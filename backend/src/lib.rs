@@ -126,7 +126,7 @@ pub fn run() {
             projects::create_project_dir,
             projects::scan_git_repos,
             projects::clone_github_repo,
-            projects::git_project_names,
+            projects::git_project_status,
             projects::project_dir_exists,
             projects::open_in_vs_code,
             projects::refresh_project_context,

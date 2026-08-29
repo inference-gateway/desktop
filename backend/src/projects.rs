@@ -356,17 +356,64 @@ pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String>
         .map_err(|e| format!("scan task failed: {e}"))
 }
 
-/// Names of projects whose resolved directory is a git repository; powers the
-/// git indicator in the UI. Derived live from the filesystem, nothing stored.
+/// Which projects are git checkouts and which of those have uncommitted
+/// changes (staged, modified or untracked non-ignored files - anything
+/// `git status --porcelain` reports); powers the git indicator in the UI.
+/// Derived live from the filesystem, nothing stored.
+#[derive(Default, serde::Serialize)]
+pub(crate) struct GitProjectStatus {
+    pub(crate) git: Vec<String>,
+    pub(crate) dirty: Vec<String>,
+}
+
+/// Whether the checkout at `dir` has uncommitted changes: `git status
+/// --porcelain` prints one line per change and we stop reading at the first,
+/// so a large listing is never transferred. A missing `git` binary or an
+/// unreadable repo reads as clean - the indicator gracefully stays gray.
+/// ponytail: git still enumerates internally before printing; switch to a
+/// libgit2 backend only if status on giant worktrees is ever slow in practice.
+fn has_uncommitted_changes(dir: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut child) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["status", "--porcelain"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    // One byte of output means `git status --porcelain` found at least one
+    // change; zero bytes means the worktree is clean.
+    let dirty = child
+        .stdout
+        .take()
+        .is_some_and(|mut out| out.read(&mut [0u8; 1]).is_ok_and(|n| n > 0));
+    let _ = child.kill();
+    let _ = child.wait();
+    dirty
+}
+
 #[tauri::command]
-pub(crate) fn git_project_names() -> Vec<String> {
-    let names = project_names();
-    let root = PathBuf::from(read_config().projects_root);
-    resolved_dirs(&root, &names, &project_paths())
-        .into_iter()
-        .filter(|(_, dir)| dir.join(".git").exists())
-        .map(|(name, _)| name)
-        .collect()
+pub(crate) async fn git_project_status() -> Result<GitProjectStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let names = project_names();
+        let root = PathBuf::from(read_config().projects_root);
+        let mut status = GitProjectStatus::default();
+        for (name, dir) in resolved_dirs(&root, &names, &project_paths()) {
+            if !dir.join(".git").exists() {
+                continue;
+            }
+            status.git.push(name.clone());
+            if has_uncommitted_changes(&dir) {
+                status.dirty.push(name);
+            }
+        }
+        status
+    })
+    .await
+    .map_err(|e| format!("git status task failed: {e}"))
 }
 
 /// Whether the project's resolved directory exists on disk; gates the Init
@@ -1009,6 +1056,60 @@ mod tests {
         assert!(dest.join(".git").exists());
         assert_eq!(repo.name, "repo-b");
         assert_eq!(repo.context, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The dirty check follows `git status`: untracked, modified and staged
+    /// files count, .gitignore is honored, and anything unreadable is clean.
+    #[test]
+    fn uncommitted_change_detection_follows_git_status() {
+        let root = std::env::temp_dir().join(format!("igd-dirty-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let repo = root.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
+                    .args(args)
+                    .status()
+                    .expect("git is available in the test environment")
+                    .success(),
+                "git {args:?} failed"
+            );
+        };
+        git(&["init", "-q"]);
+        assert!(!has_uncommitted_changes(&repo), "empty repo is clean");
+
+        std::fs::write(repo.join("AGENTS.md"), "rules").unwrap();
+        assert!(has_uncommitted_changes(&repo), "untracked file is dirty");
+
+        git(&["add", "-A"]);
+        assert!(has_uncommitted_changes(&repo), "staged file is dirty");
+        git(&["commit", "-q", "-m", "base"]);
+        assert!(!has_uncommitted_changes(&repo), "committed is clean");
+
+        std::fs::write(repo.join("AGENTS.md"), "other rules").unwrap();
+        assert!(has_uncommitted_changes(&repo), "modified file is dirty");
+        git(&["commit", "-q", "-am", "next"]);
+
+        std::fs::write(repo.join(".gitignore"), "ignored.txt\n").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-q", "-m", "ignore"]);
+        std::fs::write(repo.join("ignored.txt"), "shh").unwrap();
+        assert!(!has_uncommitted_changes(&repo), "ignored-only stays clean");
+
+        assert!(
+            !has_uncommitted_changes(&repo.parent().unwrap()),
+            "a directory without a repo is not dirty"
+        );
+        assert!(
+            !has_uncommitted_changes(&root.join("missing-dir")),
+            "a missing directory is not dirty"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

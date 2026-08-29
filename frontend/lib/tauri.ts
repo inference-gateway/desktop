@@ -42,6 +42,7 @@ export type Conversation = { id: string; title?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type ProjectFile = { name: string; size: number };
 export type GitRepo = { name: string; path: string; group: string; context: string | null };
+export type GitProjectStatus = { git: string[]; dirty: string[] };
 export type DesktopConfig = {
   storage_backend: string;
   storage_directory: string;
@@ -244,7 +245,7 @@ export const api = {
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
-  gitProjectNames: () => invoke<string[]>("git_project_names"),
+  gitProjectStatus: () => invoke<GitProjectStatus>("git_project_status"),
   projectDirExists: (name: string) => invoke<boolean>("project_dir_exists", { name }),
   openInVsCode: (name: string) => invoke<void>("open_in_vs_code", { name }),
   refreshProjectContext: (name: string) => invoke<string | null>("refresh_project_context", { name }),
