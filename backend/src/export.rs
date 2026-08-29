@@ -400,7 +400,6 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     std::fs::write(&config_path, text).map_err(|e| e.to_string())?;
     imported.push("Settings (config.yaml)".into());
 
-    // projects.json: merge so keys this export does not know survive.
     let projects_path = home.join(".infer").join("projects.json");
     let mut projects: serde_json::Value = std::fs::read_to_string(&projects_path)
         .ok()
