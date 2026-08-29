@@ -6,6 +6,15 @@ ROOT="$(git rev-parse --show-toplevel)"
 
 echo "==> Running pre-commit checks..."
 
+if command -v bunx >/dev/null 2>&1; then
+    fe=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx)$' || true)
+    if [ -n "$fe" ]; then
+        echo "--> Formatting staged frontend files (prettier --write)..."
+        printf '%s\n' "$fe" | xargs bunx prettier --write
+        printf '%s\n' "$fe" | xargs git add
+    fi
+fi
+
 fail=0
 for f in $(git ls-files | grep -vE '\.(png|icns|ico)$'); do
     [ -f "$f" ] || continue
