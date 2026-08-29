@@ -51,6 +51,14 @@ tasks:
       - cargo fmt --check
       - cargo clippy -- -D warnings
 
+  format:
+    desc: Format frontend (prettier) and check Rust formatting
+    deps:
+      - install
+    cmds:
+      - bunx prettier --write "frontend/**/*.{ts,tsx}"
+      - cargo fmt --check
+
   check:
     desc: Typecheck (no codegen)
     dir: backend
