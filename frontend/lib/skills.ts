@@ -25,8 +25,6 @@ export function getRegistryUrl(): string {
 
 export function setRegistryUrl(url: string): void {
   localStorage.setItem(REGISTRY_KEY, url);
-  // Durable mirror under ~/.infer/desktop.json so the registry URL survives a
-  // machine move (export/import, #166); localStorage stays the fallback.
   try {
     api.saveSkillsRegistryUrl(url).catch(() => {});
   } catch {
