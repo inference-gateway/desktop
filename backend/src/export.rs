@@ -53,6 +53,11 @@ pub(crate) struct DesktopExport {
     /// Raw ~/.infer/projects.json value (`paths` overrides tilde-relative).
     #[serde(default)]
     projects: serde_json::Value,
+    /// Git-repo projects as their GitHub `owner/name`: re-cloned on import so the
+    /// checkout (and its AGENTS.md) need not travel in the file. See
+    /// `strip_git_project_remotes`.
+    #[serde(default)]
+    project_remotes: BTreeMap<String, String>,
     /// A2A agents, re-created through the `infer` CLI on import.
     #[serde(default)]
     agents: Vec<A2aAgent>,
@@ -187,6 +192,52 @@ fn scrub_credentials(cfg: &mut DesktopConfig) {
     cfg.scheduler_github_app_private_key_secret.clear();
 }
 
+/// Replace each git-repo project's embedded copy with its GitHub `owner/name`:
+/// for every `paths` entry whose checkout has a GitHub remote, record the remote,
+/// drop the machine-specific `paths` entry (re-derived on import), and drop the
+/// `contexts` entry *only* when it still equals the live AGENTS.md - an unmodified
+/// copy, which is the bloat. Edited instructions and non-GitHub/local repos are
+/// left embedded so nothing is lost. Import re-clones from the returned map.
+fn strip_git_project_remotes(
+    projects: &mut serde_json::Value,
+    home: &Path,
+) -> BTreeMap<String, String> {
+    let mut remotes = BTreeMap::new();
+    let entries: Vec<(String, String)> = projects
+        .get("paths")
+        .and_then(|p| p.as_object())
+        .map(|paths| {
+            paths
+                .iter()
+                .filter_map(|(name, v)| Some((name.clone(), v.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    for (name, tilde) in entries {
+        let dir = PathBuf::from(expand_tilde(&tilde, home));
+        let Some(repo) = crate::projects::git_remote_repo(&dir) else {
+            continue;
+        };
+        remotes.insert(name.clone(), repo);
+        if let Some(paths) = projects.get_mut("paths").and_then(|p| p.as_object_mut()) {
+            paths.remove(&name);
+        }
+        let stored = projects
+            .get("contexts")
+            .and_then(|c| c.get(&name))
+            .and_then(|v| v.as_str());
+        let unedited = match (stored, crate::projects::repo_context(&dir)) {
+            (Some(s), Some(live)) => s.trim() == live.trim(),
+            _ => false,
+        };
+        if unedited && let Some(ctx) = projects.get_mut("contexts").and_then(|c| c.as_object_mut())
+        {
+            ctx.remove(&name);
+        }
+    }
+    remotes
+}
+
 /// The portable state rooted at `home`. `agents` comes from the `infer` CLI
 /// by the caller (it needs an async CLI round-trip); tests pass a fixed list.
 fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
@@ -201,10 +252,13 @@ fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
     }
     scrub_credentials(&mut config);
     let mut data = read_desktop_data_in(home);
+    let mut projects = read_projects_in(home);
+    let project_remotes = strip_git_project_remotes(&mut projects, home);
     DesktopExport {
         version: EXPORT_VERSION,
         config,
-        projects: read_projects_in(home),
+        projects,
+        project_remotes,
         agents,
         schedules: read_schedules_in(home),
         snippets: std::mem::take(&mut data.snippets),
@@ -442,10 +496,94 @@ async fn apply_export_skills(skills: &[String], warnings: &mut Vec<String>) -> u
     n
 }
 
+/// Write each cloned checkout's path (and its AGENTS.md context, unless the export
+/// already carried one) onto its project in projects.json.
+fn patch_projects_json(
+    home: &Path,
+    cloned: &BTreeMap<String, crate::projects::GitRepo>,
+) -> Result<(), String> {
+    if cloned.is_empty() {
+        return Ok(());
+    }
+    let path = home.join(".infer").join("projects.json");
+    let mut projects: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| json!({}));
+    let obj = projects
+        .as_object_mut()
+        .ok_or("projects.json is not an object")?;
+    {
+        let paths = obj.entry("paths").or_insert_with(|| json!({}));
+        if let Some(paths) = paths.as_object_mut() {
+            for (name, repo) in cloned {
+                paths.insert(name.clone(), repo.path.clone().into());
+            }
+        }
+    }
+    {
+        let contexts = obj.entry("contexts").or_insert_with(|| json!({}));
+        if let Some(contexts) = contexts.as_object_mut() {
+            for (name, repo) in cloned {
+                if let Some(ctx) = &repo.context {
+                    contexts
+                        .entry(name.clone())
+                        .or_insert_with(|| ctx.clone().into());
+                }
+            }
+        }
+    }
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Re-clone the git-repo projects recorded in `project_remotes` under the imported
+/// projects root, then record their checkout path and AGENTS.md context in
+/// projects.json. Clone failures are warnings, not fatal (as with agents/skills).
+async fn apply_export_project_repos(
+    remotes: &BTreeMap<String, String>,
+    warnings: &mut Vec<String>,
+) -> usize {
+    if remotes.is_empty() {
+        return 0;
+    }
+    let home = home_dir();
+    let root = PathBuf::from(expand_tilde(
+        &crate::config::read_config_in(&home).projects_root,
+        &home,
+    ));
+    let mut cloned = BTreeMap::new();
+    for (name, repo) in remotes {
+        let (root, repo) = (root.clone(), repo.clone());
+        match tokio::task::spawn_blocking(move || crate::projects::clone_repo_under(&root, &repo))
+            .await
+        {
+            Ok(Ok(gitrepo)) => {
+                cloned.insert(name.clone(), gitrepo);
+            }
+            Ok(Err(e)) => warnings.push(format!("project {name} not cloned: {e}")),
+            Err(e) => warnings.push(format!("project {name} clone task failed: {e}")),
+        }
+    }
+    if let Err(e) = patch_projects_json(&home, &cloned) {
+        warnings.push(format!("cloned projects not recorded: {e}"));
+    }
+    cloned.len()
+}
+
 /// Full import of a parsed export: files first, then the CLI-mediated pieces.
 async fn apply_export(export: &DesktopExport) -> Result<ImportReport, String> {
     let home = home_dir();
     let mut report = apply_export_files(export, &home)?;
+    let repos = apply_export_project_repos(&export.project_remotes, &mut report.warnings).await;
+    if !export.project_remotes.is_empty() {
+        report
+            .imported
+            .push(format!("{repos} project repo(s) cloned"));
+    }
     let agents = apply_export_agents(&export.agents, &mut report.warnings).await;
     if !export.agents.is_empty() {
         report.imported.push(format!("{agents} A2A agent(s)"));
@@ -849,6 +987,74 @@ mod tests {
     }
 
     #[test]
+    fn git_projects_export_as_remotes_and_preserve_edits() {
+        let home = temp_home("gitproj");
+        let infer = home.join(".infer");
+        std::fs::create_dir_all(&infer).unwrap();
+        std::fs::write(
+            infer.join("config.yaml"),
+            format!("projects:\n  root: {}/code\n", home.display()),
+        )
+        .unwrap();
+
+        // Unmodified checkout: stored context == AGENTS.md, so it is stripped.
+        let clean = home.join("code").join("clean");
+        std::fs::create_dir_all(clean.join(".git")).unwrap();
+        std::fs::write(
+            clean.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = https://github.com/owner/clean.git\n",
+        )
+        .unwrap();
+        std::fs::write(clean.join("AGENTS.md"), "clean rules").unwrap();
+
+        // Edited checkout: stored context differs from AGENTS.md, so it is kept.
+        let edited = home.join("code").join("edited");
+        std::fs::create_dir_all(edited.join(".git")).unwrap();
+        std::fs::write(
+            edited.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = git@github.com:owner/edited.git\n",
+        )
+        .unwrap();
+        std::fs::write(edited.join("AGENTS.md"), "original rules").unwrap();
+
+        std::fs::write(
+            infer.join("projects.json"),
+            format!(
+                "{{\"names\":[\"clean\",\"edited\"],\"contexts\":{{\"clean\":\"clean rules\",\"edited\":\"my custom rules\"}},\"paths\":{{\"clean\":\"{h}/code/clean\",\"edited\":\"{h}/code/edited\"}}}}",
+                h = home.display()
+            ),
+        )
+        .unwrap();
+
+        let export = build_export(&home, vec![]);
+        assert_eq!(
+            export.project_remotes.get("clean").map(String::as_str),
+            Some("owner/clean")
+        );
+        assert_eq!(
+            export.project_remotes.get("edited").map(String::as_str),
+            Some("owner/edited")
+        );
+        // clean: redundant context and machine path both dropped.
+        assert!(export.projects["contexts"].get("clean").is_none());
+        assert!(export.projects["paths"].get("clean").is_none());
+        // edited: custom context survives, path still dropped.
+        assert_eq!(
+            export.projects["contexts"]["edited"],
+            json!("my custom rules")
+        );
+        assert!(export.projects["paths"].get("edited").is_none());
+
+        let text = serialize_export(&export, ExportFormat::Json).unwrap();
+        assert!(
+            !text.contains("clean rules"),
+            "unmodified AGENTS.md not embedded"
+        );
+        assert!(text.contains("my custom rules"), "edited context kept");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn parse_rejects_garbage_and_wrong_version() {
         assert!(parse_export("hello, world").is_err());
         let home = temp_home("ver");
@@ -869,6 +1075,7 @@ mod tests {
             version: EXPORT_VERSION,
             config: crate::config::default_config(),
             projects: json!({}),
+            project_remotes: BTreeMap::new(),
             agents: Vec::new(),
             schedules: BTreeMap::from([
                 ("../evil.yaml".to_string(), serde_norway::Value::Null),

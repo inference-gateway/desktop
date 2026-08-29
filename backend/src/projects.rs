@@ -193,7 +193,7 @@ pub(crate) struct GitRepo {
 
 /// Agent instructions from the repo root: AGENTS.md, else CLAUDE.md.
 /// ponytail: 64 KB cap so a runaway file cannot bloat projects.json.
-fn repo_context(dir: &Path) -> Option<String> {
+pub(crate) fn repo_context(dir: &Path) -> Option<String> {
     ["AGENTS.md", "CLAUDE.md"]
         .iter()
         .filter_map(|f| std::fs::read_to_string(dir.join(f)).ok())
@@ -283,6 +283,31 @@ fn checkout_is(dest: &Path, repo: &str) -> bool {
     })
 }
 
+/// The `owner/name` of a URL that points at github.com (https or ssh forms),
+/// validated so callers can trust it as a clone target; None for any other host.
+fn parse_github_owner_name(url: &str) -> Option<String> {
+    let url = url.trim();
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    let rest = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+        .or_else(|| url.strip_prefix("ssh://git@github.com/"))
+        .or_else(|| url.strip_prefix("git@github.com:"))?;
+    crate::scheduler::valid_repo(rest).then(|| rest.to_string())
+}
+
+/// The GitHub `owner/name` of the checkout's remote, read from `.git/config` (the
+/// first `url =` that resolves to github.com). None for a non-repo, a non-GitHub
+/// or missing remote, or a `.git` file (worktree/submodule) whose config lives
+/// elsewhere - all of which keep the project's context embedded in the export.
+pub(crate) fn git_remote_repo(dir: &Path) -> Option<String> {
+    let config = std::fs::read_to_string(dir.join(".git").join("config")).ok()?;
+    config.lines().find_map(|line| {
+        let url = line.trim().strip_prefix("url")?.trim_start();
+        parse_github_owner_name(url.strip_prefix('=')?.trim())
+    })
+}
+
 /// Clone via `clone()` unless `dest` already holds a checkout of the same repo
 /// (idempotent re-import), then return the entry for the existing import flow.
 /// A checkout of a *different* repo is an error rather than a silent adoption -
@@ -316,28 +341,31 @@ fn ensure_clone(
     Ok(cloned_repo(dest))
 }
 
+/// Clone `owner/name` under `root` (idempotent via `ensure_clone`) and return the
+/// import entry. Blocking `gh repo clone` (handles auth and protocol); on failure
+/// its stderr is the error. Shared by the clone command and the desktop import.
+pub(crate) fn clone_repo_under(root: &Path, repo: &str) -> Result<GitRepo, String> {
+    let dest = clone_dest(root, repo);
+    let target = dest.to_string_lossy().into_owned();
+    let repo_arg = repo.to_string();
+    ensure_clone(
+        || crate::scheduler::gh_output(&["repo", "clone", &repo_arg, &target]).map(|_| ()),
+        &dest,
+        repo,
+    )
+}
+
 /// Clone a GitHub repository under the projects root and return it ready for
-/// importProjects. `gh repo clone` handles auth and protocol; on failure its
-/// stderr is the error.
+/// importProjects.
 #[tauri::command]
 pub(crate) async fn clone_github_repo(repo: String) -> Result<GitRepo, String> {
     if !crate::scheduler::valid_repo(&repo) {
         return Err(format!("invalid repository: {repo}"));
     }
-    let dest = clone_dest(
-        &PathBuf::from(expand_home(&read_config().projects_root)),
-        &repo,
-    );
-    let target = dest.to_string_lossy().into_owned();
-    tokio::task::spawn_blocking(move || {
-        ensure_clone(
-            || crate::scheduler::gh_output(&["repo", "clone", &repo, &target]).map(|_| ()),
-            &dest,
-            &repo,
-        )
-    })
-    .await
-    .map_err(|e| format!("clone task failed: {e}"))?
+    let root = PathBuf::from(expand_home(&read_config().projects_root));
+    tokio::task::spawn_blocking(move || clone_repo_under(&root, &repo))
+        .await
+        .map_err(|e| format!("clone task failed: {e}"))?
 }
 
 /// Scan a root directory for importable git repositories.
@@ -1110,6 +1138,46 @@ mod tests {
             !has_uncommitted_changes(&root.join("missing-dir")),
             "a missing directory is not dirty"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn git_remote_repo_reads_github_owner_name_from_config() {
+        assert_eq!(
+            parse_github_owner_name("https://github.com/owner/repo.git"),
+            Some("owner/repo".into())
+        );
+        assert_eq!(
+            parse_github_owner_name("git@github.com:owner/repo.git"),
+            Some("owner/repo".into())
+        );
+        assert_eq!(
+            parse_github_owner_name("ssh://git@github.com/owner/repo"),
+            Some("owner/repo".into())
+        );
+        assert_eq!(parse_github_owner_name("https://gitlab.com/o/r.git"), None);
+
+        let root = std::env::temp_dir().join(format!("igd-remote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dest = root.join("repo");
+        fake_checkout(&dest, "owner/repo");
+        assert_eq!(git_remote_repo(&dest).as_deref(), Some("owner/repo"));
+
+        // A `.git` file (worktree) has no readable config here and reads as None.
+        let wt = root.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join(".git"), "gitdir: /elsewhere").unwrap();
+        assert_eq!(git_remote_repo(&wt), None);
+
+        // A non-GitHub remote keeps the project's context embedded.
+        let gl = root.join("gl");
+        std::fs::create_dir_all(gl.join(".git")).unwrap();
+        std::fs::write(
+            gl.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = https://gitlab.com/owner/repo.git\n",
+        )
+        .unwrap();
+        assert_eq!(git_remote_repo(&gl), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

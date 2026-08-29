@@ -22,7 +22,14 @@ import {
 } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
-import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, mergeSnippets, type Snippet } from "@/lib/snippets";
+import {
+  loadSnippets,
+  saveSnippets,
+  defaultForId,
+  DEFAULT_SNIPPETS,
+  mergeSnippets,
+  type Snippet,
+} from "@/lib/snippets";
 import { hydrateRegistry } from "@/lib/skills";
 
 const STORAGE_KEY = "selectedModel";
@@ -1209,6 +1216,7 @@ function useDesktopStore() {
     resetSnippet,
     resetAllSnippets,
     reloadDesktopData,
+    loadProjects,
     setStatus,
     setError,
     tokenUsage,

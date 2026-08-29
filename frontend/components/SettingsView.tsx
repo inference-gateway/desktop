@@ -605,7 +605,7 @@ function GeneralTab() {
 }
 
 function ConfigTransfer() {
-  const { reloadDesktopData } = useDesktop();
+  const { reloadDesktopData, loadProjects } = useDesktop();
   const [format, setFormat] = useState("json");
   const [target, setTarget] = useState<"file" | "github">("file");
   const [repo, setRepo] = useState("");
@@ -641,10 +641,9 @@ function ConfigTransfer() {
     setMessage("");
     try {
       const r =
-        target === "file"
-          ? await api.importDesktopFile()
-          : await api.importDesktopGithub(repo.trim(), token.trim());
+        target === "file" ? await api.importDesktopFile() : await api.importDesktopGithub(repo.trim(), token.trim());
       await reloadDesktopData();
+      await loadProjects();
       setMessage(asNotice(`Imported: ${r.imported.join(", ") || "nothing"}`, r.warnings));
     } catch (e) {
       setError(String(e));
@@ -659,8 +658,8 @@ function ConfigTransfer() {
     <>
       <h3 className="mt-5 text-[0.9rem] font-semibold">Export / Import</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Move the full desktop state - Settings, projects, A2A agents, scheduled jobs, snippets and skills -
-        between machines. Credentials are never exported.
+        Move the full desktop state - Settings, projects, A2A agents, scheduled jobs, snippets and skills - between
+        machines. Credentials are never exported.
       </p>
       <div className="mb-3 flex flex-col gap-1">
         <Label htmlFor="export-format" className="text-[0.8rem] text-muted-foreground">
