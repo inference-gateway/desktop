@@ -673,7 +673,6 @@ function useDesktopStore() {
             skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
             continue;
           }
-          // ponytail: bound concurrency on a local set, not runningIdsRef (which lags a React render).
           while (inFlight.size >= maxSessions) await Promise.race(inFlight);
           const run = runOne(name).catch(() => {});
           inFlight.add(run);
