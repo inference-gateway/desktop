@@ -68,8 +68,6 @@ export function mergeSnippets(stored: Snippet[]): Snippet[] {
 
 export function saveSnippets(snippets: Snippet[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
-  // Durable mirror under ~/.infer/desktop.json so snippets survive a machine
-  // move (export/import, #166); localStorage stays the synchronous cache.
   try {
     api.saveDesktopSnippets(snippets).catch(() => {});
   } catch {
