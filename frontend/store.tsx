@@ -596,6 +596,8 @@ function useDesktopStore() {
             break;
         }
       };
+      // /init is non-destructive and runs unattended: auto-approve this run only.
+      const isInit = /^\/init(\s|$)/.test(text);
       if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: autoMode }));
       const cfg = await api.getConfig();
       const projectContext = projectName ? projectContexts[projectName] : undefined;
@@ -610,7 +612,7 @@ function useDesktopStore() {
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
           [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") || undefined,
-        autoMode: autoModes[runId] ?? autoMode,
+        autoMode: isInit || (autoModes[runId] ?? autoMode),
         project: projectName,
       });
       refreshConversations();
