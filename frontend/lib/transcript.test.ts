@@ -253,8 +253,6 @@ test("ApprovalRequest before AgentError keeps the natural order", () => {
 });
 
 test("approval record renders above its tool card once the result arrives", () => {
-  // Approval decision precedes the tool run; both stream orders must read
-  // approval → tool after the ToolResult updates the card in place.
   const actions = (assistantFirst: boolean) => [
     { type: "userSend", text: "write" },
     ...(assistantFirst
