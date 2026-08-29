@@ -4,6 +4,8 @@ export interface Snippet {
   prompt: string;
 }
 
+import { api } from "./tauri";
+
 const STORAGE_KEY = "snippets";
 
 export const DEFAULT_SNIPPETS: Snippet[] = [
@@ -42,10 +44,7 @@ export function loadSnippets(): Snippet[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const stored: Snippet[] = JSON.parse(raw);
-      const storedById = new Map(stored.map((s) => [s.id, s]));
-      // Merge: keep stored prompts, add any new defaults
-      const merged = DEFAULT_SNIPPETS.map((d) => storedById.get(d.id) ?? d);
+      const merged = mergeSnippets(JSON.parse(raw));
       saveSnippets(merged);
       return merged;
     }
@@ -56,8 +55,26 @@ export function loadSnippets(): Snippet[] {
   return DEFAULT_SNIPPETS;
 }
 
+/** Stored prompts override defaults, new defaults appear after updates, and
+    stored snippets outside the default set are kept. */
+export function mergeSnippets(stored: Snippet[]): Snippet[] {
+  const storedById = new Map(stored.map((s) => [s.id, s]));
+  const defaultIds = new Set(DEFAULT_SNIPPETS.map((d) => d.id));
+  return [
+    ...DEFAULT_SNIPPETS.map((d) => storedById.get(d.id) ?? d),
+    ...stored.filter((s) => !defaultIds.has(s.id)),
+  ];
+}
+
 export function saveSnippets(snippets: Snippet[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets));
+  // Durable mirror under ~/.infer/desktop.json so snippets survive a machine
+  // move (export/import, #166); localStorage stays the synchronous cache.
+  try {
+    api.saveDesktopSnippets(snippets).catch(() => {});
+  } catch {
+    /* outside Tauri (tests): skip */
+  }
 }
 
 export function defaultForId(id: string): Snippet | undefined {

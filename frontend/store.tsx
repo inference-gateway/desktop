@@ -22,7 +22,8 @@ import {
 } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
-import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
+import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, mergeSnippets, type Snippet } from "@/lib/snippets";
+import { hydrateRegistry } from "@/lib/skills";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
@@ -863,6 +864,22 @@ function useDesktopStore() {
     saveSnippets(DEFAULT_SNIPPETS);
   }, []);
 
+  const reloadDesktopData = useCallback(() => {
+    return api.readDesktopData().then((data) => {
+      if (data.snippets.length > 0) {
+        const next = mergeSnippets(data.snippets);
+        setSnippetsState(next);
+        saveSnippets(next);
+      }
+      hydrateRegistry(data.skills_registry_url);
+      return data;
+    });
+  }, []);
+
+  useEffect(() => {
+    void reloadDesktopData().catch(() => {});
+  }, [reloadDesktopData]);
+
   const openSettings = useCallback(() => {
     checkForUpdates();
     setCurrentView("settings");
@@ -1191,6 +1208,7 @@ function useDesktopStore() {
     updateSnippet,
     resetSnippet,
     resetAllSnippets,
+    reloadDesktopData,
     setStatus,
     setError,
     tokenUsage,

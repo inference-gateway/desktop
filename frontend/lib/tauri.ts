@@ -86,6 +86,12 @@ export type DesktopConfig = {
   projects_allowed_mimes: string;
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
+export type DesktopUiData = {
+    snippets: { id: string; label: string; prompt: string }[];
+    skills_registry_url: string;
+};
+export type ImportReport = { imported: string[]; warnings: string[] };
+export type ExportResult = { location: string | null; warnings: string[] };
 export type OsPermissionState = "granted" | "not_granted" | "unavailable" | "not_applicable";
 export type ComputerUsePermissionStatus = {
   computer_use_enabled: boolean;
@@ -189,6 +195,18 @@ export const api = {
   getConfig: () => invoke<DesktopConfig>("get_config"),
   setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
   setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
+  readDesktopData: () => invoke<DesktopUiData>("read_desktop_data"),
+  saveDesktopSnippets: (snippets: DesktopUiData["snippets"]) =>
+    invoke<void>("save_desktop_snippets", { snippets }),
+  saveSkillsRegistryUrl: (url: string) => invoke<void>("save_skills_registry_url", { url }),
+  exportDesktopFile: (format: string, path?: string | null) =>
+    invoke<ExportResult>("export_desktop_file", { format, path: path ?? null }),
+  exportDesktopGithub: (repo: string, format: string, token: string) =>
+    invoke<ExportResult>("export_desktop_github", { repo, format, token: token || null }),
+  importDesktopFile: (path?: string | null) =>
+    invoke<ImportReport>("import_desktop_file", { path: path ?? null }),
+  importDesktopGithub: (repo: string, token: string) =>
+    invoke<ImportReport>("import_desktop_github", { repo, token: token || null }),
   startGateway: (force = false, restart = false) => invoke<void>("start_gateway", { force, restart }),
   startScheduler: () => invoke<void>("start_scheduler"),
   stopScheduler: () => invoke<void>("stop_scheduler"),
