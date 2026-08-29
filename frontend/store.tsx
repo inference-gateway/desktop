@@ -605,7 +605,7 @@ function useDesktopStore() {
         }
       };
       const isInit = /^\/init(\s|$)/.test(text);
-      if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: autoMode }));
+      if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
       const cfg = await api.getConfig();
       const projectContext = projectName ? projectContexts[projectName] : undefined;
       const projectGroup = projectName && projectGroups[projectName]
