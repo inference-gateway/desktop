@@ -78,10 +78,10 @@ pub(crate) struct DesktopConfig {
     pub(crate) redis_port: String,
     pub(crate) redis_password: String,
     pub(crate) redis_db: String,
-    d1_account_id: String,
-    d1_database_id: String,
-    d1_api_token: String,
-    d1_base_url: String,
+    pub(crate) d1_account_id: String,
+    pub(crate) d1_database_id: String,
+    pub(crate) d1_api_token: String,
+    pub(crate) d1_base_url: String,
     /// Extra instructions appended to the default system prompt on every invocation.
     pub(crate) extra_instructions: String,
     /// Override the entire default system prompt with user-supplied text.
@@ -323,11 +323,17 @@ pub(crate) fn config_from_value(
 }
 
 pub(crate) fn read_config() -> DesktopConfig {
-    match std::fs::read_to_string(config_path())
+    read_config_in(&home_dir())
+}
+
+/// `read_config` rooted at an arbitrary home so export/import can run
+/// against a temp directory in tests.
+pub(crate) fn read_config_in(home: &std::path::Path) -> DesktopConfig {
+    match std::fs::read_to_string(home.join(".infer").join("config.yaml"))
         .ok()
         .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
     {
-        Some(val) => config_from_value(&val, &home_dir()),
+        Some(val) => config_from_value(&val, home),
         None => default_config(),
     }
 }
