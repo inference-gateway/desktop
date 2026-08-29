@@ -5,9 +5,7 @@ import { lazy, Suspense } from "react";
 import { useDesktop } from "@/store";
 
 const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
-const ObservabilityView = lazy(() =>
-  import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })),
-);
+const ObservabilityView = lazy(() => import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })));
 
 export function Main() {
   const { currentView } = useDesktop();

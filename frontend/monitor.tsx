@@ -6,24 +6,9 @@
 // transcript stays the single source of truth.
 import { useEffect, useReducer, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
-import {
-  getCurrentWindow,
-  currentMonitor,
-  LogicalSize,
-  PhysicalPosition,
-} from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import {
-  EyeOff,
-  GripHorizontal,
-  Maximize2,
-  Minimize2,
-  Pause,
-  Play,
-  ShieldAlert,
-  Square,
-  X,
-} from "lucide-react";
+import { EyeOff, GripHorizontal, Maximize2, Minimize2, Pause, Play, ShieldAlert, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
@@ -50,8 +35,8 @@ async function dockTopCenter() {
   await win.setPosition(
     new PhysicalPosition(
       mon.workArea.position.x + Math.round((mon.workArea.size.width - size.width) / 2),
-      mon.workArea.position.y + TOP_MARGIN
-    )
+      mon.workArea.position.y + TOP_MARGIN,
+    ),
   );
 }
 
@@ -82,9 +67,7 @@ const STATUS_STYLE: Record<MonitorSession["status"], { label: string; dot: strin
 type Action = { type: "event"; msg: MonitorEvent } | { type: "resolved"; sessionId: string };
 
 function reducer(state: MonitorState, action: Action): MonitorState {
-  return action.type === "event"
-    ? monitorReducer(state, action.msg)
-    : resolveApproval(state, action.sessionId);
+  return action.type === "event" ? monitorReducer(state, action.msg) : resolveApproval(state, action.sessionId);
 }
 
 export default function Monitor() {
@@ -137,7 +120,7 @@ export default function Monitor() {
       }
     });
     const unlistenResolved = listen<{ sessionId: string }>("approval-resolved", (e) =>
-      dispatch({ type: "resolved", sessionId: e.payload.sessionId })
+      dispatch({ type: "resolved", sessionId: e.payload.sessionId }),
     );
     return () => {
       unlisten.then((f) => f());
@@ -146,7 +129,7 @@ export default function Monitor() {
   }, []);
 
   const ids = Object.keys(sessions);
-  const id = selectedId && sessions[selectedId] ? selectedId : ids[0] ?? null;
+  const id = selectedId && sessions[selectedId] ? selectedId : (ids[0] ?? null);
   const session = id ? sessions[id] : null;
 
   useEffect(() => {
@@ -214,9 +197,7 @@ export default function Monitor() {
   }
 
   const status = STATUS_STYLE[session.status];
-  const frameSrc = session.lastFrame?.startsWith("data:")
-    ? session.lastFrame
-    : safeImageSrc(session.lastFrame);
+  const frameSrc = session.lastFrame?.startsWith("data:") ? session.lastFrame : safeImageSrc(session.lastFrame);
   const latestUpdate = session.log.at(-1) ?? "Waiting for actions...";
 
   return (
@@ -235,7 +216,10 @@ export default function Monitor() {
           aria-label="Move monitor"
           title="Drag to move"
           onMouseDown={(event) => {
-            if (event.button === 0) getCurrentWindow().startDragging().catch(() => {});
+            if (event.button === 0)
+              getCurrentWindow()
+                .startDragging()
+                .catch(() => {});
           }}
         >
           <GripHorizontal className="size-4" />
@@ -275,17 +259,10 @@ export default function Monitor() {
               aria-label={session.status === "paused" ? "Resume" : "Pause"}
               disabled={session.status === "done"}
               onClick={() =>
-                id &&
-                api
-                  .sendComputerUseControl(id, session.status === "paused" ? "resume" : "pause")
-                  .catch(() => {})
+                id && api.sendComputerUseControl(id, session.status === "paused" ? "resume" : "pause").catch(() => {})
               }
             >
-              {session.status === "paused" ? (
-                <Play className="size-3.5" />
-              ) : (
-                <Pause className="size-3.5" />
-              )}
+              {session.status === "paused" ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             </Button>
             <Button
               size="sm"
@@ -315,14 +292,16 @@ export default function Monitor() {
           aria-label="Close monitor"
           onClick={() => {
             manuallyHiddenRef.current = true;
-            getCurrentWindow().hide().catch(() => {});
+            getCurrentWindow()
+              .hide()
+              .catch(() => {});
           }}
         >
           <X className="size-3.5" />
         </Button>
       </div>
-      {session.pendingApproval && (
-        expanded ? (
+      {session.pendingApproval &&
+        (expanded ? (
           <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-primary/60 bg-primary/10 p-3 shadow-[0_0_28px_rgba(99,102,241,0.18)]">
             <div className="min-w-0">
               <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-primary">
@@ -404,16 +383,13 @@ export default function Monitor() {
               </kbd>
             </Button>
           </div>
-        )
-      )}
+        ))}
       {!expanded && !session.pendingApproval && (
         <div
           aria-label="Latest action"
           className="flex min-w-0 items-center gap-2 rounded-lg border border-primary/25 bg-background/90 px-2.5 py-2 shadow-sm backdrop-blur-xl"
         >
-          <span className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-wide text-primary">
-            Latest
-          </span>
+          <span className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-wide text-primary">Latest</span>
           <span className="min-w-0 flex-1 truncate font-mono text-xs" title={latestUpdate}>
             {latestUpdate}
           </span>
@@ -486,9 +462,7 @@ export default function Monitor() {
           aria-label="Instruct the orchestrator"
           rows={2}
           disabled={session.status !== "done"}
-          placeholder={
-            session.status === "done" ? "Instruct the orchestrator..." : "Orchestrator is running..."
-          }
+          placeholder={session.status === "done" ? "Instruct the orchestrator..." : "Orchestrator is running..."}
           className="max-h-24 w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring disabled:opacity-50"
           onInput={(e) => autoGrow(e.currentTarget)}
           onKeyDown={(e) => {

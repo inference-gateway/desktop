@@ -27,14 +27,12 @@ export const DEFAULT_SNIPPETS: Snippet[] = [
   {
     id: "prioritize-issues",
     label: "Prioritize issues",
-    prompt:
-      "Look at my open issues and suggest a priority order based on urgency and impact.",
+    prompt: "Look at my open issues and suggest a priority order based on urgency and impact.",
   },
   {
     id: "open-pr",
     label: "Open PR",
-    prompt:
-      "Create a pull request for the current branch with a descriptive title and summary of changes.",
+    prompt: "Create a pull request for the current branch with a descriptive title and summary of changes.",
   },
 ];
 

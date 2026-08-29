@@ -35,12 +35,7 @@ export function overlayAction(tc: ToolCallInfo): OverlayAction | null {
       return { kind: "click", x, y };
     case "type":
     case "key": {
-      const shown =
-        typeof args.combo === "string"
-          ? args.combo
-          : typeof args.text === "string"
-            ? args.text
-            : null;
+      const shown = typeof args.combo === "string" ? args.combo : typeof args.text === "string" ? args.text : null;
       return shown ? { kind: "type", text: shown } : null;
     }
     default:

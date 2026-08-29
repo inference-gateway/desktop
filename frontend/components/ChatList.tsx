@@ -1,5 +1,15 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { FolderPlus, GitBranch, RefreshCw, Trash2, ChevronRight, ChevronDown, Pencil, Settings2, X } from "lucide-react";
+import {
+  FolderPlus,
+  GitBranch,
+  RefreshCw,
+  Trash2,
+  ChevronRight,
+  ChevronDown,
+  Pencil,
+  Settings2,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
@@ -12,7 +22,7 @@ function CheckboxGlyph({ checked }: { checked: boolean }) {
       aria-hidden
       className={cn(
         "inline-block size-3.5 shrink-0 rounded-[4px] border",
-        checked ? "border-primary bg-primary" : "border-muted-foreground/50"
+        checked ? "border-primary bg-primary" : "border-muted-foreground/50",
       )}
     />
   );
@@ -28,9 +38,7 @@ function ChatItem({ index }: { index: number }) {
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
   const parentId = subagentParentId(conv.id);
-  const parentTitle = parentId
-    ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5)
-    : null;
+  const parentTitle = parentId ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5) : null;
 
   return (
     <div
@@ -51,17 +59,14 @@ function ChatItem({ index }: { index: number }) {
       className={cn(
         "group flex cursor-pointer items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.83rem] text-muted-foreground hover:bg-card hover:text-foreground",
         isActive && "bg-card font-medium text-foreground shadow-[inset_3px_0_0_var(--primary)]",
-        isSelected && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)] ring-1 ring-primary/25"
+        isSelected && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)] ring-1 ring-primary/25",
       )}
     >
       {running && (
         <span
           aria-label={awaiting ? "Awaiting approval" : "Running"}
           title={awaiting ? "Awaiting approval" : "Running"}
-          className={cn(
-            "h-2 w-2 shrink-0 rounded-full",
-            awaiting ? "bg-amber-500" : "animate-pulse bg-emerald-500"
-          )}
+          className={cn("h-2 w-2 shrink-0 rounded-full", awaiting ? "bg-amber-500" : "animate-pulse bg-emerald-500")}
         />
       )}
       <span className="min-w-0 flex-1 truncate">{conv.title || "(untitled)"}</span>
@@ -79,7 +84,9 @@ function ChatItem({ index }: { index: number }) {
         onMouseLeave={() => setConfirm(false)}
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-md p-[0.15rem] opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-          confirm ? "bg-destructive text-white opacity-100" : "text-muted-foreground hover:bg-card hover:text-destructive"
+          confirm
+            ? "bg-destructive text-white opacity-100"
+            : "text-muted-foreground hover:bg-card hover:text-destructive",
         )}
       >
         <Trash2 size={14} />
@@ -248,7 +255,10 @@ function ProjectGroup({
     e.preventDefault();
     setDirOk(false);
     setMenu({ x: e.clientX, y: e.clientY });
-    api.projectDirExists(name).then(setDirOk).catch(() => {});
+    api
+      .projectDirExists(name)
+      .then(setDirOk)
+      .catch(() => {});
   };
 
   const handleSubmit = () => {
@@ -284,14 +294,20 @@ function ProjectGroup({
           <button
             aria-label={`Toggle init for project ${name}`}
             aria-pressed={checked}
-            onClick={(e) => { e.stopPropagation(); onToggleCheck(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCheck();
+            }}
             className="inline-flex shrink-0 items-center"
           >
             <CheckboxGlyph checked={checked} />
           </button>
         )}
         <button
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
           aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`}
           className="inline-flex shrink-0 items-center"
         >
@@ -312,7 +328,13 @@ function ProjectGroup({
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); setEditValue(name); }}>
+            <span
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+                setEditValue(name);
+              }}
+            >
               {name}
             </span>
           )}
@@ -329,7 +351,10 @@ function ProjectGroup({
           <button
             aria-label={`Settings for project ${name}`}
             title="Project settings"
-            onClick={(e) => { e.stopPropagation(); onSettings(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSettings();
+            }}
             className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
           >
             <Settings2 size={11} />
@@ -337,7 +362,11 @@ function ProjectGroup({
           <button
             aria-label={`Rename project ${name}`}
             title="Rename"
-            onClick={(e) => { e.stopPropagation(); setEditing(true); setEditValue(name); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+              setEditValue(name);
+            }}
             className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
           >
             <Pencil size={11} />
@@ -357,45 +386,45 @@ function ProjectGroup({
       </div>
       {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
       {menu && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setMenu(null)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu(null);
-                }}
-              />
-              <div
-                style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 84) }}
-                className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
-              >
-                <button
-                  aria-label={`Open project ${name} in VS Code`}
-                  title="Open the project folder in VS Code"
-                  disabled={!dirOk}
-                  onClick={() => {
-                        setMenu(null);
-                        onOpenInVsCode();
-                  }}
-                  className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-                >
-                  Open in VS Code
-                </button>
-                <button
-                  aria-label={`Init project ${name}`}
-                  title="Run /init to create or update AGENTS.md"
-                  disabled={busy || !dirOk}
-                  onClick={() => {
-                    setMenu(null);
-                    onInit();
-                  }}
-                  className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-                >
-                  Init
-                </button>
-              </div>
-            </>
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 84) }}
+            className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
+          >
+            <button
+              aria-label={`Open project ${name} in VS Code`}
+              title="Open the project folder in VS Code"
+              disabled={!dirOk}
+              onClick={() => {
+                setMenu(null);
+                onOpenInVsCode();
+              }}
+              className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              Open in VS Code
+            </button>
+            <button
+              aria-label={`Init project ${name}`}
+              title="Run /init to create or update AGENTS.md"
+              disabled={busy || !dirOk}
+              onClick={() => {
+                setMenu(null);
+                onInit();
+              }}
+              className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              Init
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -498,8 +527,7 @@ export function ChatList() {
   };
 
   // A run in flight anywhere in the project (an init included) blocks another.
-  const projectBusy = (name: string) =>
-    conversations.some((c) => projects[c.id] === name && isRunning(c.id));
+  const projectBusy = (name: string) => conversations.some((c) => projects[c.id] === name && isRunning(c.id));
 
   const projectClusters = useMemo(() => {
     const clusters = new Map<string, [string, number[]][]>();
@@ -546,9 +574,7 @@ export function ChatList() {
                 onToggle={() => toggleCollapseProject(name)}
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
-                onOpenInVsCode={() =>
-                      api.openInVsCode(name).catch((e) => setError(String(e)))
-                }
+                onOpenInVsCode={() => api.openInVsCode(name).catch((e) => setError(String(e)))}
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);
@@ -577,10 +603,7 @@ export function ChatList() {
           }}
           onDragLeave={() => setDragOverUngrouped(false)}
           onDrop={handleDropOnUngrouped}
-          className={cn(
-            "flex flex-col gap-[2px] rounded-md",
-            dragOverUngrouped && "ring-1 ring-primary/30"
-          )}
+          className={cn("flex flex-col gap-[2px] rounded-md", dragOverUngrouped && "ring-1 ring-primary/30")}
         >
           {groups.ungrouped.map((i) => (
             <ChatItem key={conversations[i]?.id ?? i} index={i} />
@@ -620,9 +643,7 @@ export function ChatList() {
         )}
 
         {conversations.length === 0 && (
-          <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">
-            No conversations yet
-          </p>
+          <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">No conversations yet</p>
         )}
       </div>
 
@@ -634,7 +655,10 @@ export function ChatList() {
             onBlur={handleNewProject}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleNewProject();
-              if (e.key === "Escape") { setNewProjectInput(false); setNewProjectName(""); }
+              if (e.key === "Escape") {
+                setNewProjectInput(false);
+                setNewProjectName("");
+              }
             }}
             placeholder="Project name..."
             autoFocus
@@ -644,19 +668,19 @@ export function ChatList() {
       ) : (
         <div className="flex shrink-0 items-center border-t border-border">
           <button
-                onClick={() => setNewProjectInput(true)}
-                className="flex flex-1 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
+            onClick={() => setNewProjectInput(true)}
+            className="flex flex-1 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
           >
-                <FolderPlus size={14} />
-                New project
+            <FolderPlus size={14} />
+            New project
           </button>
           <button
-                aria-label="Refresh projects"
-                title="Refresh git status for all projects"
-                onClick={refreshGitProjects}
-                className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
+            aria-label="Refresh projects"
+            title="Refresh git status for all projects"
+            onClick={refreshGitProjects}
+            className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
           >
-                <RefreshCw size={14} />
+            <RefreshCw size={14} />
           </button>
         </div>
       )}

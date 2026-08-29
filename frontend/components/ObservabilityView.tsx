@@ -169,10 +169,7 @@ function StatsSection({ metrics }: { metrics: StoredMetric[] }) {
           <span className="w-20 text-right">Unit</span>
         </div>
         {aggregates.map((a) => (
-          <div
-            key={a.name}
-            className="flex border-b border-border/50 px-3 py-1.5 text-[0.75rem] last:border-b-0"
-          >
+          <div key={a.name} className="flex border-b border-border/50 px-3 py-1.5 text-[0.75rem] last:border-b-0">
             <span className="flex-1 truncate font-mono">{a.name}</span>
             <span className="w-24 text-right tabular-nums">{fmtCount(a.value)}</span>
             <span className="w-24 text-right tabular-nums text-muted-foreground">{a.points}</span>
@@ -194,8 +191,14 @@ export function ObservabilityView() {
 
   useEffect(() => {
     const fetch = () => {
-      api.getTraces().then(setTraces).catch(() => {});
-      api.getMetrics().then(setMetrics).catch(() => {});
+      api
+        .getTraces()
+        .then(setTraces)
+        .catch(() => {});
+      api
+        .getMetrics()
+        .then(setMetrics)
+        .catch(() => {});
     };
     fetch();
     const id = setInterval(fetch, 3000);
@@ -252,9 +255,7 @@ export function ObservabilityView() {
             </span>
             <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
               {traceIds.length === 0 && (
-                <p className="px-2 text-[0.8rem] text-muted-foreground">
-                  No traces yet. Start a session to see spans.
-                </p>
+                <p className="px-2 text-[0.8rem] text-muted-foreground">No traces yet. Start a session to see spans.</p>
               )}
               {traceIds.map((tid) => {
                 const spans = byTrace.get(tid)!;

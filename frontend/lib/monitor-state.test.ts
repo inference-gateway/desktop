@@ -48,12 +48,7 @@ test("text deltas append to the last text entry, actions start new entries", () 
     }),
     msg("s1", text("Done.")),
   ]);
-  expect(s.s1.log).toEqual([
-    "▸ GetLatestFrame {}",
-    "Opening the app.",
-    '▸ Computer {"action":"click","x":1}',
-    "Done.",
-  ]);
+  expect(s.s1.log).toEqual(["▸ GetLatestFrame {}", "Opening the app.", '▸ Computer {"action":"click","x":1}', "Done."]);
 });
 
 test("distinct streamed assistant messages start new log lines", () => {

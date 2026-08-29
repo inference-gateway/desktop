@@ -1,8 +1,7 @@
 // Skills registry: fetch the remote skills catalog. Installed state lives on
 // disk (~/.infer/skills) and is read via api.listInstalledSkills().
 
-export const DEFAULT_REGISTRY_URL =
-  "https://cdn.jsdelivr.net/gh/inference-gateway/skills@main/catalog.json";
+export const DEFAULT_REGISTRY_URL = "https://cdn.jsdelivr.net/gh/inference-gateway/skills@main/catalog.json";
 const LEGACY_REGISTRY_URL = "https://registry.inference-gateway.com/skills/";
 const REGISTRY_KEY = "skillsRegistryUrl";
 

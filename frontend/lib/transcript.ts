@@ -93,10 +93,7 @@ export function delegationsFrom(items: TranscriptItem[]): Delegation[] {
       out.push({
         id: `${key}:0`,
         label:
-          delegationLabel(args?.agent) ??
-          delegationLabel(args?.name) ??
-          delegationLabel(args?.url) ??
-          it.name.slice(4),
+          delegationLabel(args?.agent) ?? delegationLabel(args?.name) ?? delegationLabel(args?.url) ?? it.name.slice(4),
         kind: "a2a",
       });
     }
@@ -159,7 +156,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state,
         typing: true,
         items: state.items.map((it) =>
-          it.kind === "approval" && it.callId === action.callId ? { ...it, status: action.status } : it
+          it.kind === "approval" && it.callId === action.callId ? { ...it, status: action.status } : it,
         ),
       };
     }
@@ -178,27 +175,23 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyAssistant(state, event);
     case "ToolResult":
       return applyToolResult(state, event.tool_call_id, event.content);
-    case "ApprovalRequest": {                                  
-      let seq = state.seq;                                     
-      let insertAt = state.items.length;                       
-      for (let i = state.items.length - 1; i >= 0; i--) {     
-        if (state.items[i].kind !== "error") break;           
-        insertAt = i;                                          
-      }                                                        
-      const approval: TranscriptItem = {                       
-        kind: "approval",                                      
-        id: String(seq++),                                     
-        callId: event.tool_call_id,                            
-        toolName: event.tool_name,                             
-        toolArgs: event.tool_args,                             
-        status: "pending",                                     
-      };                                                       
-      const items = [                                          
-        ...state.items.slice(0, insertAt),                     
-        approval,                                              
-        ...state.items.slice(insertAt),                        
-      ];                                                       
-      return { ...state, items, seq, typing: false };          
+    case "ApprovalRequest": {
+      let seq = state.seq;
+      let insertAt = state.items.length;
+      for (let i = state.items.length - 1; i >= 0; i--) {
+        if (state.items[i].kind !== "error") break;
+        insertAt = i;
+      }
+      const approval: TranscriptItem = {
+        kind: "approval",
+        id: String(seq++),
+        callId: event.tool_call_id,
+        toolName: event.tool_name,
+        toolArgs: event.tool_args,
+        status: "pending",
+      };
+      const items = [...state.items.slice(0, insertAt), approval, ...state.items.slice(insertAt)];
+      return { ...state, items, seq, typing: false };
     }
     case "AgentError": {
       let seq = state.seq;
@@ -240,10 +233,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
   }
 }
 
-function applyAssistant(
-  state: ChatState,
-  event: Extract<AgentEvent, { kind: "AssistantMessage" }>
-): ChatState {
+function applyAssistant(state: ChatState, event: Extract<AgentEvent, { kind: "AssistantMessage" }>): ChatState {
   let seq = state.seq;
   let items = state.items;
   let currentAssistantId = state.currentAssistantId;
@@ -260,9 +250,7 @@ function applyAssistant(
     currentAssistantMessageId = null;
     if (currentReasoningId) {
       items = items.map((it) =>
-        it.kind === "reasoning" && it.id === currentReasoningId
-          ? { ...it, paragraphs: [...it.paragraphs, text] }
-          : it
+        it.kind === "reasoning" && it.id === currentReasoningId ? { ...it, paragraphs: [...it.paragraphs, text] } : it,
       );
     } else {
       const id = String(seq++);
@@ -281,7 +269,7 @@ function applyAssistant(
     currentReasoningMessageId = null;
     if (currentAssistantId) {
       items = items.map((it) =>
-        it.kind === "assistant" && it.id === currentAssistantId ? { ...it, chunks: [...it.chunks, text] } : it
+        it.kind === "assistant" && it.id === currentAssistantId ? { ...it, chunks: [...it.chunks, text] } : it,
       );
     } else {
       const id = String(seq++);
@@ -344,8 +332,8 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     items[idx] = { ...tool, output, state: failed ? "failed" : "done", skeleton: false };
     const apprIdx = items.findIndex((it) => it.kind === "approval" && it.callId === callId);
     if (apprIdx > idx) {
-          const [approval] = items.splice(apprIdx, 1);
-          items.splice(idx, 0, approval);
+      const [approval] = items.splice(apprIdx, 1);
+      items.splice(idx, 0, approval);
     }
   } else if (parsed) {
     items = [
@@ -377,7 +365,7 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     ];
   }
 
-  const src = parsed ? safeImageSrc(parsed.imagePath) ?? parsed.imageData : null;
+  const src = parsed ? (safeImageSrc(parsed.imagePath) ?? parsed.imageData) : null;
   if (src && parsed) {
     const file = parsed.imagePath ? imageFilename(parsed.imagePath) : `${parsed.name}.jpeg`;
     const key = parsed.imagePath ? file : src;
@@ -433,7 +421,8 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     if (entry.role === "user") {
       items.push({ kind: "user", id: String(seq++), text: content });
     } else if (entry.role === "assistant") {
-      if (entry.reasoning_content) items.push({ kind: "reasoning", id: String(seq++), paragraphs: [entry.reasoning_content] });
+      if (entry.reasoning_content)
+        items.push({ kind: "reasoning", id: String(seq++), paragraphs: [entry.reasoning_content] });
       if (content) items.push({ kind: "assistant", id: String(seq++), chunks: [content] });
     } else if (entry.role === "tool") {
       const parsed = parseToolResult(content);

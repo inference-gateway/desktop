@@ -89,7 +89,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
           setStatus(
             e.total > 0
               ? `Downloading voice model... ${Math.round((e.received / e.total) * 100)}%`
-              : "Downloading voice model..."
+              : "Downloading voice model...",
           );
           break;
         case "Verifying":

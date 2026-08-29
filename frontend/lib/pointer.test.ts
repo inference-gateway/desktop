@@ -7,17 +7,21 @@ test("overlay actions parse from Computer tool calls", () => {
     x: 100,
     y: 200,
   });
-  expect(
-    overlayAction({ id: "2", name: "Computer", args: '{"action":"scroll","x":5,"y":6,"amount":-3}' })
-  ).toEqual({ kind: "move", x: 5, y: 6 });
+  expect(overlayAction({ id: "2", name: "Computer", args: '{"action":"scroll","x":5,"y":6,"amount":-3}' })).toEqual({
+    kind: "move",
+    x: 5,
+    y: 6,
+  });
   expect(overlayAction({ id: "3", name: "Computer", args: '{"action":"click","x":10,"y":20}' })).toEqual({
     kind: "click",
     x: 10,
     y: 20,
   });
-  expect(
-    overlayAction({ id: "4", name: "Computer", args: '{"action":"double_click","button":"left"}' })
-  ).toEqual({ kind: "click", x: null, y: null });
+  expect(overlayAction({ id: "4", name: "Computer", args: '{"action":"double_click","button":"left"}' })).toEqual({
+    kind: "click",
+    x: null,
+    y: null,
+  });
   expect(overlayAction({ id: "5", name: "Computer", args: '{"action":"type","text":"hello"}' })).toEqual({
     kind: "type",
     text: "hello",

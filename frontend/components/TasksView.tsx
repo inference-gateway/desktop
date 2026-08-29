@@ -1,13 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ExternalLink, GitPullRequest, Play, RotateCw } from "lucide-react";
-import {
-  api,
-  type RepoEntry,
-  type TaskIssue,
-  type TaskPull,
-  type WorkflowRun,
-  type WorkflowStatus,
-} from "@/lib/tauri";
+import { api, type RepoEntry, type TaskIssue, type TaskPull, type WorkflowRun, type WorkflowStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 
 const TASKS_REPO_KEY = "tasksRepo";
@@ -82,9 +75,7 @@ export function TasksPanel() {
 
   const saveTemplates = (text: string) => {
     const key = commentIsPull ? PULL_TEMPLATES_KEY : ISSUE_TEMPLATES_KEY;
-    const defaults = commentIsPull
-      ? DEFAULT_PULL_TEMPLATES
-      : DEFAULT_ISSUE_TEMPLATES;
+    const defaults = commentIsPull ? DEFAULT_PULL_TEMPLATES : DEFAULT_ISSUE_TEMPLATES;
     const setList = commentIsPull ? setPullTemplates : setIssueTemplates;
     const list = text
       .split("\n")
@@ -116,9 +107,7 @@ export function TasksPanel() {
       .githubListRepos(owner)
       .then((list) => {
         setRepos(list);
-        setName((n) =>
-          n && list.some((r) => r.name === n) ? n : (list[0]?.name ?? ""),
-        );
+        setName((n) => (n && list.some((r) => r.name === n) ? n : (list[0]?.name ?? "")));
       })
       .catch((e) => setLoadError(String(e)));
   }, [owner]);
@@ -130,11 +119,7 @@ export function TasksPanel() {
   const refresh = useCallback((r: string) => {
     if (!r) return;
     setLoadError("");
-    Promise.all([
-      api.githubListTaskIssues(r),
-      api.githubListTaskPulls(r),
-      api.githubListWorkflowRuns(r),
-    ])
+    Promise.all([api.githubListTaskIssues(r), api.githubListTaskPulls(r), api.githubListWorkflowRuns(r)])
       .then(([i, p, w]) => {
         setIssues(i);
         setPulls(p);
@@ -160,21 +145,16 @@ export function TasksPanel() {
     setCommentIsPull(pull);
     setEditingTemplates(false);
     const list = pull ? pullTemplates : issueTemplates;
-    setComment(
-      list[0] ?? (pull ? DEFAULT_PULL_TEMPLATES : DEFAULT_ISSUE_TEMPLATES)[0],
-    );
+    setComment(list[0] ?? (pull ? DEFAULT_PULL_TEMPLATES : DEFAULT_ISSUE_TEMPLATES)[0]);
     setTriggeredIssue(0);
   };
 
   const linkedPulls = new Map<number, TaskPull[]>();
   const unlinkedPulls: TaskPull[] = [];
   for (const p of pulls) {
-    const refs = [...`${p.title}\n${p.body ?? ""}`.matchAll(/#(\d+)/g)].map(
-      (m) => Number(m[1]),
-    );
+    const refs = [...`${p.title}\n${p.body ?? ""}`.matchAll(/#(\d+)/g)].map((m) => Number(m[1]));
     const target = refs.find((n) => issues.some((i) => i.number === n));
-    if (target)
-      linkedPulls.set(target, [...(linkedPulls.get(target) ?? []), p]);
+    if (target) linkedPulls.set(target, [...(linkedPulls.get(target) ?? []), p]);
     else unlinkedPulls.push(p);
   }
 
@@ -211,8 +191,8 @@ export function TasksPanel() {
   return (
     <>
       <p className="mb-3 text-[0.8rem] text-muted-foreground">
-        Tasks are GitHub issues the installed infer-action workflow picks up.
-        Pick a repository, install the workflow, then create tasks below.
+        Tasks are GitHub issues the installed infer-action workflow picks up. Pick a repository, install the workflow,
+        then create tasks below.
       </p>
       <div className="mb-2 flex items-center gap-2">
         <select
@@ -254,21 +234,12 @@ export function TasksPanel() {
         </Button>
       </div>
 
-      {repo && (
-        <InferActionInstall
-          repository={repo}
-          model={agentModel}
-          onStatus={(s) => setInstalled(s.installed)}
-        />
-      )}
+      {repo && <InferActionInstall repository={repo} model={agentModel} onStatus={(s) => setInstalled(s.installed)} />}
 
       {repo && (
         <>
           <div className="mb-6 mt-5 flex flex-col gap-2">
-            <label
-              htmlFor="task-title"
-              className="text-[0.8rem] text-muted-foreground"
-            >
+            <label htmlFor="task-title" className="text-[0.8rem] text-muted-foreground">
               New task
             </label>
             <input
@@ -316,11 +287,7 @@ export function TasksPanel() {
 
           <section className="mb-6">
             <h3 className="mb-2 text-[0.9rem] font-semibold">Tasks</h3>
-            {issues.length === 0 && (
-              <p className="text-[0.8rem] text-muted-foreground">
-                No task issues yet.
-              </p>
-            )}
+            {issues.length === 0 && <p className="text-[0.8rem] text-muted-foreground">No task issues yet.</p>}
             <ul className="flex flex-col gap-1">
               {[
                 ...issues.map((i) => ({
@@ -358,10 +325,7 @@ export function TasksPanel() {
                       }
                     >
                       {pull ? (
-                        <GitPullRequest
-                          size={13}
-                          className="shrink-0 text-emerald-500"
-                        />
+                        <GitPullRequest size={13} className="shrink-0 text-emerald-500" />
                       ) : (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
                       )}
@@ -369,10 +333,7 @@ export function TasksPanel() {
                       <span className="truncate">{rowTitle}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1">
                         {triggeredIssue === num && (
-                          <span
-                            role="status"
-                            className="text-[0.7rem] text-muted-foreground"
-                          >
+                          <span role="status" className="text-[0.7rem] text-muted-foreground">
                             Triggered
                           </span>
                         )}
@@ -382,11 +343,7 @@ export function TasksPanel() {
                             size="icon-sm"
                             title="Run task"
                             aria-label="Run task"
-                            onClick={() =>
-                              commentIssue === num
-                                ? setCommentIssue(0)
-                                : openComment(num, pull)
-                            }
+                            onClick={() => (commentIssue === num ? setCommentIssue(0) : openComment(num, pull))}
                             className="text-muted-foreground hover:text-foreground"
                           >
                             <Play size={14} />
@@ -453,11 +410,7 @@ export function TasksPanel() {
                           >
                             {runningIssue === num ? "Sending..." : "Send"}
                           </Button>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            onClick={() => setCommentIssue(0)}
-                          >
+                          <Button size="xs" variant="outline" onClick={() => setCommentIssue(0)}>
                             Cancel
                           </Button>
                         </div>
@@ -469,11 +422,7 @@ export function TasksPanel() {
           </section>
           <section>
             <h3 className="mb-2 text-[0.9rem] font-semibold">Runs</h3>
-            {runs.length === 0 && (
-              <p className="text-[0.8rem] text-muted-foreground">
-                No workflow runs yet.
-              </p>
-            )}
+            {runs.length === 0 && <p className="text-[0.8rem] text-muted-foreground">No workflow runs yet.</p>}
             <ul className="flex flex-col gap-1">
               {runs.map((r) => (
                 <li key={r.id}>
@@ -526,9 +475,7 @@ function InferActionInstall({
   const [installError, setInstallError] = useState("");
   const [showOptions, setShowOptions] = useState(false);
   const [apt, setApt] = useState("");
-  const [visionModel, setVisionModel] = useState(
-    "anthropic/claude-haiku-4-5-20251001",
-  );
+  const [visionModel, setVisionModel] = useState("anthropic/claude-haiku-4-5-20251001");
   const [imageModel, setImageModel] = useState("");
 
   useEffect(() => {
@@ -554,15 +501,7 @@ function InferActionInstall({
     setInstallError("");
     setPrUrl("");
     try {
-      setPrUrl(
-        await api.githubInstallWorkflow(
-          repository,
-          model,
-          apt,
-          visionModel,
-          imageModel,
-        ),
-      );
+      setPrUrl(await api.githubInstallWorkflow(repository, model, apt, visionModel, imageModel));
     } catch (e) {
       setInstallError(String(e));
     } finally {
@@ -583,11 +522,7 @@ function InferActionInstall({
     }
   };
 
-  const outdated =
-    status?.installed &&
-    status.version &&
-    status.latest &&
-    status.version !== status.latest;
+  const outdated = status?.installed && status.version && status.latest && status.version !== status.latest;
 
   return (
     <div className="flex flex-col gap-2">
@@ -595,26 +530,16 @@ function InferActionInstall({
         <span
           className={
             "h-2 w-2 shrink-0 rounded-full " +
-            (status?.installed
-              ? outdated
-                ? "bg-amber-500"
-                : "bg-emerald-500"
-              : "bg-amber-500")
+            (status?.installed ? (outdated ? "bg-amber-500" : "bg-emerald-500") : "bg-amber-500")
           }
         />
         <span className="text-muted-foreground">
-          {status === null &&
-            !checkError &&
-            "Checking infer-action workflow..."}
+          {status === null && !checkError && "Checking infer-action workflow..."}
           {status?.installed &&
             !outdated &&
             `infer-action workflow installed${status.version ? ` (${status.version})` : ""}.`}
-          {status?.installed &&
-            outdated &&
-            `infer-action ${status.version} installed - ${status.latest} available.`}
-          {status !== null &&
-            !status.installed &&
-            "infer-action workflow not installed."}
+          {status?.installed && outdated && `infer-action ${status.version} installed - ${status.latest} available.`}
+          {status !== null && !status.installed && "infer-action workflow not installed."}
           {checkError && `Couldn't check workflow: ${checkError}`}
         </span>
         {outdated && (
@@ -623,26 +548,13 @@ function InferActionInstall({
           </Button>
         )}
         {status?.installed && status.url && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => api.openUrl(status.url!)}
-          >
+          <Button variant="outline" size="xs" onClick={() => api.openUrl(status.url!)}>
             View workflow
           </Button>
         )}
         {status !== null && (
-          <Button
-            variant="outline"
-            size="xs"
-            disabled={installing}
-            onClick={install}
-          >
-            {installing
-              ? "Installing..."
-              : status.installed
-                ? "Re-install infer-action"
-                : "Install infer-action"}
+          <Button variant="outline" size="xs" disabled={installing} onClick={install}>
+            {installing ? "Installing..." : status.installed ? "Re-install infer-action" : "Install infer-action"}
           </Button>
         )}
         {status !== null && (
@@ -654,11 +566,7 @@ function InferActionInstall({
           </button>
         )}
         {prUrl && (
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => api.openUrl(prUrl)}
-          >
+          <Button variant="outline" size="xs" onClick={() => api.openUrl(prUrl)}>
             View PR
           </Button>
         )}
@@ -671,13 +579,9 @@ function InferActionInstall({
       {showOptions && (
         <div className="flex flex-col gap-2 rounded-md border border-border p-3">
           <p className="text-[0.7rem] text-muted-foreground">
-            Written into the workflow on install/re-install. Leave empty to
-            omit.
+            Written into the workflow on install/re-install. Leave empty to omit.
           </p>
-          <label
-            htmlFor="install-apt"
-            className="text-[0.75rem] text-muted-foreground"
-          >
+          <label htmlFor="install-apt" className="text-[0.75rem] text-muted-foreground">
             Extra apt packages (space-separated)
           </label>
           <input
@@ -688,10 +592,7 @@ function InferActionInstall({
             placeholder="libwebkit2gtk-4.1-dev ffmpeg"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
-          <label
-            htmlFor="install-vision-model"
-            className="text-[0.75rem] text-muted-foreground"
-          >
+          <label htmlFor="install-vision-model" className="text-[0.75rem] text-muted-foreground">
             Vision model (image analysis)
           </label>
           <input
@@ -702,10 +603,7 @@ function InferActionInstall({
             placeholder="anthropic/claude-haiku-4-5-20251001"
             className="rounded-md border border-border bg-background px-2 py-1.5 text-[0.8rem]"
           />
-          <label
-            htmlFor="install-image-model"
-            className="text-[0.75rem] text-muted-foreground"
-          >
+          <label htmlFor="install-image-model" className="text-[0.75rem] text-muted-foreground">
             Image generation model
           </label>
           <input

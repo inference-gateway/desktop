@@ -1,13 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
   Channel,
@@ -19,12 +10,16 @@ import {
 } from "@/lib/tauri";
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
-import { chatReducer, delegationsFrom, initialChatState, COMPUTER_USE_TOOLS, type ChatAction, type ChatState, type Delegation } from "@/lib/transcript";
+  chatReducer,
+  delegationsFrom,
+  initialChatState,
+  COMPUTER_USE_TOOLS,
+  type ChatAction,
+  type ChatState,
+  type Delegation,
+} from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
@@ -176,9 +171,12 @@ function useDesktopStore() {
     (id: string, status: { label: string; error: boolean }, keepExisting = false) => {
       setLastRun((prev) => (keepExisting && prev[id] ? prev : { ...prev, [id]: status }));
       clearTimeout(lastRunTimers.current.get(id));
-      lastRunTimers.current.set(id, setTimeout(() => clearTerminal(id), LAST_RUN_TTL_MS));
+      lastRunTimers.current.set(
+        id,
+        setTimeout(() => clearTerminal(id), LAST_RUN_TTL_MS),
+      );
     },
-    [clearTerminal]
+    [clearTerminal],
   );
 
   useEffect(() => {
@@ -189,7 +187,7 @@ function useDesktopStore() {
           type: "setApproval",
           callId: e.payload.callId,
           status: e.payload.status,
-        })
+        }),
     );
     return () => {
       unlisten.then((f) => f());
@@ -214,7 +212,7 @@ function useDesktopStore() {
         if (attempt < MAX_RETRIES) setTimeout(() => fetchModelsWithRetry(attempt + 1), 1500);
       }
     },
-    [populateModels]
+    [populateModels],
   );
 
   const startGatewayThenModels = useCallback(
@@ -228,7 +226,7 @@ function useDesktopStore() {
       setStatus("Ready");
       fetchModelsWithRetry();
     },
-    [setStatus, fetchModelsWithRetry]
+    [setStatus, fetchModelsWithRetry],
   );
 
   const refreshConversations = useCallback(async () => {
@@ -293,8 +291,6 @@ function useDesktopStore() {
     }
   }, []);
 
-
-
   const checkForUpdates = useCallback(async (force = false) => {
     const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
     if (!force && cached && Date.now() - cached.checkedAt < UPDATE_INTERVAL_MS) {
@@ -324,7 +320,7 @@ function useDesktopStore() {
               setStatus(
                 event.total > 0
                   ? `Downloading infer... ${Math.round((event.received / event.total) * 100)}%`
-                  : "Downloading infer..."
+                  : "Downloading infer...",
               );
               break;
             case "Verifying":
@@ -352,7 +348,7 @@ function useDesktopStore() {
         setError(`Setup failed: ${err}`);
       }
     },
-    [setStatus, setError, startGatewayThenModels, checkForUpdates, refreshConversations]
+    [setStatus, setError, startGatewayThenModels, checkForUpdates, refreshConversations],
   );
 
   const restartBackend = useCallback(
@@ -369,7 +365,7 @@ function useDesktopStore() {
       setReady(false);
       await initBackend(force, true);
     },
-    [runningIds, setStatus, initBackend]
+    [runningIds, setStatus, initBackend],
   );
 
   useEffect(() => {
@@ -397,7 +393,10 @@ function useDesktopStore() {
         .catch(() => {});
     }
     initBackend();
-    api.readHistory().then(setHistory).catch(() => {});
+    api
+      .readHistory()
+      .then(setHistory)
+      .catch(() => {});
     loadProjects();
     const t = setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
     return () => clearInterval(t);
@@ -424,9 +423,8 @@ function useDesktopStore() {
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
   const isAwaitingApproval = useCallback(
-    (id: string) =>
-      transcripts[id]?.items.some((it) => it.kind === "approval" && it.status === "pending") ?? false,
-    [transcripts]
+    (id: string) => transcripts[id]?.items.some((it) => it.kind === "approval" && it.status === "pending") ?? false,
+    [transcripts],
   );
 
   const openConversation = useCallback(
@@ -442,7 +440,7 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, dispatchTo]
+    [transcripts, projects, dispatchTo],
   );
 
   const newChat = useCallback(() => {
@@ -480,7 +478,7 @@ function useDesktopStore() {
         setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [runningIds, activeId, newChat, refreshConversations, setError, clearTerminal]
+    [runningIds, activeId, newChat, refreshConversations, setError, clearTerminal],
   );
 
   const onChatClick = useCallback(
@@ -525,7 +523,7 @@ function useDesktopStore() {
       lastClickedIndex.current = index;
       openConversation(list[index].id);
     },
-    [displayConversations, projects, projectNames, selected, clearSelection, openConversation]
+    [displayConversations, projects, projectNames, selected, clearSelection, openConversation],
   );
 
   const bulkDelete = useCallback(() => {
@@ -555,11 +553,20 @@ function useDesktopStore() {
           paths: projectPaths,
           groups: projectGroups,
           selected: Array.from(initSelection),
-        })
+        }),
       )
       .then(() => (gitChanged ? fetchGitProjects() : undefined))
       .catch(() => {});
-  }, [projectsLoaded, projects, projectNames, projectContexts, projectPaths, projectGroups, initSelection, fetchGitProjects]);
+  }, [
+    projectsLoaded,
+    projects,
+    projectNames,
+    projectContexts,
+    projectPaths,
+    projectGroups,
+    initSelection,
+    fetchGitProjects,
+  ]);
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
 
@@ -568,97 +575,115 @@ function useDesktopStore() {
     setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
   }, []);
 
-  const sendPrompt = useCallback(async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
-    if (runningIds.has(runId)) return;
-    if (!model) {
-      setError("Please select a model first");
-      return;
-    }
-    setStatusErr(false);
-    dispatchTo(runId, { type: "userSend", text });
-    clearTerminal(runId);
-    setRunningIds((prev) => new Set(prev).add(runId));
-    try {
-      const ch = new Channel<AgentEvent>();
-      ch.onmessage = (event) => {
-        dispatchTo(runId, { type: "event", event });
-        if (event.kind === "TokenUsage") {
-          setTokenUsage((prev) => ({
-            input: prev.input + event.input,
-            output: prev.output + event.output,
-            cached_read: prev.cached_read + event.cached_read,
-            total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
-          }));
-        }
-        switch (event.kind) {
-          case "ApprovalRequest":
-            if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
-              computerApprovalsRef.current.set(event.tool_call_id, runId);
-            }
-            if (!document.hasFocus()) notifyApproval(event.tool_name);
-            break;
-          case "Done":
-            setRunningIds((prev) => {
-              const next = new Set(prev);
-              next.delete(runId);
-              return next;
-            });
-            for (const [callId, sessionId] of computerApprovalsRef.current) {
-              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
-            }
-            recordTerminal(
-              runId,
-              {
-                label: event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`,
-                error: event.exit_code !== 0,
-              },
-              true
-            );
-            break;
-          case "Cancelled":
-            setRunningIds((prev) => {
-              const next = new Set(prev);
-              next.delete(runId);
-              return next;
-            });
-            for (const [callId, sessionId] of computerApprovalsRef.current) {
-              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
-            }
-            recordTerminal(runId, { label: "Stopped", error: false });
-            break;
-        }
-      };
-      const isInit = /^\/init(\s|$)/.test(text);
-      if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
-      const cfg = await api.getConfig();
-      const projectContext = projectName ? projectContexts[projectName] : undefined;
-      const projectGroup = projectName && projectGroups[projectName]
-        ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
-        : undefined;
-      await api.sendMessage({
-        prompt: text,
-        model,
-        sessionId: runId,
-        onEvent: ch,
-        systemPrompt: cfg.system_prompt || undefined,
-        extraInstructions:
-          [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") || undefined,
-        autoMode: isInit || (autoModes[runId] ?? autoMode),
-        project: projectName,
-      });
-      refreshConversations();
-      loadProjects();
-    } catch (err) {
-      dispatchTo(runId, { type: "error", text: `Error: ${err}` });
-      dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: -1, stderr: "" } });
-      setRunningIds((prev) => {
-        const next = new Set(prev);
-        next.delete(runId);
-        return next;
-      });
-      recordTerminal(runId, { label: "Error", error: true });
-    }
-  }, [runningIds, model, autoMode, autoModes, projectContexts, projectGroups, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
+  const sendPrompt = useCallback(
+    async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
+      if (runningIds.has(runId)) return;
+      if (!model) {
+        setError("Please select a model first");
+        return;
+      }
+      setStatusErr(false);
+      dispatchTo(runId, { type: "userSend", text });
+      clearTerminal(runId);
+      setRunningIds((prev) => new Set(prev).add(runId));
+      try {
+        const ch = new Channel<AgentEvent>();
+        ch.onmessage = (event) => {
+          dispatchTo(runId, { type: "event", event });
+          if (event.kind === "TokenUsage") {
+            setTokenUsage((prev) => ({
+              input: prev.input + event.input,
+              output: prev.output + event.output,
+              cached_read: prev.cached_read + event.cached_read,
+              total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
+            }));
+          }
+          switch (event.kind) {
+            case "ApprovalRequest":
+              if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
+                computerApprovalsRef.current.set(event.tool_call_id, runId);
+              }
+              if (!document.hasFocus()) notifyApproval(event.tool_name);
+              break;
+            case "Done":
+              setRunningIds((prev) => {
+                const next = new Set(prev);
+                next.delete(runId);
+                return next;
+              });
+              for (const [callId, sessionId] of computerApprovalsRef.current) {
+                if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+              }
+              recordTerminal(
+                runId,
+                {
+                  label: event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`,
+                  error: event.exit_code !== 0,
+                },
+                true,
+              );
+              break;
+            case "Cancelled":
+              setRunningIds((prev) => {
+                const next = new Set(prev);
+                next.delete(runId);
+                return next;
+              });
+              for (const [callId, sessionId] of computerApprovalsRef.current) {
+                if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+              }
+              recordTerminal(runId, { label: "Stopped", error: false });
+              break;
+          }
+        };
+        const isInit = /^\/init(\s|$)/.test(text);
+        if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
+        const cfg = await api.getConfig();
+        const projectContext = projectName ? projectContexts[projectName] : undefined;
+        const projectGroup =
+          projectName && projectGroups[projectName]
+            ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
+            : undefined;
+        await api.sendMessage({
+          prompt: text,
+          model,
+          sessionId: runId,
+          onEvent: ch,
+          systemPrompt: cfg.system_prompt || undefined,
+          extraInstructions:
+            [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") ||
+            undefined,
+          autoMode: isInit || (autoModes[runId] ?? autoMode),
+          project: projectName,
+        });
+        refreshConversations();
+        loadProjects();
+      } catch (err) {
+        dispatchTo(runId, { type: "error", text: `Error: ${err}` });
+        dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: -1, stderr: "" } });
+        setRunningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(runId);
+          return next;
+        });
+        recordTerminal(runId, { label: "Error", error: true });
+      }
+    },
+    [
+      runningIds,
+      model,
+      autoMode,
+      autoModes,
+      projectContexts,
+      projectGroups,
+      setError,
+      refreshConversations,
+      loadProjects,
+      dispatchTo,
+      clearTerminal,
+      recordTerminal,
+    ],
+  );
 
   const runOnProjects = useCallback(
     async (names: string[], runOne: (name: string) => Promise<void>) => {
@@ -684,7 +709,7 @@ function useDesktopStore() {
         setInitAllRunning(false);
       }
     },
-    [projects, maxSessions, setStatus]
+    [projects, maxSessions, setStatus],
   );
 
   const broadcastPrompt = useCallback(
@@ -705,12 +730,12 @@ function useDesktopStore() {
         await sendPrompt(runId, text, name, extra);
       });
     },
-    [runOnProjects, assignProject, gitProjects, sendPrompt]
+    [runOnProjects, assignProject, gitProjects, sendPrompt],
   );
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
-      sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId])
+      sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId]),
     );
     return () => {
       unlisten.then((f) => f());
@@ -762,7 +787,20 @@ function useDesktopStore() {
       autoGrow(el);
     }
     await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
-  }, [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError, initSelecting, initSelection, broadcastPrompt]);
+  }, [
+    activeId,
+    runningIds,
+    model,
+    maxSessions,
+    activeProject,
+    assignProject,
+    projects,
+    sendPrompt,
+    setError,
+    initSelecting,
+    initSelection,
+    broadcastPrompt,
+  ]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -791,7 +829,7 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
       }
     },
-    [dispatchTo]
+    [dispatchTo],
   );
 
   const insertSnippet = useCallback((prompt: string) => {
@@ -812,16 +850,13 @@ function useDesktopStore() {
     });
   }, []);
 
-  const updateSnippet = useCallback(
-    (id: string, patch: { label?: string; prompt?: string }) => {
-      setSnippetsState((prev) => {
-        const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
-        saveSnippets(next);
-        return next;
-      });
-    },
-    [],
-  );
+  const updateSnippet = useCallback((id: string, patch: { label?: string; prompt?: string }) => {
+    setSnippetsState((prev) => {
+      const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
+      saveSnippets(next);
+      return next;
+    });
+  }, []);
 
   const resetAllSnippets = useCallback(() => {
     setSnippetsState(DEFAULT_SNIPPETS);
@@ -847,7 +882,7 @@ function useDesktopStore() {
         setError(`Failed to save settings: ${err}`);
       }
     },
-    [startGatewayThenModels, setError]
+    [startGatewayThenModels, setError],
   );
 
   const applyUpdates = useCallback(async () => {
@@ -881,33 +916,34 @@ function useDesktopStore() {
     api.createProjectDir(name).catch((e) => console.error("Failed to create project directory:", e));
   }, []);
 
-  const importProjects = useCallback((repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
-    setProjectNames((prev) => {
-      const fresh = repos.map((r) => r.name).filter((n) => !prev.includes(n));
-      return fresh.length ? [...prev, ...fresh] : prev;
-    });
-    setProjectPaths((prev) => {
-      const next = { ...prev };
-      for (const r of repos) next[r.name] ??= r.path;
-      return next;
-    });
-    setProjectContexts((prev) => {
-      const next = { ...prev };
-      for (const r of repos) if (r.context) next[r.name] ??= r.context;
-      return next;
-    });
-    setProjectGroups((prev) => {
-      const next = { ...prev };
-      for (const r of repos) if (r.group) next[r.name] ??= r.group;
-      return next;
-    });
-  }, []);
+  const importProjects = useCallback(
+    (repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
+      setProjectNames((prev) => {
+        const fresh = repos.map((r) => r.name).filter((n) => !prev.includes(n));
+        return fresh.length ? [...prev, ...fresh] : prev;
+      });
+      setProjectPaths((prev) => {
+        const next = { ...prev };
+        for (const r of repos) next[r.name] ??= r.path;
+        return next;
+      });
+      setProjectContexts((prev) => {
+        const next = { ...prev };
+        for (const r of repos) if (r.context) next[r.name] ??= r.context;
+        return next;
+      });
+      setProjectGroups((prev) => {
+        const next = { ...prev };
+        for (const r of repos) if (r.group) next[r.name] ??= r.group;
+        return next;
+      });
+    },
+    [],
+  );
 
   const deleteProjects = useCallback((names: string[]) => {
     const gone = new Set(names);
-    setProjects((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([, p]) => !gone.has(p)))
-    );
+    setProjects((prev) => Object.fromEntries(Object.entries(prev).filter(([, p]) => !gone.has(p))));
     setProjectNames((prev) => prev.filter((n) => !gone.has(n)));
     setProjectContexts((prev) => {
       const next = { ...prev };
@@ -930,9 +966,7 @@ function useDesktopStore() {
   const deleteProject = useCallback((name: string) => deleteProjects([name]), [deleteProjects]);
 
   const renameProject = useCallback((oldName: string, newName: string) => {
-    setProjects((prev) =>
-      Object.fromEntries(Object.entries(prev).map(([id, p]) => [id, p === oldName ? newName : p]))
-    );
+    setProjects((prev) => Object.fromEntries(Object.entries(prev).map(([id, p]) => [id, p === oldName ? newName : p])));
     setProjectNames((prev) => prev.map((n) => (n === oldName ? newName : n)));
     setProjectContexts((prev) => {
       if (!(oldName in prev)) return prev;
@@ -962,10 +996,11 @@ function useDesktopStore() {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
   }, []);
 
-  const initProject = useCallback(async (name: string) => {
+  const initProject = useCallback(
+    async (name: string) => {
       if (runningIdsRef.current.size >= maxSessions) {
-    setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
-    return;
+        setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+        return;
       }
       const runId = crypto.randomUUID();
       assignProject(runId, name);
@@ -977,7 +1012,9 @@ function useDesktopStore() {
       await loadProjects();
       const ctx = await api.refreshProjectContext(name).catch(() => null);
       if (ctx) setProjectContext(name, ctx);
-  }, [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError]);
+    },
+    [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError],
+  );
 
   const startInitSelection = useCallback(() => {
     setInitSelecting(true);
@@ -1015,12 +1052,12 @@ function useDesktopStore() {
         return next;
       });
     },
-    [projectNames, projectGroups]
+    [projectNames, projectGroups],
   );
 
   const initAllProjects = useCallback(
     (names: string[]) => runOnProjects(names, initProject),
-    [runOnProjects, initProject]
+    [runOnProjects, initProject],
   );
 
   const setProjectPath = useCallback((name: string, path: string) => {
@@ -1035,12 +1072,12 @@ function useDesktopStore() {
   }, []);
 
   const toggleCollapseProject = useCallback((name: string) => {
-        setCollapsedProjects((prev) => {
-          const next = new Set(prev);
-          if (next.has(name)) next.delete(name);
-          else next.add(name);
-          return next;
-        });
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }, []);
 
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
@@ -1084,9 +1121,7 @@ function useDesktopStore() {
       }
       if (runningIds.has(id)) {
         if (chat?.currentReasoningId) return { label: "Thinking...", error: false };
-        const tool = [...(chat?.items ?? [])]
-          .reverse()
-          .find((it) => it.kind === "tool" && it.state === "running");
+        const tool = [...(chat?.items ?? [])].reverse().find((it) => it.kind === "tool" && it.state === "running");
         return {
           label: tool?.kind === "tool" ? `Running ${tool.name}...` : "Running...",
           error: false,
@@ -1094,12 +1129,12 @@ function useDesktopStore() {
       }
       return lastRun[id] ?? null;
     },
-    [transcripts, runningIds, lastRun]
+    [transcripts, runningIds, lastRun],
   );
 
   const delegations = useCallback(
     (id: string): Delegation[] => delegationsFrom(transcripts[id]?.items ?? []),
-    [transcripts]
+    [transcripts],
   );
 
   return {

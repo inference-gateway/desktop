@@ -14,11 +14,7 @@ export function Sidebar() {
       className="flex w-[320px] shrink-0 flex-col gap-2 overflow-hidden border-r border-border bg-secondary p-3"
     >
       <div className="flex gap-2">
-        <Button
-          onClick={newChat}
-          title="New chat (⌘N / Ctrl+N)"
-          className="flex-1 text-[0.85rem]"
-        >
+        <Button onClick={newChat} title="New chat (⌘N / Ctrl+N)" className="flex-1 text-[0.85rem]">
           + New chat
         </Button>
         <Button

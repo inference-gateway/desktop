@@ -107,13 +107,10 @@ export default function Overlay() {
 
     const fitToScreen = async () => {
       if (sizedRef.current) return;
-      const mon =
-        (await primaryMonitor().catch(() => null)) ?? (await currentMonitor().catch(() => null));
+      const mon = (await primaryMonitor().catch(() => null)) ?? (await currentMonitor().catch(() => null));
       if (!mon) return;
       const top = mon.workArea.position.y;
-      await win.setSize(
-        new PhysicalSize(mon.size.width, mon.position.y + mon.size.height - top)
-      );
+      await win.setSize(new PhysicalSize(mon.size.width, mon.position.y + mon.size.height - top));
       await win.setPosition(new PhysicalPosition(mon.position.x, top));
       const f = mon.scaleFactor || 1;
       const s = Math.max(mon.size.width / f / API_WIDTH, mon.size.height / f / API_HEIGHT, 1);

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { chatReducer, delegationsFrom, initialChatState, subagentParentId, type ChatState, type TranscriptItem } from "./transcript";
+import {
+  chatReducer,
+  delegationsFrom,
+  initialChatState,
+  subagentParentId,
+  type ChatState,
+  type TranscriptItem,
+} from "./transcript";
 import type { AgentEvent } from "./tauri";
 
 const ev = (event: AgentEvent): { type: "event"; event: AgentEvent } => ({ type: "event", event });
@@ -103,7 +110,11 @@ test("a running tool call resolves by tool_call_id", () => {
       reasoning_content: null,
       tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
     }),
-    ev({ kind: "ToolResult", tool_call_id: "c1", content: '{"tool_name":"Write","data":{"output":"ok"},"success":true}' }),
+    ev({
+      kind: "ToolResult",
+      tool_call_id: "c1",
+      content: '{"tool_name":"Write","data":{"output":"ok"},"success":true}',
+    }),
   ]);
   const tool = s.items.find((i) => i.kind === "tool");
   expect(tool).toMatchObject({ callId: "c1", state: "done", output: "ok", skeleton: false });
@@ -122,8 +133,7 @@ test("a failed tool call retains its top-level error", () => {
     ev({
       kind: "ToolResult",
       tool_call_id: "c1",
-      content:
-        '{"tool_name":"Read","success":false,"error":"path is outside configured sandbox directories"}',
+      content: '{"tool_name":"Read","success":false,"error":"path is outside configured sandbox directories"}',
     }),
   ]);
   const tool = s.items.find((i) => i.kind === "tool");
@@ -143,7 +153,11 @@ test("a mismatched tool_call_id attaches to the unresolved tool card instead of 
       reasoning_content: null,
       tool_calls: [{ id: "c1", name: "Read", args: '{"file_path":"a"}' }],
     }),
-    ev({ kind: "ToolResult", tool_call_id: "", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
+    ev({
+      kind: "ToolResult",
+      tool_call_id: "",
+      content: '{"tool_name":"Read","data":{"output":"file"},"success":true}',
+    }),
   ]);
   const tools = s.items.filter((i) => i.kind === "tool");
   expect(tools).toHaveLength(1);
@@ -161,9 +175,7 @@ test("Done expires pending approvals so their buttons go away", () => {
 });
 
 test("approval request then resolution flips status", () => {
-  let s = run([
-    ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c9" }),
-  ]);
+  let s = run([ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c9" })]);
   expect(s.items[0]).toMatchObject({ kind: "approval", status: "pending" });
   s = chatReducer(s, { type: "setApproval", callId: "c9", status: "approved" });
   expect(s.items[0]).toMatchObject({ kind: "approval", status: "approved" });
@@ -203,53 +215,43 @@ test("Done stops typing and finalizes running tools", () => {
 });
 
 test("AgentError before ApprovalRequest puts approval before the error", () => {
-      const s = run([
-        { type: "userSend", text: "write" },
-        ev({
-          kind: "AssistantMessage",
-          content: "",
-          reasoning_content: null,
-          tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
-        }),
-        ev({ kind: "AgentError", message: "something went wrong" }),
-        ev({
-          kind: "ApprovalRequest",
-          tool_name: "Write",
-          tool_args: '{"path":"a"}',
-          tool_call_id: "c1",
-        }),
-      ]);
-      expect(s.items.map((i) => i.kind)).toEqual([
-        "user",
-        "tool",
-        "approval",
-        "error",
-      ]);
+  const s = run([
+    { type: "userSend", text: "write" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+    }),
+    ev({ kind: "AgentError", message: "something went wrong" }),
+    ev({
+      kind: "ApprovalRequest",
+      tool_name: "Write",
+      tool_args: '{"path":"a"}',
+      tool_call_id: "c1",
+    }),
+  ]);
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "tool", "approval", "error"]);
 });
 
 test("ApprovalRequest before AgentError keeps the natural order", () => {
-      const s = run([
-        { type: "userSend", text: "write" },
-        ev({
-          kind: "AssistantMessage",
-          content: "",
-          reasoning_content: null,
-          tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
-        }),
-        ev({
-          kind: "ApprovalRequest",
-          tool_name: "Write",
-          tool_args: '{"path":"a"}',
-          tool_call_id: "c1",
-        }),
-        ev({ kind: "AgentError", message: "something went wrong" }),
-      ]);
-      expect(s.items.map((i) => i.kind)).toEqual([
-        "user",
-        "tool",
-        "approval",
-        "error",
-      ]);
+  const s = run([
+    { type: "userSend", text: "write" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Write", args: '{"path":"a"}' }],
+    }),
+    ev({
+      kind: "ApprovalRequest",
+      tool_name: "Write",
+      tool_args: '{"path":"a"}',
+      tool_call_id: "c1",
+    }),
+    ev({ kind: "AgentError", message: "something went wrong" }),
+  ]);
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "tool", "approval", "error"]);
 });
 
 test("approval record renders above its tool card once the result arrives", () => {
@@ -306,7 +308,11 @@ test("computer-use tool call renders through the generic tool path", () => {
       reasoning_content: null,
       tool_calls: [{ id: "c1", name: "Computer", args: '{"action":"click","x":100,"y":200}' }],
     }),
-    ev({ kind: "ToolResult", tool_call_id: "c1", content: '{"tool_name":"Computer","data":{"output":"clicked"},"success":true}' }),
+    ev({
+      kind: "ToolResult",
+      tool_call_id: "c1",
+      content: '{"tool_name":"Computer","data":{"output":"clicked"},"success":true}',
+    }),
   ]);
   const tool = s.items.find((i) => i.kind === "tool");
   expect(tool).toMatchObject({ callId: "c1", name: "Computer", state: "done", output: "clicked" });
@@ -322,15 +328,23 @@ test("computer-use pause and resume toggle the paused flag", () => {
   expect(s.paused).toBe(false);
 });
 
-const toolItem = (
-  name: string,
-  args: string,
-  state: "running" | "done" | "failed" = "running"
-): TranscriptItem => ({ kind: "tool", id: "1", callId: "c1", name, args, output: null, state, skeleton: false });
+const toolItem = (name: string, args: string, state: "running" | "done" | "failed" = "running"): TranscriptItem => ({
+  kind: "tool",
+  id: "1",
+  callId: "c1",
+  name,
+  args,
+  output: null,
+  state,
+  skeleton: false,
+});
 
 test("delegationsFrom expands a running Agent tasks array into subagent rows", () => {
   const args = JSON.stringify({
-    tasks: [{ description: "map the repo", label: "repo-overview" }, { description: "a very long description that should be truncated because it exceeds the label limit" }],
+    tasks: [
+      { description: "map the repo", label: "repo-overview" },
+      { description: "a very long description that should be truncated because it exceeds the label limit" },
+    ],
   });
   const d = delegationsFrom([toolItem("Agent", args)]);
   expect(d).toHaveLength(2);
@@ -350,9 +364,7 @@ test("delegationsFrom maps A2A tool calls to a2a rows", () => {
   expect(delegationsFrom([toolItem("A2A_QueryAgent", '{"agent":"docs-agent"}')])).toMatchObject([
     { label: "docs-agent", kind: "a2a" },
   ]);
-  expect(delegationsFrom([toolItem("A2A_SubmitTask", "{}")])).toMatchObject([
-    { label: "SubmitTask", kind: "a2a" },
-  ]);
+  expect(delegationsFrom([toolItem("A2A_SubmitTask", "{}")])).toMatchObject([{ label: "SubmitTask", kind: "a2a" }]);
 });
 
 test("delegationsFrom ignores finished delegations and unrelated tools", () => {
@@ -361,9 +373,9 @@ test("delegationsFrom ignores finished delegations and unrelated tools", () => {
 });
 
 test("subagentParentId extracts the orchestrator id from subagent session ids", () => {
-  expect(
-    subagentParentId("subagent-28f1b14b-7b10-4950-9487-8c0e10bf4917-464d7ff2-5da8-4d97-bedb-a3c86e78daff")
-  ).toBe("28f1b14b-7b10-4950-9487-8c0e10bf4917");
+  expect(subagentParentId("subagent-28f1b14b-7b10-4950-9487-8c0e10bf4917-464d7ff2-5da8-4d97-bedb-a3c86e78daff")).toBe(
+    "28f1b14b-7b10-4950-9487-8c0e10bf4917",
+  );
   expect(subagentParentId("28f1b14b-7b10-4950-9487-8c0e10bf4917")).toBeNull();
   expect(subagentParentId("subagent-not-a-uuid")).toBeNull();
 });

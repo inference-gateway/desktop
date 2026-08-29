@@ -195,10 +195,8 @@ export const api = {
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
   getSchedulerLog: () => invoke<string[]>("get_scheduler_log"),
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
-  computerUsePermissionStatus: () =>
-    invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
-  setComputerUseEnabled: (enabled: boolean) =>
-    invoke<void>("set_computer_use_enabled", { enabled }),
+  computerUsePermissionStatus: () => invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
+  setComputerUseEnabled: (enabled: boolean) => invoke<void>("set_computer_use_enabled", { enabled }),
   requestAccessibilityPermission: () => invoke<void>("request_accessibility_permission"),
   requestScreenRecordingPermission: () => invoke<void>("request_screen_recording_permission"),
   githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
@@ -210,18 +208,12 @@ export const api = {
     invoke<void>("github_set_secret", { repo, name, value }),
   githubListRepos: (owner: string) => invoke<RepoEntry[]>("github_list_repos", { owner }),
   githubCheckWorkflow: (repo: string) => invoke<WorkflowStatus>("github_check_workflow", { repo }),
-  githubInstallWorkflow: (
-    repo: string,
-    model: string,
-    apt: string,
-    visionModel: string,
-    imageModel: string,
-  ) => invoke<string>("github_install_workflow", { repo, model, apt, visionModel, imageModel }),
+  githubInstallWorkflow: (repo: string, model: string, apt: string, visionModel: string, imageModel: string) =>
+    invoke<string>("github_install_workflow", { repo, model, apt, visionModel, imageModel }),
   githubBumpWorkflow: (repo: string) => invoke<string>("github_bump_workflow", { repo }),
   githubListTaskIssues: (repo: string) => invoke<TaskIssue[]>("github_list_task_issues", { repo }),
   githubListTaskPulls: (repo: string) => invoke<TaskPull[]>("github_list_task_pulls", { repo }),
-  githubListWorkflowRuns: (repo: string) =>
-    invoke<WorkflowRun[]>("github_list_workflow_runs", { repo }),
+  githubListWorkflowRuns: (repo: string) => invoke<WorkflowRun[]>("github_list_workflow_runs", { repo }),
   githubCreateTaskIssue: (repo: string, title: string, body: string) =>
     invoke<string>("github_create_task_issue", { repo, title, body }),
   githubRunTaskIssue: (repo: string, number: number, body: string) =>
@@ -237,11 +229,10 @@ export const api = {
   readProjects: () => invoke<string>("read_projects"),
   writeProjects: (data: string) => invoke<void>("write_projects", { data }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
-  saveUpload: (data: string, mime: string) =>
-        invoke<string>("save_upload", { data, mime }),
+  saveUpload: (data: string, mime: string) => invoke<string>("save_upload", { data, mime }),
   createProjectDir: (name: string) => invoke<string>("create_project_dir", { name }),
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
-        invoke<string>("save_project_file", { project, filename, mime, data }),
+    invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
@@ -257,6 +248,5 @@ export const api = {
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
-  setA2aAgentModel: (name: string, model: string) =>
-    invoke<void>("set_a2a_agent_model", { name, model }),
+  setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
 };

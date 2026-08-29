@@ -14,10 +14,10 @@ const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm"
 
 function UserBubble({ text }: { text: string }) {
   return (
-        <div className="flex max-w-[min(72ch,82%)] flex-col items-end gap-1 self-end">
-          <div className={cn(BUBBLE, "rounded-br-[4px] bg-user text-user-foreground")}>{text}</div>
-          <CopyButton text={text} />
-        </div>
+    <div className="flex max-w-[min(72ch,82%)] flex-col items-end gap-1 self-end">
+      <div className={cn(BUBBLE, "rounded-br-[4px] bg-user text-user-foreground")}>{text}</div>
+      <CopyButton text={text} />
+    </div>
   );
 }
 
@@ -66,7 +66,7 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
       <details
         className={cn(
           "disclosure overflow-hidden rounded-md border border-l-[3px] font-mono text-[0.82rem]",
-          failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg"
+          failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg",
         )}
       >
         <summary className="overflow-hidden text-ellipsis whitespace-nowrap px-[0.65rem] py-[0.35rem]">
@@ -77,8 +77,8 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
         {item.skeleton && item.state === "running" && <div className="image-skeleton mx-[0.65rem]" />}
         <pre
           className={cn(
-                "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
-                failed ? "bg-err-bg" : "bg-tool-bg"
+            "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
+            failed ? "bg-err-bg" : "bg-tool-bg",
           )}
         >
           {pre}
@@ -97,8 +97,7 @@ function ApprovalCard({
   approve: (callId: string, approved: boolean, scope?: "always") => void;
 }) {
   if (item.status !== "pending") {
-    const label =
-      item.status === "approved" ? "✓ Approved" : item.status === "denied" ? "✕ Denied" : "Session ended";
+    const label = item.status === "approved" ? "✓ Approved" : item.status === "denied" ? "✕ Denied" : "Session ended";
     const color =
       item.status === "approved" ? "text-tool" : item.status === "denied" ? "text-err" : "text-muted-foreground";
     return (
@@ -117,33 +116,33 @@ function ApprovalCard({
         {item.toolArgs}
       </pre>
       <div className="flex gap-2">
+        <button
+          onClick={() => approve(item.callId, true)}
+          className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
+        >
+          Approve
+          <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
+            A
+          </kbd>
+        </button>
+        {item.toolName === "SandboxAccess" && (
           <button
-            onClick={() => approve(item.callId, true)}
+            onClick={() => approve(item.callId, true, "always")}
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
           >
-            Approve
-            <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
-              A
-            </kbd>
+            Always allow
           </button>
-          {item.toolName === "SandboxAccess" && (
-            <button
-              onClick={() => approve(item.callId, true, "always")}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
-            >
-              Always allow
-            </button>
-          )}
-          <button
-            onClick={() => approve(item.callId, false)}
-            className="flex items-center gap-2 rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
-          >
-            Deny
-            <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
-              R
-            </kbd>
-          </button>
-        </div>
+        )}
+        <button
+          onClick={() => approve(item.callId, false)}
+          className="flex items-center gap-2 rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
+        >
+          Deny
+          <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
+            R
+          </kbd>
+        </button>
+      </div>
     </div>
   );
 }
@@ -166,7 +165,10 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   const save = () => {
     if (status === "saving") return;
     setStatus("saving");
-    api.saveImage(path).then(() => setStatus("saved")).catch(() => setStatus("error"));
+    api
+      .saveImage(path)
+      .then(() => setStatus("saved"))
+      .catch(() => setStatus("error"));
   };
   useEffect(() => {
     if (status !== "saved" && status !== "error") return;
@@ -178,27 +180,33 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
     <div className="group relative my-2 inline-block max-w-full">
       <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
       {path && (
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="secondary"
-        onClick={save}
-        disabled={status === "saving"}
-        aria-label="Download image"
-        className={cn(
-          "absolute right-2 top-2 opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100",
-          status === "saved" && "text-green-600 dark:text-green-500",
-          status === "error" && "text-destructive",
-        )}
-      >
-        <Icon className={cn(status === "saving" && "animate-spin")} />
-      </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="secondary"
+          onClick={save}
+          disabled={status === "saving"}
+          aria-label="Download image"
+          className={cn(
+            "absolute right-2 top-2 opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100",
+            status === "saved" && "text-green-600 dark:text-green-500",
+            status === "error" && "text-destructive",
+          )}
+        >
+          <Icon className={cn(status === "saving" && "animate-spin")} />
+        </Button>
       )}
     </div>
   );
 }
 
-function Item({ item, approve }: { item: TranscriptItem; approve: (callId: string, approved: boolean, scope?: "always") => void }) {
+function Item({
+  item,
+  approve,
+}: {
+  item: TranscriptItem;
+  approve: (callId: string, approved: boolean, scope?: "always") => void;
+}) {
   switch (item.kind) {
     case "user":
       return <UserBubble text={item.text} />;
@@ -233,9 +241,7 @@ function ScheduledJobs() {
   useEffect(() => {
     api
       .getConfig()
-      .then((c) =>
-        setGithubRepo(c.scheduler_backend === "github" ? c.scheduler_github_repository : null),
-      )
+      .then((c) => setGithubRepo(c.scheduler_backend === "github" ? c.scheduler_github_repository : null))
       .catch(() => {});
   }, []);
   useEffect(() => {
@@ -312,23 +318,17 @@ export function Transcript() {
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const pendingApproval = [...items].reverse().find(
-    (item): item is Extract<TranscriptItem, { kind: "approval" }> =>
-      item.kind === "approval" &&
-      item.status === "pending" &&
-      !COMPUTER_USE_TOOLS.has(item.toolName)
-  );
+  const pendingApproval = [...items]
+    .reverse()
+    .find(
+      (item): item is Extract<TranscriptItem, { kind: "approval" }> =>
+        item.kind === "approval" && item.status === "pending" && !COMPUTER_USE_TOOLS.has(item.toolName),
+    );
 
   useEffect(() => {
     if (!pendingApproval) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey
-      ) {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
       const target = event.target;
@@ -407,7 +407,7 @@ export function Transcript() {
         {items.map((item) => (
           <Item key={item.id} item={item} approve={approve} />
         ))}
-        {typing && <TypingBubble label={sessionId ? runLabel(sessionId)?.label ?? null : null} />}
+        {typing && <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} />}
       </div>
       {showScrollButton && (
         <button

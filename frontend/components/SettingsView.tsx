@@ -34,16 +34,7 @@ import {
   type SkillsCatalog,
 } from "@/lib/skills";
 
-type Tab =
-  | "general"
-  | "keys"
-  | "prompt"
-  | "updates"
-  | "agents"
-  | "snippets"
-  | "projects"
-  | "github"
-  | "skills";
+type Tab = "general" | "keys" | "prompt" | "updates" | "agents" | "snippets" | "projects" | "github" | "skills";
 
 type GithubSubTab = "repository" | "scheduling" | "tasks";
 
@@ -81,7 +72,7 @@ export function SettingsView() {
     setInitialProjectFilter,
   } = useDesktop();
   const [tab, setTab] = useState<Tab>(
-    TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general"
+    TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general",
   );
   const [githubSub, setGithubSub] = useState<GithubSubTab>("repository");
 
@@ -168,7 +159,11 @@ export function SettingsView() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         <div className="mx-auto w-full max-w-[640px]">
-          {statusError && <div role="status" className="mb-3 text-[0.8rem] text-err">{statusText}</div>}
+          {statusError && (
+            <div role="status" className="mb-3 text-[0.8rem] text-err">
+              {statusText}
+            </div>
+          )}
           {tab === "general" && <GeneralTab />}
 
           {tab === "keys" && (
@@ -362,19 +357,24 @@ const SCHEDULER_GITHUB_FIELDS: readonly StorageField[] = [
 function GeneralTab() {
   const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
-  const [computerUsePermissions, setComputerUsePermissions] =
-    useState<ComputerUsePermissionStatus | null>(null);
+  const [computerUsePermissions, setComputerUsePermissions] = useState<ComputerUsePermissionStatus | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getConfig().then(setConfigs).catch(() => {});
+    api
+      .getConfig()
+      .then(setConfigs)
+      .catch(() => {});
   }, []);
 
   const refreshComputerUsePermissions = useCallback(() => {
-    api.computerUsePermissionStatus().then(setComputerUsePermissions).catch(() => {});
+    api
+      .computerUsePermissionStatus()
+      .then(setComputerUsePermissions)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -415,8 +415,7 @@ function GeneralTab() {
 
       <h3 className="text-[0.9rem] font-semibold">Computer Use</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Lets the agent see the screen and control other apps. Off by default; takes effect on
-        the next agent spawn.
+        Lets the agent see the screen and control other apps. Off by default; takes effect on the next agent spawn.
       </p>
       <div className="mb-5 flex items-center gap-3">
         <input
@@ -586,9 +585,7 @@ function GeneralTab() {
         <Button onClick={apply} disabled={!dirty || saving}>
           {saving ? "Saving..." : "Save config"}
         </Button>
-        {dirty && !error && (
-          <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>
-        )}
+        {dirty && !error && <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>}
         {saved && !dirty && (
           <span role="status" className="text-[0.8rem] text-muted-foreground">
             Saved
@@ -648,13 +645,7 @@ function ComputerUsePermissionSection({
         </p>
       )}
       {state === "not_granted" && onGrant && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2"
-          aria-label={`Grant ${title}`}
-          onClick={onGrant}
-        >
+        <Button size="sm" variant="outline" className="mt-2" aria-label={`Grant ${title}`} onClick={onGrant}>
           Grant
         </Button>
       )}
@@ -671,7 +662,10 @@ function SchedulingTab() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getConfig().then(setConfigs).catch(() => {});
+    api
+      .getConfig()
+      .then(setConfigs)
+      .catch(() => {});
   }, []);
 
   const apply = async () => {
@@ -703,10 +697,9 @@ function SchedulingTab() {
   return (
     <>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire
-        scheduled agent jobs (and listen on configured channels like Telegram). Job runs are
-        recorded to your configured storage. The daemon starts on Save, runs while the app is
-        open, and stops on quit.
+        Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire scheduled agent jobs (and
+        listen on configured channels like Telegram). Job runs are recorded to your configured storage. The daemon
+        starts on Save, runs while the app is open, and stops on quit.
       </p>
       <div className="mb-3 flex items-center gap-3">
         <input
@@ -738,8 +731,8 @@ function SchedulingTab() {
       </div>
       <div className="mb-3 flex flex-col gap-1">
         <p className="text-[0.75rem] text-muted-foreground">
-          Routines repository for the github backend: schedules are deployed there as GitHub
-          Actions workflows by the daemon (auto-created when missing).
+          Routines repository for the github backend: schedules are deployed there as GitHub Actions workflows by the
+          daemon (auto-created when missing).
         </p>
         <RepositoryPicker
           value={config.scheduler_github_repository}
@@ -749,14 +742,12 @@ function SchedulingTab() {
       {config.scheduler_backend === "github" && (
         <>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
-            Jobs are deployed as GitHub Actions workflows in your routines repository and run
-            there via infer-action. Schedules fire in UTC with a minimum interval of 5 minutes.
-            Deploy outcomes (push or pull request URL) and cron validation errors appear in the
-            chat when you schedule a job.
+            Jobs are deployed as GitHub Actions workflows in your routines repository and run there via infer-action.
+            Schedules fire in UTC with a minimum interval of 5 minutes. Deploy outcomes (push or pull request URL) and
+            cron validation errors appear in the chat when you schedule a job.
           </p>
           <p className="mb-3 text-[0.75rem] text-muted-foreground">
-            GitHub CLI status and the Actions secrets the workflows need are managed in the
-            General tab.
+            GitHub CLI status and the Actions secrets the workflows need are managed in the General tab.
           </p>
           <div className="mb-3 flex flex-col gap-3">
             {SCHEDULER_GITHUB_FIELDS.map((f) => (
@@ -781,10 +772,7 @@ function SchedulingTab() {
               onChange={(e) => set("scheduler_github_pull_requests", e.target.checked)}
               className="h-4 w-4 accent-primary"
             />
-            <Label
-              htmlFor="scheduler-github-pull-requests"
-              className="cursor-pointer text-[0.8rem] font-medium"
-            >
+            <Label htmlFor="scheduler-github-pull-requests" className="cursor-pointer text-[0.8rem] font-medium">
               Open a pull request per change instead of pushing to main
             </Label>
           </div>
@@ -796,10 +784,7 @@ function SchedulingTab() {
               onChange={(e) => set("scheduler_github_artifacts_enabled", e.target.checked)}
               className="h-4 w-4 accent-primary"
             />
-            <Label
-              htmlFor="scheduler-github-artifacts-enabled"
-              className="cursor-pointer text-[0.8rem] font-medium"
-            >
+            <Label htmlFor="scheduler-github-artifacts-enabled" className="cursor-pointer text-[0.8rem] font-medium">
               Pull run conversations back into local storage
             </Label>
           </div>
@@ -825,8 +810,8 @@ function SchedulingTab() {
       </div>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
         Used when a scheduled job has no model of its own (writes{" "}
-        <code className="rounded bg-secondary px-1">agent.model</code>). A model chosen when
-        scheduling a job always takes precedence.
+        <code className="rounded bg-secondary px-1">agent.model</code>). A model chosen when scheduling a job always
+        takes precedence.
       </p>
       <SchedulerLogView />
 
@@ -834,9 +819,7 @@ function SchedulingTab() {
         <Button onClick={apply} disabled={!dirty || saving}>
           {saving ? "Saving..." : "Save config"}
         </Button>
-        {dirty && !error && (
-          <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>
-        )}
+        {dirty && !error && <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>}
         {saved && !dirty && (
           <span role="status" className="text-[0.8rem] text-muted-foreground">
             Saved
@@ -855,9 +838,7 @@ function SchedulingTab() {
 function GithubTab({ sub }: { sub: GithubSubTab }) {
   return (
     <>
-      <h2 className="mb-4 text-[1.05rem] font-semibold">
-        GitHub · {GITHUB_SUBTABS.find((t) => t.id === sub)?.label}
-      </h2>
+      <h2 className="mb-4 text-[1.05rem] font-semibold">GitHub · {GITHUB_SUBTABS.find((t) => t.id === sub)?.label}</h2>
       {sub === "repository" && <GithubRepositoryPanel />}
       {sub === "scheduling" && <SchedulingTab />}
       {sub === "tasks" && <TasksPanel />}
@@ -873,7 +854,10 @@ function GithubRepositoryPanel() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getConfig().then(setConfigs).catch(() => {});
+    api
+      .getConfig()
+      .then(setConfigs)
+      .catch(() => {});
   }, []);
 
   const apply = async () => {
@@ -900,8 +884,8 @@ function GithubRepositoryPanel() {
   return (
     <>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        GitHub CLI status, the Actions secrets the workflows need, and the bot identity. The
-        scheduling repository lives in the Scheduling tab; task repositories in the Tasks tab.
+        GitHub CLI status, the Actions secrets the workflows need, and the bot identity. The scheduling repository lives
+        in the Scheduling tab; task repositories in the Tasks tab.
       </p>
       <GithubPrereqs
         repository={config.scheduler_github_repository}
@@ -913,13 +897,9 @@ function GithubRepositoryPanel() {
 
       <h3 className="mt-5 text-[0.9rem] font-semibold">Bot identity</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Git author of the deploy commits pushed to the routines repository when schedules
-        change. To attribute them to your GitHub App bot, use{" "}
-        <code className="rounded bg-secondary px-1">{"<app-slug>[bot]"}</code> and{" "}
-        <code className="rounded bg-secondary px-1">
-          {"<user-id>+<app-slug>[bot]@users.noreply.github.com"}
-        </code>
-        .
+        Git author of the deploy commits pushed to the routines repository when schedules change. To attribute them to
+        your GitHub App bot, use <code className="rounded bg-secondary px-1">{"<app-slug>[bot]"}</code> and{" "}
+        <code className="rounded bg-secondary px-1">{"<user-id>+<app-slug>[bot]@users.noreply.github.com"}</code>.
       </p>
       <div className="mb-3 flex flex-col gap-3">
         <div className="flex flex-col gap-1">
@@ -950,9 +930,7 @@ function GithubRepositoryPanel() {
         <Button onClick={apply} disabled={!dirty || saving}>
           {saving ? "Saving..." : "Save config"}
         </Button>
-        {dirty && !error && (
-          <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>
-        )}
+        {dirty && !error && <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>}
         {saved && !dirty && (
           <span role="status" className="text-[0.8rem] text-muted-foreground">
             Saved
@@ -980,14 +958,20 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
   const [createError, setCreateError] = useState("");
 
   useEffect(() => {
-    api.githubOwners().then(setOwners).catch(() => {});
+    api
+      .githubOwners()
+      .then(setOwners)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     setRepoExists(null);
     if (!value.includes("/")) return;
     const t = setTimeout(() => {
-      api.githubRepoExists(value).then(setRepoExists).catch(() => {});
+      api
+        .githubRepoExists(value)
+        .then(setRepoExists)
+        .catch(() => {});
     }, 500);
     return () => clearTimeout(t);
   }, [value]);
@@ -1010,8 +994,7 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
       <div className="mt-1 flex items-center gap-2 text-[0.75rem]">
         <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
         <span className="text-muted-foreground">
-          Repository <code className="rounded bg-secondary px-1">{value}</code> doesn't exist
-          yet.
+          Repository <code className="rounded bg-secondary px-1">{value}</code> doesn't exist yet.
         </span>
         <Button variant="outline" size="xs" disabled={creating} onClick={createRepo}>
           {creating ? "Creating..." : "Create repository"}
@@ -1217,7 +1200,10 @@ function AgentsTab() {
                   {c.skills.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {c.skills.slice(0, 4).map((s) => (
-                        <span key={s} className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+                        <span
+                          key={s}
+                          className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground"
+                        >
                           {s}
                         </span>
                       ))}
@@ -1283,15 +1269,14 @@ function AgentsTab() {
 function ProjectFiles({ project }: { project: string }) {
   const [files, setFiles] = useState<ProjectFile[] | null>(null);
   useEffect(() => {
-    api.listProjectFiles(project).then(setFiles).catch(() => setFiles([]));
+    api
+      .listProjectFiles(project)
+      .then(setFiles)
+      .catch(() => setFiles([]));
   }, [project]);
   if (!files?.length) return null;
   const fmt = (n: number) =>
-    n < 1024
-      ? `${n} B`
-      : n < 1024 * 1024
-        ? `${Math.round(n / 1024)} KB`
-        : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
   return (
     <div className="flex flex-wrap gap-1.5">
       {files.map((f) => (
@@ -1309,7 +1294,19 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
-  const { projectNames, projectContexts, setProjectContext, projectPaths, setProjectPath, importProjects, gitProjects, dirtyProjects, deleteProjects, projectGroups, initialProjectFilter } = useDesktop();
+  const {
+    projectNames,
+    projectContexts,
+    setProjectContext,
+    projectPaths,
+    setProjectPath,
+    importProjects,
+    gitProjects,
+    dirtyProjects,
+    deleteProjects,
+    projectGroups,
+    initialProjectFilter,
+  } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1423,7 +1420,10 @@ function ProjectsTab() {
   };
 
   useEffect(() => {
-    api.getConfig().then(setConfigs).catch(() => {});
+    api
+      .getConfig()
+      .then(setConfigs)
+      .catch(() => {});
   }, []);
 
   const set = (k: keyof DesktopConfig, v: string) => {
@@ -1456,7 +1456,8 @@ function ProjectsTab() {
 
       <h3 className="text-[0.9rem] font-semibold">Files</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Every project gets its own directory under the root below, pre-authorized in the agent sandbox. Applies to newly created projects.
+        Every project gets its own directory under the root below, pre-authorized in the agent sandbox. Applies to newly
+        created projects.
       </p>
       <div className="mb-4 flex flex-col gap-[0.7rem]">
         <div className="flex flex-col gap-1">
@@ -1519,7 +1520,11 @@ function ProjectsTab() {
             onChange={(e) => set("projects_allowed_mimes", e.target.value)}
           />
         </div>
-        {error && <div role="status" className="text-[0.75rem] text-err">{error}</div>}
+        {error && (
+          <div role="status" className="text-[0.75rem] text-err">
+            {error}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button size="sm" disabled={saving} onClick={apply}>
             {saving ? "Saving..." : "Save"}
@@ -1553,7 +1558,7 @@ function ProjectsTab() {
                     key={r.path}
                     className={cn(
                       "flex items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem]",
-                      done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary"
+                      done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary",
                     )}
                   >
                     <input
@@ -1629,7 +1634,7 @@ function ProjectsTab() {
                           key={r.name}
                           className={cn(
                             "flex items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem]",
-                            done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary"
+                            done ? "text-muted-foreground/60" : "cursor-pointer hover:bg-secondary",
                           )}
                         >
                           <input
@@ -1653,16 +1658,16 @@ function ProjectsTab() {
                     })}
                   </div>
                 ))}
-              {error && <div role="status" className="text-[0.75rem] text-err">{error}</div>}
+              {error && (
+                <div role="status" className="text-[0.75rem] text-err">
+                  {error}
+                </div>
+              )}
             </>
           )}
           <DialogFooter showCloseButton>
             {!ghHint && (
-              <Button
-                size="sm"
-                disabled={ghLoading || ghSelected.size === 0 || cloning !== ""}
-                onClick={importGithub}
-              >
+              <Button size="sm" disabled={ghLoading || ghSelected.size === 0 || cloning !== ""} onClick={importGithub}>
                 {cloning ? `Cloning ${cloning}...` : `Import ${ghSelected.size} selected`}
               </Button>
             )}
@@ -1708,9 +1713,7 @@ function ProjectsTab() {
               </>
             )}
           </div>
-          {visible.length === 0 && (
-            <p className="text-[0.8rem] text-muted-foreground">No projects match "{filter}".</p>
-          )}
+          {visible.length === 0 && <p className="text-[0.8rem] text-muted-foreground">No projects match "{filter}".</p>}
           {visible.map((name) => (
             <div key={name} className="rounded-lg border border-border bg-card p-4">
               <div className="flex flex-col gap-1">
@@ -1778,27 +1781,17 @@ function SnippetsTab() {
       </p>
       <div className="flex flex-col gap-4">
         {snippets.map((s) => (
-          <div
-            key={s.id}
-            className="rounded-lg border border-border bg-card p-4"
-          >
+          <div key={s.id} className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <Label htmlFor={`snippet-label-${s.id}`} className="text-[0.8rem] font-medium">
                 {s.id}
               </Label>
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => resetSnippet(s.id)}
-              >
+              <Button variant="outline" size="xs" onClick={() => resetSnippet(s.id)}>
                 Reset
               </Button>
             </div>
             <div className="mb-2 flex flex-col gap-1">
-              <Label
-                htmlFor={`snippet-label-${s.id}`}
-                className="text-[0.75rem] text-muted-foreground"
-              >
+              <Label htmlFor={`snippet-label-${s.id}`} className="text-[0.75rem] text-muted-foreground">
                 Label
               </Label>
               <Input
@@ -1808,10 +1801,7 @@ function SnippetsTab() {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <Label
-                htmlFor={`snippet-prompt-${s.id}`}
-                className="text-[0.75rem] text-muted-foreground"
-              >
+              <Label htmlFor={`snippet-prompt-${s.id}`} className="text-[0.75rem] text-muted-foreground">
                 Prompt
               </Label>
               <textarea
@@ -1846,9 +1836,12 @@ function SystemPromptTab() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.getConfig().then((cfg) => {
-      setConfig(cfg);
-    }).catch(() => {});
+    api
+      .getConfig()
+      .then((cfg) => {
+        setConfig(cfg);
+      })
+      .catch(() => {});
   }, []);
 
   const update = (k: keyof DesktopConfig, v: string) => {
@@ -1954,16 +1947,22 @@ function SystemPromptTab() {
               Override system prompt?
             </DialogTitle>
             <DialogDescription>
-              You are overriding the default system prompt, which provides useful context for the orchestrator about the current
-              project, installed plugins, skills, and memory. Prefer using "Extra instructions" (append mode) instead to
-              keep this context.
+              You are overriding the default system prompt, which provides useful context for the orchestrator about the
+              current project, installed plugins, skills, and memory. Prefer using "Extra instructions" (append mode)
+              instead to keep this context.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowOverrideWarning(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => { setOverrideEnabled(true); setShowOverrideWarning(false); }}>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setOverrideEnabled(true);
+                setShowOverrideWarning(false);
+              }}
+            >
               Enable override
             </Button>
           </DialogFooter>
@@ -1976,9 +1975,15 @@ function SystemPromptTab() {
         </Button>
         {dirty && !err && <span className="text-[0.8rem] text-muted-foreground">Unsaved changes</span>}
         {saved && !dirty && (
-          <span role="status" className="text-[0.8rem] text-muted-foreground">Saved</span>
+          <span role="status" className="text-[0.8rem] text-muted-foreground">
+            Saved
+          </span>
         )}
-        {err && <span role="status" className="text-[0.8rem] text-err">Couldn't save: {err}</span>}
+        {err && (
+          <span role="status" className="text-[0.8rem] text-err">
+            Couldn't save: {err}
+          </span>
+        )}
       </div>
     </>
   );
@@ -2087,13 +2092,19 @@ function GithubPrereqs({
   const [providerSecret, setProviderSecret] = useState("OPENAI_API_KEY");
 
   useEffect(() => {
-    api.githubAuthStatus().then(setGh).catch(() => {});
+    api
+      .githubAuthStatus()
+      .then(setGh)
+      .catch(() => {});
   }, []);
 
   const hasRepo = repository.includes("/");
   const refreshSecrets = useCallback(() => {
     if (!repository.includes("/")) return;
-    api.githubListSecrets(repository).then(setExisting).catch(() => setExisting([]));
+    api
+      .githubListSecrets(repository)
+      .then(setExisting)
+      .catch(() => setExisting([]));
   }, [repository]);
 
   useEffect(() => {
@@ -2124,11 +2135,9 @@ function GithubPrereqs({
         )}
       </div>
       <p className="mb-2 text-[0.75rem] text-muted-foreground">
-        Workflows run as a GitHub App bot and need these Actions secrets in the routines
-        repository (or as org secrets under the same names). Values are sent straight to
-        GitHub and never stored by the app. The App credential secret names are written
-        into the generated workflows - rename them to match your convention, then Save
-        config.
+        Workflows run as a GitHub App bot and need these Actions secrets in the routines repository (or as org secrets
+        under the same names). Values are sent straight to GitHub and never stored by the app. The App credential secret
+        names are written into the generated workflows - rename them to match your convention, then Save config.
       </p>
       {gh?.authenticated && hasRepo ? (
         <div className="mb-2">
@@ -2193,11 +2202,7 @@ function GithubPrereqs({
           >
             Repository secrets
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => api.openUrl(`${repoUrl}/actions`).catch(() => {})}
-          >
+          <Button variant="outline" size="sm" onClick={() => api.openUrl(`${repoUrl}/actions`).catch(() => {})}>
             Actions runs
           </Button>
         </div>
@@ -2267,116 +2272,113 @@ function SkillsTab() {
   const [installErr, setInstallErr] = useState<{ name: string; msg: string } | null>(null);
 
   useEffect(() => {
-fetchSkillsCatalog()
-  .then(setCatalog)
-  .catch((e) => setErr(String(e)))
-  .finally(() => setLoading(false));
-api.listInstalledSkills().then((s) => setInstalled(new Set(s))).catch(() => {});
+    fetchSkillsCatalog()
+      .then(setCatalog)
+      .catch((e) => setErr(String(e)))
+      .finally(() => setLoading(false));
+    api
+      .listInstalledSkills()
+      .then((s) => setInstalled(new Set(s)))
+      .catch(() => {});
   }, []);
 
   const runSkillAction = async (name: string, action: (name: string) => Promise<void>) => {
-setInstallingName(name);
-setInstallErr(null);
-try {
-  await action(name);
-  setInstalled(new Set(await api.listInstalledSkills()));
-} catch (e) {
-  setInstallErr({ name, msg: String(e) });
-} finally {
-  setInstallingName("");
-}
+    setInstallingName(name);
+    setInstallErr(null);
+    try {
+      await action(name);
+      setInstalled(new Set(await api.listInstalledSkills()));
+    } catch (e) {
+      setInstallErr({ name, msg: String(e) });
+    } finally {
+      setInstallingName("");
+    }
   };
 
   const filtered = useMemo(() => {
-if (!catalog) return [];
-const q = search.toLowerCase();
-if (!q) return catalog.skills;
-return catalog.skills.filter(
-  (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-);
+    if (!catalog) return [];
+    const q = search.toLowerCase();
+    if (!q) return catalog.skills;
+    return catalog.skills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
   }, [catalog, search]);
 
   return (
-<>
-  <h2 className="text-[1.05rem] font-semibold">Skills</h2>
-  <p className="mb-5 text-[0.8rem] text-muted-foreground">
-    Remote skills registry. Type / in the composer to discover and invoke skills.
-    Remote skills are downloaded on first use with your approval.
-  </p>
-
-  <h3 className="text-[0.9rem] font-semibold">Registry URL</h3>
-  <div className="mb-4 flex items-center gap-2">
-    <Input
-      value={registryUrl}
-      onChange={(e) => {
-        setRegistryUrlState(e.target.value);
-        setUrlDirty(true);
-      }}
-      placeholder={DEFAULT_REGISTRY_URL}
-      className="flex-1"
-    />
-    {urlDirty && (
-      <Button
-        size="sm"
-        onClick={() => {
-          setRegistryUrl(registryUrl);
-          setUrlDirty(false);
-          setLoading(true);
-          setErr("");
-          fetchSkillsCatalog(registryUrl)
-            .then(setCatalog)
-            .catch((e) => setErr(String(e)))
-            .finally(() => setLoading(false));
-        }}
-      >
-        Apply
-      </Button>
-    )}
-  </div>
-
-  <h3 className="text-[0.9rem] font-semibold">Catalog</h3>
-  {loading ? (
-    <p className="text-[0.8rem] text-muted-foreground">Loading catalog...</p>
-  ) : err ? (
-    <p className="text-[0.8rem] text-err">Couldn't load catalog: {err}</p>
-  ) : catalog ? (
     <>
-      <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Version <code className="rounded bg-secondary px-1">{catalog.version}</code> — {catalog.skills.length}{" "}
-        skills available.
+      <h2 className="text-[1.05rem] font-semibold">Skills</h2>
+      <p className="mb-5 text-[0.8rem] text-muted-foreground">
+        Remote skills registry. Type / in the composer to discover and invoke skills. Remote skills are downloaded on
+        first use with your approval.
       </p>
 
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search skills by name or description..."
-        className="mb-3"
-      />
+      <h3 className="text-[0.9rem] font-semibold">Registry URL</h3>
+      <div className="mb-4 flex items-center gap-2">
+        <Input
+          value={registryUrl}
+          onChange={(e) => {
+            setRegistryUrlState(e.target.value);
+            setUrlDirty(true);
+          }}
+          placeholder={DEFAULT_REGISTRY_URL}
+          className="flex-1"
+        />
+        {urlDirty && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setRegistryUrl(registryUrl);
+              setUrlDirty(false);
+              setLoading(true);
+              setErr("");
+              fetchSkillsCatalog(registryUrl)
+                .then(setCatalog)
+                .catch((e) => setErr(String(e)))
+                .finally(() => setLoading(false));
+            }}
+          >
+            Apply
+          </Button>
+        )}
+      </div>
 
-      <div className="flex flex-col gap-1">
-        {filtered.map((s) => {
-          const isInstalled = installed.has(s.name);
-          return (
-            <div
-              key={s.name}
-              className={cn(
+      <h3 className="text-[0.9rem] font-semibold">Catalog</h3>
+      {loading ? (
+        <p className="text-[0.8rem] text-muted-foreground">Loading catalog...</p>
+      ) : err ? (
+        <p className="text-[0.8rem] text-err">Couldn't load catalog: {err}</p>
+      ) : catalog ? (
+        <>
+          <p className="mb-3 text-[0.75rem] text-muted-foreground">
+            Version <code className="rounded bg-secondary px-1">{catalog.version}</code> — {catalog.skills.length}{" "}
+            skills available.
+          </p>
+
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search skills by name or description..."
+            className="mb-3"
+          />
+
+          <div className="flex flex-col gap-1">
+            {filtered.map((s) => {
+              const isInstalled = installed.has(s.name);
+              return (
+                <div
+                  key={s.name}
+                  className={cn(
                     "flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-[0.82rem]",
                     isInstalled ? "border-primary" : "border-border",
-              )}
-            >
-              <span className="min-w-0 flex-1">
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
                     <span className="font-medium">{s.name}</span>
-                    {s.version && (
-                      <span className="ml-1 text-[0.7rem] text-muted-foreground">v{s.version}</span>
-                    )}
+                    {s.version && <span className="ml-1 text-[0.7rem] text-muted-foreground">v{s.version}</span>}
                     {s.description && (
                       <p className="line-clamp-1 text-[0.73rem] text-muted-foreground">{s.description}</p>
                     )}
-                    {installErr?.name === s.name && (
-                      <p className="text-[0.73rem] text-err">{installErr.msg}</p>
-                    )}
-              </span>
-              {isInstalled ? (
+                    {installErr?.name === s.name && <p className="text-[0.73rem] text-err">{installErr.msg}</p>}
+                  </span>
+                  {isInstalled ? (
                     <>
                       <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
                         installed
@@ -2391,7 +2393,7 @@ return catalog.skills.filter(
                         {installingName === s.name ? "Uninstalling..." : "Uninstall"}
                       </Button>
                     </>
-              ) : (
+                  ) : (
                     <Button
                       size="sm"
                       variant="outline"
@@ -2401,18 +2403,18 @@ return catalog.skills.filter(
                     >
                       {installingName === s.name ? "Installing..." : "Install"}
                     </Button>
-              )}
-            </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <p className="text-[0.8rem] text-muted-foreground">No skills match your search.</p>
-        )}
-      </div>
+                  )}
+                </div>
+              );
+            })}
+            {filtered.length === 0 && (
+              <p className="text-[0.8rem] text-muted-foreground">No skills match your search.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="text-[0.8rem] text-muted-foreground">No catalog loaded.</p>
+      )}
     </>
-  ) : (
-    <p className="text-[0.8rem] text-muted-foreground">No catalog loaded.</p>
-  )}
-</>
   );
 }

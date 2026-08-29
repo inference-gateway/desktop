@@ -41,8 +41,7 @@ export function monitorReducer(state: MonitorState, msg: MonitorEvent): MonitorS
       let currentMessageId = session.currentMessageId;
       if (event.content) {
         const last = log[log.length - 1];
-        const sameMessage =
-          !event.message_id || !currentMessageId || event.message_id === currentMessageId;
+        const sameMessage = !event.message_id || !currentMessageId || event.message_id === currentMessageId;
         log =
           last !== undefined && !last.startsWith(ACTION_PREFIX) && sameMessage
             ? [...log.slice(0, -1), last + event.content]

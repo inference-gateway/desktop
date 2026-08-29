@@ -123,9 +123,7 @@ export function StatusBar() {
             aria-label="Agents"
             className="absolute bottom-full left-0 z-50 mb-1 min-w-[18rem] max-w-[26rem] rounded-md border border-border bg-popover p-1 shadow-md"
           >
-            {agents.length === 0 && (
-              <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>
-            )}
+            {agents.length === 0 && <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>}
             {agents.map((a) => (
               <Fragment key={a.id}>
                 <button
@@ -136,18 +134,13 @@ export function StatusBar() {
                   }}
                   className={cn(
                     "flex w-full items-center gap-[0.4rem] rounded px-2 py-1.5 text-left hover:bg-secondary",
-                    a.id === sessionId && "bg-secondary/60"
+                    a.id === sessionId && "bg-secondary/60",
                   )}
                 >
                   <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[a.tone])} />
                   <span className="truncate text-foreground">{a.title}</span>
                   <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground/60">{a.id.slice(0, 5)}</span>
-                  <span
-                    className={cn(
-                      "ml-auto shrink-0 pl-3",
-                      a.status.error ? "text-err" : "text-muted-foreground"
-                    )}
-                  >
+                  <span className={cn("ml-auto shrink-0 pl-3", a.status.error ? "text-err" : "text-muted-foreground")}>
                     {a.status.label}
                   </span>
                 </button>

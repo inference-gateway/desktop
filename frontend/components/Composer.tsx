@@ -60,15 +60,15 @@ export function Composer() {
   const skillsRef = useRef<HTMLDivElement>(null);
 
   const loadSkills = useCallback(async () => {
-        try {
-          const cat = await fetchSkillsCatalog();
-          setSkills(cat.skills);
-          setInstalledSkills(new Set(await api.listInstalledSkills()));
-        } catch {}
+    try {
+      const cat = await fetchSkillsCatalog();
+      setSkills(cat.skills);
+      setInstalledSkills(new Set(await api.listInstalledSkills()));
+    } catch {}
   }, []);
 
   useEffect(() => {
-        if (skills.length === 0) loadSkills();
+    if (skills.length === 0) loadSkills();
   }, [loadSkills]);
 
   const addImage = (file: File) => {
@@ -98,41 +98,43 @@ export function Composer() {
   };
 
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
-        const el = e.currentTarget;
-        autoGrow(el);
-        const pos = el.selectionStart;
-        const text = el.value;
-        let i = pos - 1;
-        while (i >= 0 && text[i] !== "/" && text[i] !== " " && text[i] !== "\n") i--;
-        if (i >= 0 && text[i] === "/") {
-          const query = text.slice(i + 1, pos).toLowerCase();
-          setSkillQuery(query);
-          setShowSkills(true);
-          setActiveSkillIdx(0);
-        } else {
-          setShowSkills(false);
-        }
+    const el = e.currentTarget;
+    autoGrow(el);
+    const pos = el.selectionStart;
+    const text = el.value;
+    let i = pos - 1;
+    while (i >= 0 && text[i] !== "/" && text[i] !== " " && text[i] !== "\n") i--;
+    if (i >= 0 && text[i] === "/") {
+      const query = text.slice(i + 1, pos).toLowerCase();
+      setSkillQuery(query);
+      setShowSkills(true);
+      setActiveSkillIdx(0);
+    } else {
+      setShowSkills(false);
+    }
   };
 
   const selectSkill = (skill: SkillMetadata) => {
-        const el = composerRef.current;
-        if (!el) return;
-        const pos = el.selectionStart;
-        const text = el.value;
-        let i = pos - 1;
-        while (i >= 0 && text[i] !== "/") i--;
-        el.value = text.slice(0, i) + "/" + skill.name + " ";
-        autoGrow(el);
-        setShowSkills(false);
-        if (!installedSkills.has(skill.name)) {
-          setInstallError("");
-          setPendingDownload(skill);
-        }
+    const el = composerRef.current;
+    if (!el) return;
+    const pos = el.selectionStart;
+    const text = el.value;
+    let i = pos - 1;
+    while (i >= 0 && text[i] !== "/") i--;
+    el.value = text.slice(0, i) + "/" + skill.name + " ";
+    autoGrow(el);
+    setShowSkills(false);
+    if (!installedSkills.has(skill.name)) {
+      setInstallError("");
+      setPendingDownload(skill);
+    }
   };
 
   const filteredSkills = showSkills
-        ? skills.filter((s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery))
-        : [];
+    ? skills.filter(
+        (s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery),
+      )
+    : [];
 
   const onSend = async () => {
     if (pending.length > 0) {
@@ -144,8 +146,8 @@ export function Composer() {
         try {
           const base64 = img.dataUrl.split(",")[1];
           const saved = currentProject
-                ? await api.saveProjectFile(currentProject, img.file.name, img.file.type, base64)
-                : await api.saveUpload(base64, img.file.type);
+            ? await api.saveProjectFile(currentProject, img.file.name, img.file.type, base64)
+            : await api.saveUpload(base64, img.file.type);
           paths.push(saved);
         } catch (e) {
           setError(`Failed to save image: ${e}`);
@@ -164,24 +166,24 @@ export function Composer() {
     const el = e.currentTarget;
     if (showSkills && filteredSkills.length > 0) {
       if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setActiveSkillIdx((prev) => Math.min(prev + 1, filteredSkills.length - 1));
-            return;
+        e.preventDefault();
+        setActiveSkillIdx((prev) => Math.min(prev + 1, filteredSkills.length - 1));
+        return;
       }
       if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActiveSkillIdx((prev) => Math.max(prev - 1, 0));
-            return;
+        e.preventDefault();
+        setActiveSkillIdx((prev) => Math.max(prev - 1, 0));
+        return;
       }
       if (e.key === "Enter") {
-            e.preventDefault();
-            selectSkill(filteredSkills[activeSkillIdx]);
-            return;
+        e.preventDefault();
+        selectSkill(filteredSkills[activeSkillIdx]);
+        return;
       }
       if (e.key === "Escape") {
-            e.preventDefault();
-            setShowSkills(false);
-            return;
+        e.preventDefault();
+        setShowSkills(false);
+        return;
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {
@@ -246,7 +248,10 @@ export function Composer() {
         {pending.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border px-3 pt-2 pb-2">
             {pending.map((img) => (
-              <div key={img.id} className="group relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border">
+              <div
+                key={img.id}
+                className="group relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border"
+              >
                 <img src={img.dataUrl} alt="" className="h-full w-full object-cover" />
                 <button
                   aria-label="Remove image"
@@ -298,19 +303,13 @@ export function Composer() {
               <DialogHeader>
                 <DialogTitle>Download skill</DialogTitle>
                 <DialogDescription>
-                  The skill <strong>{pendingDownload.name}</strong> is not yet
-                  downloaded locally. Would you like to download it now?
+                  The skill <strong>{pendingDownload.name}</strong> is not yet downloaded locally. Would you like to
+                  download it now?
                 </DialogDescription>
               </DialogHeader>
-              {installError && (
-                <p className="text-[0.8rem] text-err">{installError}</p>
-              )}
+              {installError && <p className="text-[0.8rem] text-err">{installError}</p>}
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  disabled={installing}
-                  onClick={() => setPendingDownload(null)}
-                >
+                <Button variant="outline" disabled={installing} onClick={() => setPendingDownload(null)}>
                   Deny
                 </Button>
                 <Button

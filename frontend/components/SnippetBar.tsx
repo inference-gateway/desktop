@@ -28,7 +28,7 @@ function SnippetChip({
         "inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-[0.78rem] font-medium text-muted-foreground transition-colors",
         disabled
           ? "cursor-default opacity-50 pointer-events-none"
-          : "hover:bg-secondary hover:text-foreground active:bg-border"
+          : "hover:bg-secondary hover:text-foreground active:bg-border",
       )}
       onClick={() => onInsert(snippet.prompt)}
       onKeyDown={(e) => {
@@ -58,8 +58,7 @@ function SnippetChip({
 }
 
 export function SnippetBar() {
-  const { snippets, running, insertSnippet, resetSnippet, resetAllSnippets } =
-    useDesktop();
+  const { snippets, running, insertSnippet, resetSnippet, resetAllSnippets } = useDesktop();
 
   const hasModifications = snippets.some((s) => {
     const def = DEFAULT_SNIPPETS.find((d) => d.id === s.id);
