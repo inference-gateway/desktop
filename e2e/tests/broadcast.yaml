@@ -1,0 +1,24 @@
+name: multi-project broadcast - fan-out to multiple selected projects
+
+cleanup:
+  - approved.txt
+steps:
+  - new_chat
+  - click: { button: "New project" }
+  - type: "e2e-bcast-a"
+  - wait_for: { text: "e2e-bcast-a", timeout: 15 }
+  - click: { button: "New project" }
+  - type: "e2e-bcast-b"
+  - wait_for: { text: "e2e-bcast-b", timeout: 15 }
+  - click: { button: "Init all projects" }
+  - wait_for: { button: "Deselect all projects", timeout: 10 }
+  - click: { button: "Deselect all projects" }
+  - wait_for: { button: "Select all projects", timeout: 10 }
+  - click: { button: "Toggle init for project e2e-bcast-a" }
+  - click: { button: "Toggle init for project e2e-bcast-b" }
+  - wait_for: { button: "Init 2 projects", timeout: 10 }
+  - send: "create a file named approved.txt"
+  - wait_for: { text: "2", timeout: 15 }
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "The file was written.", timeout: 60 }

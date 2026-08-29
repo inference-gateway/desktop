@@ -27,6 +27,7 @@ type PendingImage = { id: string; dataUrl: string; file: File };
 export function Composer() {
   const {
     composerRef,
+    ready,
     enabled,
     running,
     send,
@@ -37,7 +38,12 @@ export function Composer() {
     activeProject,
     setActiveProject,
     currentProject,
+    initSelecting,
+    initSelection,
+    cancelInitSelection,
   } = useDesktop();
+  const selCount = initSelection.size;
+  const broadcasting = initSelecting && selCount > 0;
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
   const cursorRef = useRef(-1);
   const draftRef = useRef("");
@@ -329,13 +335,33 @@ export function Composer() {
             </DialogContent>
           </Dialog>
         )}
+        {initSelecting && (
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
+            <span>
+              {selCount === 0
+                ? "Select projects to broadcast to"
+                : `Broadcasting to ${selCount} project${selCount === 1 ? "" : "s"}`}
+            </span>
+            <button
+              onClick={cancelInitSelection}
+              aria-label="Exit multi-project mode"
+              className="rounded px-1.5 py-0.5 hover:bg-secondary hover:text-foreground"
+            >
+              Exit
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-[0.35rem] py-[0.35rem] pl-4 pr-[0.4rem]">
           <textarea
             id="prompt-input"
             ref={composerRef}
             rows={1}
-            placeholder="Message the orchestrator..."
-            disabled={!enabled}
+            placeholder={
+              broadcasting
+                ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
+                : "Message the orchestrator..."
+            }
+            disabled={initSelecting ? !ready : !enabled}
             onPaste={onPaste}
             onInput={handleInput}
             onKeyDown={onKeyDown}
@@ -376,7 +402,7 @@ export function Composer() {
             >
               <Mic size={18} />
             </button>
-            {running ? (
+            {running && !initSelecting ? (
               <button
                 aria-label="Stop"
                 title="Stop (Esc)"
@@ -389,7 +415,7 @@ export function Composer() {
               <button
                 aria-label="Send"
                 title="Send"
-                disabled={!enabled}
+                disabled={initSelecting ? !ready || selCount === 0 : !enabled}
                 onClick={onSend}
                 className={cn(
                   ROUND,

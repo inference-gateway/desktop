@@ -8,6 +8,11 @@ const STORAGE_KEY = "snippets";
 
 export const DEFAULT_SNIPPETS: Snippet[] = [
   {
+    id: "init-agents",
+    label: "Init AGENTS.md",
+    prompt: "/init",
+  },
+  {
     id: "work-on-issue",
     label: "Work on issue",
     prompt:
