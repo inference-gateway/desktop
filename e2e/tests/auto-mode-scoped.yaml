@@ -1,0 +1,17 @@
+name: auto mode is scoped to its session
+cleanup:
+  - denied.txt
+  - s.txt
+steps:
+  - new_chat
+  - send: "create a file named denied.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "r"
+  - click: { button: "Auto approval is off - new runs ask before protected tool actions" }
+  - wait_for: { button: "Auto approval is on - new runs do not ask before tool actions", timeout: 15 }
+  - send: "create a file named denied.txt"
+  - wait_for: { file: "denied.txt", timeout: 30 }
+  - new_chat
+  - send: "create a file named s8.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "a"

@@ -87,6 +87,7 @@ function useDesktopStore() {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
   const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
+  const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [maxSessions, setMaxSessionsState] = useState<number>(() => {
@@ -134,9 +135,15 @@ function useDesktopStore() {
     api.setDefaultModel(m).catch(() => {});
   }, []);
 
+  // With an open conversation this flips that session's own mode; on a new
+  // chat (no active session) it sets the default new sessions are seeded with (#171).
   const setAutoMode = useCallback((enabled: boolean) => {
-    setAutoModeState(enabled);
-    localStorage.setItem(AUTO_MODE_KEY, String(enabled));
+    const id = activeIdRef.current;
+    if (id) setAutoModes((prev) => ({ ...prev, [id]: enabled }));
+    else {
+      setAutoModeState(enabled);
+      localStorage.setItem(AUTO_MODE_KEY, String(enabled));
+    }
   }, []);
 
   const setMaxSessions = useCallback((n: number) => {
@@ -589,6 +596,7 @@ function useDesktopStore() {
             break;
         }
       };
+      if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: autoMode }));
       const cfg = await api.getConfig();
       const projectContext = projectName ? projectContexts[projectName] : undefined;
       const projectGroup = projectName && projectGroups[projectName]
@@ -602,7 +610,7 @@ function useDesktopStore() {
         systemPrompt: cfg.system_prompt || undefined,
         extraInstructions:
           [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") || undefined,
-        autoMode,
+        autoMode: autoModes[runId] ?? autoMode,
         project: projectName,
       });
       refreshConversations();
@@ -617,7 +625,7 @@ function useDesktopStore() {
       });
       recordTerminal(runId, { label: "Error", error: true });
     }
-  }, [runningIds, model, autoMode, projectContexts, projectGroups, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
+  }, [runningIds, model, autoMode, autoModes, projectContexts, projectGroups, setError, refreshConversations, loadProjects, dispatchTo, clearTerminal, recordTerminal]);
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
@@ -939,6 +947,7 @@ function useDesktopStore() {
 
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
+  const activeAutoMode = (activeId != null ? autoModes[activeId] : undefined) ?? autoMode;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -960,12 +969,12 @@ function useDesktopStore() {
         void cancel();
       } else if (shortcut === "autoModeToggle") {
         e.preventDefault();
-        setAutoMode(!autoMode);
+        setAutoMode(!activeAutoMode);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [running, cancel, newChat, autoMode, setAutoMode]);
+  }, [running, cancel, newChat, activeAutoMode, setAutoMode]);
 
   const runLabel = useCallback(
     (id: string): { label: string; error: boolean } | null => {
@@ -1004,7 +1013,7 @@ function useDesktopStore() {
     models,
     model,
     setModel,
-    autoMode,
+    autoMode: activeAutoMode,
     setAutoMode,
     maxSessions,
     setMaxSessions,

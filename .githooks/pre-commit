@@ -10,6 +10,16 @@ ROOT="$(git rev-parse --show-toplevel)"
 
 echo "==> Running pre-commit checks..."
 
+fail=0
+for f in $(git ls-files | grep -vE '\.(png|icns|ico)$'); do
+    [ -f "$f" ] || continue
+    if [ -n "$(tail -c 1 "$f")" ]; then
+        echo "missing final newline: $f"
+        fail=1
+    fi
+done
+[ "$fail" -eq 0 ] || exit 1
+
 # The Rust build embeds frontendDist (../dist), so build the frontend first.
 if command -v bun >/dev/null 2>&1; then
     echo "--> Frontend (bun run build)..."
