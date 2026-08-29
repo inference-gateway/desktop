@@ -131,7 +131,9 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 }
 
 /// Start (or restart) the gateway. `force` re-downloads the binary first, so an
-/// update lands on the next spawn. Images are enabled here via `ENABLE_IMAGES=true`
+/// update lands on the next spawn. `restart` respawns an already-running gateway
+/// without re-downloading, so a newly saved API key gets injected into its env
+/// (keys are read only at spawn via `auth_env()`). Images are enabled here via `ENABLE_IMAGES=true`
 /// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
 /// and the upstream response-header timeout is raised from its 10s default so
 /// non-streaming image generation (which OpenAI answers in 20-60s) doesn't 502.
@@ -139,9 +141,10 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
     force: bool,
+    restart: bool,
 ) -> Result<(), String> {
     let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.start_gateway(force))
+    tokio::task::spawn_blocking(move || processes.start_gateway(force, restart))
         .await
         .map_err(|error| format!("gateway startup task failed: {error}"))?
 }

@@ -80,7 +80,7 @@ impl ProcessManager {
         }
     }
 
-    pub(crate) fn start_gateway(&self, force: bool) -> Result<(), String> {
+    pub(crate) fn start_gateway(&self, force: bool, restart: bool) -> Result<(), String> {
         if !self.gateway_enabled {
             return Ok(());
         }
@@ -95,7 +95,7 @@ impl ProcessManager {
                 .try_wait()
                 .map_err(|e| format!("failed to inspect gateway process: {e}"))?
                 .is_none();
-            if child_running && !force && crate::gateway::gateway_reachable() {
+            if child_running && !force && !restart && crate::gateway::gateway_reachable() {
                 self.store_gateway(child)?;
                 return Ok(());
             }

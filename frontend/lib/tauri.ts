@@ -189,7 +189,7 @@ export const api = {
   getConfig: () => invoke<DesktopConfig>("get_config"),
   setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
   setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
-  startGateway: (force = false) => invoke<void>("start_gateway", { force }),
+  startGateway: (force = false, restart = false) => invoke<void>("start_gateway", { force, restart }),
   startScheduler: () => invoke<void>("start_scheduler"),
   stopScheduler: () => invoke<void>("stop_scheduler"),
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),

@@ -214,10 +214,10 @@ function useDesktopStore() {
   );
 
   const startGatewayThenModels = useCallback(
-    async (force = false) => {
+    async (force = false, restart = false) => {
       setStatus("Starting gateway...");
       try {
-        await api.startGateway(force);
+        await api.startGateway(force, restart);
       } catch (e) {
         console.error("start_gateway failed:", e);
       }
@@ -301,7 +301,7 @@ function useDesktopStore() {
   }, []);
 
   const initBackend = useCallback(
-    async (force = false) => {
+    async (force = false, restart = false) => {
       try {
         const ch = new Channel<ProgressEvent>();
         ch.onmessage = (event) => {
@@ -328,7 +328,7 @@ function useDesktopStore() {
             case "Ready":
               setStatus("Ready");
               setReady(true);
-              startGatewayThenModels(force).then(() => checkForUpdates(force));
+              startGatewayThenModels(force, restart).then(() => checkForUpdates(force));
               refreshConversations();
               break;
             case "Error":
@@ -356,7 +356,7 @@ function useDesktopStore() {
       setRunningIds(new Set());
       setStatus(force ? "Updating..." : "Restarting CLI...");
       setReady(false);
-      await initBackend(force);
+      await initBackend(force, true);
     },
     [runningIds, setStatus, initBackend]
   );
@@ -749,7 +749,7 @@ function useDesktopStore() {
       try {
         await api.setAuth(keys);
         setCurrentView("chat");
-        startGatewayThenModels();
+        startGatewayThenModels(false, true);
       } catch (err) {
         setError(`Failed to save settings: ${err}`);
       }
