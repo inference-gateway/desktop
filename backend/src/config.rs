@@ -61,7 +61,7 @@ pub(crate) async fn set_auth(
 /// Desktop-facing config fields read from ~/.infer/config.yaml.
 /// Only the fields the Settings UI manages are exposed; the rest of the
 /// config (gateway.run, gateway.standalone_binary, etc.) passes through.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopConfig {
     pub(crate) storage_backend: String,
     pub(crate) storage_directory: String,

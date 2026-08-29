@@ -768,11 +768,11 @@ pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> 
 // `infer agents add|remove|list` so the two stay perfectly in sync. Keyed by
 // name (the CLI's primary key).
 
-#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct A2aAgent {
     pub(crate) name: String,
     pub(crate) url: String,
-    run: bool,
+    pub(crate) run: bool,
     pub(crate) model: String,
 }
 
