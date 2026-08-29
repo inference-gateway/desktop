@@ -1,8 +1,4 @@
 #!/bin/sh
-# Pre-commit hook: run typecheck and tests before each commit.
-# Activate with: git config core.hooksPath .githooks
-#
-# This hook is inert until the above git config is run.
 
 set -e
 
@@ -20,7 +16,6 @@ for f in $(git ls-files | grep -vE '\.(png|icns|ico)$'); do
 done
 [ "$fail" -eq 0 ] || exit 1
 
-# The Rust build embeds frontendDist (../dist), so build the frontend first.
 if command -v bun >/dev/null 2>&1; then
     echo "--> Frontend (bun run build)..."
     (cd "$ROOT" && bun install --frozen-lockfile >/dev/null 2>&1 && bun run build >/dev/null)
@@ -28,7 +23,6 @@ fi
 
 cd "$ROOT/backend"
 
-# Run typecheck if cargo is available
 if command -v cargo >/dev/null 2>&1; then
     echo "--> Formatting (cargo fmt --check)..."
     cargo fmt --check
@@ -38,10 +32,10 @@ if command -v cargo >/dev/null 2>&1; then
     cargo check
 fi
 
-# Run tests if cargo is available
 if command -v cargo >/dev/null 2>&1; then
     echo "--> Tests (cargo test)..."
     cargo test
 fi
 
 echo "==> All checks passed."
+
