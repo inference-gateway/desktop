@@ -274,8 +274,14 @@ const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const
 
 // Fields per backend, mapping 1:1 to infer's storage.<type>.* schema.
 const STORAGE_FIELDS: Record<string, readonly StorageField[]> = {
-  jsonl: [{ key: "storage_directory", label: "Conversations directory", ph: "~/.infer/conversations" }],
-  sqlite: [{ key: "sqlite_path", label: "Database file", ph: ".infer/conversations.db" }],
+  jsonl: [
+    {
+      key: "storage_directory",
+      label: "Conversations directory",
+      ph: "default: ~/.infer/projects/<project>/conversations",
+    },
+  ],
+  sqlite: [{ key: "sqlite_path", label: "Database file", ph: "default: ~/.infer/conversations.db" }],
   postgres: [
     { key: "postgres_host", label: "Host", ph: "localhost" },
     { key: "postgres_port", label: "Port", ph: "5432" },
@@ -307,7 +313,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   storage_directory: "",
   gateway_url: "http://localhost:8080",
   default_model: "",
-  sqlite_path: ".infer/conversations.db",
+  sqlite_path: "",
   postgres_host: "localhost",
   postgres_port: "5432",
   postgres_database: "infer_conversations",

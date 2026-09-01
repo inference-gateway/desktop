@@ -64,9 +64,12 @@ pub(crate) async fn set_auth(
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopConfig {
     pub(crate) storage_backend: String,
+    /// Empty means unset: the CLI defaults to
+    /// ~/.infer/projects/<project-slug>/conversations.
     pub(crate) storage_directory: String,
     pub(crate) gateway_url: String,
     pub(crate) default_model: String,
+    /// Empty means unset: the CLI defaults to ~/.infer/conversations.db.
     pub(crate) sqlite_path: String,
     pub(crate) postgres_host: String,
     pub(crate) postgres_port: String,
@@ -123,20 +126,13 @@ pub(crate) struct DesktopConfig {
     pub(crate) projects_allowed_mimes: String,
 }
 
-pub(crate) fn default_storage_directory(home: &std::path::Path) -> String {
-    home.join(".infer")
-        .join("conversations")
-        .to_string_lossy()
-        .to_string()
-}
-
 pub(crate) fn default_config() -> DesktopConfig {
     DesktopConfig {
         storage_backend: "jsonl".into(),
-        storage_directory: default_storage_directory(&home_dir()),
+        storage_directory: String::new(),
         gateway_url: "http://localhost:8080".into(),
         default_model: String::new(),
-        sqlite_path: ".infer/conversations.db".into(),
+        sqlite_path: String::new(),
         postgres_host: "localhost".into(),
         postgres_port: "5432".into(),
         postgres_database: "infer_conversations".into(),
@@ -215,7 +211,7 @@ pub(crate) fn config_from_value(
                     s
                 }
             })
-            .unwrap_or_else(|| default_storage_directory(home)),
+            .unwrap_or_default(),
         gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
         default_model: str_at(&["default_model"]).unwrap_or_default(),
         sqlite_path: str_at(&["storage", "sqlite", "path"]).unwrap_or(d.sqlite_path),
@@ -369,6 +365,25 @@ pub(crate) fn set_section(
     }
 }
 
+/// Write `storage.<name>.path`, or drop it when `path` is empty so the CLI's
+/// own ~/.infer default applies; an emptied section is removed entirely.
+fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
+    if !path.is_empty() {
+        set_section(smap, name, vec![("path", path.into())]);
+        return;
+    }
+    let emptied = smap
+        .get_mut(name)
+        .and_then(|v| v.as_mapping_mut())
+        .is_some_and(|m| {
+            m.remove("path");
+            m.is_empty()
+        });
+    if emptied {
+        smap.remove(name);
+    }
+}
+
 /// Merge the Settings-managed storage + gateway fields into the existing config
 /// text, returning serialized YAML. `default_model` is owned by
 /// `merge_default_model` (written from the composer too), so it is deliberately
@@ -387,16 +402,8 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         smap.remove("backend");
         smap.remove("directory");
 
-        set_section(
-            smap,
-            "jsonl",
-            vec![("path", cfg.storage_directory.clone().into())],
-        );
-        set_section(
-            smap,
-            "sqlite",
-            vec![("path", cfg.sqlite_path.clone().into())],
-        );
+        set_path_section(smap, "jsonl", &cfg.storage_directory);
+        set_path_section(smap, "sqlite", &cfg.sqlite_path);
         set_section(
             smap,
             "postgres",
@@ -633,7 +640,7 @@ mod tests {
         let home = PathBuf::from("/home/tester");
         let cfg = config_from_value(&serde_norway::Value::Mapping(Default::default()), &home);
         assert_eq!(cfg.storage_backend, "jsonl");
-        assert_eq!(cfg.storage_directory, "/home/tester/.infer/conversations");
+        assert_eq!(cfg.storage_directory, "");
         assert_eq!(cfg.gateway_url, "http://localhost:8080");
         assert_eq!(cfg.default_model, "");
         assert_eq!(cfg.postgres_host, "localhost");
@@ -642,7 +649,7 @@ mod tests {
         assert_eq!(cfg.postgres_username, "");
         assert_eq!(cfg.postgres_password, "");
         assert_eq!(cfg.postgres_ssl_mode, "prefer");
-        assert_eq!(cfg.sqlite_path, ".infer/conversations.db");
+        assert_eq!(cfg.sqlite_path, "");
         assert_eq!(cfg.redis_host, "localhost");
         assert_eq!(cfg.redis_port, "6379");
         assert_eq!(cfg.redis_db, "0");
@@ -652,6 +659,22 @@ mod tests {
         assert_eq!(cfg.projects_max_file_size_mb, "10");
         assert_eq!(cfg.projects_github_repository, ".projects");
         assert!(cfg.projects_root.ends_with("Inference Gateway Desktop"));
+    }
+
+    #[test]
+    fn merge_config_drops_storage_paths_left_at_cli_default() {
+        let existing = "storage:\n  jsonl:\n    path: /old/conv\n  sqlite:\n    path: /old/conv.db\n    busy_timeout: 5\n";
+        let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
+        let storage = val.get("storage").unwrap();
+        assert!(storage.get("jsonl").is_none());
+        assert!(storage.get("sqlite").and_then(|s| s.get("path")).is_none());
+        assert_eq!(
+            storage
+                .get("sqlite")
+                .and_then(|s| s.get("busy_timeout"))
+                .and_then(|v| v.as_i64()),
+            Some(5)
+        );
     }
 
     #[test]

@@ -66,20 +66,19 @@ pub(crate) fn collector_env() -> Vec<(String, String)> {
 }
 
 /// Extra env vars for spawned infer processes: provider keys, the jsonl
-/// storage path pinned to the absolute directory from Settings (desktop
-/// conversations are machine-global; without this a relative
-/// storage.jsonl.path resolves against each child's cwd, so dev, release,
-/// and the daemon would each read a different directory), plus the CLI mock
-/// switch when the desktop runs in mock mode.
+/// storage path pinned to the absolute directory from Settings when one is
+/// set (an unset path lets the CLI use its home-anchored default,
+/// ~/.infer/projects/<slug>/conversations), plus the CLI mock switch when
+/// the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
     env.extend(collector_env());
     #[cfg(unix)]
     env.push(("PATH".into(), composed_path()));
-    env.push((
-        "INFER_STORAGE_JSONL_PATH".into(),
-        crate::config::read_config().storage_directory,
-    ));
+    let storage_directory = crate::config::read_config().storage_directory;
+    if !storage_directory.is_empty() {
+        env.push(("INFER_STORAGE_JSONL_PATH".into(), storage_directory));
+    }
     if let Some(dirs) = crate::projects::sandbox_allowed_dirs() {
         env.push(("INFER_TOOLS_SANDBOX_DIRECTORIES".into(), dirs));
     }
