@@ -193,11 +193,11 @@ fn scrub_credentials(cfg: &mut DesktopConfig) {
 }
 
 /// Replace each git-repo project's embedded copy with its GitHub `owner/name`:
-/// for every `paths` entry whose checkout has a GitHub remote, record the remote,
-/// drop the machine-specific `paths` entry (re-derived on import), and drop the
-/// `contexts` entry *only* when it still equals the live AGENTS.md - an unmodified
-/// copy, which is the bloat. Edited instructions and non-GitHub/local repos are
-/// left embedded so nothing is lost. Import re-clones from the returned map.
+/// for every `paths` entry whose checkout has a GitHub remote, record the remote
+/// and drop the machine-specific `paths` entry plus the `contexts` entry - the
+/// context is derived from the repo's AGENTS.md and re-read from the fresh
+/// clone on import, so embedding it is pure bloat (and goes stale). Only
+/// non-GitHub/local repos keep their context embedded.
 fn strip_git_project_remotes(
     projects: &mut serde_json::Value,
     home: &Path,
@@ -222,16 +222,7 @@ fn strip_git_project_remotes(
         if let Some(paths) = projects.get_mut("paths").and_then(|p| p.as_object_mut()) {
             paths.remove(&name);
         }
-        let stored = projects
-            .get("contexts")
-            .and_then(|c| c.get(&name))
-            .and_then(|v| v.as_str());
-        let unedited = match (stored, crate::projects::repo_context(&dir)) {
-            (Some(s), Some(live)) => s.trim() == live.trim(),
-            _ => false,
-        };
-        if unedited && let Some(ctx) = projects.get_mut("contexts").and_then(|c| c.as_object_mut())
-        {
+        if let Some(ctx) = projects.get_mut("contexts").and_then(|c| c.as_object_mut()) {
             ctx.remove(&name);
         }
     }
@@ -986,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn git_projects_export_as_remotes_and_preserve_edits() {
+    fn git_projects_export_as_remotes_without_contexts() {
         let home = temp_home("gitproj");
         let infer = home.join(".infer");
         std::fs::create_dir_all(&infer).unwrap();
@@ -996,30 +987,22 @@ mod tests {
         )
         .unwrap();
 
-        // Unmodified checkout: stored context == AGENTS.md, so it is stripped.
-        let clean = home.join("code").join("clean");
-        std::fs::create_dir_all(clean.join(".git")).unwrap();
+        // GitHub checkout: the repo is the source of truth, so even a stored
+        // context that drifted from the live AGENTS.md is dropped.
+        let repo = home.join("code").join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(
-            clean.join(".git").join("config"),
-            "[remote \"origin\"]\n\turl = https://github.com/owner/clean.git\n",
+            repo.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = https://github.com/owner/repo.git\n",
         )
         .unwrap();
-        std::fs::write(clean.join("AGENTS.md"), "clean rules").unwrap();
+        std::fs::write(repo.join("AGENTS.md"), "live rules").unwrap();
 
-        // Edited checkout: stored context differs from AGENTS.md, so it is kept.
-        let edited = home.join("code").join("edited");
-        std::fs::create_dir_all(edited.join(".git")).unwrap();
-        std::fs::write(
-            edited.join(".git").join("config"),
-            "[remote \"origin\"]\n\turl = git@github.com:owner/edited.git\n",
-        )
-        .unwrap();
-        std::fs::write(edited.join("AGENTS.md"), "original rules").unwrap();
-
+        // Plain local project: no remote, context stays embedded.
         std::fs::write(
             infer.join("projects.json"),
             format!(
-                "{{\"names\":[\"clean\",\"edited\"],\"contexts\":{{\"clean\":\"clean rules\",\"edited\":\"my custom rules\"}},\"paths\":{{\"clean\":\"{h}/code/clean\",\"edited\":\"{h}/code/edited\"}}}}",
+                "{{\"names\":[\"repo\",\"local\"],\"contexts\":{{\"repo\":\"stale snapshot\",\"local\":\"local notes\"}},\"paths\":{{\"repo\":\"{h}/code/repo\",\"local\":\"{h}/code/local\"}}}}",
                 h = home.display()
             ),
         )
@@ -1027,29 +1010,16 @@ mod tests {
 
         let export = build_export(&home, vec![]);
         assert_eq!(
-            export.project_remotes.get("clean").map(String::as_str),
-            Some("owner/clean")
+            export.project_remotes.get("repo").map(String::as_str),
+            Some("owner/repo")
         );
-        assert_eq!(
-            export.project_remotes.get("edited").map(String::as_str),
-            Some("owner/edited")
-        );
-        // clean: redundant context and machine path both dropped.
-        assert!(export.projects["contexts"].get("clean").is_none());
-        assert!(export.projects["paths"].get("clean").is_none());
-        // edited: custom context survives, path still dropped.
-        assert_eq!(
-            export.projects["contexts"]["edited"],
-            json!("my custom rules")
-        );
-        assert!(export.projects["paths"].get("edited").is_none());
+        assert!(export.projects["contexts"].get("repo").is_none());
+        assert!(export.projects["paths"].get("repo").is_none());
+        assert_eq!(export.projects["contexts"]["local"], json!("local notes"));
 
         let text = serialize_export(&export, ExportFormat::Json).unwrap();
-        assert!(
-            !text.contains("clean rules"),
-            "unmodified AGENTS.md not embedded"
-        );
-        assert!(text.contains("my custom rules"), "edited context kept");
+        assert!(!text.contains("stale snapshot"), "no AGENTS.md embedded");
+        assert!(text.contains("local notes"), "local context kept");
         let _ = std::fs::remove_dir_all(&home);
     }
 
