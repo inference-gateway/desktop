@@ -1,5 +1,3 @@
-// Skill install/list: thin wrappers over `infer skills`, which owns download,
-// validation, and the ~/.infer/skills layout.
 use crate::agent::run_infer;
 use crate::env::home_dir;
 

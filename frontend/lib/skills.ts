@@ -1,5 +1,3 @@
-// Skills registry: fetch the remote skills catalog. Installed state lives on
-// disk (~/.infer/skills) and is read via api.listInstalledSkills().
 import { api } from "./tauri";
 
 export const DEFAULT_REGISTRY_URL = "https://cdn.jsdelivr.net/gh/inference-gateway/skills@main/catalog.json";

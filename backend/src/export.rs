@@ -1,15 +1,3 @@
-// One-click export/import of the complete desktop state (issue #166).
-//
-// A single portable `DesktopExport` moves everything the desktop app owns:
-// the Settings fields from ~/.infer/config.yaml, projects.json, A2A agents
-// (via the `infer` CLI), scheduled jobs, snippets and the skills registry
-// URL, plus installed skill names for automatic reinstall. The file format
-// is user-selectable JSON/YAML/TOML with content-sniffing import. Secrets
-// (auth.json keys, DB passwords, tokens) never enter the export.
-//
-// The testable core is rooted at a passed `home` (no global env):
-// `build_export` / `apply_export_files` / `parse_export`; the tauri commands
-// below are thin wrappers. Round-trip tests live at the bottom.
 use crate::agent::{A2aAgent, add_a2a_agent, list_a2a_agents, set_a2a_agent_model};
 use crate::config::{DesktopConfig, merge_config, merge_default_model};
 use crate::env::home_dir;
@@ -353,8 +341,6 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     let mut imported = Vec::new();
     let mut warnings = Vec::new();
 
-    // Config: expand the source machine's `~/` paths against this machine's
-    // home, keep non-empty local secrets when the export carried blanks.
     let mut cfg = export.config.clone();
     for path in [
         &mut cfg.storage_directory,
@@ -919,8 +905,6 @@ mod tests {
                 report.warnings
             );
             assert_eq!(report.imported.len(), 4);
-            // Skills are (re)installed via the CLI on a real import; a unit
-            // test without the CLI fakes the install outcome instead.
             std::fs::create_dir_all(home.join(".infer").join("skills").join("code-review"))
                 .unwrap();
             std::fs::write(
@@ -954,7 +938,6 @@ mod tests {
         assert!(text.contains("other_top: keep"));
         assert!(text.contains("run: true"));
         assert!(text.contains("standalone_binary: /x"));
-        // Blanked secrets do not overwrite non-empty local values.
         assert!(text.contains("keepme"));
         assert!(text.contains("keepredis"));
         assert!(text.contains("keepd1"));
@@ -987,8 +970,6 @@ mod tests {
         )
         .unwrap();
 
-        // GitHub checkout: the repo is the source of truth, so even a stored
-        // context that drifted from the live AGENTS.md is dropped.
         let repo = home.join("code").join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(
@@ -998,7 +979,6 @@ mod tests {
         .unwrap();
         std::fs::write(repo.join("AGENTS.md"), "live rules").unwrap();
 
-        // Plain local project: no remote, context stays embedded.
         std::fs::write(
             infer.join("projects.json"),
             format!(
