@@ -392,6 +392,56 @@ pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String>
 pub(crate) struct GitProjectStatus {
     pub(crate) git: Vec<String>,
     pub(crate) dirty: Vec<String>,
+    pub(crate) branches: BTreeMap<String, String>,
+    pub(crate) default_branches: BTreeMap<String, String>,
+}
+
+/// The actual git directory for a checkout: `.git` itself, or the directory
+/// named by a `gitdir:` gitfile (worktrees, submodules).
+fn git_dir(dir: &Path) -> Option<PathBuf> {
+    let dot_git = dir.join(".git");
+    if dot_git.is_dir() {
+        return Some(dot_git);
+    }
+    let contents = std::fs::read_to_string(&dot_git).ok()?;
+    let target = contents.strip_prefix("gitdir:")?.trim();
+    let path = Path::new(target);
+    Some(if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        dir.join(path)
+    })
+}
+
+/// Branch name from the contents of `.git/HEAD`: `ref: refs/heads/<branch>`
+/// on a branch, a bare commit hash (shortened to 7 chars) when detached.
+fn parse_head(contents: &str) -> Option<String> {
+    let line = contents.trim();
+    if line.is_empty() {
+        return None;
+    }
+    match line.strip_prefix("ref: ") {
+        Some(r) => Some(r.strip_prefix("refs/heads/").unwrap_or(r).to_string()),
+        None => Some(line.chars().take(7).collect()),
+    }
+}
+
+fn read_head_branch(dir: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(git_dir(dir)?.join("HEAD")).ok()?;
+    parse_head(&head)
+}
+
+/// Default branch from `refs/remotes/origin/HEAD` (`ref: refs/remotes/origin/<name>`),
+/// falling back to `main` when origin/HEAD was never recorded.
+fn read_default_branch(dir: &Path) -> String {
+    git_dir(dir)
+        .and_then(|g| std::fs::read_to_string(g.join("refs/remotes/origin/HEAD")).ok())
+        .and_then(|c| {
+            c.trim()
+                .strip_prefix("ref: refs/remotes/origin/")
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "main".to_string())
 }
 
 /// Whether the checkout at `dir` has uncommitted changes: `git status
@@ -435,13 +485,64 @@ pub(crate) async fn git_project_status() -> Result<GitProjectStatus, String> {
             }
             status.git.push(name.clone());
             if has_uncommitted_changes(&dir) {
-                status.dirty.push(name);
+                status.dirty.push(name.clone());
+            }
+            if let Some(branch) = read_head_branch(&dir) {
+                status.branches.insert(name.clone(), branch);
+                status
+                    .default_branches
+                    .insert(name, read_default_branch(&dir));
             }
         }
         status
     })
     .await
     .map_err(|e| format!("git status task failed: {e}"))
+}
+
+/// Run `git -C <dir> <args>`, returning stdout on success and stderr (or the
+/// spawn error) on failure.
+fn git_output(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to run git: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+/// Check out the repository's default branch and fast-forward pull. Refuses
+/// over uncommitted changes; `--ff-only` guarantees the tree is never left
+/// worse than before. Returns the branch now checked out.
+#[tauri::command]
+pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = project_dir(&name)
+            .filter(|d| d.is_dir())
+            .ok_or_else(|| format!("no directory for project {name}"))?;
+        if has_uncommitted_changes(&dir) {
+            return Err("uncommitted changes - commit or stash first".to_string());
+        }
+        let default = git_output(
+            &dir,
+            &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        )
+        .ok()
+        .and_then(|r| r.strip_prefix("origin/").map(str::to_string))
+        .unwrap_or_else(|| "main".to_string());
+        if read_head_branch(&dir).as_deref() != Some(default.as_str()) {
+            git_output(&dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
+        }
+        git_output(&dir, &["pull", "--ff-only"]).map_err(|e| format!("pull: {e}"))?;
+        Ok(default)
+    })
+    .await
+    .map_err(|e| format!("sync task failed: {e}"))?
 }
 
 /// Whether the project's resolved directory exists on disk; gates the Init
@@ -788,6 +889,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_head_branch_detached_and_empty() {
+        assert_eq!(
+            parse_head("ref: refs/heads/main\n"),
+            Some("main".to_string())
+        );
+        assert_eq!(
+            parse_head("ref: refs/heads/feat/nested-branch\n"),
+            Some("feat/nested-branch".to_string())
+        );
+        assert_eq!(
+            parse_head("a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0\n"),
+            Some("a1b2c3d".to_string())
+        );
+        assert_eq!(parse_head(""), None);
+    }
+
+    #[test]
+    fn git_dir_follows_worktree_gitfile() {
+        let root = std::env::temp_dir().join(format!("git-dir-test-{}", std::process::id()));
+        let wt = root.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
+        assert_eq!(git_dir(&wt), Some(wt.join("../repo/.git/worktrees/wt")));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn assign_dirs_suffixes_collisions_deterministically() {
         let root = Path::new("/tmp/projects-root");
         let names: Vec<String> = vec![
@@ -1131,7 +1259,7 @@ mod tests {
         assert!(!has_uncommitted_changes(&repo), "ignored-only stays clean");
 
         assert!(
-            !has_uncommitted_changes(&repo.parent().unwrap()),
+            !has_uncommitted_changes(repo.parent().unwrap()),
             "a directory without a repo is not dirty"
         );
         assert!(

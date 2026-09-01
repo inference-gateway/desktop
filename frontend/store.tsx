@@ -115,6 +115,8 @@ function useDesktopStore() {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
+  const [projectBranches, setProjectBranches] = useState<Record<string, string>>(() => ({}));
+  const [projectDefaultBranches, setProjectDefaultBranches] = useState<Record<string, string>>(() => ({}));
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -546,6 +548,8 @@ function useDesktopStore() {
     const status = await api.gitProjectStatus();
     setGitProjects(new Set(status.git));
     setDirtyProjects(new Set(status.dirty));
+    setProjectBranches(status.branches);
+    setProjectDefaultBranches(status.default_branches);
   }, []);
 
   useEffect(() => {
@@ -1262,6 +1266,8 @@ function useDesktopStore() {
     importProjects,
     gitProjects,
     dirtyProjects,
+    projectBranches,
+    projectDefaultBranches,
     refreshGitProjects,
     deleteProject,
     deleteProjects,
