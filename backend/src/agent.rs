@@ -626,6 +626,54 @@ pub(crate) async fn delete_conversation(
     run_infer_in(cwd, &["conversations", "delete", &session_id]).await
 }
 
+/// The CLI's per-cwd conversation store: ~/.infer/projects/<slug>/conversations,
+/// where the slug is the absolute cwd with path separators replaced by '-'.
+fn conversation_store_dir(cwd: &Path) -> PathBuf {
+    let slug = cwd
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "-");
+    home_dir()
+        .join(".infer")
+        .join("projects")
+        .join(slug)
+        .join("conversations")
+}
+
+/// Moves a conversation's JSONL file between per-cwd stores so a chat dragged
+/// to another project resumes with its history instead of forking. A no-op
+/// when an explicit flat storage directory is configured, when the source
+/// file was never persisted, or when source and destination match.
+#[tauri::command]
+pub(crate) async fn move_conversation(
+    session_id: String,
+    from_cwd: Option<String>,
+    to_project: Option<String>,
+) -> Result<(), String> {
+    if session_id.contains(['/', '\\']) || session_id.contains("..") {
+        return Err("invalid session id".into());
+    }
+    if !read_config().storage_directory.is_empty() {
+        return Ok(());
+    }
+    let from = from_cwd.map(PathBuf::from).unwrap_or_else(agent_cwd);
+    let to = to_project
+        .as_deref()
+        .and_then(crate::projects::project_dir)
+        .unwrap_or_else(agent_cwd);
+    if from == to {
+        return Ok(());
+    }
+    let file = format!("{session_id}.jsonl");
+    let src = conversation_store_dir(&from).join(&file);
+    if !src.exists() {
+        return Ok(());
+    }
+    let dst_dir = conversation_store_dir(&to);
+    std::fs::create_dir_all(&dst_dir)
+        .map_err(|e| format!("creating {}: {e}", dst_dir.display()))?;
+    std::fs::rename(&src, dst_dir.join(&file)).map_err(|e| format!("moving conversation: {e}"))
+}
+
 #[tauri::command]
 pub(crate) async fn list_models() -> Result<Vec<String>, String> {
     if mock_mode() {
@@ -1346,6 +1394,16 @@ mod tests {
             parse_agent_list(br#"{"external":null,"local":null,"total":0}"#)
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn conversation_store_dir_matches_the_cli_slug_scheme() {
+        let dir = conversation_store_dir(Path::new("/home/alice/repo"));
+        assert!(
+            dir.ends_with("projects/-home-alice-repo/conversations"),
+            "{}",
+            dir.display()
         );
     }
 }

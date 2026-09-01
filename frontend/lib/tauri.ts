@@ -191,6 +191,8 @@ export const api = {
     invoke<string>("get_conversation", { sessionId, cwd: cwd ?? null }),
   deleteConversation: (sessionId: string, cwd?: string) =>
     invoke<void>("delete_conversation", { sessionId, cwd: cwd ?? null }),
+  moveConversation: (sessionId: string, fromCwd?: string, toProject?: string) =>
+    invoke<void>("move_conversation", { sessionId, fromCwd: fromCwd ?? null, toProject: toProject ?? null }),
   listModels: () => invoke<string[]>("list_models"),
   getAuth: () => invoke<Record<string, string>>("get_auth"),
   setAuth: (keys: Record<string, string>) => invoke<void>("set_auth", { keys }),

@@ -580,10 +580,25 @@ function useDesktopStore() {
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
 
-  const assignProject = useCallback((sessionId: string, projectName: string) => {
-    setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
-    setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
-  }, []);
+  const moveConversationStore = useCallback(
+    (sessionId: string, projectName?: string) => {
+      const fromCwd = conversations.find((c) => c.id === sessionId)?.project ?? undefined;
+      api
+        .moveConversation(sessionId, fromCwd, projectName)
+        .then(refreshConversations)
+        .catch((e) => setError(`Failed to move conversation: ${e}`));
+    },
+    [conversations, refreshConversations, setError],
+  );
+
+  const assignProject = useCallback(
+    (sessionId: string, projectName: string) => {
+      setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
+      setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
+      moveConversationStore(sessionId, projectName);
+    },
+    [moveConversationStore],
+  );
 
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
@@ -929,13 +944,17 @@ function useDesktopStore() {
     ? `${outdated.map((u) => `${u.name} ${u.latest}`).join(", ")} available - restart to update`
     : "";
 
-  const unassignProject = useCallback((sessionId: string) => {
-    setProjects((prev) => {
-      const next = { ...prev };
-      delete next[sessionId];
-      return next;
-    });
-  }, []);
+  const unassignProject = useCallback(
+    (sessionId: string) => {
+      setProjects((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      moveConversationStore(sessionId, undefined);
+    },
+    [moveConversationStore],
+  );
 
   const createProject = useCallback((name: string) => {
     setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));

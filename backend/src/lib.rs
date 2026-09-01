@@ -82,6 +82,7 @@ pub fn run() {
             agent::list_conversations,
             agent::get_conversation,
             agent::delete_conversation,
+            agent::move_conversation,
             agent::read_projects,
             agent::write_projects,
             agent::list_models,
