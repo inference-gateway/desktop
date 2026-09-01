@@ -442,13 +442,14 @@ function useDesktopStore() {
       setActiveProject(projects[id] ?? null);
       if (transcripts[id]) return;
       try {
-        const ndjson = await api.getConversation(id);
+        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
+        const ndjson = await api.getConversation(id, cwd);
         dispatchTo(id, { type: "loadHistory", ndjson });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, dispatchTo],
+    [transcripts, projects, conversations, dispatchTo],
   );
 
   const newChat = useCallback(() => {
@@ -473,7 +474,8 @@ function useDesktopStore() {
         });
       }
       try {
-        await api.deleteConversation(id);
+        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
+        await api.deleteConversation(id, cwd);
         setTranscripts((prev) => {
           const next = { ...prev };
           delete next[id];
@@ -486,7 +488,7 @@ function useDesktopStore() {
         setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [runningIds, activeId, newChat, refreshConversations, setError, clearTerminal],
+    [runningIds, activeId, conversations, newChat, refreshConversations, setError, clearTerminal],
   );
 
   const onChatClick = useCallback(

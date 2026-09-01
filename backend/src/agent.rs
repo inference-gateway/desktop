@@ -565,13 +565,20 @@ pub(crate) fn gateway_url() -> String {
 /// The subprocess runs on the blocking pool so the async runtime keeps serving
 /// other commands while `infer` works.
 pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
+    run_infer_in(None, args).await
+}
+
+/// Like [`run_infer`], but with an explicit working directory. The CLI stores
+/// conversations per-cwd, so project-scoped conversations must be addressed
+/// from their project directory.
+pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<String, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
         let output = std::process::Command::new(infer_bin_path())
             .args(&args)
             .env("HOME", home_dir().to_str().unwrap_or(""))
             .envs(infer_env())
-            .current_dir(agent_cwd())
+            .current_dir(cwd.map(std::path::PathBuf::from).unwrap_or_else(agent_cwd))
             .output()
             .map_err(|e| format!("Failed to run infer: {}", e))?;
         if !output.status.success() {
@@ -589,17 +596,34 @@ pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
 
 #[tauri::command]
 pub(crate) async fn list_conversations() -> Result<String, String> {
-    run_infer(&["conversations", "list", "--format", "json"]).await
+    run_infer(&[
+        "conversations",
+        "list",
+        "--all-projects",
+        "--format",
+        "json",
+    ])
+    .await
 }
 
 #[tauri::command]
-pub(crate) async fn get_conversation(session_id: String) -> Result<String, String> {
-    run_infer(&["conversations", "show", &session_id, "--format", "json"]).await
+pub(crate) async fn get_conversation(
+    session_id: String,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    run_infer_in(
+        cwd,
+        &["conversations", "show", &session_id, "--format", "json"],
+    )
+    .await
 }
 
 #[tauri::command]
-pub(crate) async fn delete_conversation(session_id: String) -> Result<String, String> {
-    run_infer(&["conversations", "delete", &session_id]).await
+pub(crate) async fn delete_conversation(
+    session_id: String,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    run_infer_in(cwd, &["conversations", "delete", &session_id]).await
 }
 
 #[tauri::command]

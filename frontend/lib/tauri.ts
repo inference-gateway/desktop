@@ -38,7 +38,7 @@ export type ProgressEvent =
 
 export type UpdateInfo = { name: string; current: string; latest: string | null; outdated: boolean };
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
-export type Conversation = { id: string; title?: string | null };
+export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type ProjectFile = { name: string; size: number };
 export type GitRepo = { name: string; path: string; group: string; context: string | null };
@@ -87,8 +87,8 @@ export type DesktopConfig = {
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {
-    snippets: { id: string; label: string; prompt: string }[];
-    skills_registry_url: string;
+  snippets: { id: string; label: string; prompt: string }[];
+  skills_registry_url: string;
 };
 export type ImportReport = { imported: string[]; warnings: string[] };
 export type ExportResult = { location: string | null; warnings: string[] };
@@ -187,8 +187,10 @@ export const api = {
     invoke<void>("send_computer_use_control", { sessionId, action }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),
   listConversations: () => invoke<string>("list_conversations"),
-  getConversation: (sessionId: string) => invoke<string>("get_conversation", { sessionId }),
-  deleteConversation: (sessionId: string) => invoke<void>("delete_conversation", { sessionId }),
+  getConversation: (sessionId: string, cwd?: string) =>
+    invoke<string>("get_conversation", { sessionId, cwd: cwd ?? null }),
+  deleteConversation: (sessionId: string, cwd?: string) =>
+    invoke<void>("delete_conversation", { sessionId, cwd: cwd ?? null }),
   listModels: () => invoke<string[]>("list_models"),
   getAuth: () => invoke<Record<string, string>>("get_auth"),
   setAuth: (keys: Record<string, string>) => invoke<void>("set_auth", { keys }),
@@ -196,15 +198,13 @@ export const api = {
   setConfig: (cfg: DesktopConfig) => invoke<void>("set_config", { cfg }),
   setDefaultModel: (model: string) => invoke<void>("set_default_model", { model }),
   readDesktopData: () => invoke<DesktopUiData>("read_desktop_data"),
-  saveDesktopSnippets: (snippets: DesktopUiData["snippets"]) =>
-    invoke<void>("save_desktop_snippets", { snippets }),
+  saveDesktopSnippets: (snippets: DesktopUiData["snippets"]) => invoke<void>("save_desktop_snippets", { snippets }),
   saveSkillsRegistryUrl: (url: string) => invoke<void>("save_skills_registry_url", { url }),
   exportDesktopFile: (format: string, path?: string | null) =>
     invoke<ExportResult>("export_desktop_file", { format, path: path ?? null }),
   exportDesktopGithub: (repo: string, format: string, token: string) =>
     invoke<ExportResult>("export_desktop_github", { repo, format, token: token || null }),
-  importDesktopFile: (path?: string | null) =>
-    invoke<ImportReport>("import_desktop_file", { path: path ?? null }),
+  importDesktopFile: (path?: string | null) => invoke<ImportReport>("import_desktop_file", { path: path ?? null }),
   importDesktopGithub: (repo: string, token: string) =>
     invoke<ImportReport>("import_desktop_github", { repo, token: token || null }),
   startGateway: (force = false, restart = false) => invoke<void>("start_gateway", { force, restart }),
