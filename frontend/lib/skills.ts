@@ -1,5 +1,4 @@
-// Skills registry: fetch the remote skills catalog. Installed state lives on
-// disk (~/.infer/skills) and is read via api.listInstalledSkills().
+import { api } from "./tauri";
 
 export const DEFAULT_REGISTRY_URL = "https://cdn.jsdelivr.net/gh/inference-gateway/skills@main/catalog.json";
 const LEGACY_REGISTRY_URL = "https://registry.inference-gateway.com/skills/";
@@ -24,6 +23,17 @@ export function getRegistryUrl(): string {
 
 export function setRegistryUrl(url: string): void {
   localStorage.setItem(REGISTRY_KEY, url);
+  try {
+    api.saveSkillsRegistryUrl(url).catch(() => {});
+  } catch {
+    /* outside Tauri (tests): skip */
+  }
+}
+
+/** Adopt a registry URL imported from another machine when localStorage has
+    not populated one yet (called once at startup). */
+export function hydrateRegistry(url: string): void {
+  if (url && localStorage.getItem(REGISTRY_KEY) === null) setRegistryUrl(url);
 }
 
 export async function fetchSkillsCatalog(url?: string): Promise<SkillsCatalog> {

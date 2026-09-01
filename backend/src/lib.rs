@@ -7,6 +7,7 @@ mod cli_install;
 mod config;
 mod download;
 mod env;
+mod export;
 mod gateway;
 mod observability;
 mod permissions;
@@ -53,6 +54,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState {
             processes: Arc::clone(&processes),
@@ -80,6 +82,7 @@ pub fn run() {
             agent::list_conversations,
             agent::get_conversation,
             agent::delete_conversation,
+            agent::move_conversation,
             agent::read_projects,
             agent::write_projects,
             agent::list_models,
@@ -88,6 +91,13 @@ pub fn run() {
             config::get_config,
             config::set_config,
             config::set_default_model,
+            export::export_desktop_file,
+            export::export_desktop_github,
+            export::import_desktop_file,
+            export::import_desktop_github,
+            export::read_desktop_data,
+            export::save_desktop_snippets,
+            export::save_skills_registry_url,
             gateway::start_gateway,
             scheduler::start_scheduler,
             scheduler::stop_scheduler,

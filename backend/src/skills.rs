@@ -1,14 +1,31 @@
-// Skill install/list: thin wrappers over `infer skills`, which owns download,
-// validation, and the ~/.infer/skills layout.
 use crate::agent::run_infer;
 use crate::env::home_dir;
 
-fn valid_name(name: &str) -> bool {
+/// True when `name` is safe to pass to `infer skills install/uninstall`.
+pub(crate) fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('-')
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Names of the skills installed under `<home>/.infer/skills` (an entry owns a
+/// SKILL.md), rooted at an arbitrary home so tests can use a temp dir.
+pub(crate) fn installed_skills_in(home: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(home.join(".infer").join("skills")) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().join("SKILL.md").is_file())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect()
+}
+
+#[tauri::command]
+pub(crate) fn list_installed_skills() -> Vec<String> {
+    installed_skills_in(&home_dir())
 }
 
 #[tauri::command]
@@ -27,19 +44,6 @@ pub(crate) async fn uninstall_skill(name: String) -> Result<(), String> {
     }
     run_infer(&["skills", "uninstall", &name, "--user"]).await?;
     Ok(())
-}
-
-#[tauri::command]
-pub(crate) fn list_installed_skills() -> Vec<String> {
-    let dir = home_dir().join(".infer").join("skills");
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().join("SKILL.md").is_file())
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect()
 }
 
 #[cfg(test)]

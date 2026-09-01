@@ -29,6 +29,10 @@ The app updates itself. When a newer release is available the top bar shows an u
 
 Releases are not signed with an Apple Developer or Windows code-signing certificate, so there is some **first-run** friction: macOS marks the downloaded `.dmg` as quarantined, so open the app once with right-click -> Open and confirm, and Windows SmartScreen asks for "More info" -> "Run anyway". Updates applied by the app itself are downloaded by the app rather than a browser, so they are not quarantined and do not repeat that prompt. macOS privacy permissions are separate: releases are signed with the project's own **self-signed** certificate (not from Apple, no developer account involved), which gives the app a stable code identity - permissions you grant survive updates. It does not remove the first-run Gatekeeper prompt; only a paid Apple Developer ID certificate would do that.
 
+### Moving to a new machine
+
+Settings > General > **Export / Import** moves the complete desktop state between machines: all Settings fields, sidebar projects, A2A agents, scheduled jobs, snippets, the skills registry URL and installed skills. Export writes one portable file (JSON, YAML or TOML) in a native save dialog, or pushes it to a private GitHub repo you name (created on demand; public repos are refused) - Import reads it back from either place and auto-detects the format. Credentials (database passwords, tokens, `auth.json` keys) are never exported, and machine-specific paths are stored `~/`-relative so they resolve against the new machine's home. Projects that are GitHub checkouts travel as their `owner/name` rather than a full copy: Import re-clones them under the projects root and re-reads their `AGENTS.md`, keeping the file small (edited project instructions are still carried in full).
+
 ### Supported platforms
 
 | Platform | Asset name |

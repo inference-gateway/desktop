@@ -22,7 +22,15 @@ import {
 } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
-import { loadSnippets, saveSnippets, defaultForId, DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
+import {
+  loadSnippets,
+  saveSnippets,
+  defaultForId,
+  DEFAULT_SNIPPETS,
+  mergeSnippets,
+  type Snippet,
+} from "@/lib/snippets";
+import { hydrateRegistry } from "@/lib/skills";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
@@ -335,7 +343,7 @@ function useDesktopStore() {
             case "Ready":
               setStatus("Ready");
               setReady(true);
-              startGatewayThenModels(force, restart).then(() => checkForUpdates(force));
+              startGatewayThenModels(force, restart).then(() => checkForUpdates(true));
               refreshConversations();
               break;
             case "Error":
@@ -434,13 +442,14 @@ function useDesktopStore() {
       setActiveProject(projects[id] ?? null);
       if (transcripts[id]) return;
       try {
-        const ndjson = await api.getConversation(id);
+        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
+        const ndjson = await api.getConversation(id, cwd);
         dispatchTo(id, { type: "loadHistory", ndjson });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, dispatchTo],
+    [transcripts, projects, conversations, dispatchTo],
   );
 
   const newChat = useCallback(() => {
@@ -465,7 +474,8 @@ function useDesktopStore() {
         });
       }
       try {
-        await api.deleteConversation(id);
+        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
+        await api.deleteConversation(id, cwd);
         setTranscripts((prev) => {
           const next = { ...prev };
           delete next[id];
@@ -478,7 +488,7 @@ function useDesktopStore() {
         setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [runningIds, activeId, newChat, refreshConversations, setError, clearTerminal],
+    [runningIds, activeId, conversations, newChat, refreshConversations, setError, clearTerminal],
   );
 
   const onChatClick = useCallback(
@@ -570,10 +580,25 @@ function useDesktopStore() {
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
 
-  const assignProject = useCallback((sessionId: string, projectName: string) => {
-    setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
-    setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
-  }, []);
+  const moveConversationStore = useCallback(
+    (sessionId: string, projectName?: string) => {
+      const fromCwd = conversations.find((c) => c.id === sessionId)?.project ?? undefined;
+      api
+        .moveConversation(sessionId, fromCwd, projectName)
+        .then(refreshConversations)
+        .catch((e) => setError(`Failed to move conversation: ${e}`));
+    },
+    [conversations, refreshConversations, setError],
+  );
+
+  const assignProject = useCallback(
+    (sessionId: string, projectName: string) => {
+      setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
+      setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
+      moveConversationStore(sessionId, projectName);
+    },
+    [moveConversationStore],
+  );
 
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
@@ -863,6 +888,22 @@ function useDesktopStore() {
     saveSnippets(DEFAULT_SNIPPETS);
   }, []);
 
+  const reloadDesktopData = useCallback(() => {
+    return api.readDesktopData().then((data) => {
+      if (data.snippets.length > 0) {
+        const next = mergeSnippets(data.snippets);
+        setSnippetsState(next);
+        saveSnippets(next);
+      }
+      hydrateRegistry(data.skills_registry_url);
+      return data;
+    });
+  }, []);
+
+  useEffect(() => {
+    void reloadDesktopData().catch(() => {});
+  }, [reloadDesktopData]);
+
   const openSettings = useCallback(() => {
     checkForUpdates();
     setCurrentView("settings");
@@ -903,13 +944,17 @@ function useDesktopStore() {
     ? `${outdated.map((u) => `${u.name} ${u.latest}`).join(", ")} available - restart to update`
     : "";
 
-  const unassignProject = useCallback((sessionId: string) => {
-    setProjects((prev) => {
-      const next = { ...prev };
-      delete next[sessionId];
-      return next;
-    });
-  }, []);
+  const unassignProject = useCallback(
+    (sessionId: string) => {
+      setProjects((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      moveConversationStore(sessionId, undefined);
+    },
+    [moveConversationStore],
+  );
 
   const createProject = useCallback((name: string) => {
     setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
@@ -1191,6 +1236,8 @@ function useDesktopStore() {
     updateSnippet,
     resetSnippet,
     resetAllSnippets,
+    reloadDesktopData,
+    loadProjects,
     setStatus,
     setError,
     tokenUsage,

@@ -211,7 +211,7 @@ export function SettingsView() {
           {tab === "updates" && (
             <>
               <h2 className="text-[1.05rem] font-semibold">Updates</h2>
-              <p className="mb-4 text-[0.8rem] text-muted-foreground">Checked automatically every 6 hours.</p>
+              <p className="mb-4 text-[0.8rem] text-muted-foreground">Checked on launch and every 6 hours.</p>
               <div>
                 {updates.map((u) => {
                   const latest = u.latest ? (u.outdated ? `→ ${u.latest}` : "up to date") : "unknown";
@@ -274,8 +274,14 @@ const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const
 
 // Fields per backend, mapping 1:1 to infer's storage.<type>.* schema.
 const STORAGE_FIELDS: Record<string, readonly StorageField[]> = {
-  jsonl: [{ key: "storage_directory", label: "Conversations directory", ph: "~/.infer/conversations" }],
-  sqlite: [{ key: "sqlite_path", label: "Database file", ph: ".infer/conversations.db" }],
+  jsonl: [
+    {
+      key: "storage_directory",
+      label: "Conversations directory",
+      ph: "default: ~/.infer/projects/<project>/conversations",
+    },
+  ],
+  sqlite: [{ key: "sqlite_path", label: "Database file", ph: "default: ~/.infer/conversations.db" }],
   postgres: [
     { key: "postgres_host", label: "Host", ph: "localhost" },
     { key: "postgres_port", label: "Port", ph: "5432" },
@@ -307,7 +313,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   storage_directory: "",
   gateway_url: "http://localhost:8080",
   default_model: "",
-  sqlite_path: ".infer/conversations.db",
+  sqlite_path: "",
   postgres_host: "localhost",
   postgres_port: "5432",
   postgres_database: "infer_conversations",
@@ -581,6 +587,9 @@ function GeneralTab() {
         />
       </div>
 
+      {/* Export/import the complete desktop state between machines (#166). */}
+      <ConfigTransfer />
+
       <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-border bg-background/95 pb-1 pt-4 backdrop-blur">
         <Button onClick={apply} disabled={!dirty || saving}>
           {saving ? "Saving..." : "Save config"}
@@ -594,6 +603,151 @@ function GeneralTab() {
         {error && (
           <span role="status" className="text-[0.8rem] text-err">
             Couldn't save: {error}
+          </span>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ConfigTransfer() {
+  const { reloadDesktopData, loadProjects } = useDesktop();
+  const [format, setFormat] = useState("json");
+  const [target, setTarget] = useState<"file" | "github">("file");
+  const [repo, setRepo] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const asNotice = (base: string, warnings: string[]) =>
+    warnings.length ? `${base} (warnings: ${warnings.join("; ")})` : base;
+
+  const exportConfig = async () => {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const r =
+        target === "file"
+          ? await api.exportDesktopFile(format)
+          : await api.exportDesktopGithub(repo.trim(), format, token.trim());
+      if (r.location) setMessage(asNotice(`Exported to ${r.location}`, r.warnings));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importConfig = async () => {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const r =
+        target === "file" ? await api.importDesktopFile() : await api.importDesktopGithub(repo.trim(), token.trim());
+      await reloadDesktopData();
+      await loadProjects();
+      setMessage(asNotice(`Imported: ${r.imported.join(", ") || "nothing"}`, r.warnings));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disabled = busy || (target === "github" && repo.trim().length === 0);
+
+  return (
+    <>
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Export / Import</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Move the full desktop state - Settings, projects, A2A agents, scheduled jobs, snippets and skills - between
+        machines. Credentials are never exported.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="export-format" className="text-[0.8rem] text-muted-foreground">
+          Format
+        </Label>
+        <select
+          id="export-format"
+          value={format}
+          onChange={(e) => setFormat(e.target.value)}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          <option value="json">json</option>
+          <option value="yaml">yaml</option>
+          <option value="toml">toml</option>
+        </select>
+      </div>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="export-destination" className="text-[0.8rem] text-muted-foreground">
+          Destination
+        </Label>
+        <select
+          id="export-destination"
+          value={target}
+          onChange={(e) => setTarget(e.target.value as "file" | "github")}
+          className="w-44 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+        >
+          <option value="file">Local file (native dialog)</option>
+          <option value="github">Private GitHub repo</option>
+        </select>
+      </div>
+      {target === "github" && (
+        <>
+          <div className="mb-3 flex flex-col gap-1">
+            <Label htmlFor="export-repo" className="text-[0.8rem] text-muted-foreground">
+              Repository (owner/repo)
+            </Label>
+            <Input
+              id="export-repo"
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+              placeholder="you/desktop-config"
+            />
+          </div>
+          <div className="mb-3 flex flex-col gap-1">
+            <Label htmlFor="export-token" className="text-[0.8rem] text-muted-foreground">
+              GitHub token (optional)
+            </Label>
+            <Input
+              id="export-token"
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="empty = gh's stored login"
+            />
+          </div>
+        </>
+      )}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <Button
+          onClick={() => {
+            void exportConfig();
+          }}
+          disabled={disabled}
+        >
+          Export config
+        </Button>
+        <Button
+          onClick={() => {
+            void importConfig();
+          }}
+          disabled={disabled}
+          variant="secondary"
+        >
+          Import config
+        </Button>
+        {message && (
+          <span role="status" className="text-[0.75rem] text-muted-foreground">
+            {message}
+          </span>
+        )}
+        {error && (
+          <span role="status" className="text-[0.8rem] text-err">
+            {error}
           </span>
         )}
       </div>
