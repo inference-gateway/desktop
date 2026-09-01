@@ -343,7 +343,7 @@ function useDesktopStore() {
             case "Ready":
               setStatus("Ready");
               setReady(true);
-              startGatewayThenModels(force, restart).then(() => checkForUpdates(force));
+              startGatewayThenModels(force, restart).then(() => checkForUpdates(true));
               refreshConversations();
               break;
             case "Error":

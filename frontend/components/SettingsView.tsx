@@ -211,7 +211,7 @@ export function SettingsView() {
           {tab === "updates" && (
             <>
               <h2 className="text-[1.05rem] font-semibold">Updates</h2>
-              <p className="mb-4 text-[0.8rem] text-muted-foreground">Checked automatically every 6 hours.</p>
+              <p className="mb-4 text-[0.8rem] text-muted-foreground">Checked on launch and every 6 hours.</p>
               <div>
                 {updates.map((u) => {
                   const latest = u.latest ? (u.outdated ? `→ ${u.latest}` : "up to date") : "unknown";
