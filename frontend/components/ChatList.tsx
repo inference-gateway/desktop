@@ -211,6 +211,8 @@ function ProjectGroup({
   count,
   isGit,
   dirty,
+  branch,
+  defaultBranch,
   busy,
   collapsed,
   active,
@@ -218,6 +220,7 @@ function ProjectGroup({
   onSelect,
   onInit,
   onOpenInVsCode,
+  onSyncDefaultBranch,
   onSettings,
   onRename,
   onDelete,
@@ -232,6 +235,8 @@ function ProjectGroup({
   count: number;
   isGit: boolean;
   dirty: boolean;
+  branch?: string;
+  defaultBranch?: string;
   busy: boolean;
   collapsed: boolean;
   active: boolean;
@@ -239,6 +244,7 @@ function ProjectGroup({
   onSelect: () => void;
   onInit: () => void;
   onOpenInVsCode: () => void;
+  onSyncDefaultBranch: () => void;
   onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
@@ -346,6 +352,11 @@ function ProjectGroup({
               className={cn("ml-0.5 shrink-0", dirty ? "text-amber-500" : "text-muted-foreground/60")}
             />
           )}
+          {isGit && branch && (
+            <span title={branch} className="max-w-28 truncate text-[0.65rem] font-normal text-muted-foreground/60">
+              {branch}
+            </span>
+          )}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
           <button
@@ -396,7 +407,7 @@ function ProjectGroup({
             }}
           />
           <div
-            style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 84) }}
+            style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 120) }}
             className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
           >
             <button
@@ -423,6 +434,20 @@ function ProjectGroup({
             >
               Init
             </button>
+            {isGit && branch && defaultBranch && branch !== defaultBranch && (
+              <button
+                aria-label={`Sync project ${name} to default branch`}
+                title={`Checkout ${defaultBranch} and pull the latest changes`}
+                disabled={busy || !dirOk}
+                onClick={() => {
+                  setMenu(null);
+                  onSyncDefaultBranch();
+                }}
+                className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+              >
+                Checkout default branch + pull
+              </button>
+            )}
           </div>
         </>
       )}
@@ -461,6 +486,8 @@ export function ChatList() {
     setCurrentView,
     gitProjects,
     dirtyProjects,
+    projectBranches,
+    projectDefaultBranches,
     refreshGitProjects,
     projectGroups,
     setError,
@@ -568,6 +595,8 @@ export function ChatList() {
                 count={indices.length}
                 isGit={gitProjects.has(name)}
                 dirty={dirtyProjects.has(name)}
+                branch={projectBranches[name]}
+                defaultBranch={projectDefaultBranches[name]}
                 busy={projectBusy(name)}
                 collapsed={collapsed}
                 active={activeProject === name}
@@ -575,6 +604,12 @@ export function ChatList() {
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
                 onOpenInVsCode={() => api.openInVsCode(name).catch((e) => setError(String(e)))}
+                onSyncDefaultBranch={() =>
+                  api
+                    .syncDefaultBranch(name)
+                    .then(refreshGitProjects)
+                    .catch((e) => setError(String(e)))
+                }
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);
