@@ -220,6 +220,18 @@ function Item({
       return <ApprovalCard item={item} approve={approve} />;
     case "image":
       return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
+    case "audio":
+      return (
+        <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
+          <audio
+            controls
+            preload="none"
+            src={item.src}
+            aria-label={`Generated speech ${item.filename}`}
+            className="w-full"
+          />
+        </div>
+      );
     case "error":
       return (
         <div className="max-w-[min(72ch,82%)] self-start rounded-md border border-err-border bg-err-bg px-3 py-2 text-err">

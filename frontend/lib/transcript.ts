@@ -2,7 +2,7 @@
 // to a flat list of render items. A faithful port of the imperative DOM logic
 // in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
 import type { AgentEvent, HistoryLine } from "./tauri";
-import { imageFilename, parseToolResult, safeImageSrc } from "./tools";
+import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
 
@@ -29,6 +29,7 @@ export type TranscriptItem =
       status: "pending" | "approved" | "denied" | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
+  | { kind: "audio"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
   | { kind: "cancelled"; id: string };
 
@@ -375,6 +376,16 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     }
   }
 
+  // TextToSpeech results name the generated WAV; render an inline player.
+  const audioSrc = parsed ? safeAudioSrc(parsed.imagePath) : null;
+  if (audioSrc && parsed?.imagePath) {
+    const file = imageFilename(parsed.imagePath);
+    if (!seenImages.includes(file)) {
+      seenImages = [...seenImages, file];
+      items = [...items, { kind: "audio", id: String(seq++), src: audioSrc, filename: file, path: parsed.imagePath }];
+    }
+  }
+
   return { ...state, items, seq, seenImages };
 }
 
@@ -408,6 +419,15 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     items.push({ kind: "image", id: String(seq++), src, filename: file, path: imagePath });
   };
 
+  const pushAudio = (audioPath: string | null) => {
+    const src = safeAudioSrc(audioPath);
+    if (!src || !audioPath) return;
+    const file = imageFilename(audioPath);
+    if (seenImages.includes(file)) return;
+    seenImages = [...seenImages, file];
+    items.push({ kind: "audio", id: String(seq++), src, filename: file, path: audioPath });
+  };
+
   for (const line of ndjson.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -438,6 +458,7 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
           skeleton: false,
         });
         pushImage(parsed.imagePath);
+        pushAudio(parsed.imagePath);
       } else {
         items.push({
           kind: "tool",

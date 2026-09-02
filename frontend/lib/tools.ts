@@ -15,6 +15,12 @@ export type ParsedToolResult = {
 // are served through Tauri's asset protocol.
 const SAFE_IMAGE_PATH = /\.infer\/(?:tmp|artifacts)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.(?:png|gif|webp|avif|jpe?g)$/i;
 
+// infer's TextToSpeech writes WAVs to its default output dir ~/.infer/tts and
+// voice samples live in ~/.infer/models/tts/samples; both are in the asset
+// protocol scope (tauri.conf.json). ponytail: a custom text_to_speech.output_dir
+// outside these dirs falls back to the plain tool card.
+const SAFE_AUDIO_PATH = /\.infer\/(?:tts|models\/tts\/samples)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.wav$/i;
+
 export function prettyJson(str: string): string {
   try {
     return JSON.stringify(JSON.parse(str), null, 2);
@@ -50,6 +56,11 @@ export function parseToolResult(content: string): ParsedToolResult | null {
 
 export function safeImageSrc(path: string | null | undefined): string | null {
   if (!path || !SAFE_IMAGE_PATH.test(path)) return null;
+  return convertFileSrc(path);
+}
+
+export function safeAudioSrc(path: string | null | undefined): string | null {
+  if (!path || !SAFE_AUDIO_PATH.test(path)) return null;
   return convertFileSrc(path);
 }
 

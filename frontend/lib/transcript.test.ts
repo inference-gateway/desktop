@@ -121,6 +121,46 @@ test("a running tool call resolves by tool_call_id", () => {
   expect(s.currentAssistantId).toBeNull();
 });
 
+test("a TextToSpeech result with a tts wav path adds an inline audio item", () => {
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    const s = run([
+      { type: "userSend", text: "speak" },
+      ev({
+        kind: "AssistantMessage",
+        content: "",
+        reasoning_content: null,
+        tool_calls: [{ id: "c1", name: "TextToSpeech", args: '{"text":"hi"}' }],
+      }),
+      ev({
+        kind: "ToolResult",
+        tool_call_id: "c1",
+        content:
+          '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
+      }),
+    ]);
+    const audio = s.items.find((i) => i.kind === "audio");
+    expect(audio).toMatchObject({
+      kind: "audio",
+      filename: "speech-20260102-150405-123.wav",
+      path: "/Users/x/.infer/tts/speech-20260102-150405-123.wav",
+    });
+    // Non-tts tool results never produce audio items.
+    const other = run([
+      ev({
+        kind: "ToolResult",
+        tool_call_id: "c2",
+        content: '{"tool_name":"Write","data":{"path":"/Users/x/.infer/tmp/out.wav"},"success":true}',
+      }),
+    ]);
+    expect(other.items.some((i) => i.kind === "audio")).toBe(false);
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
+});
+
 test("a failed tool call retains its top-level error", () => {
   const s = run([
     { type: "userSend", text: "read" },

@@ -38,6 +38,7 @@ export type ProgressEvent =
 
 export type UpdateInfo = { name: string; current: string; latest: string | null; outdated: boolean };
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
+export type VoiceSample = { name: string; path: string };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type ProjectFile = { name: string; size: number };
@@ -89,6 +90,7 @@ export type DesktopConfig = {
   projects_github_repository: string;
   projects_max_file_size_mb: string;
   projects_allowed_mimes: string;
+  text_to_speech_enabled: boolean;
 };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {
@@ -249,6 +251,9 @@ export const api = {
   sttStatus: () => invoke<SttStatus>("stt_status"),
   prepareStt: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_stt", { onEvent }),
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),
+  listVoiceSamples: () => invoke<VoiceSample[]>("list_voice_samples"),
+  addVoiceSample: () => invoke<VoiceSample | null>("add_voice_sample"),
+  deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   readProjects: () => invoke<string>("read_projects"),
