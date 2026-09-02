@@ -60,7 +60,11 @@
           "$HOME/**/.infer/tmp/**",
           "$HOME/.infer/tmp/**",
           "$HOME/**/.infer/artifacts/**",
-          "$HOME/.infer/artifacts/**"
+          "$HOME/.infer/artifacts/**",
+          "$HOME/**/.infer/tts/**",
+          "$HOME/.infer/tts/**",
+          "$HOME/**/.infer/models/tts/samples/**",
+          "$HOME/.infer/models/tts/samples/**"
         ]
       }
     },

@@ -116,10 +116,27 @@ pub(crate) fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
     Ok(bin)
 }
 
+/// Env vars that switch on /v1/audio/speech in the gateway so the CLI's
+/// TextToSpeech tool (engine "gateway") can reach it; the gateway defaults
+/// audio off. Read at spawn, so toggling TTS needs a gateway restart.
+pub(crate) fn audio_env(tts_enabled: bool) -> Vec<(&'static str, &'static str)> {
+    if tts_enabled {
+        vec![
+            ("AUDIO_ENABLED", "true"),
+            ("AUDIO_LOCAL_AUTO_DOWNLOAD", "true"),
+        ]
+    } else {
+        vec![]
+    }
+}
+
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
     std::process::Command::new(bin)
         .envs(auth_env())
         .envs(collector_env())
+        .envs(audio_env(
+            crate::config::read_config().text_to_speech_enabled,
+        ))
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
         .env("ENABLE_IMAGES", "true")
@@ -137,6 +154,8 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 /// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
 /// and the upstream response-header timeout is raised from its 10s default so
 /// non-streaming image generation (which OpenAI answers in 20-60s) doesn't 502.
+/// The audio endpoint (/v1/audio/speech) is enabled the same way when the
+/// Settings text-to-speech toggle is on (see `audio_env`).
 #[tauri::command]
 pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
@@ -147,4 +166,21 @@ pub(crate) async fn start_gateway(
     tokio::task::spawn_blocking(move || processes.start_gateway(force, restart))
         .await
         .map_err(|error| format!("gateway startup task failed: {error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_env_sets_audio_vars_only_when_tts_enabled() {
+        assert!(audio_env(false).is_empty());
+        assert_eq!(
+            audio_env(true),
+            vec![
+                ("AUDIO_ENABLED", "true"),
+                ("AUDIO_LOCAL_AUTO_DOWNLOAD", "true")
+            ]
+        );
+    }
 }

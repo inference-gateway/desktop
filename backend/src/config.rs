@@ -124,6 +124,10 @@ pub(crate) struct DesktopConfig {
     pub(crate) projects_max_file_size_mb: String,
     /// Comma-separated extension allowlist for uploaded files.
     pub(crate) projects_allowed_mimes: String,
+    /// Enable the CLI's TextToSpeech tool (text_to_speech.enabled in the CLI
+    /// config); the desktop never synthesizes audio itself.
+    #[serde(default)]
+    pub(crate) text_to_speech_enabled: bool,
 }
 
 pub(crate) fn default_config() -> DesktopConfig {
@@ -168,6 +172,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_github_repository: ".projects".into(),
         projects_max_file_size_mb: "10".into(),
         projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".into(),
+        text_to_speech_enabled: false,
     }
 }
 
@@ -315,6 +320,7 @@ pub(crate) fn config_from_value(
             "rate_limit_backoff",
         ])
         .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
+        text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
     }
 }
 
@@ -463,6 +469,14 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
             vec![("enabled", cfg.schedule_enabled.into())],
         );
     }
+
+    // Only `enabled` is written; CLI-managed keys (engine, output_dir, model)
+    // in the section pass through untouched.
+    set_section(
+        map,
+        "text_to_speech",
+        vec![("enabled", cfg.text_to_speech_enabled.into())],
+    );
 
     set_section(
         map,
@@ -659,6 +673,41 @@ mod tests {
         assert_eq!(cfg.projects_max_file_size_mb, "10");
         assert_eq!(cfg.projects_github_repository, ".projects");
         assert!(cfg.projects_root.ends_with("Inference Gateway Desktop"));
+        assert!(!cfg.text_to_speech_enabled);
+    }
+
+    #[test]
+    fn merge_config_round_trips_text_to_speech() {
+        // CLI-managed keys in the section survive; only `enabled` is written.
+        let existing = "text_to_speech:\n  engine: qwen3-tts\n  output_dir: /x\n";
+        let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
+        assert_eq!(
+            val.get("text_to_speech")
+                .and_then(|t| t.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            str_field(&val, &["text_to_speech", "engine"]),
+            Some("qwen3-tts")
+        );
+        assert_eq!(
+            str_field(&val, &["text_to_speech", "output_dir"]),
+            Some("/x")
+        );
+
+        let mut cfg = default_config();
+        cfg.text_to_speech_enabled = true;
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            val.get("text_to_speech")
+                .and_then(|t| t.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert!(cfg2.text_to_speech_enabled);
     }
 
     #[test]
