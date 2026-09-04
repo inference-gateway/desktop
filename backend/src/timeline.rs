@@ -100,6 +100,27 @@ fn install_bundled_skill() -> Result<(), String> {
     Ok(())
 }
 
+/// The export needs adelay/amix/apad and an mp4 muxer; older releases of the
+/// binaries repo shipped an audio-only ffmpeg without them.
+fn check_ffmpeg_video_support() -> Result<(), String> {
+    let ffmpeg = bin_path("ffmpeg").ok_or("ffmpeg is not installed")?;
+    let out = std::process::Command::new(&ffmpeg)
+        .args(["-hide_banner", "-filters"])
+        .output()
+        .map_err(|e| format!("running {}: {e}", ffmpeg.display()))?;
+    let filters = String::from_utf8_lossy(&out.stdout);
+    if [" adelay ", " amix ", " apad ", " scale "]
+        .iter()
+        .all(|f| filters.contains(f))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "{} is an audio-only ffmpeg build without video filters; install a full ffmpeg (e.g. brew install ffmpeg) or update to a newer inference-gateway/binaries release",
+        ffmpeg.display()
+    ))
+}
+
 /// Install everything the video-editing skill needs so the agent finds the
 /// tools ready in ~/.infer/bin: ffmpeg, whisper-cli and the whisper model.
 /// Called when a project is switched to the content type.
@@ -118,6 +139,7 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
                 download_binary(name, &on_event)?;
             }
         }
+        check_ffmpeg_video_support()?;
         ensure_whisper_model(|received, total| {
             let _ = on_event.send(ProgressEvent::Downloading { received, total });
         })?;
