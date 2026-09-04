@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Clapperboard, FilePlus, FolderOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { safeAudioSrc, safeVideoSrc } from "@/lib/tools";
+import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
   addMarker,
   clipLayout,
@@ -26,6 +26,13 @@ import { AudioPlayer } from "./AudioPlayer";
 import { Button } from "@/components/ui/button";
 
 const SAVE_DEBOUNCE_MS = 600;
+const SYNC_TOLERANCE_S = 0.3;
+
+// Clip audio lives either in ~/.infer/tts (voice) or in the project dir (music).
+function clipSrc(dir: string, src: string): string | null {
+  const path = resolveSrc(dir, src);
+  return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
+}
 const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", voice: "Voice", audio: "Audio" };
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 
@@ -52,12 +59,37 @@ export function TimelineView() {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<{ track: string; clip: string } | null>(null);
-  const [showOutput, setShowOutput] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [time, setTime] = useState(0);
   const [videos, setVideos] = useState<ProjectFile[]>([]);
   const [newSourceAudio, setNewSourceAudio] = useState<SourceAudio>("transcribe");
   const dirtyRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRefs = useRef(new Map<string, HTMLAudioElement>());
+  const { setStatus } = useDesktop();
+
+  // The preview plays whatever the timeline holds: every clip's audio is kept
+  // in step with the video's clock; the original sound stays only with "keep".
+  const syncAudio = (t: number, playing: boolean) => {
+    if (!timeline) return;
+    for (const tr of timeline.tracks) {
+      if (tr.kind === "video") continue;
+      for (const c of tr.clips) {
+        const el = audioRefs.current.get(c.id);
+        if (!el) continue;
+        el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
+        const offset = t - c.start;
+        const length = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : c.end - c.start;
+        const inside = offset >= 0 && offset < length;
+        if (playing && inside) {
+          if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
+          if (el.paused) el.play().catch(() => {});
+        } else if (!el.paused) {
+          el.pause();
+        }
+      }
+    }
+  };
 
   const load = useCallback(
     async (pick?: string) => {
@@ -120,13 +152,35 @@ export function TimelineView() {
     const el = videoRef.current;
     if (el) el.currentTime = t;
     setTime(t);
+    syncAudio(t, !!el && !el.paused);
+  };
+
+  const exportVideo = () => {
+    if (!name) return;
+    setExporting(true);
+    setStatus("Exporting video...");
+    api
+      .exportTimeline(project!, name)
+      .then((out) => {
+        setStatus(`Exported ${out}`);
+        return api.revealProjectFile(project!, out);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setExporting(false));
   };
 
   if (!project) return null;
 
   const source = timeline ? videoSource(timeline) : undefined;
-  const videoPath = timeline && (showOutput && timeline.output ? timeline.output : source);
-  const videoSrc = videoPath ? safeVideoSrc(resolveSrc(dir, videoPath)) : null;
+  const videoPath = source;
+  const videoSrc = videoPath ? safeProjectMediaSrc(resolveSrc(dir, videoPath)) : null;
+  const clipAudio = timeline
+    ? timeline.tracks
+        .filter((tr) => tr.kind !== "video")
+        .flatMap((tr) => tr.clips)
+        .flatMap((c) => (c.src ? [{ id: c.id, src: clipSrc(dir, c.src) }] : []))
+        .filter((c): c is { id: string; src: string } => !!c.src)
+    : [];
   const duration = timeline?.duration ?? 0;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
@@ -136,8 +190,8 @@ export function TimelineView() {
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
     const prompt = hasVoice
-      ? `Redo the draft clips in ${name} with my cloned voice and mux the video again. ${sourceAudioInstruction(mode)}`
-      : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"}, make the audio for every clip and mux the result. ${sourceAudioInstruction(mode)}`;
+      ? `Redo the draft clips in ${name} with my cloned voice. ${sourceAudioInstruction(mode)}`
+      : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"} and make the audio for every clip. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -152,7 +206,7 @@ export function TimelineView() {
 
   const addVoiceTo = (video: string) => {
     const stem = video.replace(VIDEO_EXT, "");
-    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}", make the audio for every clip and mux the result into ${stem}.with-voice.mp4. ${sourceAudioInstruction(newSourceAudio)}`;
+    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}" and make the audio for every clip. ${sourceAudioInstruction(newSourceAudio)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -249,32 +303,21 @@ export function TimelineView() {
                     </option>
                   ))}
                 </select>
-                {timeline.output && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-pressed={showOutput}
-                    onClick={() => setShowOutput((v) => !v)}
-                  >
-                    {showOutput ? "Original" : "With voice"}
-                  </Button>
-                )}
                 <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
                   <Plus size={14} /> Add marker
                 </Button>
                 <Button size="sm" onClick={generate} disabled={running > 0}>
                   <Sparkles size={14} /> {hasVoice ? "Redo drafts" : "Add voice"}
                 </Button>
-                {timeline.output && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    title="Reveal the exported video"
-                    onClick={() => api.revealProjectFile(project, timeline.output!).catch((e) => setError(String(e)))}
-                  >
-                    <FolderOpen size={14} /> Export
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Render the timeline to an MP4 with ffmpeg"
+                  onClick={exportVideo}
+                  disabled={exporting || running > 0 || hasVoice === 0}
+                >
+                  <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
+                </Button>
               </div>
             </div>
 
@@ -284,11 +327,30 @@ export function TimelineView() {
                 key={videoSrc}
                 src={videoSrc}
                 controls
-                onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+                muted={timeline.source_audio !== "keep"}
+                onTimeUpdate={(e) => {
+                  setTime(e.currentTarget.currentTime);
+                  syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused);
+                }}
+                onPlay={(e) => syncAudio(e.currentTarget.currentTime, true)}
+                onPause={(e) => syncAudio(e.currentTarget.currentTime, false)}
+                onSeeked={(e) => syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused)}
                 onError={() => setLoadError(`Cannot play ${videoPath}`)}
                 className="max-h-[45vh] w-full rounded-lg bg-black"
               />
-            ) : (
+            ) : null}
+            {clipAudio.map((c) => (
+              <audio
+                key={c.id}
+                src={c.src}
+                preload="auto"
+                ref={(el) => {
+                  if (el) audioRefs.current.set(c.id, el);
+                  else audioRefs.current.delete(c.id);
+                }}
+              />
+            ))}
+            {videoSrc ? null : (
               <p className="rounded-lg border border-border p-3 text-[0.8rem] text-muted-foreground">
                 Preview unavailable for {videoPath ?? "this timeline"} (only files under the default projects root can
                 be previewed).

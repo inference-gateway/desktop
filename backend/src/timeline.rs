@@ -157,6 +157,148 @@ pub(crate) async fn add_project_video(
     Ok(Some(name.to_string()))
 }
 
+#[derive(serde::Deserialize)]
+struct TimelineFile {
+    output: Option<String>,
+    source_audio: Option<String>,
+    #[serde(default)]
+    tracks: Vec<TrackFile>,
+}
+
+#[derive(serde::Deserialize)]
+struct TrackFile {
+    kind: String,
+    gain: Option<f64>,
+    #[serde(default)]
+    clips: Vec<ClipFile>,
+}
+
+#[derive(serde::Deserialize)]
+struct ClipFile {
+    start: f64,
+    src: Option<String>,
+}
+
+fn resolve_src(dir: &Path, src: &str) -> PathBuf {
+    let p = Path::new(src);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        dir.join(p)
+    }
+}
+
+/// Build the ffmpeg invocation that renders a timeline: the video's picture,
+/// every voice and audio clip delayed to its start time and mixed together,
+/// plus the original sound when `source_audio` is `keep`. Returns the
+/// arguments and the output file name. Pure, so it is testable.
+fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
+    let t: TimelineFile =
+        serde_json::from_str(json).map_err(|e| format!("invalid timeline: {e}"))?;
+    let video = t
+        .tracks
+        .iter()
+        .find(|tr| tr.kind == "video")
+        .and_then(|tr| tr.clips.first())
+        .and_then(|c| c.src.as_deref())
+        .ok_or("timeline has no video clip")?;
+    let output = t
+        .output
+        .clone()
+        .unwrap_or_else(|| format!("{stem}.with-voice.mp4"));
+    if output.contains('/') || output.contains('\\') {
+        return Err(format!("output must be a bare file name: {output}"));
+    }
+    let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-i".into()];
+    args.push(resolve_src(dir, video).to_string_lossy().into_owned());
+    let mut filters = Vec::new();
+    let mut mix: Vec<String> = Vec::new();
+    if t.source_audio.as_deref() == Some("keep") {
+        mix.push("[0:a]".into());
+    }
+    let mut input = 1;
+    for tr in t.tracks.iter().filter(|tr| tr.kind != "video") {
+        for c in tr
+            .clips
+            .iter()
+            .filter(|c| c.src.as_deref().is_some_and(|s| !s.is_empty()))
+        {
+            let src = resolve_src(dir, c.src.as_deref().unwrap_or_default());
+            if !src.is_file() {
+                return Err(format!("missing clip audio: {}", src.display()));
+            }
+            args.push("-i".into());
+            args.push(src.to_string_lossy().into_owned());
+            let ms = (c.start.max(0.0) * 1000.0).round() as u64;
+            let volume = tr
+                .gain
+                .filter(|g| (*g - 1.0).abs() > f64::EPSILON)
+                .map(|g| format!(",volume={g}"))
+                .unwrap_or_default();
+            filters.push(format!("[{input}]adelay={ms}|{ms}{volume}[a{input}]"));
+            mix.push(format!("[a{input}]"));
+            input += 1;
+        }
+    }
+    if mix.is_empty() {
+        return Err("nothing to export: the timeline has no audio clips".into());
+    }
+    filters.push(format!(
+        "{}amix=inputs={}:normalize=0[a]",
+        mix.concat(),
+        mix.len()
+    ));
+    args.extend(
+        [
+            "-filter_complex",
+            &filters.join(";"),
+            "-map",
+            "0:v",
+            "-map",
+            "[a]",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ]
+        .map(String::from),
+    );
+    args.push(dir.join(&output).to_string_lossy().into_owned());
+    Ok((args, output))
+}
+
+/// Render `<stem>.timeline.json` with ffmpeg into the project directory and
+/// return the output file name. Deterministic: same JSON, same command.
+#[tauri::command]
+pub(crate) async fn export_timeline(project: String, name: String) -> Result<String, String> {
+    let dir = dir_for(&project)?;
+    let path = timeline_path(&dir, &name)?;
+    let stem = name.trim_end_matches(SUFFIX).to_string();
+    let json =
+        std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let (args, output) = export_args(&dir, &stem, &json)?;
+    let ffmpeg = bin_path("ffmpeg")
+        .ok_or("ffmpeg is not installed; switch the project to Content again to install it")?;
+    tokio::task::spawn_blocking(move || {
+        let out = std::process::Command::new(ffmpeg)
+            .args(&args)
+            .output()
+            .map_err(|e| format!("running ffmpeg: {e}"))?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            let tail: Vec<&str> = err.lines().rev().take(5).collect();
+            return Err(format!(
+                "ffmpeg failed: {}",
+                tail.into_iter().rev().collect::<Vec<_>>().join(" ")
+            ));
+        }
+        Ok(output)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Reveal a project file in the platform file manager (Finder on macOS).
 #[tauri::command]
 pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), String> {
@@ -204,6 +346,45 @@ mod tests {
             timeline_path(dir, "demo.timeline.json").unwrap(),
             dir.join("demo.timeline.json")
         );
+    }
+
+    #[test]
+    fn export_args_delays_and_mixes_every_clip() {
+        let dir = std::env::temp_dir().join(format!("infer-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("s1.wav"), b"x").unwrap();
+        std::fs::write(dir.join("music.mp3"), b"x").unwrap();
+        let json = r#"{"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
+            {"kind":"voice","clips":[{"start":1.5,"src":"s1.wav"},{"start":9,"text":"draft"}]},
+            {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3"}]}]}"#;
+        let (args, output) = export_args(&dir, "demo", json).unwrap();
+        assert_eq!(output, "demo.with-voice.mp4");
+        let joined = args.join(" ");
+        assert!(joined.contains("[1]adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[a]"), "{joined}");
+        assert!(
+            joined.ends_with(
+                &dir.join("demo.with-voice.mp4")
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+        assert!(joined.contains("-c:v copy -c:a aac -shortest"));
+
+        let muted = json.replace("\"keep\"", "\"mute\"");
+        let (args, _) = export_args(&dir, "demo", &muted).unwrap();
+        assert!(args.join(" ").contains("[a1][a2]amix=inputs=2"));
+
+        assert!(
+            export_args(
+                &dir,
+                "demo",
+                r#"{"tracks":[{"kind":"video","clips":[{"start":0,"src":"d.mov"}]}]}"#
+            )
+            .is_err()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

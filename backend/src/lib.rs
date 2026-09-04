@@ -137,6 +137,7 @@ pub fn run() {
             timeline::reveal_project_file,
             timeline::add_project_video,
             timeline::prepare_content_tools,
+            timeline::export_timeline,
             agent::list_a2a_agents,
             agent::add_a2a_agent,
             agent::remove_a2a_agent,

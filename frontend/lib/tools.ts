@@ -62,10 +62,11 @@ export function safeImageSrc(path: string | null | undefined): string | null {
 // Project directories under the default projects root are in the asset scope
 // so the timeline can preview recordings. ponytail: a custom projects_root
 // outside Documents gets no preview; make the scope dynamic if that bites.
-const SAFE_VIDEO_PATH = /\/Documents\/Inference Gateway Desktop\/(?:[^/\0]+\/)*[^/\0]+\.(?:mp4|mov|m4v|webm)$/i;
+const SAFE_PROJECT_MEDIA_PATH =
+  /\/Documents\/Inference Gateway Desktop\/(?:[^/\0]+\/)*[^/\0]+\.(?:mp4|mov|m4v|webm|wav|mp3|m4a|aac|ogg)$/i;
 
-export function safeVideoSrc(path: string | null | undefined): string | null {
-  if (!path || !SAFE_VIDEO_PATH.test(path)) return null;
+export function safeProjectMediaSrc(path: string | null | undefined): string | null {
+  if (!path || !SAFE_PROJECT_MEDIA_PATH.test(path)) return null;
   return convertFileSrc(path);
 }
 
