@@ -1,5 +1,5 @@
 // Timeline files (<stem>.timeline.json) inside a project directory: the
-// contract between the video-narration skill and the desktop timeline view.
+// contract between the video-editing skill and the desktop timeline view.
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::projects::project_dir;
 use std::path::{Path, PathBuf};

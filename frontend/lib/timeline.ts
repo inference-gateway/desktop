@@ -1,4 +1,4 @@
-// The <stem>.timeline.json contract shared with the video-narration skill:
+// The <stem>.timeline.json contract shared with the video-editing skill:
 // a duration plus tracks of clips. The desktop edits narration text and
 // markers here; the agent synthesizes draft clips and muxes the output.
 export type ClipStatus = "draft" | "done";
