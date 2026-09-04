@@ -35,6 +35,7 @@ import {
   type RepoEntry,
   type VoiceSample,
 } from "@/lib/tauri";
+import { AudioPlayer } from "@/components/AudioPlayer";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
@@ -2800,13 +2801,7 @@ function VoiceSamplesTab() {
                   <Trash2 size={14} />
                 </Button>
               </div>
-              <audio
-                controls
-                preload="auto"
-                src={safeAudioSrc(s.path) ?? undefined}
-                aria-label={`Preview ${s.name}`}
-                className="w-full"
-              />
+              {safeAudioSrc(s.path) && <AudioPlayer src={safeAudioSrc(s.path)!} ariaLabel={s.name} />}
             </div>
           ))}
         </div>

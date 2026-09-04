@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
@@ -223,13 +224,7 @@ function Item({
     case "audio":
       return (
         <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
-          <audio
-            controls
-            preload="auto"
-            src={item.src}
-            aria-label={`Generated speech ${item.filename}`}
-            className="w-full"
-          />
+          <AudioPlayer src={item.src} ariaLabel={`generated speech ${item.filename}`} />
         </div>
       );
     case "error":

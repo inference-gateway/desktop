@@ -29,6 +29,21 @@ export function downsample(samples: Float32Array, from: number, to: number): Flo
   return out;
 }
 
+export function computePeaks(samples: Float32Array, bars: number): number[] {
+  if (samples.length === 0 || bars <= 0) return Array(Math.max(bars, 0)).fill(0);
+  const bucket = Math.max(1, Math.floor(samples.length / bars));
+  const peaks: number[] = [];
+  for (let b = 0; b < bars; b++) {
+    let sum = 0;
+    const start = b * bucket;
+    const end = Math.min(start + bucket, samples.length);
+    for (let i = start; i < end; i++) sum += samples[i] * samples[i];
+    peaks.push(Math.sqrt(sum / Math.max(1, end - start)));
+  }
+  const max = Math.max(...peaks);
+  return max > 0 ? peaks.map((p) => p / max) : peaks;
+}
+
 export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
