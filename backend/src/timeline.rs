@@ -3,7 +3,7 @@
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::download::ProgressEvent;
 use crate::projects::project_dir;
-use crate::stt::{bin_path, download_binary, ensure_whisper_model};
+use crate::stt::{download_binary, ensure_whisper_model, find_on_path, owned_bin};
 use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
 use tauri_plugin_dialog::DialogExt;
@@ -100,29 +100,35 @@ fn install_bundled_skill() -> Result<(), String> {
     Ok(())
 }
 
-/// The export needs adelay/amix/apad and an mp4 muxer; older releases of the
-/// binaries repo shipped an audio-only ffmpeg without them.
-fn check_ffmpeg_video_support() -> Result<(), String> {
-    let ffmpeg = bin_path("ffmpeg").ok_or("ffmpeg is not installed")?;
-    let out = std::process::Command::new(&ffmpeg)
+fn has_video_filters(ffmpeg: &Path) -> bool {
+    std::process::Command::new(ffmpeg)
         .args(["-hide_banner", "-filters"])
         .output()
-        .map_err(|e| format!("running {}: {e}", ffmpeg.display()))?;
-    let filters = String::from_utf8_lossy(&out.stdout);
-    if [" adelay ", " amix ", " apad ", " scale "]
-        .iter()
-        .all(|f| filters.contains(f))
-    {
-        return Ok(());
-    }
-    Err(format!(
-        "{} is an audio-only ffmpeg build without video filters; install a full ffmpeg (e.g. brew install ffmpeg) or update to a newer inference-gateway/binaries release",
-        ffmpeg.display()
-    ))
+        .map(|out| {
+            let filters = String::from_utf8_lossy(&out.stdout);
+            [" adelay ", " amix ", " apad ", " scale "]
+                .iter()
+                .all(|f| filters.contains(f))
+        })
+        .unwrap_or(false)
+}
+
+/// The ffmpeg used for keyframes and the export: the desktop-owned copy when
+/// it has the video filters, else a full build on PATH.
+/// ponytail: the binaries release is audio-only until inference-gateway/binaries#26 ships;
+/// drop the PATH fallback once the pinned release has the filters.
+fn video_ffmpeg() -> Result<PathBuf, String> {
+    [owned_bin("ffmpeg"), find_on_path("ffmpeg")]
+        .into_iter()
+        .flatten()
+        .find(|p| has_video_filters(p))
+        .ok_or_else(|| {
+            "no ffmpeg with video filters found: the bundled build is audio-only; install a full ffmpeg (brew install ffmpeg) until a newer inference-gateway/binaries release ships".to_string()
+        })
 }
 
 /// Install everything the video-editing skill needs so the agent finds the
-/// tools ready in ~/.infer/bin: ffmpeg, whisper-cli and the whisper model.
+/// tools ready in ~/.infer/tools: ffmpeg, whisper-cli and the whisper model.
 /// Called when a project is switched to the content type.
 #[tauri::command]
 pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> Result<(), String> {
@@ -134,12 +140,12 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
         let _ = on_event.send(ProgressEvent::Checking);
         install_bundled_skill()?;
         for name in ["ffmpeg", "whisper-cli"] {
-            if bin_path(name).is_none() {
+            if owned_bin(name).is_none() {
                 let _ = on_event.send(ProgressEvent::Installing);
                 download_binary(name, &on_event)?;
             }
         }
-        check_ffmpeg_video_support()?;
+        video_ffmpeg()?;
         ensure_whisper_model(|received, total| {
             let _ = on_event.send(ProgressEvent::Downloading { received, total });
         })?;
@@ -300,8 +306,7 @@ pub(crate) async fn export_timeline(project: String, name: String) -> Result<Str
     let json =
         std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
     let (args, output) = export_args(&dir, &stem, &json)?;
-    let ffmpeg = bin_path("ffmpeg")
-        .ok_or("ffmpeg is not installed; switch the project to Content again to install it")?;
+    let ffmpeg = video_ffmpeg()?;
     tokio::task::spawn_blocking(move || {
         let out = std::process::Command::new(ffmpeg)
             .args(&args)

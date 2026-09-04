@@ -18,12 +18,11 @@ pub(crate) const WHISPER_MODEL_URL: &str =
 /// Prebuilt static ffmpeg / whisper-cli / llama-tts release shared with the CLI.
 pub(crate) const BINARIES_BASE: &str =
     "https://github.com/inference-gateway/binaries/releases/download/v0.3.0";
-/// Filename for the downloaded whisper binary; Windows needs the `.exe` to run.
-pub(crate) const WHISPER_BIN_NAME: &str = if cfg!(windows) {
-    "whisper-cli.exe"
-} else {
-    "whisper-cli"
-};
+/// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/tools, apart
+/// from the CLI's and gateway's own downloads in ~/.infer/bin.
+pub(crate) fn tools_dir() -> PathBuf {
+    home_dir().join(".infer").join("tools")
+}
 
 pub(crate) fn whisper_model_path() -> PathBuf {
     home_dir()
@@ -66,16 +65,9 @@ pub(crate) fn bin_file_name(name: &str) -> String {
     }
 }
 
-/// Resolve a tool binary: PATH first, then the desktop-downloaded copy in
-/// ~/.infer/bin.
-pub(crate) fn bin_path(name: &str) -> Option<PathBuf> {
-    if let Some(p) = find_on_path(name) {
-        return Some(p);
-    }
-    let owned = home_dir()
-        .join(".infer")
-        .join("bin")
-        .join(bin_file_name(name));
+/// The desktop-owned copy of a tool in ~/.infer/tools, if installed.
+pub(crate) fn owned_bin(name: &str) -> Option<PathBuf> {
+    let owned = tools_dir().join(bin_file_name(name));
     is_executable_file(&owned).then_some(owned)
 }
 
@@ -121,13 +113,12 @@ pub(crate) fn whisper_bin_path() -> Option<PathBuf> {
             return Some(pb);
         }
     }
-    for name in ["whisper-cli", "whisper-cpp"] {
-        if let Some(p) = find_on_path(name) {
-            return Some(p);
-        }
+    if let Some(p) = owned_bin("whisper-cli") {
+        return Some(p);
     }
-    let owned = home_dir().join(".infer").join("bin").join(WHISPER_BIN_NAME);
-    is_executable_file(&owned).then_some(owned)
+    ["whisper-cli", "whisper-cpp"]
+        .iter()
+        .find_map(|name| find_on_path(name))
 }
 
 /// Stream `reader` into `tmp`, reporting (received, total) progress. Leaves `tmp`
@@ -190,7 +181,7 @@ pub(crate) fn download_whisper_binary(
 }
 
 /// Download and checksum-verify a prebuilt binary from the binaries release
-/// into ~/.infer/bin. Copies check_and_install_cli's verify-then-rename-then-chmod flow.
+/// into ~/.infer/tools. Copies check_and_install_cli's verify-then-rename-then-chmod flow.
 pub(crate) fn download_binary(
     name: &str,
     on_event: &Channel<ProgressEvent>,
@@ -203,7 +194,7 @@ pub(crate) fn download_binary(
         )
     })?;
 
-    let bin_dir = home_dir().join(".infer").join("bin");
+    let bin_dir = tools_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
     let dest = bin_dir.join(bin_file_name(name));
     let tmp = bin_dir.join(format!("{name}.tmp"));
@@ -392,6 +383,45 @@ mod tests {
             "Create a file named test.txt"
         );
         assert_eq!(clean_transcript("hi (typing) there [noise]"), "hi there");
+    }
+
+    /// Real network: downloads ffmpeg and whisper-cli from the binaries
+    /// release into DL_TEST_HOME (default: a temp dir) and verifies the
+    /// checksum flow end to end.
+    /// Run with: DL_TEST_HOME=$HOME cargo test download_binaries_install_from_release -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn download_binaries_install_from_release() {
+        let temp = std::env::temp_dir().join(format!("infer-dl-{}", std::process::id()));
+        let home = std::env::var("DL_TEST_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| temp.clone());
+        std::fs::create_dir_all(&home).unwrap();
+        unsafe { std::env::set_var("HOME", &home) };
+        let ch = Channel::new(|_| Ok(()));
+        for name in ["ffmpeg", "whisper-cli"] {
+            let dest = download_binary(name, &ch).unwrap();
+            assert_eq!(dest, home.join(".infer").join("tools").join(name));
+            assert!(is_executable_file(&dest));
+            assert_eq!(owned_bin(name).as_deref(), Some(dest.as_path()));
+            let out = std::process::Command::new(&dest).arg("-version").output();
+            let out = out
+                .or_else(|_| std::process::Command::new(&dest).arg("--help").output())
+                .unwrap();
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                text.contains("version") || text.contains("usage"),
+                "{name} did not run: {text}"
+            );
+            println!("installed {}", dest.display());
+        }
+        if home == temp {
+            let _ = std::fs::remove_dir_all(&home);
+        }
     }
 
     #[test]
