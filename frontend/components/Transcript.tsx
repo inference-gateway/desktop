@@ -225,7 +225,7 @@ function Item({
         <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
           <audio
             controls
-            preload="none"
+            preload="auto"
             src={item.src}
             aria-label={`Generated speech ${item.filename}`}
             className="w-full"

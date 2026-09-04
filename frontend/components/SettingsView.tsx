@@ -2802,7 +2802,7 @@ function VoiceSamplesTab() {
               </div>
               <audio
                 controls
-                preload="none"
+                preload="auto"
                 src={safeAudioSrc(s.path) ?? undefined}
                 aria-label={`Preview ${s.name}`}
                 className="w-full"
