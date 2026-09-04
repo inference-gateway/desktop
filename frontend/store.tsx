@@ -37,7 +37,7 @@ const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 
 const CONTENT_GUIDANCE =
-  'This is a content project, not a code repository. For video narration requests ("add my voice", "narrate this recording") use the video-editing skill; the desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
+  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") use the video-editing skill; the desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
 
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;

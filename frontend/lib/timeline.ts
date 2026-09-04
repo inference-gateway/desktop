@@ -1,15 +1,15 @@
 // The <stem>.timeline.json contract shared with the video-editing skill:
-// a duration plus tracks of clips. The desktop edits narration text and
+// a duration plus tracks of clips. The desktop edits voice text and
 // markers here; the agent synthesizes draft clips and muxes the output.
 export type ClipStatus = "draft" | "done";
-export type TrackKind = "video" | "narration" | "audio";
+export type TrackKind = "video" | "voice" | "audio";
 // What to do with the recording's own audio track: transcribe it and replace
-// it with the cloned voice, drop it, or mix it under the narration.
+// it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
 export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
-  { value: "transcribe", label: "Re-voice: transcribe, polish the text, clone my voice from it" },
+  { value: "transcribe", label: "Redo my voice: write down what I say, clean it up, clone my voice" },
   { value: "mute", label: "Mute" },
-  { value: "keep", label: "Keep under the narration" },
+  { value: "keep", label: "Keep it under my voice" },
 ];
 
 export type Clip = {
@@ -37,7 +37,7 @@ export type Timeline = {
   tracks: Track[];
 };
 
-const KINDS: TrackKind[] = ["video", "narration", "audio"];
+const KINDS: TrackKind[] = ["video", "voice", "audio"];
 const MARKER_SECONDS = 5;
 
 function num(v: unknown, fallback = 0): number {
@@ -82,8 +82,8 @@ export function videoSource(t: Timeline): string | undefined {
   return t.tracks.find((tr) => tr.kind === "video")?.clips[0]?.src;
 }
 
-export function narrationTrack(t: Timeline): Track | undefined {
-  return t.tracks.find((tr) => tr.kind === "narration");
+export function voiceTrack(t: Timeline): Track | undefined {
+  return t.tracks.find((tr) => tr.kind === "voice");
 }
 
 export function clipLayout(clip: Clip, duration: number): { left: string; width: string } {
@@ -122,16 +122,16 @@ export function removeClip(t: Timeline, trackId: string, clipId: string): Timeli
   };
 }
 
-// Insert a draft narration clip at `at`, ending at the next clip or after
-// MARKER_SECONDS, whichever comes first. Creates the narration track if missing.
+// Insert a draft voice clip at `at`, ending at the next clip or after
+// MARKER_SECONDS, whichever comes first. Creates the voice track if missing.
 export function addMarker(t: Timeline, at: number, text = ""): Timeline {
   const start = Math.max(0, Math.min(at, t.duration));
-  const track = narrationTrack(t) ?? { id: "voice", kind: "narration" as const, clips: [] };
+  const track = voiceTrack(t) ?? { id: "voice", kind: "voice" as const, clips: [] };
   const next = track.clips.find((c) => c.start > start);
   const end = Math.min(t.duration || start + MARKER_SECONDS, next?.start ?? Infinity, start + MARKER_SECONDS);
   const clip: Clip = { id: nextId(track, "m"), start, end: Math.max(end, start + 0.5), text, status: "draft" };
   const clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
-  const tracks = narrationTrack(t)
+  const tracks = voiceTrack(t)
     ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))
     : [...t.tracks, { ...track, clips }];
   return { ...t, tracks };

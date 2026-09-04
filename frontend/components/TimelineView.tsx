@@ -8,7 +8,7 @@ import {
   clipLayout,
   draftCount,
   fmtTime,
-  narrationTrack,
+  voiceTrack,
   parseTimeline,
   removeClip,
   resolveSrc,
@@ -26,22 +26,22 @@ import { AudioPlayer } from "./AudioPlayer";
 import { Button } from "@/components/ui/button";
 
 const SAVE_DEBOUNCE_MS = 600;
-const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", narration: "Narration", audio: "Audio" };
+const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", voice: "Voice", audio: "Audio" };
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 
 function sourceAudioInstruction(mode: SourceAudio): string {
   switch (mode) {
     case "transcribe":
-      return "The recording has my own narration: transcribe it, rewrite each segment into cleaner narration that keeps the meaning and timing, use the recording's speech as the voice sample unless a library sample is chosen, and replace the original audio with the cloned voice.";
+      return "The recording already has me talking: write down what I say, rewrite each part into cleaner text that keeps the meaning and timing, use my speech from the recording as the voice sample unless a library sample is chosen, and replace the original audio with the cloned voice.";
     case "mute":
       return "Ignore and drop the recording's own audio.";
     case "keep":
-      return "Keep the recording's own audio mixed under the narration.";
+      return "Keep the recording's own audio mixed under my voice.";
   }
 }
 
 // Editable view of <stem>.timeline.json: video preview, one row per track,
-// clips positioned by time, and a text editor for the selected narration
+// clips positioned by time, and a text editor for the selected voice
 // clip. Edits mark clips draft and are debounced to disk; the agent
 // synthesizes drafts and remuxes when asked via "Generate".
 export function TimelineView() {
@@ -131,19 +131,19 @@ export function TimelineView() {
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
-  const hasNarration = (timeline && narrationTrack(timeline)?.clips.length) ?? 0;
+  const hasVoice = (timeline && voiceTrack(timeline)?.clips.length) ?? 0;
 
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
-    const prompt = hasNarration
-      ? `Regenerate the draft clips in ${name} with my cloned voice and remux the video. ${sourceAudioInstruction(mode)}`
-      : `Narrate ${source ?? "the video in this project"} in my cloned voice: write ${name || "<stem>.timeline.json"}, synthesize every clip and mux the result. ${sourceAudioInstruction(mode)}`;
+    const prompt = hasVoice
+      ? `Redo the draft clips in ${name} with my cloned voice and mux the video again. ${sourceAudioInstruction(mode)}`
+      : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"}, make the audio for every clip and mux the result. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  const narrateNew = (video: string) => {
+  const addVoiceTo = (video: string) => {
     const stem = video.replace(VIDEO_EXT, "");
-    const prompt = `Narrate ${video} in my cloned voice: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}", synthesize every clip and mux the result into ${stem}.narrated.mp4. ${sourceAudioInstruction(newSourceAudio)}`;
+    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}", make the audio for every clip and mux the result into ${stem}.with-voice.mp4. ${sourceAudioInstruction(newSourceAudio)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -177,7 +177,7 @@ export function TimelineView() {
         ))}
         {names.length === 0 && (
           <p className="px-2 text-[0.78rem] text-muted-foreground">
-            No timeline yet. Drop a recording into this project and ask the agent to narrate it.
+            No timeline yet. Drop a recording into this project and ask the agent to add your voice.
           </p>
         )}
       </nav>
@@ -205,8 +205,8 @@ export function TimelineView() {
             {videos.map((v) => (
               <div key={v.name} className="flex items-center gap-2 text-[0.85rem]">
                 <span className="truncate">{v.name}</span>
-                <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => narrateNew(v.name)}>
-                  <Sparkles size={14} /> Narrate
+                <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => addVoiceTo(v.name)}>
+                  <Sparkles size={14} /> Add voice
                 </Button>
               </div>
             ))}
@@ -241,14 +241,14 @@ export function TimelineView() {
                     aria-pressed={showOutput}
                     onClick={() => setShowOutput((v) => !v)}
                   >
-                    {showOutput ? "Original" : "Narrated"}
+                    {showOutput ? "Original" : "With voice"}
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
                   <Plus size={14} /> Add marker
                 </Button>
                 <Button size="sm" onClick={generate} disabled={running > 0}>
-                  <Sparkles size={14} /> {hasNarration ? "Regenerate drafts" : "Generate narration"}
+                  <Sparkles size={14} /> {hasVoice ? "Redo drafts" : "Add voice"}
                 </Button>
                 {timeline.output && (
                   <Button
@@ -312,7 +312,7 @@ export function TimelineView() {
                           "absolute top-0.5 bottom-0.5 truncate rounded px-1 text-left text-[0.68rem] leading-7 outline-none",
                           tr.kind === "video" && "bg-primary/30",
                           tr.kind === "audio" && "bg-emerald-500/30",
-                          tr.kind === "narration" && (c.status === "draft" ? "bg-amber-500/40" : "bg-primary/50"),
+                          tr.kind === "voice" && (c.status === "draft" ? "bg-amber-500/40" : "bg-primary/50"),
                           selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
                         )}
                       >
@@ -371,10 +371,10 @@ function ClipEditor({
           </button>
         )}
       </div>
-      {track.kind === "narration" && (
+      {track.kind === "voice" && (
         <textarea
           id={`clip-text-${clip.id}`}
-          aria-label={`Narration text for ${clip.id}`}
+          aria-label={`Voice text for ${clip.id}`}
           rows={3}
           value={clip.text ?? ""}
           placeholder="What should be said here? Leave blank to let the agent suggest it."

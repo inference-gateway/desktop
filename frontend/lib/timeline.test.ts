@@ -4,12 +4,12 @@ import { addMarker, clipLayout, draftCount, parseTimeline, removeClip, setClipTe
 const SAMPLE = JSON.stringify({
   version: 1,
   duration: 20,
-  output: "demo.narrated.mp4",
+  output: "demo.with-voice.mp4",
   tracks: [
     { id: "video", kind: "video", clips: [{ id: "v1", src: "demo.mov", start: 0, end: 20 }] },
     {
       id: "voice",
-      kind: "narration",
+      kind: "voice",
       clips: [
         { id: "s2", start: "10", end: 20, text: "second", status: "done" },
         { id: "s1", start: 0, end: 10, text: "first", status: "done" },
@@ -51,9 +51,9 @@ describe("edits", () => {
     expect(clips[1]).toMatchObject({ start: 8, end: 10, status: "draft" });
   });
 
-  test("addMarker creates the narration track when missing", () => {
+  test("addMarker creates the voice track when missing", () => {
     const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "hello");
-    expect(t.tracks[0]).toMatchObject({ kind: "narration", clips: [{ start: 3, end: 8, text: "hello" }] });
+    expect(t.tracks[0]).toMatchObject({ kind: "voice", clips: [{ start: 3, end: 8, text: "hello" }] });
   });
 
   test("removeClip drops the clip", () => {
