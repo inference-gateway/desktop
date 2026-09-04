@@ -2750,8 +2750,8 @@ function VoiceSamplesTab() {
     <>
       <h2 className="text-[1.05rem] font-semibold">Voice samples</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        Reference WAV recordings for voice cloning, stored in ~/.infer/models/tts/samples. Once the CLI resolves sample
-        names from this library, ask the agent to speak "in the voice of a sample" by its file name.
+        Reference WAV recordings for voice cloning, stored in ~/.infer/models/tts/samples. Ask the agent to speak in a
+        sample's voice by its full file name, e.g. "read this in the voice of my-voice.wav".
       </p>
       <div className="mb-4 flex items-center gap-2">
         <Button size="sm" disabled={adding || recording} onClick={add}>
