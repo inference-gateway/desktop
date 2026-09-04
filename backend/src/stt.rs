@@ -95,8 +95,7 @@ pub(crate) fn is_executable_file(p: &std::path::Path) -> bool {
 
 /// First matching executable named `name` on PATH.
 pub(crate) fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    for dir in std::env::split_paths(&crate::env::composed_path()) {
         let candidate = dir.join(name);
         if is_executable_file(&candidate) {
             return Some(candidate);

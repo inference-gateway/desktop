@@ -244,7 +244,7 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
         return Err("nothing to export: the timeline has no audio clips".into());
     }
     filters.push(format!(
-        "{}amix=inputs={}:normalize=0[a]",
+        "{}amix=inputs={}:normalize=0[mix];[mix]apad[a]",
         mix.concat(),
         mix.len()
     ));
@@ -362,7 +362,7 @@ mod tests {
         let (args, output) = export_args(&dir, "demo", json).unwrap();
         assert_eq!(output, "demo.with-voice.mp4");
         let joined = args.join(" ");
-        assert!(joined.contains("[1]adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[a]"), "{joined}");
+        assert!(joined.contains("[1]adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
         assert!(
             joined.ends_with(
                 &dir.join("demo.with-voice.mp4")
