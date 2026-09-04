@@ -15,8 +15,9 @@ use tauri::ipc::Channel;
 pub(crate) const WHISPER_MODEL_FILE: &str = "ggml-tiny.bin";
 pub(crate) const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
-pub(crate) const STT_BINARIES_BASE: &str =
-    "https://github.com/inference-gateway/stt-binaries/releases/download/v0.2.0";
+/// Prebuilt static ffmpeg / whisper-cli / llama-tts release shared with the CLI.
+pub(crate) const BINARIES_BASE: &str =
+    "https://github.com/inference-gateway/binaries/releases/download/v0.3.0";
 /// Filename for the downloaded whisper binary; Windows needs the `.exe` to run.
 pub(crate) const WHISPER_BIN_NAME: &str = if cfg!(windows) {
     "whisper-cli.exe"
@@ -34,21 +35,48 @@ pub(crate) fn whisper_model_path() -> PathBuf {
 
 /// Prebuilt whisper-cli asset for this platform, or `None` where none is published.
 pub(crate) fn stt_bin_asset() -> Option<String> {
-    stt_bin_asset_for(std::env::consts::OS, std::env::consts::ARCH)
+    bin_asset("whisper-cli")
 }
 
-pub(crate) fn stt_bin_asset_for(os: &str, arch: &str) -> Option<String> {
+/// Release asset name (`<name>-<os>-<arch>`) for this platform.
+pub(crate) fn bin_asset(name: &str) -> Option<String> {
+    bin_asset_for(name, std::env::consts::OS, std::env::consts::ARCH)
+}
+
+pub(crate) fn bin_asset_for(name: &str, os: &str, arch: &str) -> Option<String> {
     let arch = match arch {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
         _ => return None,
     };
     match os {
-        "linux" => Some(format!("whisper-cli-linux-{}", arch)),
-        "macos" => Some(format!("whisper-cli-darwin-{}", arch)),
-        "windows" if arch == "amd64" => Some("whisper-cli-windows-amd64.exe".into()),
+        "linux" => Some(format!("{name}-linux-{arch}")),
+        "macos" => Some(format!("{name}-darwin-{arch}")),
+        "windows" if arch == "amd64" => Some(format!("{name}-windows-amd64.exe")),
         _ => None,
     }
+}
+
+/// Installed file name for a downloaded binary; Windows needs the `.exe` to run.
+pub(crate) fn bin_file_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
+/// Resolve a tool binary: PATH first, then the desktop-downloaded copy in
+/// ~/.infer/bin.
+pub(crate) fn bin_path(name: &str) -> Option<PathBuf> {
+    if let Some(p) = find_on_path(name) {
+        return Some(p);
+    }
+    let owned = home_dir()
+        .join(".infer")
+        .join("bin")
+        .join(bin_file_name(name));
+    is_executable_file(&owned).then_some(owned)
 }
 
 pub(crate) fn is_executable_file(p: &std::path::Path) -> bool {
@@ -156,13 +184,21 @@ pub(crate) fn ensure_whisper_model(on_progress: impl FnMut(u64, u64)) -> Result<
 }
 
 /// Download and checksum-verify the prebuilt whisper-cli into ~/.infer/bin.
-/// Copies check_and_install_cli's verify-then-rename-then-chmod flow.
 pub(crate) fn download_whisper_binary(
     on_event: &Channel<ProgressEvent>,
 ) -> Result<PathBuf, String> {
-    let asset = stt_bin_asset().ok_or_else(|| {
+    download_binary("whisper-cli", on_event)
+}
+
+/// Download and checksum-verify a prebuilt binary from the binaries release
+/// into ~/.infer/bin. Copies check_and_install_cli's verify-then-rename-then-chmod flow.
+pub(crate) fn download_binary(
+    name: &str,
+    on_event: &Channel<ProgressEvent>,
+) -> Result<PathBuf, String> {
+    let asset = bin_asset(name).ok_or_else(|| {
         format!(
-            "No prebuilt whisper-cli for {}-{}",
+            "No prebuilt {name} for {}-{}",
             std::env::consts::OS,
             std::env::consts::ARCH
         )
@@ -170,17 +206,17 @@ pub(crate) fn download_whisper_binary(
 
     let bin_dir = home_dir().join(".infer").join("bin");
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-    let dest = bin_dir.join(WHISPER_BIN_NAME);
-    let tmp = bin_dir.join("whisper-cli.tmp");
+    let dest = bin_dir.join(bin_file_name(name));
+    let tmp = bin_dir.join(format!("{name}.tmp"));
 
     let _ = on_event.send(ProgressEvent::Downloading {
         received: 0,
         total: 0,
     });
-    download(&format!("{}/{}", STT_BINARIES_BASE, asset), &tmp, on_event)?;
+    download(&format!("{}/{}", BINARIES_BASE, asset), &tmp, on_event)?;
 
     let _ = on_event.send(ProgressEvent::Verifying);
-    let checksums_resp = ureq::get(&format!("{}/checksums.txt", STT_BINARIES_BASE))
+    let checksums_resp = ureq::get(&format!("{}/checksums.txt", BINARIES_BASE))
         .call()
         .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
     let mut checksums_text = String::new();
@@ -362,26 +398,26 @@ mod tests {
     #[test]
     fn test_stt_bin_asset_mapping() {
         assert_eq!(
-            stt_bin_asset_for("linux", "x86_64").as_deref(),
+            bin_asset_for("whisper-cli", "linux", "x86_64").as_deref(),
             Some("whisper-cli-linux-amd64")
         );
         assert_eq!(
-            stt_bin_asset_for("linux", "aarch64").as_deref(),
+            bin_asset_for("whisper-cli", "linux", "aarch64").as_deref(),
             Some("whisper-cli-linux-arm64")
         );
         assert_eq!(
-            stt_bin_asset_for("macos", "aarch64").as_deref(),
+            bin_asset_for("whisper-cli", "macos", "aarch64").as_deref(),
             Some("whisper-cli-darwin-arm64")
         );
         assert_eq!(
-            stt_bin_asset_for("macos", "x86_64").as_deref(),
+            bin_asset_for("whisper-cli", "macos", "x86_64").as_deref(),
             Some("whisper-cli-darwin-amd64")
         );
         assert_eq!(
-            stt_bin_asset_for("windows", "x86_64").as_deref(),
+            bin_asset_for("whisper-cli", "windows", "x86_64").as_deref(),
             Some("whisper-cli-windows-amd64.exe")
         );
-        assert_eq!(stt_bin_asset_for("windows", "aarch64"), None);
-        assert_eq!(stt_bin_asset_for("linux", "riscv64"), None);
+        assert_eq!(bin_asset_for("whisper-cli", "windows", "aarch64"), None);
+        assert_eq!(bin_asset_for("whisper-cli", "linux", "riscv64"), None);
     }
 }

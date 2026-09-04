@@ -1090,17 +1090,55 @@ function useDesktopStore() {
     setActiveProject((p) => (p === oldName ? newName : p));
   }, []);
 
-  const setProjectType = useCallback((name: string, type: ProjectType) => {
-    setProjectTypes((prev) => {
-      if (type === "code") {
-        if (!(name in prev)) return prev;
-        const next = { ...prev };
-        delete next[name];
-        return next;
+  // Content projects need ffmpeg, whisper-cli and the whisper model in
+  // ~/.infer/bin so the agent never has to fetch tools itself.
+  const prepareContentTools = useCallback(async () => {
+    const ch = new Channel<ProgressEvent>();
+    ch.onmessage = (e) => {
+      switch (e.kind) {
+        case "Checking":
+          setStatus("Checking video tools...");
+          break;
+        case "Installing":
+          setStatus("Installing video tools...");
+          break;
+        case "Downloading":
+          setStatus(
+            e.total > 0
+              ? `Downloading video tools... ${Math.round((e.received / e.total) * 100)}%`
+              : "Downloading video tools...",
+          );
+          break;
+        case "Verifying":
+          setStatus("Verifying video tools...");
+          break;
+        case "Ready":
+          setStatus("Video tools ready");
+          break;
       }
-      return { ...prev, [name]: type };
-    });
-  }, []);
+    };
+    try {
+      await api.prepareContentTools(ch);
+    } catch (err) {
+      setError(`Failed to install video tools: ${err}`);
+    }
+  }, [setStatus, setError]);
+
+  const setProjectType = useCallback(
+    (name: string, type: ProjectType) => {
+      if (type === "content") prepareContentTools();
+      setProjectTypes((prev) => {
+        if (type === "code") {
+          if (!(name in prev)) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        }
+        return { ...prev, [name]: type };
+      });
+    },
+    [prepareContentTools],
+  );
 
   const setProjectContext = useCallback((name: string, context: string) => {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));

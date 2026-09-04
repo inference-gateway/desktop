@@ -1,8 +1,11 @@
 // Timeline files (<stem>.timeline.json) inside a project directory: the
 // contract between the video-editing skill and the desktop timeline view.
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
+use crate::download::ProgressEvent;
 use crate::projects::project_dir;
+use crate::stt::{bin_path, download_binary, ensure_whisper_model};
 use std::path::{Path, PathBuf};
+use tauri::ipc::Channel;
 use tauri_plugin_dialog::DialogExt;
 
 const VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "mov", "m4v", "webm"];
@@ -78,6 +81,33 @@ pub(crate) fn write_timeline(project: String, name: String, data: String) -> Res
     let path = timeline_path(&dir, &name)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(&path, data).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+/// Install everything the video-editing skill needs so the agent finds the
+/// tools ready in ~/.infer/bin: ffmpeg, whisper-cli and the whisper model.
+/// Called when a project is switched to the content type.
+#[tauri::command]
+pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> Result<(), String> {
+    if crate::env::mock_mode() {
+        let _ = on_event.send(ProgressEvent::Ready);
+        return Ok(());
+    }
+    tokio::task::spawn_blocking(move || {
+        let _ = on_event.send(ProgressEvent::Checking);
+        for name in ["ffmpeg", "whisper-cli"] {
+            if bin_path(name).is_none() {
+                let _ = on_event.send(ProgressEvent::Installing);
+                download_binary(name, &on_event)?;
+            }
+        }
+        ensure_whisper_model(|received, total| {
+            let _ = on_event.send(ProgressEvent::Downloading { received, total });
+        })?;
+        let _ = on_event.send(ProgressEvent::Ready);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Pick a video with the native file dialog and copy it into the project
