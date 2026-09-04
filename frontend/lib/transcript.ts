@@ -433,12 +433,15 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     if (!trimmed) continue;
     let entry: HistoryLine;
     try {
-      entry = JSON.parse(trimmed);
+      const raw = JSON.parse(trimmed);
+      entry = raw?.entry?.message ?? raw;
     } catch {
       continue;
     }
+    if (!entry || typeof entry !== "object") continue;
     const content = entry.content || "";
     if (entry.role === "user") {
+      if (content.startsWith("<system-reminder>")) continue;
       items.push({ kind: "user", id: String(seq++), text: content });
     } else if (entry.role === "assistant") {
       if (entry.reasoning_content)
@@ -470,6 +473,10 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
           state: FAILISH.test(content) ? "failed" : "done",
           skeleton: false,
         });
+        for (const m of content.match(/\/\S+\.(?:wav|png|gif|webp|avif|jpe?g)\b/gi) ?? []) {
+          pushImage(m);
+          pushAudio(m);
+        }
       }
     }
   }
