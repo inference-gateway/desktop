@@ -85,7 +85,7 @@ export function AudioPlayer({ src, ariaLabel, path }: { src: string; ariaLabel: 
     saveStatus === "saving" ? Loader2 : saveStatus === "saved" ? Check : saveStatus === "error" ? X : Download;
 
   return (
-    <div className="group flex w-full max-w-md items-center gap-2 rounded-full border border-border bg-card py-2 pr-4 pl-2">
+    <div className="group flex w-[26rem] max-w-full items-center gap-2 rounded-full border border-border bg-card py-2 pr-4 pl-2">
       <audio
         ref={audioRef}
         preload="auto"
