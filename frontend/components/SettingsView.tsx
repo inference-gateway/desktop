@@ -2801,7 +2801,7 @@ function VoiceSamplesTab() {
                   <Trash2 size={14} />
                 </Button>
               </div>
-              {safeAudioSrc(s.path) && <AudioPlayer src={safeAudioSrc(s.path)!} ariaLabel={s.name} />}
+              {safeAudioSrc(s.path) && <AudioPlayer src={safeAudioSrc(s.path)!} ariaLabel={s.name} path={s.path} />}
             </div>
           ))}
         </div>

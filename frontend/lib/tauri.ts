@@ -260,6 +260,7 @@ export const api = {
   readProjects: () => invoke<string>("read_projects"),
   writeProjects: (data: string) => invoke<void>("write_projects", { data }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
+  saveAudio: (path: string) => invoke<string>("save_audio", { path }),
   saveUpload: (data: string, mime: string) => invoke<string>("save_upload", { data, mime }),
   createProjectDir: (name: string) => invoke<string>("create_project_dir", { name }),
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>

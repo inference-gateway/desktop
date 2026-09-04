@@ -137,6 +137,7 @@ pub fn run() {
             agent::read_history,
             agent::append_history,
             agent::save_image,
+            agent::save_audio,
             agent::save_upload,
             projects::create_project_dir,
             projects::scan_git_repos,

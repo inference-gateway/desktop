@@ -224,7 +224,7 @@ function Item({
     case "audio":
       return (
         <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
-          <AudioPlayer src={item.src} ariaLabel={`generated speech ${item.filename}`} />
+          <AudioPlayer src={item.src} ariaLabel={`generated speech ${item.filename}`} path={item.path} />
         </div>
       );
     case "error":
