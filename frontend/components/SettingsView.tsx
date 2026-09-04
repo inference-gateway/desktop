@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus, Eye, EyeOff, GitBranch, Paperclip } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  CircleMinus,
+  Eye,
+  EyeOff,
+  GitBranch,
+  Mic,
+  Paperclip,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -2746,12 +2757,15 @@ function VoiceSamplesTab() {
           {adding ? "Adding..." : "Add sample"}
         </Button>
         <Button
-          size="sm"
+          size="icon-sm"
           variant={recording ? "destructive" : "outline"}
+          aria-label={recording ? "Stop recording" : "Record voice sample"}
+          title={recording ? "Stop recording" : "Record a voice sample"}
           disabled={adding}
           onClick={() => void record()}
+          className={cn(recording && "mic-recording bg-destructive text-white hover:bg-destructive")}
         >
-          {recording ? "Stop recording" : "Record"}
+          {recording ? <Square size={14} /> : <Mic size={14} />}
         </Button>
         {error && (
           <span role="status" className="text-[0.75rem] text-err">
