@@ -106,7 +106,8 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "timeline">("chat");
+  const [timelineProject, setTimelineProject] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
@@ -933,6 +934,26 @@ function useDesktopStore() {
     setCurrentView("observability");
   }, []);
 
+  const openTimeline = useCallback((project: string) => {
+    setTimelineProject(project);
+    setCurrentView("timeline");
+  }, []);
+
+  // Start a fresh chat in a project with a given prompt (the timeline's
+  // "Generate" button) and switch to it so progress and approvals are visible.
+  const promptProject = useCallback(
+    async (name: string, text: string) => {
+      const runId = crypto.randomUUID();
+      assignProject(runId, name);
+      setActiveProject(name);
+      setActiveId(runId);
+      activeIdRef.current = runId;
+      setCurrentView("chat");
+      await sendPrompt(runId, text, name);
+    },
+    [assignProject, sendPrompt],
+  );
+
   const saveSettings = useCallback(
     async (keys: Record<string, string>) => {
       try {
@@ -1262,6 +1283,10 @@ function useDesktopStore() {
     currentView,
     openSettings,
     openObservability,
+    openTimeline,
+    timelineProject,
+    promptProject,
+    runningIds,
     setCurrentView,
     saveSettings,
     getConfig: () => api.getConfig(),

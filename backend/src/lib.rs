@@ -9,6 +9,7 @@ mod download;
 mod env;
 mod export;
 mod gateway;
+mod narration;
 mod observability;
 mod permissions;
 mod process_manager;
@@ -130,6 +131,10 @@ pub fn run() {
             tts_samples::add_voice_sample,
             tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
+            narration::list_timelines,
+            narration::read_timeline,
+            narration::write_timeline,
+            narration::reveal_project_file,
             agent::list_a2a_agents,
             agent::add_a2a_agent,
             agent::remove_a2a_agent,

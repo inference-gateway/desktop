@@ -224,6 +224,7 @@ function ProjectGroup({
   onOpenInVsCode,
   onSyncDefaultBranch,
   onSettings,
+  onTimeline,
   onRename,
   onDelete,
   onDrop,
@@ -249,6 +250,7 @@ function ProjectGroup({
   onOpenInVsCode: () => void;
   onSyncDefaultBranch: () => void;
   onSettings: () => void;
+  onTimeline: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
   onDrop: (e: DragEvent) => void;
@@ -365,6 +367,19 @@ function ProjectGroup({
           )}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
+          {isContent && (
+            <button
+              aria-label={`Timeline for project ${name}`}
+              title="Timeline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTimeline();
+              }}
+              className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+            >
+              <Clapperboard size={11} />
+            </button>
+          )}
           <button
             aria-label={`Settings for project ${name}`}
             title="Project settings"
@@ -497,6 +512,7 @@ export function ChatList() {
     refreshGitProjects,
     projectGroups,
     projectTypes,
+    openTimeline,
     setError,
   } = useDesktop();
 
@@ -623,6 +639,7 @@ export function ChatList() {
                   setInitialProjectFilter(name);
                   setCurrentView("settings");
                 }}
+                onTimeline={() => openTimeline(name)}
                 onRename={(n) => renameProject(name, n)}
                 onDelete={() => deleteProject(name)}
                 onDrop={(e) => handleDropOnProject(e, name)}
