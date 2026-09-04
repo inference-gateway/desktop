@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Clapperboard, FilePlus, FolderOpen, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Clapperboard, FilePlus, FolderOpen, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
@@ -193,6 +193,24 @@ export function TimelineView() {
       ? `Redo the draft clips in ${name} with my cloned voice. ${sourceAudioInstruction(mode)}`
       : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"} and make the audio for every clip. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
+  };
+
+  // Regenerate one clip's voice with its current text: mark it draft, save
+  // right away (the agent reads the file), then ask for just that clip.
+  const redoClip = (trackId: string, c: Clip) => {
+    if (!timeline || !name) return;
+    const next = setClipText(timeline, trackId, c.id, c.text ?? "");
+    dirtyRef.current = false;
+    setTimeline(next);
+    api
+      .writeTimeline(project, name, serializeTimeline(next))
+      .then(() =>
+        promptProject(
+          project,
+          `Redo only the voice of clip ${c.id} in ${name} with my cloned voice, using its current text. Leave every other clip untouched.`,
+        ),
+      )
+      .catch((e) => setError(String(e)));
   };
 
   const addRecording = () => {
@@ -407,7 +425,16 @@ export function TimelineView() {
               ))}
             </div>
 
-            {track && clip && <ClipEditor track={track} clip={clip} dir={dir} timeline={timeline} onChange={update} />}
+            {track && clip && (
+              <ClipEditor
+                track={track}
+                clip={clip}
+                dir={dir}
+                timeline={timeline}
+                onChange={update}
+                onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
+              />
+            )}
           </>
         )}
       </div>
@@ -421,12 +448,14 @@ function ClipEditor({
   dir,
   timeline,
   onChange,
+  onRedo,
 }: {
   track: Track;
   clip: Clip;
   dir: string;
   timeline: Timeline;
   onChange: (t: Timeline) => void;
+  onRedo?: () => void;
 }) {
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
   return (
@@ -437,12 +466,24 @@ function ClipEditor({
           {fmtTime(clip.start)} - {fmtTime(clip.end)}
         </span>
         {clip.status && <span className="rounded border border-border px-1">{clip.status}</span>}
+        {track.kind === "voice" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-6 px-2 text-[0.72rem]"
+            title="Generate this clip's voice again with the text below"
+            disabled={!onRedo}
+            onClick={onRedo}
+          >
+            <RefreshCw size={12} /> Redo voice
+          </Button>
+        )}
         {track.kind !== "video" && (
           <button
             aria-label={`Delete clip ${clip.id}`}
             title="Delete clip"
             onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
-            className="ml-auto text-muted-foreground hover:text-destructive"
+            className={cn("text-muted-foreground hover:text-destructive", track.kind !== "voice" && "ml-auto")}
           >
             <Trash2 size={14} />
           </button>
