@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus, Eye, EyeOff, GitBranch, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import { safeAudioSrc } from "@/lib/tools";
+import { encodeWav, mergeChunks } from "@/lib/audio";
 import {
   DEFAULT_REGISTRY_URL,
   fetchSkillsCatalog,
@@ -2612,11 +2613,30 @@ function SkillsTab() {
 
 // Managed library of WAV reference recordings for voice cloning, backed by the
 // list/add/delete voice-sample commands (backend/src/tts_samples.rs). Upload is
-// a native file picker + copy; preview streams through the asset protocol.
+// a native file picker + copy, or an in-app mic recording saved via
+// save_voice_sample; preview streams through the asset protocol.
+const MAX_SAMPLE_REC_MS = 30000;
+
 function VoiceSamplesTab() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  const [recording, setRecording] = useState(false);
+
+  const mediaStream = useRef<MediaStream | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const recNode = useRef<ScriptProcessorNode | null>(null);
+  const recChunks = useRef<Float32Array[]>([]);
+  const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (recTimer.current) clearTimeout(recTimer.current);
+      mediaStream.current?.getTracks().forEach((t) => t.stop());
+      audioCtx.current?.close();
+    },
+    [],
+  );
 
   const refresh = useCallback(() => {
     api
@@ -2650,6 +2670,70 @@ function VoiceSamplesTab() {
     }
   };
 
+  // Same capture wiring as useVoiceInput, but kept at the native sample rate
+  // (no 16kHz downsample) - cloning wants the full-quality reference.
+  const stopRecording = useCallback(async () => {
+    setRecording(false);
+    if (recTimer.current) clearTimeout(recTimer.current);
+    if (recNode.current) {
+      recNode.current.disconnect();
+      recNode.current.onaudioprocess = null;
+      recNode.current = null;
+    }
+    mediaStream.current?.getTracks().forEach((t) => t.stop());
+    mediaStream.current = null;
+    const rate = audioCtx.current?.sampleRate ?? 48000;
+    if (audioCtx.current) {
+      await audioCtx.current.close();
+      audioCtx.current = null;
+    }
+
+    const samples = mergeChunks(recChunks.current);
+    recChunks.current = [];
+    if (samples.length === 0) {
+      setError("No audio captured");
+      return;
+    }
+    const name = window.prompt("Sample name", "my-voice");
+    if (!name || !name.trim()) return;
+    const file = name.trim().toLowerCase().endsWith(".wav") ? name.trim() : `${name.trim()}.wav`;
+    try {
+      await api.saveVoiceSample(file, Array.from(encodeWav(samples, rate)));
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [refresh]);
+
+  const record = async () => {
+    if (recording) {
+      await stopRecording();
+      return;
+    }
+    setError("");
+    try {
+      mediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Microphone access denied");
+      return;
+    }
+    const Ctx: typeof AudioContext =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    audioCtx.current = ctx;
+    recChunks.current = [];
+    const source = ctx.createMediaStreamSource(mediaStream.current);
+    const node = ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => {
+      recChunks.current.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    source.connect(node);
+    node.connect(ctx.destination);
+    recNode.current = node;
+    setRecording(true);
+    recTimer.current = setTimeout(() => void stopRecording(), MAX_SAMPLE_REC_MS);
+  };
+
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">Voice samples</h2>
@@ -2658,8 +2742,16 @@ function VoiceSamplesTab() {
         names from this library, ask the agent to speak "in the voice of a sample" by its file name.
       </p>
       <div className="mb-4 flex items-center gap-2">
-        <Button size="sm" disabled={adding} onClick={add}>
+        <Button size="sm" disabled={adding || recording} onClick={add}>
           {adding ? "Adding..." : "Add sample"}
+        </Button>
+        <Button
+          size="sm"
+          variant={recording ? "destructive" : "outline"}
+          disabled={adding}
+          onClick={() => void record()}
+        >
+          {recording ? "Stop recording" : "Record"}
         </Button>
         {error && (
           <span role="status" className="text-[0.75rem] text-err">

@@ -128,6 +128,7 @@ pub fn run() {
             stt::transcribe_audio,
             tts_samples::list_voice_samples,
             tts_samples::add_voice_sample,
+            tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
             agent::list_a2a_agents,
             agent::add_a2a_agent,

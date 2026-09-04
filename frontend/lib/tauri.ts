@@ -253,6 +253,7 @@ export const api = {
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),
   listVoiceSamples: () => invoke<VoiceSample[]>("list_voice_samples"),
   addVoiceSample: () => invoke<VoiceSample | null>("add_voice_sample"),
+  saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),

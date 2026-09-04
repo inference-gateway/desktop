@@ -117,6 +117,25 @@ fn copy_sample(src: &Path, dir: &Path) -> Result<Option<VoiceSample>, String> {
     }))
 }
 
+/// Persist a WAV recorded in the webview under `name`, overwriting an
+/// existing sample of the same name.
+#[tauri::command]
+pub(crate) async fn save_voice_sample(name: String, wav: Vec<u8>) -> Result<VoiceSample, String> {
+    write_sample(&samples_dir(), &name, &wav)
+}
+
+fn write_sample(dir: &Path, name: &str, wav: &[u8]) -> Result<VoiceSample, String> {
+    if !name.to_ascii_lowercase().ends_with(".wav") {
+        return Err(format!("voice samples must be .wav files: {name:?}"));
+    }
+    let dest = sample_path(dir, name)?;
+    std::fs::write(&dest, wav).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    Ok(VoiceSample {
+        name: name.to_string(),
+        path: dest.display().to_string(),
+    })
+}
+
 /// Remove one sample by bare file name.
 #[tauri::command]
 pub(crate) async fn delete_voice_sample(name: String) -> Result<(), String> {
@@ -158,6 +177,18 @@ mod tests {
             .map(|s| s.name)
             .collect();
         assert_eq!(names, vec!["a.WAV", "b.wav"]);
+    }
+
+    #[test]
+    fn write_sample_writes_wav_and_rejects_bad_names() {
+        let dir = temp_dir("write");
+        let saved = write_sample(&dir, "rec.wav", b"RIFF").unwrap();
+        assert_eq!(saved.name, "rec.wav");
+        assert_eq!(std::fs::read(dir.join("rec.wav")).unwrap(), b"RIFF");
+
+        write_sample(&dir, "rec.WAV", b"RIFF2").unwrap();
+        assert!(write_sample(&dir, "rec.txt", b"x").is_err());
+        assert!(write_sample(&dir, "../rec.wav", b"x").is_err());
     }
 
     #[test]
