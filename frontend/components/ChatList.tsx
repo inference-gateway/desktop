@@ -351,7 +351,17 @@ function ProjectGroup({
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
           {isContent && (
-            <Clapperboard size={11} aria-label="Content project" className="ml-0.5 shrink-0 text-muted-foreground/60" />
+            <button
+              aria-label={`Timeline for project ${name}`}
+              title="Open timeline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTimeline();
+              }}
+              className="ml-0.5 inline-flex shrink-0 items-center rounded p-[0.1rem] text-muted-foreground/70 hover:text-foreground"
+            >
+              <Clapperboard size={11} />
+            </button>
           )}
           {isGit && (
             <GitBranch
@@ -367,19 +377,6 @@ function ProjectGroup({
           )}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100 focus-within:opacity-100">
-          {isContent && (
-            <button
-              aria-label={`Timeline for project ${name}`}
-              title="Timeline"
-              onClick={(e) => {
-                e.stopPropagation();
-                onTimeline();
-              }}
-              className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
-            >
-              <Clapperboard size={11} />
-            </button>
-          )}
           <button
             aria-label={`Settings for project ${name}`}
             title="Project settings"
