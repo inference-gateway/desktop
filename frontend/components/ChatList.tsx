@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Pencil,
   Settings2,
+  Clapperboard,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -210,6 +211,7 @@ function ProjectGroup({
   onToggleCheck,
   count,
   isGit,
+  isContent,
   dirty,
   branch,
   defaultBranch,
@@ -234,6 +236,7 @@ function ProjectGroup({
   onToggleCheck: () => void;
   count: number;
   isGit: boolean;
+  isContent: boolean;
   dirty: boolean;
   branch?: string;
   defaultBranch?: string;
@@ -345,6 +348,9 @@ function ProjectGroup({
             </span>
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+          {isContent && (
+            <Clapperboard size={11} aria-label="Content project" className="ml-0.5 shrink-0 text-muted-foreground/60" />
+          )}
           {isGit && (
             <GitBranch
               size={11}
@@ -490,6 +496,7 @@ export function ChatList() {
     projectDefaultBranches,
     refreshGitProjects,
     projectGroups,
+    projectTypes,
     setError,
   } = useDesktop();
 
@@ -593,7 +600,8 @@ export function ChatList() {
                 checked={initSelection.has(name)}
                 onToggleCheck={() => toggleInitSelection(name)}
                 count={indices.length}
-                isGit={gitProjects.has(name)}
+                isGit={gitProjects.has(name) && projectTypes[name] !== "content"}
+                isContent={projectTypes[name] === "content"}
                 dirty={dirtyProjects.has(name)}
                 branch={projectBranches[name]}
                 defaultBranch={projectDefaultBranches[name]}

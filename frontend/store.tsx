@@ -34,6 +34,11 @@ import { hydrateRegistry } from "@/lib/skills";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
+export type ProjectType = "code" | "content";
+
+const CONTENT_GUIDANCE =
+  'This is a content project, not a code repository. For video narration requests ("add my voice", "narrate this recording") use the video-narration skill; the desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
+
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
@@ -112,6 +117,7 @@ function useDesktopStore() {
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
+  const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
@@ -282,6 +288,10 @@ function useDesktopStore() {
       for (const [name, g] of Object.entries(parsed?.groups ?? {})) {
         if (typeof g === "string" && g.trim()) groups[name] = g;
       }
+      const types: Record<string, ProjectType> = {};
+      for (const [name, t] of Object.entries(parsed?.types ?? {})) {
+        if (t === "content") types[name] = t;
+      }
       const selected = new Set<string>();
       if (Array.isArray(parsed?.selected)) {
         for (const n of parsed.selected) {
@@ -293,6 +303,7 @@ function useDesktopStore() {
       setProjectContexts(contexts);
       setProjectPaths(paths);
       setProjectGroups(groups);
+      setProjectTypes(types);
       setInitSelection(selected);
     } catch (e) {
       console.error("Failed to load projects:", e);
@@ -566,6 +577,7 @@ function useDesktopStore() {
           contexts: projectContexts,
           paths: projectPaths,
           groups: projectGroups,
+          types: projectTypes,
           selected: Array.from(initSelection),
         }),
       )
@@ -578,6 +590,7 @@ function useDesktopStore() {
     projectContexts,
     projectPaths,
     projectGroups,
+    projectTypes,
     initSelection,
     fetchGitProjects,
   ]);
@@ -673,6 +686,7 @@ function useDesktopStore() {
           projectName && projectGroups[projectName]
             ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
             : undefined;
+        const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
         await api.sendMessage({
           prompt: text,
           model,
@@ -680,8 +694,9 @@ function useDesktopStore() {
           onEvent: ch,
           systemPrompt: cfg.system_prompt || undefined,
           extraInstructions:
-            [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") ||
-            undefined,
+            [cfg.extra_instructions, projectGroup, projectType, projectContext, extraInstruction]
+              .filter(Boolean)
+              .join("\n\n") || undefined,
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
         });
@@ -705,6 +720,7 @@ function useDesktopStore() {
       autoModes,
       projectContexts,
       projectGroups,
+      projectTypes,
       setError,
       refreshConversations,
       loadProjects,
@@ -1009,6 +1025,11 @@ function useDesktopStore() {
       for (const name of gone) delete next[name];
       return next;
     });
+    setProjectTypes((prev) => {
+      const next = { ...prev };
+      for (const name of gone) delete next[name];
+      return next;
+    });
     setActiveProject((p) => (p && gone.has(p) ? null : p));
   }, []);
 
@@ -1038,7 +1059,26 @@ function useDesktopStore() {
       delete next[oldName];
       return next;
     });
+    setProjectTypes((prev) => {
+      if (!(oldName in prev)) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
     setActiveProject((p) => (p === oldName ? newName : p));
+  }, []);
+
+  const setProjectType = useCallback((name: string, type: ProjectType) => {
+    setProjectTypes((prev) => {
+      if (type === "code") {
+        if (!(name in prev)) return prev;
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      }
+      return { ...prev, [name]: type };
+    });
   }, []);
 
   const setProjectContext = useCallback((name: string, context: string) => {
@@ -1256,6 +1296,8 @@ function useDesktopStore() {
     projectPaths,
     setProjectPath,
     projectGroups,
+    projectTypes,
+    setProjectType,
     initialSettingsTab,
     setInitialSettingsTab,
     initialProjectFilter,
