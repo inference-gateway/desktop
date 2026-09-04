@@ -2639,6 +2639,7 @@ function VoiceSamplesTab() {
   const recNode = useRef<ScriptProcessorNode | null>(null);
   const recChunks = useRef<Float32Array[]>([]);
   const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(
     () => () => {
@@ -2705,9 +2706,8 @@ function VoiceSamplesTab() {
       setError("No audio captured");
       return;
     }
-    const name = window.prompt("Sample name", "my-voice");
-    if (!name || !name.trim()) return;
-    const file = name.trim().toLowerCase().endsWith(".wav") ? name.trim() : `${name.trim()}.wav`;
+    const name = nameRef.current?.value.trim() || "my-voice";
+    const file = name.toLowerCase().endsWith(".wav") ? name : `${name}.wav`;
     try {
       await api.saveVoiceSample(file, Array.from(encodeWav(samples, rate)));
       refresh();
@@ -2756,6 +2756,13 @@ function VoiceSamplesTab() {
         <Button size="sm" disabled={adding || recording} onClick={add}>
           {adding ? "Adding..." : "Add sample"}
         </Button>
+        <Input
+          ref={nameRef}
+          defaultValue="my-voice"
+          aria-label="Sample name"
+          placeholder="Sample name"
+          className="h-7 w-40 text-[0.8rem]"
+        />
         <Button
           size="icon-sm"
           variant={recording ? "destructive" : "outline"}
