@@ -618,8 +618,7 @@ function GeneralTab() {
         />
       </div>
 
-      {/* Text to speech: the CLI/gateway own all synthesis (#186); this
-              only flips text_to_speech.enabled and restarts the gateway. */}
+      {/* Text to speech */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Text to speech</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
         Lets the agent generate spoken audio with the CLI's TextToSpeech tool. Off by default; saving restarts the
@@ -638,7 +637,7 @@ function GeneralTab() {
         </Label>
       </div>
 
-      {/* Export/import the complete desktop state between machines (#166). */}
+      {/* Export/import */}
       <ConfigTransfer />
 
       <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-border bg-background/95 pb-1 pt-4 backdrop-blur">

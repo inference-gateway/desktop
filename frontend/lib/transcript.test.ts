@@ -147,7 +147,6 @@ test("a TextToSpeech result with a tts wav path adds an inline audio item", () =
       filename: "speech-20260102-150405-123.wav",
       path: "/Users/x/.infer/tts/speech-20260102-150405-123.wav",
     });
-    // Non-tts tool results never produce audio items.
     const other = run([
       ev({
         kind: "ToolResult",

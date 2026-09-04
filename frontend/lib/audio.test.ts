@@ -19,7 +19,7 @@ test("downsample is a no-op when target >= source", () => {
 
 test("computePeaks buckets RMS energy normalized to the loudest bar", () => {
   const samples = new Float32Array(100);
-  samples.fill(1, 0, 50); // loud first half, silent second half
+  samples.fill(1, 0, 50);
   const peaks = computePeaks(samples, 4);
   expect(peaks.length).toBe(4);
   expect(peaks[0]).toBeCloseTo(1);

@@ -470,8 +470,6 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         );
     }
 
-    // Only `enabled` is written; CLI-managed keys (engine, output_dir, model)
-    // in the section pass through untouched.
     set_section(
         map,
         "text_to_speech",
@@ -678,7 +676,6 @@ mod tests {
 
     #[test]
     fn merge_config_round_trips_text_to_speech() {
-        // CLI-managed keys in the section survive; only `enabled` is written.
         let existing = "text_to_speech:\n  engine: qwen3-tts\n  output_dir: /x\n";
         let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
         assert_eq!(
