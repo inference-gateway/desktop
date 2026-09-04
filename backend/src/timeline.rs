@@ -3,6 +3,9 @@
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::projects::project_dir;
 use std::path::{Path, PathBuf};
+use tauri_plugin_dialog::DialogExt;
+
+const VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "mov", "m4v", "webm"];
 
 const SUFFIX: &str = ".timeline.json";
 
@@ -75,6 +78,35 @@ pub(crate) fn write_timeline(project: String, name: String, data: String) -> Res
     let path = timeline_path(&dir, &name)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(&path, data).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+/// Pick a video with the native file dialog and copy it into the project
+/// directory under its base name. Returns `None` when the user cancels.
+/// A plain copy: no base64 round trip through the webview for large files.
+#[tauri::command]
+pub(crate) async fn add_project_video(
+    app: tauri::AppHandle,
+    project: String,
+) -> Result<Option<String>, String> {
+    let dir = dir_for(&project)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("Video", &VIDEO_EXTENSIONS)
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("file dialog failed: {e}"))?;
+    let Some(tauri_plugin_dialog::FilePath::Path(src)) = picked else {
+        return Ok(None);
+    };
+    let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
+        return Err(format!("invalid file name: {}", src.display()));
+    };
+    let dest = bare_name(&dir, name)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::copy(&src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
+    Ok(Some(name.to_string()))
 }
 
 /// Reveal a project file in the platform file manager (Finder on macOS).

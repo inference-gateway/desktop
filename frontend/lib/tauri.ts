@@ -262,6 +262,7 @@ export const api = {
   writeTimeline: (project: string, name: string, data: string) =>
     invoke<void>("write_timeline", { project, name, data }),
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
+  addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   readProjects: () => invoke<string>("read_projects"),

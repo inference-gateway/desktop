@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Clapperboard, FolderOpen, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Clapperboard, FilePlus, FolderOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeVideoSrc } from "@/lib/tools";
@@ -141,6 +141,15 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
+  const addRecording = () => {
+    api
+      .addProjectVideo(project)
+      .then((added) => {
+        if (added) load();
+      })
+      .catch((e) => setError(String(e)));
+  };
+
   const addVoiceTo = (video: string) => {
     const stem = video.replace(VIDEO_EXT, "");
     const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}", make the audio for every clip and mux the result into ${stem}.with-voice.mp4. ${sourceAudioInstruction(newSourceAudio)}`;
@@ -176,17 +185,23 @@ export function TimelineView() {
           </button>
         ))}
         {names.length === 0 && (
-          <p className="px-2 text-[0.78rem] text-muted-foreground">
-            No timeline yet. Drop a recording into this project and ask the agent to add your voice.
-          </p>
+          <p className="px-2 text-[0.78rem] text-muted-foreground">No timeline yet. Add a recording to get started.</p>
         )}
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
-        {!timeline && videos.length > 0 && (
+        {!timeline && (
           <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-            <h2 className="text-[0.9rem] font-semibold">Recordings in this project</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[0.9rem] font-semibold">Recordings in this project</h2>
+              <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
+                <FilePlus size={14} /> Add recording
+              </Button>
+            </div>
+            {videos.length === 0 && (
+              <p className="text-[0.8rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
+            )}
             <label className="flex items-center gap-2 text-[0.78rem] text-muted-foreground">
               Original audio
               <select
