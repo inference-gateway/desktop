@@ -1974,6 +1974,19 @@ function ProjectsTab() {
                     <option value="content">Content</option>
                   </select>
                 </div>
+                {projectTypes[name] === "content" &&
+                  (!config.text_to_speech_enabled || !config.vision_annotator_model) && (
+                    <p role="alert" className="text-[0.75rem] text-amber-600 dark:text-amber-400">
+                      Content projects need{" "}
+                      {[
+                        !config.text_to_speech_enabled && "Text to Speech enabled",
+                        !config.vision_annotator_model && "a vision model",
+                      ]
+                        .filter(Boolean)
+                        .join(" and ")}{" "}
+                      - see the General tab.
+                    </p>
+                  )}
                 <ProjectFiles project={name} />
                 <Label htmlFor={`project-path-${name}`} className="text-[0.8rem] text-muted-foreground">
                   Directory (blank = default under the projects root)
