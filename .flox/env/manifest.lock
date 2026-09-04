@@ -4,11 +4,12 @@
     "schema-version": "1.14.0",
     "install": {
       "bun": {
-        "pkg-path": "bun"
+        "pkg-path": "bun",
+        "version": "1.3.13"
       },
       "cargo": {
         "pkg-path": "cargo",
-        "version": "1.95.0"
+        "version": "1.97.1"
       },
       "cargo-tauri": {
         "pkg-path": "cargo-tauri",
@@ -17,11 +18,11 @@
       "claude-code": {
         "pkg-path": "claude-code",
         "pkg-group": "claude-code",
-        "version": "2.1.238"
+        "version": "2.1.245"
       },
       "clippy": {
         "pkg-path": "clippy",
-        "version": "1.95.0"
+        "version": "1.97.1"
       },
       "codex": {
         "pkg-path": "codex",
@@ -30,110 +31,23 @@
       },
       "go-task": {
         "pkg-path": "go-task",
-        "version": "3.48.0"
+        "version": "3.53.1"
       },
       "infer": {
-        "flake": "github:inference-gateway/cli/v0.188.0"
+        "flake": "github:inference-gateway/cli/v0.189.0"
       },
       "rustc": {
         "pkg-path": "rustc",
-        "version": "1.95.0"
+        "version": "1.97.1"
       },
       "rustfmt": {
         "pkg-path": "rustfmt",
-        "version": "1.95.0"
+        "version": "1.97.1"
       }
     },
     "options": {}
   },
   "packages": [
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/1pk8z3lpf4b902cfki2hj75pq7y4gsl2-claude-code-2.1.238.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "claude-code-2.1.238",
-      "pname": "claude-code",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T04:56:36.841005Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.238",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/kjnmmrf7v36j58p28wfcxikqx95x360s-claude-code-2.1.238"
-      },
-      "system": "aarch64-darwin",
-      "group": "claude-code",
-      "priority": 5
-    },
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/hmxbbx2fmz8dfz5zyhza7fdgpfg43sxg-claude-code-2.1.238.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "claude-code-2.1.238",
-      "pname": "claude-code",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T05:27:21.992477Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.238",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/s88n98j5wn3mgav74nx46wlrvjzq1b9l-claude-code-2.1.238"
-      },
-      "system": "aarch64-linux",
-      "group": "claude-code",
-      "priority": 5
-    },
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/myal77xjy2yldx80q552x1720zm28qfq-claude-code-2.1.238.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "name": "claude-code-2.1.238",
-      "pname": "claude-code",
-      "rev": "56c02bc00adcf003215cc4bd996d6efaf4cff188",
-      "rev_count": 1060451,
-      "rev_date": "2026-08-23T15:22:48Z",
-      "scrape_date": "2026-08-25T06:00:36.213524Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.238",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/kn3qc9ri2izd493mh78pmjlazk4610vq-claude-code-2.1.238"
-      },
-      "system": "x86_64-linux",
-      "group": "claude-code",
-      "priority": 5
-    },
     {
       "attr_path": "codex",
       "broken": false,
@@ -222,21 +136,107 @@
       "priority": 5
     },
     {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/n1lgqcdgazzb39wknhn4l88v3skjww77-claude-code-2.1.245.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "claude-code-2.1.245",
+      "pname": "claude-code",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:40.238535Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.245",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/bx59a90qzpvyapbyz4hwks81xsfw025s-claude-code-2.1.245"
+      },
+      "system": "aarch64-darwin",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/jk2cbws779imgjzjmhci5fnmq3bqa7zr-claude-code-2.1.245.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "claude-code-2.1.245",
+      "pname": "claude-code",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:15.601663Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.245",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/z9ispy7d612d2kpp7nrhj3v7pddzp3np-claude-code-2.1.245"
+      },
+      "system": "aarch64-linux",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/cwgj6qx0pr1ag13i1l2n4ml1qakxc3qq-claude-code-2.1.245.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "claude-code-2.1.245",
+      "pname": "claude-code",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:01.474851Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.245",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/k4z7dn65na1gngrpcs8l79vr2pv504dx-claude-code-2.1.245"
+      },
+      "system": "x86_64-linux",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
       "attr_path": "bun",
       "broken": false,
-      "derivation": "/nix/store/bk2swzj1hhnakb2xlxp01n3fvqk2x11s-bun-1.3.13.drv",
+      "derivation": "/nix/store/8ndwrddjfc25kpigqm4zb2n3zfd3da2c-bun-1.3.13.drv",
       "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
       "install_id": "bun",
       "license": "[ MIT, LGPL-2.1-only ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "bun-1.3.13",
       "pname": "bun",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:12:54.950824Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:40.015871Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -245,7 +245,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/4iw87ni8zbr4yar90zcy8r2aqmih9hk8-bun-1.3.13"
+        "out": "/nix/store/r4svrxgw5kys9g187dzcaj8yvc6dzm65-bun-1.3.13"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -254,19 +254,18 @@
     {
       "attr_path": "bun",
       "broken": false,
-      "derivation": "/nix/store/hvk8chpx4j8wdz3mprl6ir4qv75niycp-bun-1.3.13.drv",
+      "derivation": "/nix/store/ay5sa8chjiy13qwxw7w18827vx6n7s50-bun-1.3.13.drv",
       "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
       "install_id": "bun",
       "license": "[ MIT, LGPL-2.1-only ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "bun-1.3.13",
       "pname": "bun",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:41:21.516370Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:15.340256Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -275,7 +274,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/6wnvdw8ps9fi7a1cjbq0d0s736j0rpnr-bun-1.3.13"
+        "out": "/nix/store/p9a0b8bh0iv9g1qszfvi9n2k7aj7ypyh-bun-1.3.13"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -284,19 +283,18 @@
     {
       "attr_path": "bun",
       "broken": false,
-      "derivation": "/nix/store/0aa9vfw76bbnla6z8vv4x6iw5hzw5bb1-bun-1.3.13.drv",
+      "derivation": "/nix/store/icy7axnlrszi2ynx0wmzj7z0d1cl8bbf-bun-1.3.13.drv",
       "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
       "install_id": "bun",
       "license": "[ MIT, LGPL-2.1-only ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "bun-1.3.13",
       "pname": "bun",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:40:24.139843Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:01.202739Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -305,7 +303,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/r3k0n7fx6qjw9k9v2yy2h55lpl4kg0sd-bun-1.3.13"
+        "out": "/nix/store/gzh2rx2sjwra135my0jw3va49hm7z4vf-bun-1.3.13"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -314,29 +312,27 @@
     {
       "attr_path": "cargo",
       "broken": false,
-      "derivation": "/nix/store/dl0dn79gzqkqk550kpak9pkgk6sdlc56-cargo-1.95.0.drv",
+      "derivation": "/nix/store/3ryprf12nc4pvyabn4dr49fd1syshg6l-cargo-1.97.1.drv",
       "description": "Downloads your Rust project's dependencies and builds your project",
       "install_id": "cargo",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "cargo-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "cargo-1.97.1",
       "pname": "cargo",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:12:54.969229Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:40.038874Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
-        "out",
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/6ks3pm4wf78b4nir9biqy99hbld903yp-cargo-1.95.0"
+        "out": "/nix/store/cvd2pzmgq4pr7kkzx2zmya47fqd70sqa-cargo-1.97.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -345,28 +341,27 @@
     {
       "attr_path": "cargo",
       "broken": false,
-      "derivation": "/nix/store/i49w47kp6n3qbyx47ddbyv0a5lzlpkgc-cargo-1.95.0.drv",
+      "derivation": "/nix/store/d0lxy2g0nx9dgxp72wx7jn5qjr1gv29g-cargo-1.97.1.drv",
       "description": "Downloads your Rust project's dependencies and builds your project",
       "install_id": "cargo",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "cargo-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "cargo-1.97.1",
       "pname": "cargo",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:41:21.547929Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:15.370915Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/1pyc40aar7cymg1i1hvlrhnp3mcdva50-cargo-1.95.0"
+        "out": "/nix/store/z64fp7fjfy9zr3xn7prdidi4gww213d5-cargo-1.97.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -375,29 +370,27 @@
     {
       "attr_path": "cargo",
       "broken": false,
-      "derivation": "/nix/store/36gfn3aq76gz94brbxyfw35w3fsv570m-cargo-1.95.0.drv",
+      "derivation": "/nix/store/y1zg3wvkz7q4l1fd57ldkam9l5idl6k3-cargo-1.97.1.drv",
       "description": "Downloads your Rust project's dependencies and builds your project",
       "install_id": "cargo",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "cargo-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "cargo-1.97.1",
       "pname": "cargo",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:40:24.174359Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:01.236128Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
-        "out",
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/6gcrqjdzbx71bavmmrqpl3hw1ljml7vi-cargo-1.95.0"
+        "out": "/nix/store/dv55qwamlq68hdiprg1v104ymwh1c27r-cargo-1.97.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -406,19 +399,18 @@
     {
       "attr_path": "cargo-tauri",
       "broken": false,
-      "derivation": "/nix/store/6bxzgpifn505lqvqrn23wiqadmqw76db-tauri-2.11.4.drv",
+      "derivation": "/nix/store/d3f18rjfivrbciwkd9m8vn2cszpd45wk-tauri-2.11.4.drv",
       "description": "Build smaller, faster, and more secure desktop applications with a web frontend",
       "install_id": "cargo-tauri",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "tauri-2.11.4",
       "pname": "cargo-tauri",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:12:54.985830Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:40.056981Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -427,7 +419,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/8q8fc05c608f1hvxcc5lfvp0jdriadip-tauri-2.11.4"
+        "out": "/nix/store/8w5f8dkcr50l6fzf8j61xjydwdyyfnvi-tauri-2.11.4"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -436,19 +428,18 @@
     {
       "attr_path": "cargo-tauri",
       "broken": false,
-      "derivation": "/nix/store/hlzg79xm5kfl6sb9d10pvz6hfyd6a0d9-tauri-2.11.4.drv",
+      "derivation": "/nix/store/scizsq507g217rl6vqhpaxnzn74hzc26-tauri-2.11.4.drv",
       "description": "Build smaller, faster, and more secure desktop applications with a web frontend",
       "install_id": "cargo-tauri",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "tauri-2.11.4",
       "pname": "cargo-tauri",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:41:21.567088Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:15.389503Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -457,7 +448,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/5gsl46g5xylpqizkl4d63n1kl8h7gzy9-tauri-2.11.4"
+        "out": "/nix/store/pjjbrmygj02siqkx0xpkzzdy5jn32nd9-tauri-2.11.4"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -466,19 +457,18 @@
     {
       "attr_path": "cargo-tauri",
       "broken": false,
-      "derivation": "/nix/store/6qk0x4frxd44zprym72si84gdnn624x3-tauri-2.11.4.drv",
+      "derivation": "/nix/store/fd10m10j3d9ak7n5gqr44fcambj3sryg-tauri-2.11.4.drv",
       "description": "Build smaller, faster, and more secure desktop applications with a web frontend",
       "install_id": "cargo-tauri",
       "license": "[ Apache-2.0, MIT ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
       "name": "tauri-2.11.4",
       "pname": "cargo-tauri",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:40:24.195384Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:01.256115Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
@@ -487,7 +477,7 @@
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/qa5y5pjdvz0m6pjk1p5q3xidpil74mrj-tauri-2.11.4"
+        "out": "/nix/store/vf0d3xq55zwyjb39f6hr2xarhfya284p-tauri-2.11.4"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -496,28 +486,27 @@
     {
       "attr_path": "clippy",
       "broken": false,
-      "derivation": "/nix/store/cpk102k3rn5i5lvspq4z5pddfzgq84pb-clippy-1.95.0.drv",
+      "derivation": "/nix/store/68izw1c3lcpg3mrhqsyyrpf3gv1xd4dz-clippy-1.97.1.drv",
       "description": "Bunch of lints to catch common mistakes and improve your Rust code",
       "install_id": "clippy",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "clippy-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "clippy-1.97.1",
       "pname": "clippy",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:12:55.161789Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:40.248004Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/8wlwhav780qj9nrsd44f0pw63zwfmws1-clippy-1.95.0"
+        "out": "/nix/store/v3i30k0c7qw3imdbq491328r4a6qry1m-clippy-1.97.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -526,29 +515,28 @@
     {
       "attr_path": "clippy",
       "broken": false,
-      "derivation": "/nix/store/vh5kcnccrdp9cqlf8xy1idskjy3iqwqs-clippy-1.95.0.drv",
+      "derivation": "/nix/store/dx2n1cmxy0r6hfpa31psr4x2yb1rkmh6-clippy-1.97.1.drv",
       "description": "Bunch of lints to catch common mistakes and improve your Rust code",
       "install_id": "clippy",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "clippy-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "clippy-1.97.1",
       "pname": "clippy",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:41:21.794571Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:15.615327Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "debug": "/nix/store/mc47abhf1gy9s2yd6533n2q9m5d7hpvj-clippy-1.95.0-debug",
-        "out": "/nix/store/g4kyy68i62jlirr5b77ib7ks29fzvkf7-clippy-1.95.0"
+        "debug": "/nix/store/3mbk6zr9jqgzv3zfz3x3mirkf9894b5k-clippy-1.97.1-debug",
+        "out": "/nix/store/y6v5c5bb5drnvyf3jgm4qkkyihnfjwhj-clippy-1.97.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -557,29 +545,28 @@
     {
       "attr_path": "clippy",
       "broken": false,
-      "derivation": "/nix/store/gyzhc37y760azqsg0jvgr7bcqprgk7dg-clippy-1.95.0.drv",
+      "derivation": "/nix/store/c73jla34znhc3l3a3s4fk5aj7zg17qsk-clippy-1.97.1.drv",
       "description": "Bunch of lints to catch common mistakes and improve your Rust code",
       "install_id": "clippy",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "clippy-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "clippy-1.97.1",
       "pname": "clippy",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:40:24.439395Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:01.490328Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "debug": "/nix/store/ha0z0bxaxsi7bqnds3zny9sc15rhj06x-clippy-1.95.0-debug",
-        "out": "/nix/store/b7n7djcbwb88vfsg7nc1pwj0s3qd7yp6-clippy-1.95.0"
+        "debug": "/nix/store/nafib7p33g095kh5s8y790wdcrv7mp9l-clippy-1.97.1-debug",
+        "out": "/nix/store/n4c4rzywa0wsfy239bqkgsx8lfhsfmwx-clippy-1.97.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -588,28 +575,27 @@
     {
       "attr_path": "go-task",
       "broken": false,
-      "derivation": "/nix/store/j21ln20g1i17pfl80xw8ywnalfxpb4sb-go-task-3.48.0.drv",
+      "derivation": "/nix/store/6lifhbkq5k5y07q7pl0945wrrpypi0wv-go-task-3.53.1.drv",
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "go-task-3.48.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "go-task-3.53.1",
       "pname": "go-task",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:12:56.249247Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:57:41.365027Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "3.48.0",
+      "version": "3.53.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/80bj596m0qh7lyh7f5cmfy6r2cif9i08-go-task-3.48.0"
+        "out": "/nix/store/2cp94m0qgih229db2yg2x30rwzrwdamk-go-task-3.53.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -618,28 +604,27 @@
     {
       "attr_path": "go-task",
       "broken": false,
-      "derivation": "/nix/store/rl7sbwdajlmb9smvycjx4fjk7rn8bf0y-go-task-3.48.0.drv",
+      "derivation": "/nix/store/vygxrrfkl5rc201mr9vxzvxb3092yx30-go-task-3.53.1.drv",
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "go-task-3.48.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "go-task-3.53.1",
       "pname": "go-task",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:41:23.928527Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:29:17.882032Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "3.48.0",
+      "version": "3.53.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/cp9nkcbc9gpx527n258c2bglhc4b82w5-go-task-3.48.0"
+        "out": "/nix/store/5wxmmkjhivk4lrx09acasbyffya5q640-go-task-3.53.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -648,28 +633,27 @@
     {
       "attr_path": "go-task",
       "broken": false,
-      "derivation": "/nix/store/6y3w945jm88ncdssbc63gkr46ax9pdqh-go-task-3.48.0.drv",
+      "derivation": "/nix/store/qs9lfl8yp18bhb6s0rx2wmlk34x03mih-go-task-3.53.1.drv",
       "description": "Task runner / simpler Make alternative written in Go",
       "install_id": "go-task",
       "license": "MIT",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "go-task-3.48.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "go-task-3.53.1",
       "pname": "go-task",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:40:26.750803Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:06:04.029930Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "3.48.0",
+      "version": "3.53.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/7fshm6glyd5vi331jjizidvn95lflpig-go-task-3.48.0"
+        "out": "/nix/store/bvzzl57kpmvzb6aj0v0yc45gvw8ggf2a-go-task-3.53.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -678,33 +662,30 @@
     {
       "attr_path": "rustc",
       "broken": false,
-      "derivation": "/nix/store/v10k4iza9w5zj3m3xiassblw6jfzsna7-rustc-wrapper-1.95.0.drv",
+      "derivation": "/nix/store/b7dwrh5g7lwa49zbrzz717fb4ngjay4q-rustc-wrapper-1.97.1.drv",
       "description": "Safe, concurrent, practical language (wrapper script)",
       "install_id": "rustc",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustc-wrapper-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustc-wrapper-1.97.1",
       "pname": "rustc",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:14:34.122597Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:59:19.830309Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "man",
-        "man",
-        "out",
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/bsm0vxrb2hd84g8vi0qwbl3d13dm3lps-rustc-wrapper-1.95.0-doc",
-        "man": "/nix/store/j6bl3b3hx6admc3g17dyk1s376g2gpd6-rustc-wrapper-1.95.0-man",
-        "out": "/nix/store/r2pi7zvrvcrbhqnc9yjd08qhi7d0l6p7-rustc-wrapper-1.95.0"
+        "doc": "/nix/store/8qkha38sic70l51g4l7dmjrxnzqjrr6w-rustc-wrapper-1.97.1-doc",
+        "man": "/nix/store/grw7ifdixkdr4ya8bw5x0psjyfr5azva-rustc-wrapper-1.97.1-man",
+        "out": "/nix/store/swrk83krgf2iaqd7a1bs0pg1sinlz5ds-rustc-wrapper-1.97.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -713,31 +694,30 @@
     {
       "attr_path": "rustc",
       "broken": false,
-      "derivation": "/nix/store/bgcq6hw3zimwxaxk2mvifwj0wmh8msmz-rustc-wrapper-1.95.0.drv",
+      "derivation": "/nix/store/zys8ks6vyd9ldiscb5b9hwk15sk6hlfv-rustc-wrapper-1.97.1.drv",
       "description": "Safe, concurrent, practical language (wrapper script)",
       "install_id": "rustc",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustc-wrapper-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustc-wrapper-1.97.1",
       "pname": "rustc",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:43:31.282416Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:31:32.328292Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "man",
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/iamkk525c3q6ln5djq46kx5ddqga99iv-rustc-wrapper-1.95.0-doc",
-        "man": "/nix/store/pgs6qa8w0q8xzhmw3wgwm07fjc9mwyhr-rustc-wrapper-1.95.0-man",
-        "out": "/nix/store/00lwhlix1jqpy3k5m621qk0vaba3rwgj-rustc-wrapper-1.95.0"
+        "doc": "/nix/store/avbwjkw896rb3nl28kh8qv6kxyq5b9v2-rustc-wrapper-1.97.1-doc",
+        "man": "/nix/store/hn340n5pi9p30j4bcxgzqgq8lmclg1by-rustc-wrapper-1.97.1-man",
+        "out": "/nix/store/d6bnbpk6jr95frzmmksda4r7l3v8d3m6-rustc-wrapper-1.97.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -746,33 +726,30 @@
     {
       "attr_path": "rustc",
       "broken": false,
-      "derivation": "/nix/store/6ag9phi7nq5kbdb6wyad3gg07ap6pjmr-rustc-wrapper-1.95.0.drv",
+      "derivation": "/nix/store/ws46bp68ih8hf9661myqyf8ssq32fzba-rustc-wrapper-1.97.1.drv",
       "description": "Safe, concurrent, practical language (wrapper script)",
       "install_id": "rustc",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustc-wrapper-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustc-wrapper-1.97.1",
       "pname": "rustc",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:42:43.500521Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:08:20.200514Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "man",
-        "man",
-        "out",
         "out"
       ],
       "outputs": {
-        "doc": "/nix/store/shjz14vp8z0368pyl3y1k9y25k033vdh-rustc-wrapper-1.95.0-doc",
-        "man": "/nix/store/bdimrwi4i9p5wxqzms5s8gh0vjqig9gb-rustc-wrapper-1.95.0-man",
-        "out": "/nix/store/qcpwgd3b95bxxylvb0na4hny75chrkzm-rustc-wrapper-1.95.0"
+        "doc": "/nix/store/8svfp79q0gx10gcrsyxf1pw04q8jf0lp-rustc-wrapper-1.97.1-doc",
+        "man": "/nix/store/an2hvf5i7mq52mqdad9rad8mxkpksmq2-rustc-wrapper-1.97.1-man",
+        "out": "/nix/store/yaa1sq5g4jar7rvlspy7kk2wd98nj6qh-rustc-wrapper-1.97.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -781,28 +758,27 @@
     {
       "attr_path": "rustfmt",
       "broken": false,
-      "derivation": "/nix/store/413r1n97kn892qm27c65kj2pbd5fb4sq-rustfmt-1.95.0.drv",
+      "derivation": "/nix/store/pbqhn2qr20h957gaajzwc3s45ycwyigb-rustfmt-1.97.1.drv",
       "description": "Tool for formatting Rust code according to style guidelines",
       "install_id": "rustfmt",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustfmt-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustfmt-1.97.1",
       "pname": "rustfmt",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:14:34.149026Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T04:59:19.855308Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/118jsdf94i0rgbmbwfbj91xybpgcgqaa-rustfmt-1.95.0"
+        "out": "/nix/store/l7xlkqk1bz4w75rwf5dh7pn2br04n59l-rustfmt-1.97.1"
       },
       "system": "aarch64-darwin",
       "group": "toplevel",
@@ -811,28 +787,27 @@
     {
       "attr_path": "rustfmt",
       "broken": false,
-      "derivation": "/nix/store/fln3py9f0nyv8ln9k2a7lrfc4f0jk2hk-rustfmt-1.95.0.drv",
+      "derivation": "/nix/store/4g0gx13xjx0i07jb0dnff6qc71vrdizz-rustfmt-1.97.1.drv",
       "description": "Tool for formatting Rust code according to style guidelines",
       "install_id": "rustfmt",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustfmt-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustfmt-1.97.1",
       "pname": "rustfmt",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T03:43:31.315134Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T05:31:32.356843Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/r2fi72db9a0l2xclj18xq4isn3mrci4q-rustfmt-1.95.0"
+        "out": "/nix/store/rl3j1za9dpdri1vr52vl69y1qczjb5zv-rustfmt-1.97.1"
       },
       "system": "aarch64-linux",
       "group": "toplevel",
@@ -841,28 +816,27 @@
     {
       "attr_path": "rustfmt",
       "broken": false,
-      "derivation": "/nix/store/n5y626lz2qvx1i5r95jxxmsgf7ijf181-rustfmt-1.95.0.drv",
+      "derivation": "/nix/store/89x1576ckylmc24b4qnh3j2k387lrgc5-rustfmt-1.97.1.drv",
       "description": "Tool for formatting Rust code according to style guidelines",
       "install_id": "rustfmt",
       "license": "[ MIT, Apache-2.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=d407951447dcd00442e97087bf374aad70c04cea",
-      "name": "rustfmt-1.95.0",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "name": "rustfmt-1.97.1",
       "pname": "rustfmt",
-      "rev": "d407951447dcd00442e97087bf374aad70c04cea",
-      "rev_count": 1027867,
-      "rev_date": "2026-07-05T04:06:12Z",
-      "scrape_date": "2026-07-06T04:42:43.536550Z",
+      "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+      "rev_count": 1064949,
+      "rev_date": "2026-08-31T12:23:27Z",
+      "scrape_date": "2026-09-01T06:08:20.233047Z",
       "stabilities": [
-        "staging",
         "unstable"
       ],
       "unfree": false,
-      "version": "1.95.0",
+      "version": "1.97.1",
       "outputs_to_install": [
         "out"
       ],
       "outputs": {
-        "out": "/nix/store/ywjbx0pbnabhbscywxkmyrmwp0m2086q-rustfmt-1.95.0"
+        "out": "/nix/store/47k26k98v32x56rxiqawdk5qk0r0b6w1-rustfmt-1.97.1"
       },
       "system": "x86_64-linux",
       "group": "toplevel",
@@ -870,12 +844,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/538470bdbf97fa98f1ba262933ca9b657bd39e34?narHash=sha256-LpkNnvM%2Bn3JK2lwzKYpxIOhzwt5FYiI6Wf6Sm3vrGkM%3D",
+      "locked-url": "github:inference-gateway/cli/a7f9f1284469345e944763ff2291888b32af8245?narHash=sha256-yxAkR98drmxDJP8%2Bc9qoxzfbMKIGXhOwtajFEGJLYWw%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-darwin.default",
-      "derivation": "/nix/store/0mjcf0xdf5vq9qk62dlbkfg07i0zpazi-infer-0.188.0.drv",
+      "derivation": "/nix/store/qyyy73g6zfmshsdxdgpiz1xj1v513y1p-infer-0.189.0.drv",
       "outputs": {
-        "out": "/nix/store/724kk2x6csvsixd3wzkvr5x5a06plv6n-infer-0.188.0"
+        "out": "/nix/store/lrvpixkf0zdw1vgl746cfwjbd2x3jpri-infer-0.189.0"
       },
       "output-names": [
         "out"
@@ -886,9 +860,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-darwin",
       "system": "aarch64-darwin",
-      "name": "infer-0.188.0",
+      "name": "infer-0.189.0",
       "pname": "infer",
-      "version": "0.188.0",
+      "version": "0.189.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -899,12 +873,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/538470bdbf97fa98f1ba262933ca9b657bd39e34?narHash=sha256-LpkNnvM%2Bn3JK2lwzKYpxIOhzwt5FYiI6Wf6Sm3vrGkM%3D",
+      "locked-url": "github:inference-gateway/cli/a7f9f1284469345e944763ff2291888b32af8245?narHash=sha256-yxAkR98drmxDJP8%2Bc9qoxzfbMKIGXhOwtajFEGJLYWw%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-linux.default",
-      "derivation": "/nix/store/2n656pdfyjgvvncjh5vgmhwqj0rwjp97-infer-0.188.0.drv",
+      "derivation": "/nix/store/83956n49ccvdzd880x8q5yh6m9dg5ca7-infer-0.189.0.drv",
       "outputs": {
-        "out": "/nix/store/k9dbkbx8npizza9bblmyfmqyds14w274-infer-0.188.0"
+        "out": "/nix/store/bk1ici4v2blm7n9g7cjidzvhw460kp60-infer-0.189.0"
       },
       "output-names": [
         "out"
@@ -915,9 +889,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-linux",
       "system": "aarch64-linux",
-      "name": "infer-0.188.0",
+      "name": "infer-0.189.0",
       "pname": "infer",
-      "version": "0.188.0",
+      "version": "0.189.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -928,12 +902,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/538470bdbf97fa98f1ba262933ca9b657bd39e34?narHash=sha256-LpkNnvM%2Bn3JK2lwzKYpxIOhzwt5FYiI6Wf6Sm3vrGkM%3D",
+      "locked-url": "github:inference-gateway/cli/a7f9f1284469345e944763ff2291888b32af8245?narHash=sha256-yxAkR98drmxDJP8%2Bc9qoxzfbMKIGXhOwtajFEGJLYWw%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.x86_64-linux.default",
-      "derivation": "/nix/store/lpzkqk6vkrf3dgr0vswc564cjkadml9p-infer-0.188.0.drv",
+      "derivation": "/nix/store/ddypw3br5d99r0x52zfk7nmy53gpfald-infer-0.189.0.drv",
       "outputs": {
-        "out": "/nix/store/j9pxldmf5nflc5q8qqv3jnjdqdzp62h4-infer-0.188.0"
+        "out": "/nix/store/hj4g667wpsqjdn1pw21yn1ac884xgwl7-infer-0.189.0"
       },
       "output-names": [
         "out"
@@ -944,9 +918,9 @@
       "requested-outputs-to-install": [],
       "package-system": "x86_64-linux",
       "system": "x86_64-linux",
-      "name": "infer-0.188.0",
+      "name": "infer-0.189.0",
       "pname": "infer",
-      "version": "0.188.0",
+      "version": "0.189.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
