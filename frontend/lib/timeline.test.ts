@@ -25,6 +25,9 @@ describe("parseTimeline", () => {
     expect(videoSource(t)).toBe("demo.mov");
     expect(t.tracks[1].clips.map((c) => c.id)).toEqual(["s1", "s2"]);
     expect(t.tracks[1].clips[1].start).toBe(10);
+    expect(t.source_audio).toBeUndefined();
+    expect(parseTimeline('{"source_audio":"keep","tracks":[]}').source_audio).toBe("keep");
+    expect(parseTimeline('{"source_audio":"bogus","tracks":[]}').source_audio).toBeUndefined();
   });
 
   test("rejects files without tracks and derives duration from clips", () => {

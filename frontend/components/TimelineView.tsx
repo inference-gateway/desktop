@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Clapperboard, FolderOpen, Plus, Sparkles, Trash2 } from "lucide-react";
-import { api } from "@/lib/tauri";
+import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeVideoSrc } from "@/lib/tools";
 import {
@@ -15,7 +15,9 @@ import {
   serializeTimeline,
   setClipText,
   videoSource,
+  SOURCE_AUDIO,
   type Clip,
+  type SourceAudio,
   type Timeline,
   type Track,
 } from "@/lib/timeline";
@@ -25,6 +27,18 @@ import { Button } from "@/components/ui/button";
 
 const SAVE_DEBOUNCE_MS = 600;
 const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", narration: "Narration", audio: "Audio" };
+const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
+
+function sourceAudioInstruction(mode: SourceAudio): string {
+  switch (mode) {
+    case "transcribe":
+      return "The recording has my own narration: transcribe it, rewrite each segment into cleaner narration that keeps the meaning and timing, use the recording's speech as the voice sample unless a library sample is chosen, and replace the original audio with the cloned voice.";
+    case "mute":
+      return "Ignore and drop the recording's own audio.";
+    case "keep":
+      return "Keep the recording's own audio mixed under the narration.";
+  }
+}
 
 // Editable view of <stem>.timeline.json: video preview, one row per track,
 // clips positioned by time, and a text editor for the selected narration
@@ -40,6 +54,8 @@ export function TimelineView() {
   const [selected, setSelected] = useState<{ track: string; clip: string } | null>(null);
   const [showOutput, setShowOutput] = useState(false);
   const [time, setTime] = useState(0);
+  const [videos, setVideos] = useState<ProjectFile[]>([]);
+  const [newSourceAudio, setNewSourceAudio] = useState<SourceAudio>("transcribe");
   const dirtyRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -50,6 +66,10 @@ export function TimelineView() {
         const list = await api.listTimelines(project);
         setDir(list.dir);
         setNames(list.names);
+        api
+          .listProjectFiles(project)
+          .then((files) => setVideos(files.filter((f) => VIDEO_EXT.test(f.name))))
+          .catch(() => setVideos([]));
         const chosen =
           pick && list.names.includes(pick) ? pick : list.names.includes(name) ? name : (list.names[0] ?? "");
         setName(chosen);
@@ -114,9 +134,16 @@ export function TimelineView() {
   const hasNarration = (timeline && narrationTrack(timeline)?.clips.length) ?? 0;
 
   const generate = () => {
+    const mode = timeline?.source_audio ?? "mute";
     const prompt = hasNarration
-      ? `Regenerate the draft clips in ${name} with my cloned voice and remux the video.`
-      : `Narrate ${source ?? "the video in this project"} in my cloned voice: write ${name || "<stem>.timeline.json"}, synthesize every clip and mux the result.`;
+      ? `Regenerate the draft clips in ${name} with my cloned voice and remux the video. ${sourceAudioInstruction(mode)}`
+      : `Narrate ${source ?? "the video in this project"} in my cloned voice: write ${name || "<stem>.timeline.json"}, synthesize every clip and mux the result. ${sourceAudioInstruction(mode)}`;
+    promptProject(project, prompt).catch((e) => setError(String(e)));
+  };
+
+  const narrateNew = (video: string) => {
+    const stem = video.replace(VIDEO_EXT, "");
+    const prompt = `Narrate ${video} in my cloned voice: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}", synthesize every clip and mux the result into ${stem}.narrated.mp4. ${sourceAudioInstruction(newSourceAudio)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -157,6 +184,34 @@ export function TimelineView() {
 
       <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
+        {!timeline && videos.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+            <h2 className="text-[0.9rem] font-semibold">Recordings in this project</h2>
+            <label className="flex items-center gap-2 text-[0.78rem] text-muted-foreground">
+              Original audio
+              <select
+                aria-label="Original audio"
+                value={newSourceAudio}
+                onChange={(e) => setNewSourceAudio(e.target.value as SourceAudio)}
+                className="h-7 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+              >
+                {SOURCE_AUDIO.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {videos.map((v) => (
+              <div key={v.name} className="flex items-center gap-2 text-[0.85rem]">
+                <span className="truncate">{v.name}</span>
+                <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => narrateNew(v.name)}>
+                  <Sparkles size={14} /> Narrate
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
         {timeline && (
           <>
             <div className="flex flex-wrap items-center gap-2">
@@ -166,6 +221,19 @@ export function TimelineView() {
                 {drafts > 0 && ` · ${drafts} draft${drafts === 1 ? "" : "s"}`}
               </span>
               <div className="ml-auto flex items-center gap-1.5">
+                <select
+                  aria-label="Original audio"
+                  title="What to do with the recording's own audio"
+                  value={timeline.source_audio ?? "mute"}
+                  onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
+                  className="h-8 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                >
+                  {SOURCE_AUDIO.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
                 {timeline.output && (
                   <Button
                     variant="outline"

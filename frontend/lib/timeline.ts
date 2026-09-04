@@ -3,6 +3,14 @@
 // markers here; the agent synthesizes draft clips and muxes the output.
 export type ClipStatus = "draft" | "done";
 export type TrackKind = "video" | "narration" | "audio";
+// What to do with the recording's own audio track: transcribe it and replace
+// it with the cloned voice, drop it, or mix it under the narration.
+export type SourceAudio = "transcribe" | "mute" | "keep";
+export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
+  { value: "transcribe", label: "Re-voice: transcribe, polish the text, clone my voice from it" },
+  { value: "mute", label: "Mute" },
+  { value: "keep", label: "Keep under the narration" },
+];
 
 export type Clip = {
   id: string;
@@ -25,6 +33,7 @@ export type Timeline = {
   version: number;
   duration: number;
   output?: string;
+  source_audio?: SourceAudio;
   tracks: Track[];
 };
 
@@ -60,6 +69,7 @@ export function parseTimeline(json: string): Timeline {
     version: num(raw.version, 1),
     duration: num(raw.duration, clipEnd) || clipEnd,
     output: typeof raw.output === "string" ? raw.output : undefined,
+    source_audio: SOURCE_AUDIO.some((o) => o.value === raw.source_audio) ? raw.source_audio : undefined,
     tracks,
   };
 }
