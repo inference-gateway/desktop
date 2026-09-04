@@ -1091,7 +1091,7 @@ function useDesktopStore() {
   }, []);
 
   // Content projects need ffmpeg, whisper-cli and the whisper model in
-  // ~/.infer/tools so the agent never has to fetch tools itself.
+  // ~/.infer/bin/tools so the agent never has to fetch tools itself.
   const prepareContentTools = useCallback(async () => {
     const ch = new Channel<ProgressEvent>();
     ch.onmessage = (e) => {

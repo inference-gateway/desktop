@@ -18,10 +18,10 @@ pub(crate) const WHISPER_MODEL_URL: &str =
 /// Prebuilt static ffmpeg / whisper-cli / llama-tts release shared with the CLI.
 pub(crate) const BINARIES_BASE: &str =
     "https://github.com/inference-gateway/binaries/releases/download/v0.3.0";
-/// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/tools, apart
-/// from the CLI's and gateway's own downloads in ~/.infer/bin.
+/// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/bin/tools, apart
+/// from the CLI's and gateway's own downloads directly in ~/.infer/bin.
 pub(crate) fn tools_dir() -> PathBuf {
-    home_dir().join(".infer").join("tools")
+    home_dir().join(".infer").join("bin").join("tools")
 }
 
 pub(crate) fn whisper_model_path() -> PathBuf {
@@ -65,7 +65,7 @@ pub(crate) fn bin_file_name(name: &str) -> String {
     }
 }
 
-/// The desktop-owned copy of a tool in ~/.infer/tools, if installed.
+/// The desktop-owned copy of a tool in ~/.infer/bin/tools, if installed.
 pub(crate) fn owned_bin(name: &str) -> Option<PathBuf> {
     let owned = tools_dir().join(bin_file_name(name));
     is_executable_file(&owned).then_some(owned)
@@ -181,7 +181,7 @@ pub(crate) fn download_whisper_binary(
 }
 
 /// Download and checksum-verify a prebuilt binary from the binaries release
-/// into ~/.infer/tools. Copies check_and_install_cli's verify-then-rename-then-chmod flow.
+/// into ~/.infer/bin/tools. Copies check_and_install_cli's verify-then-rename-then-chmod flow.
 pub(crate) fn download_binary(
     name: &str,
     on_event: &Channel<ProgressEvent>,
@@ -401,7 +401,10 @@ mod tests {
         let ch = Channel::new(|_| Ok(()));
         for name in ["ffmpeg", "whisper-cli"] {
             let dest = download_binary(name, &ch).unwrap();
-            assert_eq!(dest, home.join(".infer").join("tools").join(name));
+            assert_eq!(
+                dest,
+                home.join(".infer").join("bin").join("tools").join(name)
+            );
             assert!(is_executable_file(&dest));
             assert_eq!(owned_bin(name).as_deref(), Some(dest.as_path()));
             let out = std::process::Command::new(&dest).arg("-version").output();

@@ -128,7 +128,7 @@ fn video_ffmpeg() -> Result<PathBuf, String> {
 }
 
 /// Install everything the video-editing skill needs so the agent finds the
-/// tools ready in ~/.infer/tools: ffmpeg, whisper-cli and the whisper model.
+/// tools ready in ~/.infer/bin/tools: ffmpeg, whisper-cli and the whisper model.
 /// Called when a project is switched to the content type.
 #[tauri::command]
 pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> Result<(), String> {

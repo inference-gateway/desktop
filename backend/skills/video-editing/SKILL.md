@@ -26,9 +26,9 @@ Everything below is installed by the desktop when a project is switched to the C
 not download, build, symlink or search the disk for tools, and do not create directories anywhere
 under `~/.infer`; the only place you write is the working directory.
 
-- `ffmpeg` on `PATH` (the desktop's own copy lives in `~/.infer/tools/ffmpeg`). There is no `ffprobe`;
+- `ffmpeg` on `PATH` (the desktop's own copy lives in `~/.infer/bin/tools/ffmpeg`). There is no `ffprobe`;
   probe with `ffmpeg -i`.
-- `~/.infer/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (only for
+- `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (only for
   `source_audio: transcribe`). Use a larger model only if one already exists in that directory.
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
@@ -136,7 +136,7 @@ live in the working directory next to the video and the timeline.
 When `source_audio` is `transcribe`, or it is unset and the probe showed an `Audio:` stream:
 
 1. Extract: `ffmpeg -y -i <video> -vn -ac 1 -ar 16000 audio.wav`.
-2. Transcribe with timestamps: `~/.infer/tools/whisper-cli -m ~/.infer/models/whisper/ggml-tiny.bin -f audio.wav -oj -of transcript`
+2. Transcribe with timestamps: `~/.infer/bin/tools/whisper-cli -m ~/.infer/models/whisper/ggml-tiny.bin -f audio.wav -oj -of transcript`
    writes `transcript.json` with `transcription[].timestamps` / `offsets` (ms) and `text`. Use the
    largest ggml model present. If the transcript is empty or only noise, fall back to `mute` and
    say so; do not try to boost, filter or split the audio and transcribe again.
