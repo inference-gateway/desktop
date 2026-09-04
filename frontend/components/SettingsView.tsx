@@ -10,6 +10,7 @@ import {
   Mic,
   Paperclip,
   Square,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2788,8 +2789,15 @@ function VoiceSamplesTab() {
             <div key={s.name} className="rounded-lg border border-border bg-card p-3">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-[0.8rem] font-medium">{s.name}</span>
-                <Button variant="outline" size="xs" className="ml-auto" onClick={() => remove(s.name)}>
-                  Delete
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Delete ${s.name}`}
+                  title="Delete sample"
+                  className="ml-auto text-muted-foreground hover:text-destructive"
+                  onClick={() => remove(s.name)}
+                >
+                  <Trash2 size={14} />
                 </Button>
               </div>
               <audio
