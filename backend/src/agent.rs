@@ -790,14 +790,42 @@ pub(crate) fn write_projects(data: String) -> Result<(), String> {
 pub(crate) fn save_image(path: String) -> Result<String, String> {
     let home = home_dir();
     let src = safe_image_source(&path, &home)?;
-    if !src.exists() {
-        return Err(format!("Image not found: {path}"));
+    copy_to_downloads(&src, &home)
+}
+
+/// Copy a generated WAV (transcript speech or a voice sample) to the user's
+/// Downloads folder. Same guard shape as `safe_image_source`, scoped to the
+/// TTS output and samples-library directories.
+#[tauri::command]
+pub(crate) fn save_audio(path: String) -> Result<String, String> {
+    let home = home_dir();
+    let src = safe_audio_source(&path, &home)?;
+    copy_to_downloads(&src, &home)
+}
+
+pub(crate) fn safe_audio_source(path: &str, home: &Path) -> Result<PathBuf, String> {
+    let p = Path::new(path);
+    let ok = p.starts_with(home)
+        && !p.components().any(|c| c == Component::ParentDir)
+        && (path.contains("/.infer/tts/") || path.contains("/.infer/models/tts/samples/"))
+        && path.to_ascii_lowercase().ends_with(".wav");
+    if !ok {
+        return Err(format!(
+            "Refusing to save audio outside .infer/tts or .infer/models/tts/samples: {path}"
+        ));
     }
-    let name = src.file_name().ok_or("invalid image path")?;
+    Ok(p.to_path_buf())
+}
+
+fn copy_to_downloads(src: &Path, home: &Path) -> Result<String, String> {
+    if !src.exists() {
+        return Err(format!("File not found: {}", src.display()));
+    }
+    let name = src.file_name().ok_or("invalid file path")?;
     let downloads = home.join("Downloads");
     std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
     let dest = downloads.join(name);
-    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    std::fs::copy(src, &dest).map_err(|e| e.to_string())?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -985,6 +1013,19 @@ mod tests {
             safe_image_source("/Users/me/.infer/artifacts/../../../etc/passwd", &home).is_err()
         );
         assert!(safe_image_source("/Users/me/Pictures/cat.png", &home).is_err());
+    }
+
+    #[test]
+    fn safe_audio_source_guards_scope() {
+        let home = PathBuf::from("/Users/me");
+        assert!(safe_audio_source("/Users/me/.infer/tts/speech-1.wav", &home).is_ok());
+        assert!(
+            safe_audio_source("/Users/me/.infer/models/tts/samples/my-voice.wav", &home).is_ok()
+        );
+        assert!(safe_audio_source("/Users/me/.infer/tts/notes.txt", &home).is_err());
+        assert!(safe_audio_source("/Users/me/.infer/tts/../../../etc/passwd.wav", &home).is_err());
+        assert!(safe_audio_source("/etc/passwd.wav", &home).is_err());
+        assert!(safe_audio_source("/Users/me/Music/song.wav", &home).is_err());
     }
 
     // --- AG-UI parser tests ---

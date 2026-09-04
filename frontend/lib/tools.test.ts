@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseToolResult, safeImageSrc } from "./tools";
+import { parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 test("ImageDecode result with an uploads source does not produce an image item", () => {
   const parsed = parseToolResult(
@@ -47,6 +47,28 @@ test("safeImageSrc allows nested computer-use screenshot paths", () => {
   try {
     expect(safeImageSrc("/Users/x/.infer/tmp/screenshots/session-b9fb/frame_001.png")).not.toBeNull();
     expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/nested/a.png")).not.toBeNull();
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
+});
+
+test("TextToSpeech result path in the default tts output dir is previewable", () => {
+  const parsed = parseToolResult(
+    '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
+  );
+  expect(parsed?.imagePath).toBe("/Users/x/.infer/tts/speech-20260102-150405-123.wav");
+});
+
+test("safeAudioSrc rejects non-tts wav paths, non-wav files, and traversal", () => {
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    expect(safeAudioSrc("/Users/x/.infer/tts/speech-1.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/models/tts/samples/me.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/uploads/me.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tts/speech.mp3")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tts/../uploads/me.wav")).toBeNull();
   } finally {
     delete (globalThis as Record<string, unknown>).window;
   }

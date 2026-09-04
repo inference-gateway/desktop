@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
@@ -220,6 +221,12 @@ function Item({
       return <ApprovalCard item={item} approve={approve} />;
     case "image":
       return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
+    case "audio":
+      return (
+        <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
+          <AudioPlayer src={item.src} ariaLabel={`generated speech ${item.filename}`} path={item.path} />
+        </div>
+      );
     case "error":
       return (
         <div className="max-w-[min(72ch,82%)] self-start rounded-md border border-err-border bg-err-bg px-3 py-2 text-err">

@@ -17,6 +17,7 @@ mod scheduler;
 mod skills;
 mod stt;
 mod tasks;
+mod tts_samples;
 mod updates;
 
 use observability::{StoredMetric, StoredSpan, start_collector};
@@ -125,6 +126,10 @@ pub fn run() {
             stt::stt_status,
             stt::prepare_stt,
             stt::transcribe_audio,
+            tts_samples::list_voice_samples,
+            tts_samples::add_voice_sample,
+            tts_samples::save_voice_sample,
+            tts_samples::delete_voice_sample,
             agent::list_a2a_agents,
             agent::add_a2a_agent,
             agent::remove_a2a_agent,
@@ -132,6 +137,7 @@ pub fn run() {
             agent::read_history,
             agent::append_history,
             agent::save_image,
+            agent::save_audio,
             agent::save_upload,
             projects::create_project_dir,
             projects::scan_git_repos,

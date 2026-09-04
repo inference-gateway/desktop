@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility actions over screenshots. On macOS, target the intended app by its process or bundle name (`app:<name>`) instead of `frontmost` or its display title; for this desktop use `app:inference-gateway-desktop`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
 
+const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and TextToSpeech WAVs inline in the transcript with playback and download controls. After generating one, state the file path in plain text and stop - do not run `open`, suggest a command to open it, or ask for approval to view or play it.";
+
 const PROJECTS_GUIDANCE: &str = "Chat organization: the desktop sidebar groups chats into projects via ~/.infer/projects.json, JSON of the shape {\"assignments\":{\"<conversation-id>\":\"<project>\"},\"names\":[\"<project>\"],\"contexts\":{\"<project>\":\"<extra instructions>\"},\"groups\":{\"<project>\":\"<label grouping sibling projects, e.g. their parent directory>\"}}. To organize chats, list them with `infer conversations list --format json` and edit that file (preserve entries you are not changing); the sidebar reloads it after your run. Do not modify the app's source code for this.";
 
 /// Map the running platform to the CLI release asset name.
@@ -126,7 +128,7 @@ pub(crate) fn prompt_env(
 /// the model states it instead of guessing (Finder launches land in $HOME).
 pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
     let desktop_notes = format!(
-        "{COMPUTER_USE_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: {}",
+        "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: {}",
         cwd.display()
     );
     match extra_instructions.filter(|s| !s.trim().is_empty()) {
@@ -304,19 +306,19 @@ mod tests {
         assert_eq!(
             desktop_notes,
             format!(
-                "{COMPUTER_USE_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+                "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
             )
         );
         assert_eq!(
             compose_extras(Some("  "), cwd),
             format!(
-                "{COMPUTER_USE_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+                "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
             )
         );
         assert_eq!(
             compose_extras(Some("be a pirate"), cwd),
             format!(
-                "be a pirate\n\n{COMPUTER_USE_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+                "be a pirate\n\n{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
             )
         );
     }

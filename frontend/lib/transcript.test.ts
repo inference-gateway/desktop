@@ -121,6 +121,46 @@ test("a running tool call resolves by tool_call_id", () => {
   expect(s.currentAssistantId).toBeNull();
 });
 
+test("a TextToSpeech result with a tts wav path adds an inline audio item", () => {
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    const s = run([
+      { type: "userSend", text: "speak" },
+      ev({
+        kind: "AssistantMessage",
+        content: "",
+        reasoning_content: null,
+        tool_calls: [{ id: "c1", name: "TextToSpeech", args: '{"text":"hi"}' }],
+      }),
+      ev({
+        kind: "ToolResult",
+        tool_call_id: "c1",
+        content:
+          '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
+      }),
+    ]);
+    const audio = s.items.find((i) => i.kind === "audio");
+    expect(audio).toMatchObject({
+      kind: "audio",
+      filename: "speech-20260102-150405-123.wav",
+      path: "/Users/x/.infer/tts/speech-20260102-150405-123.wav",
+    });
+    // Non-tts tool results never produce audio items.
+    const other = run([
+      ev({
+        kind: "ToolResult",
+        tool_call_id: "c2",
+        content: '{"tool_name":"Write","data":{"path":"/Users/x/.infer/tmp/out.wav"},"success":true}',
+      }),
+    ]);
+    expect(other.items.some((i) => i.kind === "audio")).toBe(false);
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
+});
+
 test("a failed tool call retains its top-level error", () => {
   const s = run([
     { type: "userSend", text: "read" },
@@ -297,6 +337,32 @@ test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
   ].join("\n");
   const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
   expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
+});
+
+test("loadHistory unwraps the CLI v2 entry envelope and skips meta/system-reminder lines", () => {
+  const wrap = (message: object) => JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message } });
+  const ndjson = [
+    wrap({ role: "user", content: "hello" }),
+    JSON.stringify({ type: "meta", metadata: { id: "x" } }),
+    wrap({ role: "user", content: "<system-reminder>\ninjected context\n</system-reminder>" }),
+    wrap({ role: "assistant", content: "hi there", reasoning_content: "thinking" }),
+    wrap({ role: "tool", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
+  ].join("\n");
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
+});
+
+test("loadHistory recovers audio players from pretty-printed v2 tool results", () => {
+  const content =
+    "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tts/speech-1.wav (1.0s of audio)";
+  const ndjson = JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message: { role: "tool", content } } });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(s.items.map((i) => i.kind)).toEqual(["tool", "audio"]);
+  expect(s.items[1]).toMatchObject({
+    kind: "audio",
+    filename: "speech-1.wav",
+    path: "/Users/me/.infer/tts/speech-1.wav",
+  });
 });
 
 test("computer-use tool call renders through the generic tool path", () => {

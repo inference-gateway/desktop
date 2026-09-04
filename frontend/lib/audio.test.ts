@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { downsample, encodeWav, mergeChunks } from "./audio";
+import { computePeaks, downsample, encodeWav, mergeChunks } from "./audio";
 
 test("mergeChunks concatenates in order", () => {
   const out = mergeChunks([new Float32Array([1, 2]), new Float32Array([3])]);
@@ -15,6 +15,21 @@ test("downsample halves length at a 2:1 ratio", () => {
 test("downsample is a no-op when target >= source", () => {
   const input = new Float32Array([0.1, 0.2]);
   expect(downsample(input, 16000, 16000)).toBe(input);
+});
+
+test("computePeaks buckets RMS energy normalized to the loudest bar", () => {
+  const samples = new Float32Array(100);
+  samples.fill(1, 0, 50); // loud first half, silent second half
+  const peaks = computePeaks(samples, 4);
+  expect(peaks.length).toBe(4);
+  expect(peaks[0]).toBeCloseTo(1);
+  expect(peaks[1]).toBeCloseTo(1);
+  expect(peaks[3]).toBeCloseTo(0);
+});
+
+test("computePeaks handles empty input and silence", () => {
+  expect(computePeaks(new Float32Array(0), 3)).toEqual([0, 0, 0]);
+  expect(computePeaks(new Float32Array(10), 2)).toEqual([0, 0]);
 });
 
 test("encodeWav writes a valid 44-byte RIFF/WAVE header + PCM", () => {

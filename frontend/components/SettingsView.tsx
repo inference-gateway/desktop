@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, CircleMinus, Eye, EyeOff, GitBranch, Paperclip } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  CircleMinus,
+  Eye,
+  EyeOff,
+  GitBranch,
+  Mic,
+  Paperclip,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,11 +33,15 @@ import {
   type OsPermissionState,
   type ProjectFile,
   type RepoEntry,
+  type VoiceSample,
 } from "@/lib/tauri";
+import { AudioPlayer } from "@/components/AudioPlayer";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
+import { safeAudioSrc } from "@/lib/tools";
+import { encodeWav, mergeChunks } from "@/lib/audio";
 import {
   DEFAULT_REGISTRY_URL,
   fetchSkillsCatalog,
@@ -34,7 +50,8 @@ import {
   type SkillsCatalog,
 } from "@/lib/skills";
 
-type Tab = "general" | "keys" | "prompt" | "updates" | "agents" | "snippets" | "projects" | "github" | "skills";
+type Tab =
+  "general" | "keys" | "prompt" | "updates" | "agents" | "snippets" | "projects" | "github" | "skills" | "voice";
 
 type GithubSubTab = "repository" | "scheduling" | "tasks";
 
@@ -53,6 +70,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "snippets", label: "Snippets" },
   { id: "github", label: "GitHub" },
   { id: "skills", label: "Skills" },
+  { id: "voice", label: "Voice samples" },
   { id: "updates", label: "Updates" },
 ];
 
@@ -256,6 +274,7 @@ export function SettingsView() {
           {tab === "snippets" && <SnippetsTab />}
           {tab === "prompt" && <SystemPromptTab />}
           {tab === "skills" && <SkillsTab />}
+          {tab === "voice" && <VoiceSamplesTab />}
         </div>
       </div>
     </div>
@@ -349,6 +368,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   projects_github_repository: ".projects",
   projects_max_file_size_mb: "10",
   projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv",
+  text_to_speech_enabled: false,
 };
 
 // Text inputs for the github scheduling backend; the repository picker and
@@ -368,11 +388,16 @@ function GeneralTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // Value as last read from disk; saving with a changed TTS toggle restarts the gateway.
+  const [savedTts, setSavedTts] = useState(false);
 
   useEffect(() => {
     api
       .getConfig()
-      .then(setConfigs)
+      .then((c) => {
+        setConfigs(c);
+        setSavedTts(c.text_to_speech_enabled);
+      })
       .catch(() => {});
   }, []);
 
@@ -396,6 +421,12 @@ function GeneralTab() {
       setDirty(false);
       setSaved(true);
       setError("");
+      // The gateway reads AUDIO_* env at spawn, so a TTS toggle needs a restart
+      // (same path as saving an API key).
+      if (savedTts !== config.text_to_speech_enabled) {
+        setSavedTts(config.text_to_speech_enabled);
+        await api.startGateway(false, true);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -585,6 +616,26 @@ function GeneralTab() {
           onChange={(e) => set("gateway_url", e.target.value)}
           placeholder="http://localhost:8080"
         />
+      </div>
+
+      {/* Text to speech: the CLI/gateway own all synthesis (#186); this
+              only flips text_to_speech.enabled and restarts the gateway. */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Text to speech</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Lets the agent generate spoken audio with the CLI's TextToSpeech tool. Off by default; saving restarts the
+        gateway. Manage reference recordings in the Voice samples tab.
+      </p>
+      <div className="mb-5 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="tts-enabled"
+          checked={config.text_to_speech_enabled}
+          onChange={(e) => set("text_to_speech_enabled", e.target.checked)}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="tts-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Enable Text to Speech
+        </Label>
       </div>
 
       {/* Export/import the complete desktop state between machines (#166). */}
@@ -2568,6 +2619,192 @@ function SkillsTab() {
         </>
       ) : (
         <p className="text-[0.8rem] text-muted-foreground">No catalog loaded.</p>
+      )}
+    </>
+  );
+}
+
+// Managed library of WAV reference recordings for voice cloning, backed by the
+// list/add/delete voice-sample commands (backend/src/tts_samples.rs). Upload is
+// a native file picker + copy, or an in-app mic recording saved via
+// save_voice_sample; preview streams through the asset protocol.
+const MAX_SAMPLE_REC_MS = 30000;
+
+function VoiceSamplesTab() {
+  const [samples, setSamples] = useState<VoiceSample[]>([]);
+  const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [recording, setRecording] = useState(false);
+
+  const mediaStream = useRef<MediaStream | null>(null);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const recNode = useRef<ScriptProcessorNode | null>(null);
+  const recChunks = useRef<Float32Array[]>([]);
+  const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(
+    () => () => {
+      if (recTimer.current) clearTimeout(recTimer.current);
+      mediaStream.current?.getTracks().forEach((t) => t.stop());
+      audioCtx.current?.close();
+    },
+    [],
+  );
+
+  const refresh = useCallback(() => {
+    api
+      .listVoiceSamples()
+      .then(setSamples)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  const add = async () => {
+    setAdding(true);
+    setError("");
+    try {
+      const added = await api.addVoiceSample();
+      if (added) refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const remove = async (name: string) => {
+    setError("");
+    try {
+      await api.deleteVoiceSample(name);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  // Same capture wiring as useVoiceInput, but kept at the native sample rate
+  // (no 16kHz downsample) - cloning wants the full-quality reference.
+  const stopRecording = useCallback(async () => {
+    setRecording(false);
+    if (recTimer.current) clearTimeout(recTimer.current);
+    if (recNode.current) {
+      recNode.current.disconnect();
+      recNode.current.onaudioprocess = null;
+      recNode.current = null;
+    }
+    mediaStream.current?.getTracks().forEach((t) => t.stop());
+    mediaStream.current = null;
+    const rate = audioCtx.current?.sampleRate ?? 48000;
+    if (audioCtx.current) {
+      await audioCtx.current.close();
+      audioCtx.current = null;
+    }
+
+    const samples = mergeChunks(recChunks.current);
+    recChunks.current = [];
+    if (samples.length === 0) {
+      setError("No audio captured");
+      return;
+    }
+    const name = nameRef.current?.value.trim() || "my-voice";
+    const file = name.toLowerCase().endsWith(".wav") ? name : `${name}.wav`;
+    try {
+      await api.saveVoiceSample(file, Array.from(encodeWav(samples, rate)));
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [refresh]);
+
+  const record = async () => {
+    if (recording) {
+      await stopRecording();
+      return;
+    }
+    setError("");
+    try {
+      mediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Microphone access denied");
+      return;
+    }
+    const Ctx: typeof AudioContext =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    audioCtx.current = ctx;
+    recChunks.current = [];
+    const source = ctx.createMediaStreamSource(mediaStream.current);
+    const node = ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => {
+      recChunks.current.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    source.connect(node);
+    node.connect(ctx.destination);
+    recNode.current = node;
+    setRecording(true);
+    recTimer.current = setTimeout(() => void stopRecording(), MAX_SAMPLE_REC_MS);
+  };
+
+  return (
+    <>
+      <h2 className="text-[1.05rem] font-semibold">Voice samples</h2>
+      <p className="mb-5 text-[0.8rem] text-muted-foreground">
+        Reference WAV recordings for voice cloning, stored in ~/.infer/models/tts/samples. Ask the agent to speak in a
+        sample's voice by its full file name, e.g. "read this in the voice of my-voice.wav".
+      </p>
+      <div className="mb-4 flex items-center gap-2">
+        <Button size="sm" disabled={adding || recording} onClick={add}>
+          {adding ? "Adding..." : "Add sample"}
+        </Button>
+        <Input
+          ref={nameRef}
+          defaultValue="my-voice"
+          aria-label="Sample name"
+          placeholder="Sample name"
+          className="h-7 w-40 text-[0.8rem]"
+        />
+        <Button
+          size="icon-sm"
+          variant={recording ? "destructive" : "outline"}
+          aria-label={recording ? "Stop recording" : "Record voice sample"}
+          title={recording ? "Stop recording" : "Record a voice sample"}
+          disabled={adding}
+          onClick={() => void record()}
+          className={cn(recording && "mic-recording bg-destructive text-white hover:bg-destructive")}
+        >
+          {recording ? <Square size={14} /> : <Mic size={14} />}
+        </Button>
+        {error && (
+          <span role="status" className="text-[0.75rem] text-err">
+            {error}
+          </span>
+        )}
+      </div>
+      {samples.length === 0 ? (
+        <p className="text-[0.8rem] text-muted-foreground">No voice samples yet.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {samples.map((s) => (
+            <div key={s.name} className="rounded-lg border border-border bg-card p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[0.8rem] font-medium">{s.name}</span>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Delete ${s.name}`}
+                  title="Delete sample"
+                  className="ml-auto text-muted-foreground hover:text-destructive"
+                  onClick={() => remove(s.name)}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
+              {safeAudioSrc(s.path) && <AudioPlayer src={safeAudioSrc(s.path)!} ariaLabel={s.name} path={s.path} />}
+            </div>
+          ))}
+        </div>
       )}
     </>
   );
