@@ -17,6 +17,7 @@ mod scheduler;
 mod skills;
 mod stt;
 mod tasks;
+mod timeline;
 mod tts_samples;
 mod updates;
 
@@ -130,6 +131,13 @@ pub fn run() {
             tts_samples::add_voice_sample,
             tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
+            timeline::list_timelines,
+            timeline::read_timeline,
+            timeline::write_timeline,
+            timeline::reveal_project_file,
+            timeline::add_project_video,
+            timeline::prepare_content_tools,
+            timeline::export_timeline,
             agent::list_a2a_agents,
             agent::add_a2a_agent,
             agent::remove_a2a_agent,

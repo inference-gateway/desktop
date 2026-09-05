@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Pencil,
   Settings2,
+  Clapperboard,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -210,6 +211,7 @@ function ProjectGroup({
   onToggleCheck,
   count,
   isGit,
+  isContent,
   dirty,
   branch,
   defaultBranch,
@@ -222,6 +224,7 @@ function ProjectGroup({
   onOpenInVsCode,
   onSyncDefaultBranch,
   onSettings,
+  onTimeline,
   onRename,
   onDelete,
   onDrop,
@@ -234,6 +237,7 @@ function ProjectGroup({
   onToggleCheck: () => void;
   count: number;
   isGit: boolean;
+  isContent: boolean;
   dirty: boolean;
   branch?: string;
   defaultBranch?: string;
@@ -246,6 +250,7 @@ function ProjectGroup({
   onOpenInVsCode: () => void;
   onSyncDefaultBranch: () => void;
   onSettings: () => void;
+  onTimeline: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
   onDrop: (e: DragEvent) => void;
@@ -345,6 +350,19 @@ function ProjectGroup({
             </span>
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+          {isContent && (
+            <button
+              aria-label={`Timeline for project ${name}`}
+              title="Open timeline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTimeline();
+              }}
+              className="ml-0.5 inline-flex shrink-0 items-center rounded p-[0.1rem] text-muted-foreground/70 hover:text-foreground"
+            >
+              <Clapperboard size={11} />
+            </button>
+          )}
           {isGit && (
             <GitBranch
               size={11}
@@ -490,6 +508,8 @@ export function ChatList() {
     projectDefaultBranches,
     refreshGitProjects,
     projectGroups,
+    projectTypes,
+    openTimeline,
     setError,
   } = useDesktop();
 
@@ -593,7 +613,8 @@ export function ChatList() {
                 checked={initSelection.has(name)}
                 onToggleCheck={() => toggleInitSelection(name)}
                 count={indices.length}
-                isGit={gitProjects.has(name)}
+                isGit={gitProjects.has(name) && projectTypes[name] !== "content"}
+                isContent={projectTypes[name] === "content"}
                 dirty={dirtyProjects.has(name)}
                 branch={projectBranches[name]}
                 defaultBranch={projectDefaultBranches[name]}
@@ -615,6 +636,7 @@ export function ChatList() {
                   setInitialProjectFilter(name);
                   setCurrentView("settings");
                 }}
+                onTimeline={() => openTimeline(name)}
                 onRename={(n) => renameProject(name, n)}
                 onDelete={() => deleteProject(name)}
                 onDrop={(e) => handleDropOnProject(e, name)}

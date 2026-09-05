@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, Clapperboard, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
@@ -321,7 +321,8 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const { items, typing, approve, runLabel, sessionId } = useDesktop();
+  const { items, typing, approve, runLabel, sessionId, currentProject, projectTypes, openTimeline } = useDesktop();
+  const contentProject = currentProject && projectTypes[currentProject] === "content" ? currentProject : null;
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -409,7 +410,14 @@ export function Transcript() {
         className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
       >
         {items.length === 0 && !typing && (
-          <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
+          <div className="m-auto flex flex-col items-center gap-3 text-[0.95rem] text-muted-foreground">
+            Start a conversation
+            {contentProject && (
+              <Button variant="outline" size="sm" onClick={() => openTimeline(contentProject)}>
+                <Clapperboard size={14} /> Open timeline
+              </Button>
+            )}
+          </div>
         )}
         {items.map((item) => (
           <Item key={item.id} item={item} approve={approve} />

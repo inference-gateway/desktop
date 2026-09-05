@@ -38,7 +38,7 @@ import {
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
-import { PROVIDERS, useDesktop } from "@/store";
+import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import { safeAudioSrc } from "@/lib/tools";
 import { encodeWav, mergeChunks } from "@/lib/audio";
@@ -366,9 +366,10 @@ const DEFAULT_CONFIG: DesktopConfig = {
   projects_root: "",
   projects_backend: "local",
   projects_github_repository: ".projects",
-  projects_max_file_size_mb: "10",
+  projects_max_file_size_mb: "500",
   projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv",
   text_to_speech_enabled: false,
+  vision_annotator_model: "",
 };
 
 // Text inputs for the github scheduling backend; the repository picker and
@@ -635,6 +636,25 @@ function GeneralTab() {
         <Label htmlFor="tts-enabled" className="cursor-pointer text-[0.8rem] font-medium">
           Enable Text to Speech
         </Label>
+      </div>
+
+      {/* Vision */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Vision</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Vision model the agent uses to describe images and video frames (the CLI's ImageDecode tool). Blank disables it.
+        For a fully local setup run Ollama, pull the model, and add OLLAMA_API_URL=http://localhost:11434/v1 under
+        Providers.
+      </p>
+      <div className="mb-5 flex flex-col gap-1">
+        <Label htmlFor="vision-annotator-model" className="text-[0.8rem] text-muted-foreground">
+          Vision model
+        </Label>
+        <Input
+          id="vision-annotator-model"
+          value={config.vision_annotator_model}
+          onChange={(e) => set("vision_annotator_model", e.target.value)}
+          placeholder="ollama/qwen3-vl:2b"
+        />
       </div>
 
       {/* Export/import */}
@@ -1509,6 +1529,8 @@ function ProjectsTab() {
     dirtyProjects,
     deleteProjects,
     projectGroups,
+    projectTypes,
+    setProjectType,
     initialProjectFilter,
   } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
@@ -1942,7 +1964,29 @@ function ProjectsTab() {
                       {projectGroups[name]}
                     </span>
                   )}
+                  <select
+                    aria-label={`Type of project ${name}`}
+                    value={projectTypes[name] ?? "code"}
+                    onChange={(e) => setProjectType(name, e.target.value as ProjectType)}
+                    className="ml-auto h-6 rounded-md border border-input bg-transparent px-1 text-[0.72rem] text-foreground"
+                  >
+                    <option value="code">Code</option>
+                    <option value="content">Content</option>
+                  </select>
                 </div>
+                {projectTypes[name] === "content" &&
+                  (!config.text_to_speech_enabled || !config.vision_annotator_model) && (
+                    <p role="alert" className="text-[0.75rem] text-amber-600 dark:text-amber-400">
+                      Content projects need{" "}
+                      {[
+                        !config.text_to_speech_enabled && "Text to Speech enabled",
+                        !config.vision_annotator_model && "a vision model",
+                      ]
+                        .filter(Boolean)
+                        .join(" and ")}{" "}
+                      - see the General tab.
+                    </p>
+                  )}
                 <ProjectFiles project={name} />
                 <Label htmlFor={`project-path-${name}`} className="text-[0.8rem] text-muted-foreground">
                   Directory (blank = default under the projects root)

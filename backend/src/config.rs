@@ -128,6 +128,10 @@ pub(crate) struct DesktopConfig {
     /// config); the desktop never synthesizes audio itself.
     #[serde(default)]
     pub(crate) text_to_speech_enabled: bool,
+    /// Vision model (`provider/model`) for the CLI's ImageDecode annotator
+    /// (vision.annotator in the CLI config); empty disables the annotator.
+    #[serde(default)]
+    pub(crate) vision_annotator_model: String,
 }
 
 pub(crate) fn default_config() -> DesktopConfig {
@@ -170,9 +174,10 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_root: crate::projects::default_projects_root(&home_dir()),
         projects_backend: "local".into(),
         projects_github_repository: ".projects".into(),
-        projects_max_file_size_mb: "10".into(),
+        projects_max_file_size_mb: "500".into(),
         projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".into(),
         text_to_speech_enabled: false,
+        vision_annotator_model: String::new(),
     }
 }
 
@@ -321,6 +326,11 @@ pub(crate) fn config_from_value(
         ])
         .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
+        vision_annotator_model: if bool_at(&["vision", "annotator", "enabled"]).unwrap_or(false) {
+            str_at(&["vision", "annotator", "model"]).unwrap_or_default()
+        } else {
+            String::new()
+        },
     }
 }
 
@@ -475,6 +485,18 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         "text_to_speech",
         vec![("enabled", cfg.text_to_speech_enabled.into())],
     );
+
+    let annotator_model = cfg.vision_annotator_model.trim();
+    let vision = map
+        .entry("vision".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(vmap) = vision.as_mapping_mut() {
+        let mut kvs = vec![("enabled", (!annotator_model.is_empty()).into())];
+        if !annotator_model.is_empty() {
+            kvs.push(("model", annotator_model.into()));
+        }
+        set_section(vmap, "annotator", kvs);
+    }
 
     set_section(
         map,
@@ -668,10 +690,48 @@ mod tests {
         assert_eq!(cfg.d1_base_url, "https://api.cloudflare.com/client/v4");
         assert!(!cfg.schedule_enabled);
         assert_eq!(cfg.projects_backend, "local");
-        assert_eq!(cfg.projects_max_file_size_mb, "10");
+        assert_eq!(cfg.projects_max_file_size_mb, "500");
         assert_eq!(cfg.projects_github_repository, ".projects");
         assert!(cfg.projects_root.ends_with("Inference Gateway Desktop"));
         assert!(!cfg.text_to_speech_enabled);
+        assert_eq!(cfg.vision_annotator_model, "");
+    }
+
+    #[test]
+    fn merge_config_round_trips_vision_annotator() {
+        let existing = "vision:\n  annotator:\n    enabled: true\n    model: anthropic/claude-haiku-4-5-20251001\n    max_tokens: 512\n";
+        let mut cfg = default_config();
+        cfg.vision_annotator_model = "ollama/qwen3-vl:2b".into();
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["vision", "annotator", "model"]),
+            Some("ollama/qwen3-vl:2b")
+        );
+        assert_eq!(
+            val.get("vision")
+                .and_then(|v| v.get("annotator"))
+                .and_then(|a| a.get("max_tokens"))
+                .and_then(|v| v.as_u64()),
+            Some(512)
+        );
+        assert_eq!(
+            config_from_value(&val, std::path::Path::new("/home/tester")).vision_annotator_model,
+            "ollama/qwen3-vl:2b"
+        );
+
+        cfg.vision_annotator_model = String::new();
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            val.get("vision")
+                .and_then(|v| v.get("annotator"))
+                .and_then(|a| a.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        assert_eq!(
+            config_from_value(&val, std::path::Path::new("/home/tester")).vision_annotator_model,
+            ""
+        );
     }
 
     #[test]

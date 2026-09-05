@@ -34,6 +34,11 @@ import { hydrateRegistry } from "@/lib/skills";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
+export type ProjectType = "code" | "content";
+
+const CONTENT_GUIDANCE =
+  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
+
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
 const UPDATE_CACHE_KEY = "updateCheck";
@@ -101,7 +106,8 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "timeline">("chat");
+  const [timelineProject, setTimelineProject] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
@@ -112,6 +118,7 @@ function useDesktopStore() {
   const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
+  const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
@@ -282,6 +289,10 @@ function useDesktopStore() {
       for (const [name, g] of Object.entries(parsed?.groups ?? {})) {
         if (typeof g === "string" && g.trim()) groups[name] = g;
       }
+      const types: Record<string, ProjectType> = {};
+      for (const [name, t] of Object.entries(parsed?.types ?? {})) {
+        if (t === "content") types[name] = t;
+      }
       const selected = new Set<string>();
       if (Array.isArray(parsed?.selected)) {
         for (const n of parsed.selected) {
@@ -293,6 +304,7 @@ function useDesktopStore() {
       setProjectContexts(contexts);
       setProjectPaths(paths);
       setProjectGroups(groups);
+      setProjectTypes(types);
       setInitSelection(selected);
     } catch (e) {
       console.error("Failed to load projects:", e);
@@ -566,6 +578,7 @@ function useDesktopStore() {
           contexts: projectContexts,
           paths: projectPaths,
           groups: projectGroups,
+          types: projectTypes,
           selected: Array.from(initSelection),
         }),
       )
@@ -578,6 +591,7 @@ function useDesktopStore() {
     projectContexts,
     projectPaths,
     projectGroups,
+    projectTypes,
     initSelection,
     fetchGitProjects,
   ]);
@@ -673,6 +687,7 @@ function useDesktopStore() {
           projectName && projectGroups[projectName]
             ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
             : undefined;
+        const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
         await api.sendMessage({
           prompt: text,
           model,
@@ -680,8 +695,9 @@ function useDesktopStore() {
           onEvent: ch,
           systemPrompt: cfg.system_prompt || undefined,
           extraInstructions:
-            [cfg.extra_instructions, projectGroup, projectContext, extraInstruction].filter(Boolean).join("\n\n") ||
-            undefined,
+            [cfg.extra_instructions, projectGroup, projectType, projectContext, extraInstruction]
+              .filter(Boolean)
+              .join("\n\n") || undefined,
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
         });
@@ -705,6 +721,7 @@ function useDesktopStore() {
       autoModes,
       projectContexts,
       projectGroups,
+      projectTypes,
       setError,
       refreshConversations,
       loadProjects,
@@ -917,6 +934,26 @@ function useDesktopStore() {
     setCurrentView("observability");
   }, []);
 
+  const openTimeline = useCallback((project: string) => {
+    setTimelineProject(project);
+    setCurrentView("timeline");
+  }, []);
+
+  // Start a fresh chat in a project with a given prompt (the timeline's
+  // "Generate" button) and switch to it so progress and approvals are visible.
+  const promptProject = useCallback(
+    async (name: string, text: string) => {
+      const runId = crypto.randomUUID();
+      assignProject(runId, name);
+      setActiveProject(name);
+      setActiveId(runId);
+      activeIdRef.current = runId;
+      setCurrentView("chat");
+      await sendPrompt(runId, text, name);
+    },
+    [assignProject, sendPrompt],
+  );
+
   const saveSettings = useCallback(
     async (keys: Record<string, string>) => {
       try {
@@ -1009,6 +1046,11 @@ function useDesktopStore() {
       for (const name of gone) delete next[name];
       return next;
     });
+    setProjectTypes((prev) => {
+      const next = { ...prev };
+      for (const name of gone) delete next[name];
+      return next;
+    });
     setActiveProject((p) => (p && gone.has(p) ? null : p));
   }, []);
 
@@ -1038,8 +1080,65 @@ function useDesktopStore() {
       delete next[oldName];
       return next;
     });
+    setProjectTypes((prev) => {
+      if (!(oldName in prev)) return prev;
+      const next = { ...prev };
+      next[newName] = next[oldName];
+      delete next[oldName];
+      return next;
+    });
     setActiveProject((p) => (p === oldName ? newName : p));
   }, []);
+
+  // Content projects need ffmpeg, whisper-cli and the whisper model in
+  // ~/.infer/bin/tools so the agent never has to fetch tools itself.
+  const prepareContentTools = useCallback(async () => {
+    const ch = new Channel<ProgressEvent>();
+    ch.onmessage = (e) => {
+      switch (e.kind) {
+        case "Checking":
+          setStatus("Checking video tools...");
+          break;
+        case "Installing":
+          setStatus("Installing video tools...");
+          break;
+        case "Downloading":
+          setStatus(
+            e.total > 0
+              ? `Downloading video tools... ${Math.round((e.received / e.total) * 100)}%`
+              : "Downloading video tools...",
+          );
+          break;
+        case "Verifying":
+          setStatus("Verifying video tools...");
+          break;
+        case "Ready":
+          setStatus("Video tools ready");
+          break;
+      }
+    };
+    try {
+      await api.prepareContentTools(ch);
+    } catch (err) {
+      setError(`Failed to install video tools: ${err}`);
+    }
+  }, [setStatus, setError]);
+
+  const setProjectType = useCallback(
+    (name: string, type: ProjectType) => {
+      if (type === "content") prepareContentTools();
+      setProjectTypes((prev) => {
+        if (type === "code") {
+          if (!(name in prev)) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        }
+        return { ...prev, [name]: type };
+      });
+    },
+    [prepareContentTools],
+  );
 
   const setProjectContext = useCallback((name: string, context: string) => {
     setProjectContexts((prev) => ({ ...prev, [name]: context }));
@@ -1222,6 +1321,10 @@ function useDesktopStore() {
     currentView,
     openSettings,
     openObservability,
+    openTimeline,
+    timelineProject,
+    promptProject,
+    runningIds,
     setCurrentView,
     saveSettings,
     getConfig: () => api.getConfig(),
@@ -1256,6 +1359,8 @@ function useDesktopStore() {
     projectPaths,
     setProjectPath,
     projectGroups,
+    projectTypes,
+    setProjectType,
     initialSettingsTab,
     setInitialSettingsTab,
     initialProjectFilter,
