@@ -139,7 +139,7 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
         ))
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
-        .env("ENABLE_IMAGES", "true")
+        .env("IMAGES_ENABLED", "true")
         .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -150,7 +150,7 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 /// Start (or restart) the gateway. `force` re-downloads the binary first, so an
 /// update lands on the next spawn. `restart` respawns an already-running gateway
 /// without re-downloading, so a newly saved API key gets injected into its env
-/// (keys are read only at spawn via `auth_env()`). Images are enabled here via `ENABLE_IMAGES=true`
+/// (keys are read only at spawn via `auth_env()`). Images are enabled here via `IMAGES_ENABLED=true`
 /// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
 /// and the upstream response-header timeout is raised from its 10s default so
 /// non-streaming image generation (which OpenAI answers in 20-60s) doesn't 502.
