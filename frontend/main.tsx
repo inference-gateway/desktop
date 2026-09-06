@@ -18,6 +18,12 @@ const roots: Record<string, () => React.JSX.Element> = {
   overlay: () => <Overlay />,
 };
 
+// Tauri's native drag-drop is off (HTML5 drag is used for chat sorting), so a
+// file dropped outside a drop target would make the webview navigate to it.
+for (const type of ["dragover", "drop"] as const) {
+  document.addEventListener(type, (e) => e.preventDefault());
+}
+
 const el = document.getElementById("app");
 const label = getCurrentWindow().label;
 if (label === "monitor" || label === "overlay") {

@@ -91,7 +91,9 @@ export type DesktopConfig = {
   projects_max_file_size_mb: string;
   projects_allowed_mimes: string;
   text_to_speech_enabled: boolean;
+  vision_annotator_model: string;
 };
+export type Timelines = { dir: string; names: string[] };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {
   snippets: { id: string; label: string; prompt: string }[];
@@ -255,6 +257,14 @@ export const api = {
   addVoiceSample: () => invoke<VoiceSample | null>("add_voice_sample"),
   saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
+  listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
+  readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
+  writeTimeline: (project: string, name: string, data: string) =>
+    invoke<void>("write_timeline", { project, name, data }),
+  revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
+  addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
+  prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
+  exportTimeline: (project: string, name: string) => invoke<string>("export_timeline", { project, name }),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   readProjects: () => invoke<string>("read_projects"),

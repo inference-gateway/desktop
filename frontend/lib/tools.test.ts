@@ -67,6 +67,7 @@ test("safeAudioSrc rejects non-tts wav paths, non-wav files, and traversal", () 
     expect(safeAudioSrc("/Users/x/.infer/tts/speech-1.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/models/tts/samples/me.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/uploads/me.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tts/Screen Recording 2026-09-03 at 14.05.28-s1.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/tts/speech.mp3")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/tts/../uploads/me.wav")).toBeNull();
   } finally {

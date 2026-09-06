@@ -19,7 +19,7 @@ const SAFE_IMAGE_PATH = /\.infer\/(?:tmp|artifacts)\/(?:[\w-][\w.-]*\/)*[\w-][\w
 // voice samples live in ~/.infer/models/tts/samples; both are in the asset
 // protocol scope (tauri.conf.json). ponytail: a custom text_to_speech.output_dir
 // outside these dirs falls back to the plain tool card.
-const SAFE_AUDIO_PATH = /\.infer\/(?:tts|models\/tts\/samples)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.wav$/i;
+const SAFE_AUDIO_PATH = /\.infer\/(?:tts|models\/tts\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
 
 export function prettyJson(str: string): string {
   try {
@@ -56,6 +56,17 @@ export function parseToolResult(content: string): ParsedToolResult | null {
 
 export function safeImageSrc(path: string | null | undefined): string | null {
   if (!path || !SAFE_IMAGE_PATH.test(path)) return null;
+  return convertFileSrc(path);
+}
+
+// Project directories under the default projects root are in the asset scope
+// so the timeline can preview recordings. ponytail: a custom projects_root
+// outside Documents gets no preview; make the scope dynamic if that bites.
+const SAFE_PROJECT_MEDIA_PATH =
+  /\/Documents\/Inference Gateway Desktop\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.(?:mp4|mov|m4v|webm|wav|mp3|m4a|aac|ogg)$/i;
+
+export function safeProjectMediaSrc(path: string | null | undefined): string | null {
+  if (!path || !SAFE_PROJECT_MEDIA_PATH.test(path)) return null;
   return convertFileSrc(path);
 }
 

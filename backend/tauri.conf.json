@@ -62,7 +62,8 @@
           "$HOME/**/.infer/artifacts/**",
           "$HOME/.infer/artifacts/**",
           "$HOME/.infer/tts/**",
-          "$HOME/.infer/models/tts/samples/**"
+          "$HOME/.infer/models/tts/samples/**",
+          "$HOME/Documents/Inference Gateway Desktop/**"
         ]
       }
     },
