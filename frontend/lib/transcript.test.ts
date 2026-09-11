@@ -352,16 +352,23 @@ test("loadHistory unwraps the CLI v2 entry envelope and skips meta/system-remind
 });
 
 test("loadHistory recovers audio players from pretty-printed v2 tool results", () => {
-  const content =
-    "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tts/speech-1.wav (1.0s of audio)";
-  const ndjson = JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message: { role: "tool", content } } });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.items.map((i) => i.kind)).toEqual(["tool", "audio"]);
-  expect(s.items[1]).toMatchObject({
-    kind: "audio",
-    filename: "speech-1.wav",
-    path: "/Users/me/.infer/tts/speech-1.wav",
-  });
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    const content =
+        "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tts/speech-1.wav (1.0s of audio)";
+    const ndjson = JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message: { role: "tool", content } } });
+    const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+    expect(s.items.map((i) => i.kind)).toEqual(["tool", "audio"]);
+    expect(s.items[1]).toMatchObject({
+        kind: "audio",
+        filename: "speech-1.wav",
+        path: "/Users/me/.infer/tts/speech-1.wav",
+    });
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
 });
 
 test("computer-use tool call renders through the generic tool path", () => {

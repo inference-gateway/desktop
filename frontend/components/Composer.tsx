@@ -31,6 +31,7 @@ export function Composer() {
     enabled,
     running,
     send,
+    executeToolCall,
     cancel,
     setStatus,
     setError,
@@ -58,6 +59,11 @@ export function Composer() {
   const [activeSkillIdx, setActiveSkillIdx] = useState(0);
   const [pendingDownload, setPendingDownload] = useState<SkillMetadata | null>(null);
   const skillsRef = useRef<HTMLDivElement>(null);
+  const [tools, setTools] = useState<string[]>([]);
+  const [toolQuery, setToolQuery] = useState("");
+  const [showTools, setShowTools] = useState(false);
+  const [activeToolIdx, setActiveToolIdx] = useState(0);
+  const toolsLoadedRef = useRef(false);
 
   const loadSkills = useCallback(async () => {
     try {
@@ -97,9 +103,29 @@ export function Composer() {
     e.target.value = "";
   };
 
+  const ensureTools = () => {
+    if (toolsLoadedRef.current) return;
+    toolsLoadedRef.current = true;
+    api.listTools().then(setTools).catch(() => {});
+  };
+
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     autoGrow(el);
+    if (el.value.startsWith("!!")) {
+        setShowSkills(false);
+        ensureTools();
+        // Tools mode: autocomplete while the tool name is still being typed;
+        // once "(" appears the args are free text.
+        if (!el.value.slice(2).includes("(")) {
+          setToolQuery(el.value.slice(2).toLowerCase());
+          setShowTools(true);
+          setActiveToolIdx(0);
+        } else {
+          setShowTools(false);
+        }
+        return;
+    }
     const pos = el.selectionStart;
     const text = el.value;
     let i = pos - 1;
@@ -130,13 +156,33 @@ export function Composer() {
     }
   };
 
+  const selectTool = (tool: string) => {
+      const el = composerRef.current;
+      if (!el) return;
+      el.value = "!!" + tool + "(";
+      autoGrow(el);
+      setShowTools(false);
+  };
+
   const filteredSkills = showSkills
     ? skills.filter(
         (s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery),
       )
     : [];
 
+  const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
+
   const onSend = async () => {
+    const raw = composerRef.current?.value.trim() ?? "";
+    if (raw.startsWith("!!")) {
+        const el = composerRef.current;
+        if (el) {
+          el.value = "";
+          autoGrow(el);
+        }
+        executeToolCall(raw);
+        return;
+    }
     if (pending.length > 0) {
       const el = composerRef.current;
       if (!el) return;
@@ -164,6 +210,28 @@ export function Composer() {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
+    if (showTools && filteredTools.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setActiveToolIdx((prev) => Math.min(prev + 1, filteredTools.length - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveToolIdx((prev) => Math.max(prev - 1, 0));
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          selectTool(filteredTools[activeToolIdx]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowTools(false);
+          return;
+        }
+    }
     if (showSkills && filteredSkills.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -263,6 +331,24 @@ export function Composer() {
               </div>
             ))}
           </div>
+        )}
+        {filteredTools.length > 0 && (
+            <div className="mx-2 mb-2 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
+              {filteredTools.map((t, i) => (
+                <button
+                  key={t}
+                  onClick={() => selectTool(t)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.82rem]",
+                    i === activeToolIdx
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">{t}</span>
+                </button>
+              ))}
+            </div>
         )}
         {filteredSkills.length > 0 && (
           <div
