@@ -79,7 +79,6 @@ pub(crate) async fn execute_tool(
     if !valid_name(&name) {
         return Err(format!("invalid tool name: {name}"));
     }
-    // Validate at this trust boundary rather than pass arbitrary text on.
     let parsed: Value =
         serde_json::from_str(&args).map_err(|e| format!("arguments must be a JSON object: {e}"))?;
     if !parsed.is_object() {
