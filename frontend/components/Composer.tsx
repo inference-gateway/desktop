@@ -115,8 +115,6 @@ export function Composer() {
     if (el.value.startsWith("!!")) {
         setShowSkills(false);
         ensureTools();
-        // Tools mode: autocomplete while the tool name is still being typed;
-        // once "(" appears the args are free text.
         if (!el.value.slice(2).includes("(")) {
           setToolQuery(el.value.slice(2).toLowerCase());
           setShowTools(true);
