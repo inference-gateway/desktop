@@ -788,6 +788,9 @@ function useDesktopStore() {
     };
   }, [sendPrompt, projects]);
 
+  // `!!ToolName(arg="value")` from the composer: parse, execute through the
+  // CLI's own tool registry (`infer tools execute`) and render the result
+  // exactly like an AI-initiated tool call. No model turn involved.
   const send = useCallback(async () => {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";

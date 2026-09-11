@@ -286,6 +286,7 @@ export const api = {
   installSkill: (name: string) => invoke<void>("install_skill", { name }),
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
+  listTools: () => invoke<string[]>("list_tools"),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
   getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),

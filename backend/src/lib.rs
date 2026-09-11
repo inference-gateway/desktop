@@ -18,6 +18,7 @@ mod skills;
 mod stt;
 mod tasks;
 mod timeline;
+mod tools;
 mod tts_samples;
 mod updates;
 
@@ -160,6 +161,7 @@ pub fn run() {
             skills::install_skill,
             skills::uninstall_skill,
             skills::list_installed_skills,
+            tools::list_tools,
             observability::get_traces,
             observability::get_metrics,
             permissions::computer_use_permission_status,
