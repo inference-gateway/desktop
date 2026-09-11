@@ -64,6 +64,13 @@ export function Composer() {
   const [showTools, setShowTools] = useState(false);
   const [activeToolIdx, setActiveToolIdx] = useState(0);
   const toolsLoadedRef = useRef(false);
+  const toolsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    for (const list of [toolsRef.current, skillsRef.current]) {
+      list?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeToolIdx, activeSkillIdx]);
 
   const loadSkills = useCallback(async () => {
     try {
@@ -329,10 +336,14 @@ export function Composer() {
           </div>
         )}
         {filteredTools.length > 0 && (
-          <div className="mx-2 mb-2 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
+          <div
+            ref={toolsRef}
+            className="mx-2 mb-2 max-h-[40vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+          >
             {filteredTools.map((t, i) => (
               <button
                 key={t}
+                aria-selected={i === activeToolIdx}
                 onClick={() => selectTool(t)}
                 className={cn(
                   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.82rem]",
@@ -349,13 +360,14 @@ export function Composer() {
         {filteredSkills.length > 0 && (
           <div
             ref={skillsRef}
-            className="mx-2 mb-2 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+            className="mx-2 mb-2 max-h-[40vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
           >
             {filteredSkills.map((s, i) => {
               const isConfigured = installedSkills.has(s.name);
               return (
                 <button
                   key={s.name}
+                  aria-selected={i === activeSkillIdx}
                   onClick={() => selectSkill(s)}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.82rem]",
