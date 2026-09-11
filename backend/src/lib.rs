@@ -161,7 +161,6 @@ pub fn run() {
             skills::install_skill,
             skills::uninstall_skill,
             skills::list_installed_skills,
-            tools::execute_tool,
             tools::list_tools,
             observability::get_traces,
             observability::get_metrics,

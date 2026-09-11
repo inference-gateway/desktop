@@ -1,42 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseToolCall, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
-
-test("parseToolCall accepts plain, empty, comma-separated and JSON-object forms", () => {
-  expect(parseToolCall('!!Read(file_path="README.md")')).toEqual({
-    ok: true,
-    name: "Read",
-    args: { file_path: "README.md" },
-  });
-  expect(parseToolCall("!!Tree()")).toEqual({ ok: true, name: "Tree", args: {} });
-  expect(parseToolCall('!!Tree( path=".", max_depth=2 )')).toEqual({
-    ok: true,
-    name: "Tree",
-    args: { path: ".", max_depth: 2 },
-  });
-  expect(parseToolCall('!!Bash(command="echo \\"hi\\"", timeout="30")')).toEqual({
-    ok: true,
-    name: "Bash",
-    args: { command: 'echo "hi"', timeout: "30" },
-  });
-  expect(parseToolCall('!!Read({"path":"a)b","n":2})')).toEqual({
-    ok: true,
-    name: "Read",
-    args: { path: "a)b", n: 2 },
-  });
-});
-
-test("parseToolCall rejects malformed calls", () => {
-  expect(parseToolCall("!!Read")).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read(")).toMatchObject({ ok: false });
-  expect(parseToolCall('!!Read(path="a") extra')).toMatchObject({ ok: false });
-  expect(parseToolCall('!!Read(path="a") trailing="x")')).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read(garbage)")).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read(path=unquoted)")).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read([1])")).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read( ) extra )")).toMatchObject({ ok: false });
-  expect(parseToolCall("hello !!Read()")).toMatchObject({ ok: false });
-  expect(parseToolCall("!!Read(path='a')")).toMatchObject({ ok: false });
-});
+import { parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 test("ImageDecode result with an uploads source does not produce an image item", () => {
   const parsed = parseToolResult(
@@ -110,12 +73,4 @@ test("safeAudioSrc rejects non-tts wav paths, non-wav files, and traversal", () 
   } finally {
     delete (globalThis as Record<string, unknown>).window;
   }
-});
-
-test("parseToolCall folds macOS smart quotes", () => {
-  expect(parseToolCall("!!Bash(command=\u201cls -la\u201d)")).toEqual({
-    ok: true,
-    name: "Bash",
-    args: { command: "ls -la" },
-  });
 });

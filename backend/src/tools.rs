@@ -1,5 +1,4 @@
 use crate::agent::run_infer_in;
-use crate::env::agent_cwd;
 use serde_json::Value;
 
 /// `tools.<key>` config entries mapped to the CLI registry's tool names.
@@ -58,58 +57,11 @@ pub(crate) async fn list_tools() -> Result<Vec<String>, String> {
     Ok(enabled_tools_in(&dump))
 }
 
-/// True when `name` is safe to pass to `infer tools execute`.
-pub(crate) fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && !name.starts_with('-')
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-}
-
-/// Execute a tool directly through the CLI's own registry and validation path
-/// (`infer tools execute`), from the project's directory so relative paths
-/// behave like an in-session tool call. No LLM involved.
-#[tauri::command]
-pub(crate) async fn execute_tool(
-    name: String,
-    args: String,
-    project: Option<String>,
-) -> Result<String, String> {
-    if !valid_name(&name) {
-        return Err(format!("invalid tool name: {name}"));
-    }
-    let parsed: Value =
-        serde_json::from_str(&args).map_err(|e| format!("arguments must be a JSON object: {e}"))?;
-    if !parsed.is_object() {
-        return Err("arguments must be a JSON object".into());
-    }
-    let cwd = project
-        .as_deref()
-        .and_then(crate::projects::project_dir)
-        .filter(|dir| std::fs::create_dir_all(dir).is_ok())
-        .unwrap_or_else(agent_cwd);
-    run_infer_in(
-        Some(cwd.to_string_lossy().into_owned()),
-        &["tools", "execute", &name, &args],
-    )
-    .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn name_validation() {
-        assert!(valid_name("Bash"));
-        assert!(valid_name("A2A_QueryAgent"));
-        assert!(!valid_name(""));
-        assert!(!valid_name("-flag"));
-        assert!(!valid_name("../evil"));
-        assert!(!valid_name("a b"));
-    }
-
     #[test]
     fn enabled_tools_respects_the_master_switch_and_per_tool_flags() {
         let dump = r#"{

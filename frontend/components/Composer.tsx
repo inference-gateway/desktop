@@ -31,7 +31,6 @@ export function Composer() {
     enabled,
     running,
     send,
-    executeToolCall,
     cancel,
     setStatus,
     setError,
@@ -181,10 +180,9 @@ export function Composer() {
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
   const onSend = async () => {
-    const raw = composerRef.current?.value.trim() ?? "";
-    if (raw.startsWith("!!")) {
-      executeToolCall(raw);
-      return;
+    const composer = composerRef.current;
+    if (composer && composer.value.trimStart().startsWith("!!")) {
+      composer.value = composer.value.replace(/[\u201c\u201d]/g, '"');
     }
     if (pending.length > 0) {
       const el = composerRef.current;
