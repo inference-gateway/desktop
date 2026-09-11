@@ -83,6 +83,8 @@ export function imageFilename(path: string): string {
 // Values are quoted JSON strings (escapes honored) or bare JSON scalars
 // (numbers/true/false/null); `{...}` raw JSON is also accepted, matching
 // `infer tools execute <tool> <json>`. Anything else is a syntax error.
+// macOS smart quotes are folded to plain `"` first. ponytail: this also folds
+// curly quotes inside values; escape them as \u201c if that ever matters.
 export type ParsedToolCall = { ok: true; name: string; args: Record<string, unknown> } | { ok: false; error: string };
 
 export const TOOL_CALL_FORM = '!!ToolName(arg="value")';
@@ -92,7 +94,7 @@ export function parseToolCall(text: string): ParsedToolCall {
     ok: false,
     error: `Invalid tool call - ${why} expected ${TOOL_CALL_FORM}`,
   });
-  const m = /^!!([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*$/.exec(text.trim());
+  const m = /^!!([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*$/.exec(text.trim().replace(/[\u201c\u201d]/g, '"'));
   if (!m) return bad("bad syntax -");
   const inner = m[2].trim();
   let args: Record<string, unknown> = {};

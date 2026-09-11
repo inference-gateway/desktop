@@ -111,3 +111,11 @@ test("safeAudioSrc rejects non-tts wav paths, non-wav files, and traversal", () 
     delete (globalThis as Record<string, unknown>).window;
   }
 });
+
+test("parseToolCall folds macOS smart quotes", () => {
+  expect(parseToolCall("!!Bash(command=\u201cls -la\u201d)")).toEqual({
+    ok: true,
+    name: "Bash",
+    args: { command: "ls -la" },
+  });
+});
