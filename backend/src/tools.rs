@@ -94,11 +94,41 @@ pub(crate) async fn execute_tool(
         &["tools", "execute", &name, &args],
     )
     .await
+    .map(|out| strip_ansi(&out))
+}
+
+// ponytail: `infer tools execute` ignores NO_COLOR/--no-colors (CLI 0.189),
+// so CSI sequences are stripped here; drop this once the CLI honors them.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strip_ansi_removes_csi_sequences_only() {
+        assert_eq!(
+            strip_ansi("\x1b[38;2;1;2;3m│\x1b[m hi \x1b[1mbold\x1b[0m"),
+            "│ hi bold"
+        );
+        assert_eq!(strip_ansi("plain\x1b"), "plain\x1b");
+    }
 
     #[test]
     fn name_validation() {
