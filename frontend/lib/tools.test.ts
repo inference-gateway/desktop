@@ -30,8 +30,8 @@ test("parseToolCall rejects malformed calls", () => {
   expect(parseToolCall("!!Read(")).toMatchObject({ ok: false });
   expect(parseToolCall('!!Read(path="a") extra')).toMatchObject({ ok: false });
   expect(parseToolCall('!!Read(path="a") trailing="x")')).toMatchObject({ ok: false });
-  expect(parseToolCall('!!Read(garbage)')).toMatchObject({ ok: false });
-  expect(parseToolCall('!!Read(path=unquoted)')).toMatchObject({ ok: false });
+  expect(parseToolCall("!!Read(garbage)")).toMatchObject({ ok: false });
+  expect(parseToolCall("!!Read(path=unquoted)")).toMatchObject({ ok: false });
   expect(parseToolCall("!!Read([1])")).toMatchObject({ ok: false });
   expect(parseToolCall("!!Read( ) extra )")).toMatchObject({ ok: false });
   expect(parseToolCall("hello !!Read()")).toMatchObject({ ok: false });

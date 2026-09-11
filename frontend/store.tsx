@@ -793,80 +793,72 @@ function useDesktopStore() {
   // CLI's own tool registry (`infer tools execute`) and render the result
   // exactly like an AI-initiated tool call. No model turn involved.
   const executeToolCall = useCallback(
-      async (text: string) => {
-        const parsed = parseToolCall(text);
-        if (!parsed.ok) {
-          setError(parsed.error);
-          return;
-        }
-        const active = activeIdRef.current;
-        if (active && runningIdsRef.current.has(active)) return;
-        if (!active && runningIdsRef.current.size >= maxSessions) {
-          setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
-          return;
-        }
-        const runId = active ?? crypto.randomUUID();
-        if (!active && activeProject) assignProject(runId, activeProject);
-        setActiveId(runId);
-        activeIdRef.current = runId;
-        api.appendHistory(text).catch(() => {});
-        setHistory((h) => [...h, text]);
-        const args = JSON.stringify(parsed.args);
-        dispatchTo(runId, { type: "userSend", text });
-        clearTerminal(runId);
-        setRunningIds((prev) => new Set(prev).add(runId));
-        const callId = `direct-${crypto.randomUUID()}`;
-        dispatchTo(runId, {
-          type: "event",
-          event: {
-            kind: "AssistantMessage",
-            content: "",
-            reasoning_content: null,
-            tool_calls: [{ id: callId, name: parsed.name, args }],
-          },
+    async (text: string) => {
+      const parsed = parseToolCall(text);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+      const active = activeIdRef.current;
+      if (active && runningIdsRef.current.has(active)) return;
+      if (!active && runningIdsRef.current.size >= maxSessions) {
+        setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+        return;
+      }
+      const runId = active ?? crypto.randomUUID();
+      if (!active && activeProject) assignProject(runId, activeProject);
+      setActiveId(runId);
+      activeIdRef.current = runId;
+      api.appendHistory(text).catch(() => {});
+      setHistory((h) => [...h, text]);
+      const el = composerRef.current;
+      if (el) {
+        el.value = "";
+        autoGrow(el);
+      }
+      const args = JSON.stringify(parsed.args);
+      dispatchTo(runId, { type: "userSend", text });
+      clearTerminal(runId);
+      setRunningIds((prev) => new Set(prev).add(runId));
+      const callId = `direct-${crypto.randomUUID()}`;
+      dispatchTo(runId, {
+        type: "event",
+        event: {
+          kind: "AssistantMessage",
+          content: "",
+          reasoning_content: null,
+          tool_calls: [{ id: callId, name: parsed.name, args }],
+        },
+      });
+      try {
+        const out = await api.executeTool(parsed.name, args, (active ? projects[active] : activeProject) ?? undefined);
+        const content = JSON.stringify({
+          tool_name: parsed.name,
+          arguments: parsed.args,
+          success: true,
+          data: { output: out.trim() },
         });
-        try {
-          const out = await api.executeTool(
-            parsed.name,
-            args,
-            (active ? projects[active] : activeProject) ?? undefined,
-          );
-          const content = JSON.stringify({
-            tool_name: parsed.name,
-            arguments: parsed.args,
-            success: true,
-            data: { output: out.trim() },
-          });
-          dispatchTo(runId, { type: "event", event: { kind: "ToolResult", tool_call_id: callId, content } });
-          recordTerminal(runId, { label: "Done", error: false });
-        } catch (e) {
-          const content = JSON.stringify({
-            tool_name: parsed.name,
-            arguments: parsed.args,
-            success: false,
-            error: String(e),
-          });
-          dispatchTo(runId, { type: "event", event: { kind: "ToolResult", tool_call_id: callId, content } });
-          recordTerminal(runId, { label: "Error", error: true });
-        } finally {
-          dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: 0, stderr: "" } });
-          setRunningIds((prev) => {
-            const next = new Set(prev);
-            next.delete(runId);
-            return next;
-          });
-        }
-      },
-      [
-        maxSessions,
-        activeProject,
-        assignProject,
-        projects,
-        dispatchTo,
-        clearTerminal,
-        recordTerminal,
-        setError,
-      ],
+        dispatchTo(runId, { type: "event", event: { kind: "ToolResult", tool_call_id: callId, content } });
+        recordTerminal(runId, { label: "Done", error: false });
+      } catch (e) {
+        const content = JSON.stringify({
+          tool_name: parsed.name,
+          arguments: parsed.args,
+          success: false,
+          error: String(e),
+        });
+        dispatchTo(runId, { type: "event", event: { kind: "ToolResult", tool_call_id: callId, content } });
+        recordTerminal(runId, { label: "Error", error: true });
+      } finally {
+        dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: 0, stderr: "" } });
+        setRunningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(runId);
+          return next;
+        });
+      }
+    },
+    [maxSessions, activeProject, assignProject, projects, dispatchTo, clearTerminal, recordTerminal, setError],
   );
 
   const send = useCallback(async () => {
