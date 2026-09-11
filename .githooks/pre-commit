@@ -43,7 +43,7 @@ fi
 
 if command -v cargo >/dev/null 2>&1; then
     echo "--> Tests (cargo test)..."
-    cargo test
+    env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX cargo test
 fi
 
 echo "==> All checks passed."
