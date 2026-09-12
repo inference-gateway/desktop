@@ -163,7 +163,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
         setComposer(text);
         setStatus("Ready");
       } else {
-        setComposer(null); // drop any stale interim text
+        setComposer(null);
         setStatus("No speech detected");
       }
     } catch (err) {
