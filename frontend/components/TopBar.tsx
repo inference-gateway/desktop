@@ -60,7 +60,7 @@ export function TopBar() {
         if (el) {
           const ref = `[Attached screen recording: ${dir}]\nIt contains frames/*.jpg captured at 1 fps and events.jsonl with timestamped key presses and clicks.`;
           const ask =
-            "Create a skill for this workflow. Use /skill-creator. Before writing anything, ask me whether to store it globally in ~/.infer/skills/<name>/SKILL.md (default) or in this project's .agents/skills/<name>/SKILL.md.";
+            "Create a skill for this workflow. Use /skill-creator. Before writing anything, ask me in a plain message (not a tool call) whether to store it globally in ~/.infer/skills/<name>/SKILL.md (default) or in this project's .agents/skills/<name>/SKILL.md.";
           const text = el.value.trim();
           el.value = text ? `${ref}\n\n${text}` : `${ref}\n\n${ask}`;
           autoGrow(el);
