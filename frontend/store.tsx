@@ -627,8 +627,6 @@ function useDesktopStore() {
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
       if (runningIds.has(runId)) return;
-      // `!cmd` runs in bash mode without a model turn (the CLI's headless
-      // direct path); a model is only needed for real prompts.
       if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
         return;
