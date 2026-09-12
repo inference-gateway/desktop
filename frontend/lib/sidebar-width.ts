@@ -1,4 +1,3 @@
-// Sidebar width: clamping + localStorage persistence for the resizable sidebar.
 export const DEFAULT_SIDEBAR_WIDTH = 320;
 export const MIN_SIDEBAR_WIDTH = 240;
 const SIDEBAR_WIDTH_KEY = "sidebarWidth";
