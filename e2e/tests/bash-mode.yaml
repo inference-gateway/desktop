@@ -1,0 +1,5 @@
+name: bash mode - !command runs directly without a model turn
+steps:
+  - new_chat
+  - send: "!echo bash-mode-e2e-marker"
+  - wait_for: { text: "bash-mode-e2e-marker", timeout: 30 }

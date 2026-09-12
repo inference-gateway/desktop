@@ -1,4 +1,4 @@
-import { ArrowUp, Folder, Mic, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Folder, Mic, Paperclip, Square, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -6,6 +6,7 @@ import { TokenReadout } from "./TokenReadout";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
+import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
 import { api } from "@/lib/tauri";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -35,6 +36,7 @@ export function Composer() {
     setStatus,
     setError,
     history,
+    bashHistory,
     activeProject,
     setActiveProject,
     currentProject,
@@ -62,6 +64,7 @@ export function Composer() {
   const [toolQuery, setToolQuery] = useState("");
   const [showTools, setShowTools] = useState(false);
   const [activeToolIdx, setActiveToolIdx] = useState(0);
+  const [bashMode, setBashMode] = useState(false);
   const toolsLoadedRef = useRef(false);
   const toolsRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +124,13 @@ export function Composer() {
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     autoGrow(el);
+    if (isBashCommand(el.value)) {
+      setShowSkills(false);
+      setShowTools(false);
+      setBashMode(true);
+      return;
+    }
+    setBashMode(false);
     if (el.value.startsWith("!!")) {
       setShowSkills(false);
       ensureTools();
@@ -207,6 +217,7 @@ export function Composer() {
       setPending([]);
     }
     send();
+    setBashMode(false);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -262,25 +273,26 @@ export function Composer() {
       onSend();
       return;
     }
-    if (e.key === "ArrowUp" && history.length > 0) {
+    const recall = bashMode ? bashHistory : history;
+    if (e.key === "ArrowUp" && recall.length > 0) {
       e.preventDefault();
       if (cursorRef.current === -1) {
         draftRef.current = el.value;
-        cursorRef.current = history.length - 1;
+        cursorRef.current = recall.length - 1;
       } else if (cursorRef.current > 0) {
         cursorRef.current--;
       } else {
         return;
       }
-      el.value = history[cursorRef.current];
+      el.value = recall[cursorRef.current];
       autoGrow(el);
       return;
     }
-    if (e.key === "ArrowDown" && history.length > 0 && cursorRef.current !== -1) {
+    if (e.key === "ArrowDown" && recall.length > 0 && cursorRef.current !== -1) {
       e.preventDefault();
-      if (cursorRef.current < history.length - 1) {
+      if (cursorRef.current < recall.length - 1) {
         cursorRef.current++;
-        el.value = history[cursorRef.current];
+        el.value = recall[cursorRef.current];
       } else {
         cursorRef.current = -1;
         el.value = draftRef.current;
@@ -314,6 +326,12 @@ export function Composer() {
         id="composer"
         className="mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20"
       >
+        {bashMode && (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
+            <Terminal size={13} className="shrink-0" />
+            <span>bash mode - Enter runs the command in the workspace, output lands in the conversation</span>
+          </div>
+        )}
         {pending.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border px-3 pt-2 pb-2">
             {pending.map((img) => (
