@@ -151,9 +151,13 @@ function ApprovalCard({
 const OTHER = "Other";
 const RECOMMENDED = /\(Recommended\)\s*$/;
 
-function answerSummary(a: UserQuestionAnswer): string {
-  const parts = [a.selectedLabels.join(", "), a.otherText ? `Other: "${a.otherText}"` : ""].filter(Boolean);
-  return `[${a.header}] ${a.question} -> ${parts.join("; ") || "(no selection)"}`;
+function answerSummary(a: UserQuestionAnswer, options: { label: string; description: string }[]): string {
+  const withDescription = (label: string) => {
+    const d = options.find((o) => o.label === label)?.description;
+    return d ? `${label} (${d})` : label;
+  };
+  const parts = [a.selectedLabels.map(withDescription).join(", "), a.otherText ? `Other: "${a.otherText}"` : ""];
+  return `[${a.header}] ${a.question} -> ${parts.filter(Boolean).join("; ") || "(no selection)"}`;
 }
 
 // Native radio/checkbox/text inputs so the e2e harness can drive the form
@@ -180,9 +184,9 @@ function QuestionCard({
     return (
       <div className={cn("self-start text-[0.8rem]", color)}>
         {label}
-        {item.answers.map((a) => (
+        {item.answers.map((a, i) => (
           <div key={a.header + a.question} className="whitespace-pre-wrap text-foreground">
-            {answerSummary(a)}
+            {answerSummary(a, item.questions[i]?.options ?? [])}
           </div>
         ))}
       </div>
