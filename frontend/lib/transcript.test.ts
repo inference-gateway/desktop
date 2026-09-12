@@ -235,6 +235,36 @@ test("a duplicate setApproval is a no-op and cannot restart the dots", () => {
   expect(echoed).toBe(s);
 });
 
+const question = {
+  header: "Lang",
+  question: "Which language?",
+  options: [{ label: "Go", description: "" }],
+  multiSelect: false,
+};
+
+test("question request renders pending, answering restarts the dots, duplicates are no-ops", () => {
+  let s = run([
+    { type: "userSend", text: "ask" },
+    ev({ kind: "UserQuestionRequest", tool_call_id: "q1", questions: [question] }),
+  ]);
+  expect(s.items[1]).toMatchObject({ kind: "question", status: "pending", callId: "q1" });
+  expect(s.typing).toBe(false);
+  const answers = [{ header: "Lang", question: "Which language?", selectedLabels: ["Go"] }];
+  s = chatReducer(s, { type: "setQuestion", callId: "q1", answers });
+  expect(s.items[1]).toMatchObject({ kind: "question", status: "answered", answers });
+  expect(s.typing).toBe(true);
+  expect(chatReducer(s, { type: "setQuestion", callId: "q1", answers })).toBe(s);
+});
+
+test("skipping a question and expiring it on run end", () => {
+  let s = run([ev({ kind: "UserQuestionRequest", tool_call_id: "q1", questions: [question] })]);
+  expect(chatReducer(s, { type: "setQuestion", callId: "q1", answers: null }).items[0]).toMatchObject({
+    status: "skipped",
+  });
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.items[0]).toMatchObject({ kind: "question", status: "expired" });
+});
+
 test("setApproval for an unknown callId leaves state untouched", () => {
   const s = run([{ type: "userSend", text: "write" }]);
   expect(chatReducer(s, { type: "setApproval", callId: "nope", status: "denied" })).toBe(s);

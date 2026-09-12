@@ -1,7 +1,7 @@
 // Pure transcript state machine. Maps agent stream events (and loaded history)
 // to a flat list of render items. A faithful port of the imperative DOM logic
 // in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
-import type { AgentEvent, HistoryLine } from "./tauri";
+import type { AgentEvent, HistoryLine, UserQuestion, UserQuestionAnswer } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
@@ -27,6 +27,14 @@ export type TranscriptItem =
       toolName: string;
       toolArgs: string;
       status: "pending" | "approved" | "denied" | "expired";
+    }
+  | {
+      kind: "question";
+      id: string;
+      callId: string;
+      questions: UserQuestion[];
+      answers: UserQuestionAnswer[];
+      status: "pending" | "answered" | "skipped" | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
@@ -168,6 +176,7 @@ export type ChatAction =
   | { type: "userSend"; text: string }
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
+  | { type: "setQuestion"; callId: string; answers: UserQuestionAnswer[] | null }
   | { type: "error"; text: string };
 
 const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
@@ -210,9 +219,35 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ),
       };
     }
+    case "setQuestion": {
+      if (!state.items.some((it) => it.kind === "question" && it.callId === action.callId && it.status === "pending")) {
+        return state;
+      }
+      return {
+        ...state,
+        typing: true,
+        items: state.items.map((it) =>
+          it.kind === "question" && it.callId === action.callId
+            ? { ...it, status: action.answers ? "answered" : "skipped", answers: action.answers ?? [] }
+            : it,
+        ),
+      };
+    }
     case "event":
       return applyEvent(state, action.event);
   }
+}
+
+// Approval and question cards land above any trailing error bubbles so the
+// prompt is not buried under an error the run already emitted.
+function insertBeforeErrors(state: ChatState, item: TranscriptItem): ChatState {
+  let insertAt = state.items.length;
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    if (state.items[i].kind !== "error") break;
+    insertAt = i;
+  }
+  const items = [...state.items.slice(0, insertAt), item, ...state.items.slice(insertAt)];
+  return { ...state, items, seq: state.seq + 1, typing: false };
 }
 
 function applyEvent(state: ChatState, event: AgentEvent): ChatState {
@@ -225,24 +260,24 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyAssistant(state, event);
     case "ToolResult":
       return applyToolResult(state, event.tool_call_id, event.content);
-    case "ApprovalRequest": {
-      let seq = state.seq;
-      let insertAt = state.items.length;
-      for (let i = state.items.length - 1; i >= 0; i--) {
-        if (state.items[i].kind !== "error") break;
-        insertAt = i;
-      }
-      const approval: TranscriptItem = {
+    case "ApprovalRequest":
+      return insertBeforeErrors(state, {
         kind: "approval",
-        id: String(seq++),
+        id: String(state.seq),
         callId: event.tool_call_id,
         toolName: event.tool_name,
         toolArgs: event.tool_args,
         status: "pending",
-      };
-      const items = [...state.items.slice(0, insertAt), approval, ...state.items.slice(insertAt)];
-      return { ...state, items, seq, typing: false };
-    }
+      });
+    case "UserQuestionRequest":
+      return insertBeforeErrors(state, {
+        kind: "question",
+        id: String(state.seq),
+        callId: event.tool_call_id,
+        questions: Array.isArray(event.questions) ? event.questions : [],
+        answers: [],
+        status: "pending",
+      });
     case "AgentError": {
       let seq = state.seq;
       const items = [...state.items, { kind: "error", id: String(seq++), text: event.message } as TranscriptItem];
@@ -447,7 +482,7 @@ function finalizeTools(state: ChatState): ChatState {
       changed = true;
       return { ...it, state: it.state === "running" ? "done" : it.state, skeleton: false };
     }
-    if (it.kind === "approval" && it.status === "pending") {
+    if ((it.kind === "approval" || it.kind === "question") && it.status === "pending") {
       changed = true;
       return { ...it, status: "expired" as const };
     }

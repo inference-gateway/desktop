@@ -7,6 +7,7 @@ import {
   type DesktopConfig,
   type ProgressEvent,
   type UpdateInfo,
+  type UserQuestionAnswer,
 } from "@/lib/tauri";
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -902,6 +903,20 @@ function useDesktopStore() {
     [dispatchTo],
   );
 
+  const answerQuestions = useCallback(
+    async (callId: string, answers: UserQuestionAnswer[] | null) => {
+      const id = activeIdRef.current;
+      if (!id) return;
+      try {
+        await api.sendQuestionAnswers(id, callId, answers);
+        dispatchTo(id, { type: "setQuestion", callId, answers });
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Answer failed: ${err}` });
+      }
+    },
+    [dispatchTo],
+  );
+
   const insertSnippet = useCallback((prompt: string) => {
     const el = composerRef.current;
     if (!el) return;
@@ -1366,6 +1381,7 @@ function useDesktopStore() {
     sendText,
     cancel,
     approve,
+    answerQuestions,
     openConversation,
     newChat,
     restartBackend,

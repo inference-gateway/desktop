@@ -1,0 +1,9 @@
+name: ask-user-question - the form answers the agent and the run continues
+steps:
+  - new_chat
+  - send: "ask me which language to use"
+  - wait_for: { button: "Submit", timeout: 30 }
+  - click: { button: "Go" }
+  - click: { button: "Submit" }
+  - wait_for: { text: "Answered", timeout: 15 }
+  - wait_for: { text: "Thanks, noted your choice.", timeout: 15 }

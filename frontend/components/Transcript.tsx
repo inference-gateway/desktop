@@ -8,7 +8,7 @@ import { useDesktop } from "@/store";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
-import type { ScheduleJob } from "@/lib/tauri";
+import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
 import { COMPUTER_USE_TOOLS, type TranscriptItem } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
@@ -148,6 +148,128 @@ function ApprovalCard({
   );
 }
 
+const OTHER = "Other";
+const RECOMMENDED = /\(Recommended\)\s*$/;
+
+function answerSummary(a: UserQuestionAnswer): string {
+  const parts = [a.selectedLabels.join(", "), a.otherText ? `Other: "${a.otherText}"` : ""].filter(Boolean);
+  return `[${a.header}] ${parts.join("; ") || "(no selection)"}`;
+}
+
+// Native radio/checkbox/text inputs so the e2e harness can drive the form
+// through the macOS accessibility tree. The always-appended "Other" row selects
+// itself when typed into, matching the CLI's own form.
+function QuestionCard({
+  item,
+  answer,
+}: {
+  item: Extract<TranscriptItem, { kind: "question" }>;
+  answer: (callId: string, answers: UserQuestionAnswer[] | null) => void;
+}) {
+  const [answers, setAnswers] = useState<UserQuestionAnswer[]>(() =>
+    item.questions.map((q) => ({
+      header: q.header,
+      question: q.question,
+      selectedLabels: q.options.filter((o) => RECOMMENDED.test(o.label)).map((o) => o.label),
+      otherText: "",
+    })),
+  );
+  if (item.status !== "pending") {
+    const label = item.status === "answered" ? "✓ Answered" : item.status === "skipped" ? "Skipped" : "Session ended";
+    const color = item.status === "answered" ? "text-tool" : "text-muted-foreground";
+    return (
+      <div className={cn("self-start text-[0.8rem]", color)}>
+        {label}
+        {item.answers.map((a) => (
+          <div key={a.header + a.question} className="text-muted-foreground">
+            {answerSummary(a)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const update = (i: number, patch: Partial<UserQuestionAnswer>) =>
+    setAnswers((prev) => prev.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+  const toggle = (i: number, label: string, multi: boolean, checked: boolean) => {
+    const current = answers[i].selectedLabels;
+    const next = multi ? (checked ? [...current, label] : current.filter((l) => l !== label)) : [label];
+    update(i, { selectedLabels: next, otherText: multi || label === OTHER ? answers[i].otherText : "" });
+  };
+  return (
+    <div className="self-stretch rounded-xl border border-warn bg-warn-bg p-3 text-[0.85rem]">
+      <div className="mb-2 font-bold text-warn">The agent has a question</div>
+      {item.questions.map((q, i) => {
+        const a = answers[i];
+        const otherChecked = a.selectedLabels.includes(OTHER);
+        return (
+          <fieldset key={q.header + q.question} className="mb-3 border-0 p-0">
+            <legend className="mb-1">
+              <span className="mr-2 rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.7rem]">{q.header}</span>
+              <span className="font-bold">{q.question}</span>
+            </legend>
+            {q.options.map((o) => (
+              <label key={o.label} className="flex cursor-pointer items-start gap-2 py-0.5">
+                <input
+                  type={q.multiSelect ? "checkbox" : "radio"}
+                  name={`${item.callId}-${i}`}
+                  aria-label={o.label}
+                  className="mt-1"
+                  checked={a.selectedLabels.includes(o.label)}
+                  onChange={(e) => toggle(i, o.label, q.multiSelect, e.target.checked)}
+                />
+                <span>
+                  {o.label}
+                  {o.description && <span className="ml-2 text-muted-foreground">{o.description}</span>}
+                </span>
+              </label>
+            ))}
+            <label className="flex cursor-pointer items-center gap-2 py-0.5">
+              <input
+                type={q.multiSelect ? "checkbox" : "radio"}
+                name={`${item.callId}-${i}`}
+                aria-label={OTHER}
+                checked={otherChecked}
+                onChange={(e) => toggle(i, OTHER, q.multiSelect, e.target.checked)}
+              />
+              <span>{OTHER}</span>
+              <input
+                type="text"
+                aria-label={`Other answer for ${q.header}`}
+                placeholder="Type your own answer"
+                value={a.otherText ?? ""}
+                onChange={(e) => {
+                  update(i, { otherText: e.target.value });
+                  if (!otherChecked) toggle(i, OTHER, q.multiSelect, true);
+                }}
+                className="flex-1 rounded-md border border-border bg-card px-2 py-1 text-[0.8rem]"
+              />
+            </label>
+          </fieldset>
+        );
+      })}
+      <div className="flex gap-2">
+        <button
+          onClick={() =>
+            answer(
+              item.callId,
+              answers.map((a) => ({ ...a, selectedLabels: a.selectedLabels.filter((l) => l !== OTHER) })),
+            )
+          }
+          className="rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
+        >
+          Submit
+        </button>
+        <button
+          onClick={() => answer(item.callId, null)}
+          className="rounded-md bg-secondary px-4 py-[0.4rem] text-[0.85rem] hover:bg-accent"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TypingBubble({ label }: { label: string | null }) {
   return (
     <div className={cn(BUBBLE, "flex items-center gap-[0.35rem] self-start rounded-bl-[4px] bg-assistant")}>
@@ -204,9 +326,11 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
 function Item({
   item,
   approve,
+  answer,
 }: {
   item: TranscriptItem;
   approve: (callId: string, approved: boolean, scope?: "always") => void;
+  answer: (callId: string, answers: UserQuestionAnswer[] | null) => void;
 }) {
   switch (item.kind) {
     case "user":
@@ -219,6 +343,8 @@ function Item({
       return <ToolCard item={item} />;
     case "approval":
       return <ApprovalCard item={item} approve={approve} />;
+    case "question":
+      return <QuestionCard item={item} answer={answer} />;
     case "image":
       return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
     case "audio":
@@ -321,7 +447,8 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const { items, typing, approve, runLabel, sessionId, currentProject, projectTypes, openTimeline } = useDesktop();
+  const { items, typing, approve, answerQuestions, runLabel, sessionId, currentProject, projectTypes, openTimeline } =
+    useDesktop();
   const contentProject = currentProject && projectTypes[currentProject] === "content" ? currentProject : null;
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -420,7 +547,7 @@ export function Transcript() {
           </div>
         )}
         {items.map((item) => (
-          <Item key={item.id} item={item} approve={approve} />
+          <Item key={item.id} item={item} approve={approve} answer={answerQuestions} />
         ))}
         {typing && <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} />}
       </div>

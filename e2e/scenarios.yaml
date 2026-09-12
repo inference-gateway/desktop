@@ -45,6 +45,21 @@ scenarios:
           - { name: Write, args: { file_path: "summary.txt", content: "two files inspected" } }
       - content: "Summary written."
 
+  - name: ask-user-question
+    match: '(?i)ask me which language'
+    turns:
+      - tool_calls:
+          - name: AskUserQuestion
+            args:
+              questions:
+                - header: Language
+                  question: "Which language should the service use?"
+                  options:
+                    - { label: "Rust (Recommended)", description: "Matches the backend" }
+                    - { label: Go, description: "Matches the CLI" }
+                  multiSelect: false
+      - content: "Thanks, noted your choice."
+
   - name: markdown-showcase
     match: '(?i)show me some markdown'
     turns:
