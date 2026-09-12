@@ -906,8 +906,6 @@ function useDesktopStore() {
     }
   }, [activeId, runningIds]);
 
-  // ponytail: an approval already on screen when auto mode is toggled on still
-  // needs a click; approve-all-pending-on-toggle if that bites.
   const approve = useCallback(
     async (callId: string, approved: boolean, scope?: "always") => {
       const id = activeIdRef.current;
