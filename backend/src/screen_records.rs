@@ -5,7 +5,7 @@
 //! (timestamped key presses and mouse clicks from a listen-only `CGEventTap`).
 //! On stop the directory is returned so the UI can reference it in the composer
 //! and the agent can turn the workflow into a skill. Frame capture stops after
-//! `MAX_FRAMES` (one hour at 1 fps) so a forgotten recording cannot fill the disk;
+//! `MAX_FRAMES` (3 minutes at 1 fps) so a forgotten recording cannot fill the disk;
 //! event logging continues until Stop.
 
 use crate::env::{home_dir, mock_mode};
@@ -41,10 +41,10 @@ pub(crate) struct RecordingHandle {
     recorder: Option<imp::Recorder>,
 }
 
-/// ponytail: fixed 1 fps JPEG, one hour cap - add interval/size settings only
-/// if disk use is reported.
+/// ponytail: fixed 1 fps JPEG, 3 minute cap (the top bar stops the recording
+/// at the same mark) - add interval/duration settings only if asked.
 #[cfg(target_os = "macos")]
-const MAX_FRAMES: u32 = 3600;
+const MAX_FRAMES: u32 = 180;
 
 pub(crate) fn records_dir() -> PathBuf {
     home_dir().join(".infer").join("tmp").join("screen-records")

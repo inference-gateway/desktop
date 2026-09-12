@@ -8,6 +8,8 @@ import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
 const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
+// ponytail: fixed 3 minute cap, matches MAX_FRAMES in screen_records.rs - make it a setting if asked.
+const MAX_RECORD_SECS = 180;
 
 export function TopBar() {
   const {
@@ -25,6 +27,7 @@ export function TopBar() {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const startedAtRef = useRef(0);
+  const stopRef = useRef<() => void>(() => {});
 
   // Rehydrate the button after a webview reload.
   useEffect(() => {
@@ -40,7 +43,11 @@ export function TopBar() {
     if (!recording) return;
     startedAtRef.current = Date.now();
     setElapsed(0);
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000)), 1000);
+    const timer = setInterval(() => {
+      const secs = Math.floor((Date.now() - startedAtRef.current) / 1000);
+      setElapsed(secs);
+      if (secs >= MAX_RECORD_SECS) stopRef.current();
+    }, 1000);
     return () => clearInterval(timer);
   }, [recording]);
 
@@ -51,9 +58,10 @@ export function TopBar() {
         setRecording(false);
         const el = composerRef.current;
         if (el) {
-          const ref = `[Attached screen recording: ${dir} - frames/*.jpg at 1 fps, events.jsonl with timestamped key presses and clicks]`;
+          const ref = `[Attached screen recording: ${dir}]\nIt contains frames/*.jpg captured at 1 fps and events.jsonl with timestamped key presses and clicks.`;
+          const ask = "Create a skill for this workflow. Use /skill-creator.";
           const text = el.value.trim();
-          el.value = text ? `${ref}\n\n${text}` : ref;
+          el.value = text ? `${ref}\n\n${text}` : `${ref}\n\n${ask}`;
           autoGrow(el);
           el.focus();
         }
@@ -68,6 +76,10 @@ export function TopBar() {
         setError(`Failed to start recording: ${e}`);
       }
     }
+  };
+
+  stopRef.current = () => {
+    if (recording) toggleRecording();
   };
 
   const handleUpdate = async () => {
