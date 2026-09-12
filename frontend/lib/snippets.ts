@@ -15,6 +15,11 @@ export const DEFAULT_SNIPPETS: Snippet[] = [
     prompt: "/init",
   },
   {
+    id: "organise-projects",
+    label: "Organise projects",
+    prompt: "/desktop-projects organise my projects and chats",
+  },
+  {
     id: "work-on-issue",
     label: "Work on issue",
     prompt:
@@ -60,10 +65,7 @@ export function loadSnippets(): Snippet[] {
 export function mergeSnippets(stored: Snippet[]): Snippet[] {
   const storedById = new Map(stored.map((s) => [s.id, s]));
   const defaultIds = new Set(DEFAULT_SNIPPETS.map((d) => d.id));
-  return [
-    ...DEFAULT_SNIPPETS.map((d) => storedById.get(d.id) ?? d),
-    ...stored.filter((s) => !defaultIds.has(s.id)),
-  ];
+  return [...DEFAULT_SNIPPETS.map((d) => storedById.get(d.id) ?? d), ...stored.filter((s) => !defaultIds.has(s.id))];
 }
 
 export function saveSnippets(snippets: Snippet[]): void {

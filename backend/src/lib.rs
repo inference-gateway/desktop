@@ -71,6 +71,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             raise_overlay_above_dock(app);
+            skills::install_bundled_skills();
             if config::read_config().schedule_enabled {
                 let state = app.state::<AppState>();
                 if let Err(e) = scheduler::spawn_daemon(&state) {
