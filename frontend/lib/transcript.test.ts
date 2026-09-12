@@ -293,6 +293,14 @@ test("Done stops typing and finalizes running tools", () => {
   expect(s.typing).toBe(false);
 });
 
+test("max_turns_reached is rendered as a recoverable message", () => {
+  const s = run([ev({ kind: "AgentError", message: "max_turns_reached" })]);
+  expect(s.items[0]).toMatchObject({
+    kind: "error",
+    text: 'Turn limit reached. Send a message (e.g. "continue") to keep going.',
+  });
+});
+
 test("AgentError before ApprovalRequest puts approval before the error", () => {
   const s = run([
     { type: "userSend", text: "write" },

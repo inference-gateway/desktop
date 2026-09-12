@@ -143,6 +143,10 @@ function useDesktopStore() {
   useEffect(() => {
     runningIdsRef.current = runningIds;
   }, [runningIds]);
+  const autoModesRef = useRef<Record<string, boolean>>(autoModes);
+  useEffect(() => {
+    autoModesRef.current = autoModes;
+  }, [autoModes]);
 
   const setStatus = useCallback((t: string) => {
     setStatusText(t);
@@ -644,6 +648,20 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
+  const resolveApproval = useCallback(
+    async (id: string, callId: string, approved: boolean, scope?: "always") => {
+      try {
+        await api.sendApproval(id, callId, approved, scope);
+        const status = approved ? "approved" : "denied";
+        dispatchTo(id, { type: "setApproval", callId, status });
+        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
+      }
+    },
+    [dispatchTo],
+  );
+
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
       if (runningIds.has(runId)) return;
@@ -661,6 +679,10 @@ function useDesktopStore() {
           dispatchTo(runId, { type: "event", event });
           switch (event.kind) {
             case "ApprovalRequest":
+              if (autoModesRef.current[runId]) {
+                resolveApproval(runId, event.tool_call_id, true);
+                break;
+              }
               if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
                 computerApprovalsRef.current.set(event.tool_call_id, runId);
               }
@@ -746,6 +768,7 @@ function useDesktopStore() {
       dispatchTo,
       clearTerminal,
       recordTerminal,
+      resolveApproval,
     ],
   );
 
@@ -887,21 +910,13 @@ function useDesktopStore() {
     async (callId: string, approved: boolean, scope?: "always") => {
       const id = activeIdRef.current;
       if (!id) return;
-      try {
-        const computerApproval = computerApprovalsRef.current.get(callId) === id;
-        if (computerApproval) {
-          computerApprovalsRef.current.delete(callId);
-          if (approved) await setMonitorVisible(false).catch(() => {});
-        }
-        await api.sendApproval(id, callId, approved, scope);
-        const status = approved ? "approved" : "denied";
-        dispatchTo(id, { type: "setApproval", callId, status });
-        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
-      } catch (err) {
-        dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
+      if (computerApprovalsRef.current.get(callId) === id) {
+        computerApprovalsRef.current.delete(callId);
+        if (approved) await setMonitorVisible(false).catch(() => {});
       }
+      await resolveApproval(id, callId, approved, scope);
     },
-    [dispatchTo],
+    [resolveApproval],
   );
 
   const answerQuestions = useCallback(

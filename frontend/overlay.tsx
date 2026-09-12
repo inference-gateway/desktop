@@ -2,7 +2,8 @@
 // actions: a rounded border glows at the screen edges while any computer-use
 // session is active, a cursor dot glides to each Computer move/scroll target,
 // a ring ripples on a Computer click, and a key-cast pill at the bottom shows what
-// the agent is typing. Fed by the backend's global "agent-event" broadcast;
+// the agent is typing or which non-pointer tool (screenshot, WebSearch, ...) it
+// is waiting on, so an unfocused user still sees activity. Fed by the backend's global "agent-event" broadcast;
 // all animation is CSS inside this webview, so no per-frame IPC. The same
 // frame turns red while a workflow recording is running ("screen-recording"
 // event from the top bar).
@@ -15,7 +16,7 @@ import {
   PhysicalPosition,
   PhysicalSize,
 } from "@tauri-apps/api/window";
-import type { AgentEvent } from "@/lib/tauri";
+import type { AgentEvent, ToolCallInfo } from "@/lib/tauri";
 import { overlayAction } from "@/lib/pointer";
 import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
@@ -93,10 +94,20 @@ const STYLE = `
 type Ripple = { x: number; y: number; seq: number };
 type Keycast = { text: string; seq: number };
 
+function busyLabel(tc: ToolCallInfo): string {
+  try {
+    const action = JSON.parse(tc.args).action;
+    return typeof action === "string" ? `${tc.name} · ${action}` : tc.name;
+  } catch {
+    return tc.name;
+  }
+}
+
 export default function Overlay() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [ripple, setRipple] = useState<Ripple | null>(null);
   const [keycast, setKeycast] = useState<Keycast | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [active, setActive] = useState(false);
   const [recording, setRecording] = useState(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
@@ -146,6 +157,7 @@ export default function Overlay() {
       setActive(false);
       setCursor(null);
       setKeycast(null);
+      setBusy(null);
       setRipple(null);
       cursorRef.current = null;
       if (!recordingNow) win.hide().catch(() => {});
@@ -167,14 +179,24 @@ export default function Overlay() {
         endSession(e.payload.sessionId);
         return;
       }
+      if (ev.kind === "ToolResult" && activeSessions.current.has(e.payload.sessionId)) {
+        setBusy(null);
+        return;
+      }
       if (ev.kind !== "AssistantMessage") return;
       for (const tc of ev.tool_calls) {
         if (COMPUTER_USE_TOOLS.has(tc.name) && !activeSessions.current.has(e.payload.sessionId)) {
           activeSessions.current.add(e.payload.sessionId);
           setActive(true);
         }
+        if (!activeSessions.current.has(e.payload.sessionId)) continue;
         const action = overlayAction(tc);
-        if (!action) continue;
+        if (!action) {
+          wake();
+          setBusy(busyLabel(tc));
+          continue;
+        }
+        setBusy(null);
         wake();
         if (action.kind === "type") {
           setKeycast({ text: action.text, seq: seqRef.current++ });
@@ -206,10 +228,12 @@ export default function Overlay() {
       {(active || recording) && <div id="frame" className={recording ? "recording" : undefined} />}
       {cursor && <div id="cursor" style={{ left: cursor.x, top: cursor.y }} />}
       {ripple && <div key={ripple.seq} className="ripple" style={{ left: ripple.x, top: ripple.y }} />}
-      {keycast && (
+      {keycast ? (
         <div key={keycast.seq} id="keycast">
           {keycast.text}
         </div>
+      ) : (
+        busy && <div id="keycast">⟳ {busy}</div>
       )}
     </>
   );
