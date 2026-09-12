@@ -103,7 +103,6 @@ export function StatusBar() {
     ["cached", tokenUsage.cached_read.toLocaleString()],
     ["tool calls", tokenUsage.total_tool_calls.toLocaleString()],
   ];
-  // The CLI omits contextWindow when unknown, so the percentage is hidden until then.
   if (contextPct !== null) stats.unshift(["Context", `${contextPct}%`]);
   if (!showStatusBar) return null;
   return (
