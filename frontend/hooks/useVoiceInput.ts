@@ -41,9 +41,9 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
   const recSampleRate = useRef(48000);
   const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interimTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const interimBusy = useRef(false); // single in-flight transcribe call; overlapping ticks are skipped
+  const interimBusy = useRef(false);
   const interimFlight = useRef<Promise<void> | null>(null);
-  const baseText = useRef(""); // composer content before dictation started
+  const baseText = useRef("");
 
   const refreshSttStatus = useCallback(async (): Promise<SttStatus | null> => {
     try {
