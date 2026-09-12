@@ -12,6 +12,8 @@ const DOT: Record<string, string> = {
   idle: "bg-muted-foreground",
 };
 
+const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1 ? 3 : 2)}`;
+
 export function StatusBar() {
   const {
     statusText,
@@ -104,6 +106,7 @@ export function StatusBar() {
     ["tool calls", tokenUsage.total_tool_calls.toLocaleString()],
   ];
   if (contextPct !== null) stats.unshift(["Context", `${contextPct}%`]);
+  if (tokenUsage.cost > 0) stats.push(["cost", formatCost(tokenUsage.cost)]);
   if (!showStatusBar) return null;
   return (
     <div
