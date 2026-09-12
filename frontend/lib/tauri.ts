@@ -177,6 +177,16 @@ export type StoredMetric = {
   time_unix_nano: number;
 };
 
+export const isMacOS = navigator.platform.toUpperCase().includes("MAC");
+
+export const SCREEN_RECORD_KEEP_KEY = "screenRecordKeep";
+export const DEFAULT_SCREEN_RECORD_KEEP = 5;
+
+export function screenRecordKeep(): number {
+  const n = parseInt(localStorage.getItem(SCREEN_RECORD_KEEP_KEY) || "", 10);
+  return Number.isFinite(n) && n >= 1 ? n : DEFAULT_SCREEN_RECORD_KEEP;
+}
+
 export const api = {
   checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false) =>
     invoke<void>("check_and_install_cli", { onEvent, force }),
@@ -228,6 +238,9 @@ export const api = {
   setComputerUseEnabled: (enabled: boolean) => invoke<void>("set_computer_use_enabled", { enabled }),
   requestAccessibilityPermission: () => invoke<void>("request_accessibility_permission"),
   requestScreenRecordingPermission: () => invoke<void>("request_screen_recording_permission"),
+  startScreenRecording: (keep: number) => invoke<string>("start_screen_recording", { keep }),
+  stopScreenRecording: () => invoke<string>("stop_screen_recording"),
+  screenRecordingStatus: () => invoke<boolean>("screen_recording_status"),
   githubAuthStatus: () => invoke<GithubAuthStatus>("github_auth_status"),
   githubOwners: () => invoke<string[]>("github_owners"),
   githubRepoExists: (repo: string) => invoke<boolean>("github_repo_exists", { repo }),

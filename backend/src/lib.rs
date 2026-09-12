@@ -14,6 +14,7 @@ mod permissions;
 mod process_manager;
 mod projects;
 mod scheduler;
+mod screen_records;
 mod skills;
 mod stt;
 mod tasks;
@@ -29,6 +30,7 @@ pub(crate) struct AppState {
     scheduler_log: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
+    screen_recording: std::sync::Mutex<Option<screen_records::RecordingHandle>>,
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
@@ -64,6 +66,7 @@ pub fn run() {
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
             stored_traces,
             stored_metrics,
+            screen_recording: std::sync::Mutex::new(None),
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -168,6 +171,9 @@ pub fn run() {
             permissions::set_computer_use_enabled,
             permissions::request_accessibility_permission,
             permissions::request_screen_recording_permission,
+            screen_records::start_screen_recording,
+            screen_records::stop_screen_recording,
+            screen_records::screen_recording_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -188,6 +194,7 @@ pub fn run() {
             if let Err(error) = state.processes.shutdown() {
                 eprintln!("process shutdown during Tauri exit failed: {error}");
             }
+            screen_records::stop_on_exit(&state);
         }
     });
 }

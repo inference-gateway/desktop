@@ -62,7 +62,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[test]
     fn enabled_tools_respects_the_master_switch_and_per_tool_flags() {
         let dump = r#"{
             "enabled": true,

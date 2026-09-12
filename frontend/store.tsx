@@ -866,11 +866,13 @@ function useDesktopStore() {
       await broadcastPrompt(names, text);
       return;
     }
-    if (await sendText(text)) {
-      if (el) {
-        el.value = "";
-        autoGrow(el);
-      }
+    if (el) {
+      el.value = "";
+      autoGrow(el);
+    }
+    if (!(await sendText(text)) && el && !el.value) {
+      el.value = text;
+      autoGrow(el);
     }
   }, [initSelecting, initSelection, model, setError, broadcastPrompt, sendText]);
 
