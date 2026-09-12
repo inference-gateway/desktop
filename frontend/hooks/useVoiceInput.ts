@@ -145,7 +145,6 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
       audioCtx.current = null;
     }
 
-    // Let an in-flight interim pass settle so it cannot clobber the final text.
     const flight = interimFlight.current;
     if (flight) await flight;
 
