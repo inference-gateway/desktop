@@ -50,7 +50,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, local setup, and build
 
 ### Testing macOS permission grants locally
 
-macOS ties Accessibility and Screen Recording grants to the app's code-signing identity, so Computer Use permissions can only be verified from a signed `.app` bundle - dev builds (`task dev`) simulate the flow instead. The project signs with a **self-signed** certificate (created below with `openssl` - nothing from Apple, no developer account). To test the real thing:
+macOS ties Accessibility and Screen Recording grants to the app's code-signing identity, so Computer Use permissions can only be verified from a signed `.app` bundle - dev builds without it report the permissions as unavailable, and the grant flow is simulated only when the app runs with `DESKTOP_MOCK=true` (for example `DESKTOP_MOCK=true task dev`). Note that `DESKTOP_MOCK` also switches the whole desktop into token-free mock mode: it skips the desktop-owned gateway, serves a canned model list, and spawns `infer` with `INFER_GATEWAY_MOCK=true`. The project signs with a **self-signed** certificate (created below with `openssl` - nothing from Apple, no developer account). To test the real thing:
 
 1. Create the self-signed certificate once and trust it (approve the macOS prompt):
 
