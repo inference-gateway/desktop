@@ -16,14 +16,15 @@ const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
-/// button lookup walks `UI elements` instead. Matches AXCheckBox too: buttons
-/// with aria-pressed (toggles/checkboxes) surface as AXCheckBox, not AXButton.
+/// button lookup walks `UI elements` instead. Matches AXCheckBox and
+/// AXRadioButton too: buttons with aria-pressed (toggles/checkboxes) surface as
+/// AXCheckBox, and question-form options are native radios.
 const FIND_BUTTON_FN: &str = r#"
 on findButton(el, btnName, depth)
 	tell application "System Events"
 		if depth > 8 then return missing value
 		try
-			if (role of el is "AXButton" or role of el is "AXCheckBox") and name of el is btnName then return el
+			if (role of el is "AXButton" or role of el is "AXCheckBox" or role of el is "AXRadioButton") and name of el is btnName then return el
 		end try
 		try
 			repeat with c in (UI elements of el)

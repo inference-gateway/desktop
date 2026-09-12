@@ -7,6 +7,20 @@ export { Channel, convertFileSrc };
 
 export type ToolCallInfo = { id: string; name: string; args: string };
 
+export type UserQuestion = {
+  header: string;
+  question: string;
+  options: { label: string; description: string }[];
+  multiSelect: boolean;
+};
+
+export type UserQuestionAnswer = {
+  header: string;
+  question: string;
+  selectedLabels: string[];
+  otherText?: string;
+};
+
 export type AgentEvent =
   | { kind: "SessionId"; session_id: string }
   | {
@@ -18,6 +32,7 @@ export type AgentEvent =
     }
   | { kind: "ToolResult"; content: string; tool_call_id: string }
   | { kind: "ApprovalRequest"; tool_name: string; tool_args: string; tool_call_id: string }
+  | { kind: "UserQuestionRequest"; tool_call_id: string; questions: UserQuestion[] }
   | { kind: "Info"; message: string }
   | { kind: "AgentError"; message: string }
   | { kind: "RawLine"; line: string }
@@ -212,6 +227,8 @@ export const api = {
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean, scope?: "always") =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved, scope: scope ?? null }),
+  sendQuestionAnswers: (sessionId: string, toolCallId: string, answers: UserQuestionAnswer[] | null) =>
+    invoke<void>("send_question_answers", { sessionId, toolCallId, answers }),
   sendComputerUseControl: (sessionId: string, action: "pause" | "resume") =>
     invoke<void>("send_computer_use_control", { sessionId, action }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),

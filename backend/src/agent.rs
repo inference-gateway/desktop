@@ -34,6 +34,10 @@ pub(crate) enum AgentEvent {
         tool_args: String,
         tool_call_id: String,
     },
+    UserQuestionRequest {
+        tool_call_id: String,
+        questions: serde_json::Value,
+    },
     Info {
         message: String,
     },
@@ -278,6 +282,23 @@ impl AgentParser {
                         tool_name,
                         tool_args,
                         tool_call_id,
+                    });
+                }
+                if val.get("name").and_then(|v| v.as_str()) == Some("user_question_request")
+                    && let Some(data) = val.get("value")
+                {
+                    let tool_call_id = data
+                        .get("tool_call_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let questions = data
+                        .get("questions")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([]));
+                    return Some(AgentEvent::UserQuestionRequest {
+                        tool_call_id,
+                        questions,
                     });
                 }
                 Some(AgentEvent::RawLine {
@@ -533,6 +554,37 @@ pub(crate) async fn send_approval(
     if let Some(scope) = scope.filter(|s| !s.is_empty()) {
         response["scope"] = serde_json::Value::String(scope);
     }
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&response).map_err(|e| e.to_string())?
+    );
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
+        .await
+        .map_err(|error| format!("agent write task failed: {error}"))?
+}
+
+/// Answers an AskUserQuestion form: `answers` is the frontend's
+/// `UserQuestionAnswer[]`, `None` dismisses the form.
+#[tauri::command]
+pub(crate) async fn send_question_answers(
+    session_id: String,
+    tool_call_id: String,
+    answers: Option<serde_json::Value>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let response = match answers {
+        Some(answers) => serde_json::json!({
+            "type": "user_question_response",
+            "tool_call_id": tool_call_id,
+            "answers": answers,
+        }),
+        None => serde_json::json!({
+            "type": "user_question_response",
+            "tool_call_id": tool_call_id,
+            "cancelled": true,
+        }),
+    };
     let line = format!(
         "{}\n",
         serde_json::to_string(&response).map_err(|e| e.to_string())?
@@ -1383,6 +1435,18 @@ mod tests {
     fn test_parse_messages_snapshot_skipped() {
         let (events, _) = parse_all(&[r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#]);
         assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_custom_user_question_request() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"user_question_request","value":{"type":"user_question_request","tool_call_id":"call-2","questions":[{"header":"Lang","question":"Which?","options":[{"label":"Go","description":""}],"multiSelect":false}]}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::UserQuestionRequest { tool_call_id, questions }
+            if tool_call_id == "call-2" && questions[0]["options"][0]["label"] == "Go")
+        );
     }
 
     #[test]

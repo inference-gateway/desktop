@@ -67,8 +67,8 @@ function ChatItem({ index }: { index: number }) {
     >
       {running && (
         <span
-          aria-label={awaiting ? "Awaiting approval" : "Running"}
-          title={awaiting ? "Awaiting approval" : "Running"}
+          aria-label={awaiting ? "Awaiting input" : "Running"}
+          title={awaiting ? "Awaiting input" : "Running"}
           className={cn("h-2 w-2 shrink-0 rounded-full", awaiting ? "bg-amber-500" : "animate-pulse bg-emerald-500")}
         />
       )}

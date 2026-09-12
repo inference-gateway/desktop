@@ -7,6 +7,7 @@ import {
   type DesktopConfig,
   type ProgressEvent,
   type UpdateInfo,
+  type UserQuestionAnswer,
 } from "@/lib/tauri";
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -15,6 +16,7 @@ import {
   chatReducer,
   delegationsFrom,
   initialChatState,
+  pendingInput,
   COMPUTER_USE_TOOLS,
   type ChatAction,
   type ChatState,
@@ -469,7 +471,7 @@ function useDesktopStore() {
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
   const isAwaitingApproval = useCallback(
-    (id: string) => transcripts[id]?.items.some((it) => it.kind === "approval" && it.status === "pending") ?? false,
+    (id: string) => pendingInput(transcripts[id]?.items ?? []) != null,
     [transcripts],
   );
 
@@ -902,6 +904,20 @@ function useDesktopStore() {
     [dispatchTo],
   );
 
+  const answerQuestions = useCallback(
+    async (callId: string, answers: UserQuestionAnswer[] | null) => {
+      const id = activeIdRef.current;
+      if (!id) return;
+      try {
+        await api.sendQuestionAnswers(id, callId, answers);
+        dispatchTo(id, { type: "setQuestion", callId, answers });
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Answer failed: ${err}` });
+      }
+    },
+    [dispatchTo],
+  );
+
   const insertSnippet = useCallback((prompt: string) => {
     const el = composerRef.current;
     if (!el) return;
@@ -1314,8 +1330,9 @@ function useDesktopStore() {
   const runLabel = useCallback(
     (id: string): { label: string; error: boolean } | null => {
       const chat = transcripts[id];
-      if (chat?.items.some((it) => it.kind === "approval" && it.status === "pending")) {
-        return { label: "Awaiting approval...", error: false };
+      const pending = pendingInput(chat?.items ?? []);
+      if (pending) {
+        return { label: pending === "approval" ? "Awaiting approval..." : "Awaiting answer...", error: false };
       }
       if (runningIds.has(id)) {
         if (chat?.currentReasoningId) return { label: "Thinking...", error: false };
@@ -1366,6 +1383,7 @@ function useDesktopStore() {
     sendText,
     cancel,
     approve,
+    answerQuestions,
     openConversation,
     newChat,
     restartBackend,
