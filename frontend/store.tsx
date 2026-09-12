@@ -837,7 +837,6 @@ function useDesktopStore() {
     if (!activeId && activeProject) assignProject(runId, activeProject);
     setActiveId(runId);
     activeIdRef.current = runId;
-    // Bash commands live in their own history, separate from chat (#185).
     if (isBashCommand(text)) {
       api.appendBashHistory(text).catch(() => {});
       setBashHistory((h) => [...h, text]);
