@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { ChatList } from "./ChatList";
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
-/** Prompt to create a new project shown below the chat list */
 export function Sidebar() {
   const { newChat, projectNames, initSelecting, startInitSelection, cancelInitSelection, initAllRunning } =
     useDesktop();
