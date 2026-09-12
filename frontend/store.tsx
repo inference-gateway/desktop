@@ -16,6 +16,7 @@ import {
   chatReducer,
   delegationsFrom,
   initialChatState,
+  pendingInput,
   COMPUTER_USE_TOOLS,
   type ChatAction,
   type ChatState,
@@ -470,7 +471,7 @@ function useDesktopStore() {
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
   const isAwaitingApproval = useCallback(
-    (id: string) => transcripts[id]?.items.some((it) => it.kind === "approval" && it.status === "pending") ?? false,
+    (id: string) => pendingInput(transcripts[id]?.items ?? []) != null,
     [transcripts],
   );
 
@@ -1329,8 +1330,9 @@ function useDesktopStore() {
   const runLabel = useCallback(
     (id: string): { label: string; error: boolean } | null => {
       const chat = transcripts[id];
-      if (chat?.items.some((it) => it.kind === "approval" && it.status === "pending")) {
-        return { label: "Awaiting approval...", error: false };
+      const pending = pendingInput(chat?.items ?? []);
+      if (pending) {
+        return { label: pending === "approval" ? "Awaiting approval..." : "Awaiting answer...", error: false };
       }
       if (runningIds.has(id)) {
         if (chat?.currentReasoningId) return { label: "Thinking...", error: false };

@@ -66,6 +66,12 @@ export type ChatState = {
   paused?: boolean;
 };
 
+/** The run is blocked on the user: a pending approval or question card. */
+export function pendingInput(items: TranscriptItem[]): "approval" | "question" | null {
+  const it = items.find((i) => (i.kind === "approval" || i.kind === "question") && i.status === "pending");
+  return it ? (it.kind as "approval" | "question") : null;
+}
+
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
 export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" };

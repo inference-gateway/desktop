@@ -3,6 +3,7 @@ import {
   chatReducer,
   delegationsFrom,
   initialChatState,
+  pendingInput,
   subagentParentId,
   todosDiffer,
   todosFrom,
@@ -254,6 +255,12 @@ test("question request renders pending, answering restarts the dots, duplicates 
   expect(s.items[1]).toMatchObject({ kind: "question", status: "answered", answers });
   expect(s.typing).toBe(true);
   expect(chatReducer(s, { type: "setQuestion", callId: "q1", answers })).toBe(s);
+});
+
+test("a pending question blocks the run like a pending approval", () => {
+  const s = run([ev({ kind: "UserQuestionRequest", tool_call_id: "q1", questions: [question] })]);
+  expect(pendingInput(s.items)).toBe("question");
+  expect(pendingInput(chatReducer(s, { type: "setQuestion", callId: "q1", answers: null }).items)).toBeNull();
 });
 
 test("skipping a question and expiring it on run end", () => {
