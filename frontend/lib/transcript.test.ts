@@ -354,6 +354,24 @@ test("loadHistory unwraps the CLI v2 entry envelope and skips meta/system-remind
   expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
 });
 
+test("loadHistory reads the pretty-printed { metadata, entries } document from newer CLIs", () => {
+  const doc = JSON.stringify(
+    {
+      metadata: { id: "x", message_count: 4 },
+      entries: [
+        { role: "user", content: "hello", time: "t" },
+        { role: "user", content: "<system-reminder>\ninjected\n</system-reminder>" },
+        { role: "assistant", content: "hi there", reasoning_content: "thinking", model: "m" },
+        { role: "tool", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}', tool_call_id: "c1" },
+      ],
+    },
+    null,
+    2,
+  );
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
+});
+
 test("loadHistory recovers audio players from pretty-printed v2 tool results", () => {
   (globalThis as Record<string, unknown>).window = {
     __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },

@@ -442,6 +442,25 @@ function finalizeTools(state: ChatState): ChatState {
   return changed ? { ...state, items } : state;
 }
 
+/** `infer conversations show --format json` returns one pretty-printed
+    `{ metadata, entries }` document (CLI >= 0.190); older CLIs streamed NDJSON. */
+function historyRecords(text: string): any[] {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const doc = JSON.parse(trimmed);
+      if (Array.isArray(doc?.entries)) return doc.entries;
+    } catch {}
+  }
+  const records: any[] = [];
+  for (const line of trimmed.split("\n")) {
+    try {
+      records.push(JSON.parse(line.trim()));
+    } catch {}
+  }
+  return records;
+}
+
 function loadHistory(state: ChatState, ndjson: string): ChatState {
   let seq = state.seq;
   const items: TranscriptItem[] = [];
@@ -465,16 +484,8 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     items.push({ kind: "audio", id: String(seq++), src, filename: file, path: audioPath });
   };
 
-  for (const line of ndjson.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let entry: HistoryLine;
-    try {
-      const raw = JSON.parse(trimmed);
-      entry = raw?.entry?.message ?? raw;
-    } catch {
-      continue;
-    }
+  for (const raw of historyRecords(ndjson)) {
+    const entry: HistoryLine = raw?.entry?.message ?? raw;
     if (!entry || typeof entry !== "object") continue;
     const content = entry.content || "";
     if (entry.role === "user") {
