@@ -86,6 +86,16 @@ export function Composer() {
     if (skills.length === 0) loadSkills();
   }, [loadSkills]);
 
+  // Re-read ~/.infer/skills whenever the / popup opens so skills the agent just
+  // wrote to disk appear without a restart.
+  useEffect(() => {
+    if (!showSkills) return;
+    api
+      .listInstalledSkills()
+      .then((names) => setInstalledSkills(new Set(names)))
+      .catch(() => {});
+  }, [showSkills]);
+
   const addImage = (file: File) => {
     if (!ALLOWED.includes(file.type)) {
       setError(`Unsupported file type: ${file.type}`);
@@ -181,8 +191,12 @@ export function Composer() {
     setShowTools(false);
   };
 
+  const localOnlySkills: SkillMetadata[] = Array.from(installedSkills)
+    .filter((name) => !skills.some((s) => s.name === name))
+    .sort()
+    .map((name) => ({ name, description: "", version: "" }));
   const filteredSkills = showSkills
-    ? skills.filter(
+    ? [...skills, ...localOnlySkills].filter(
         (s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery),
       )
     : [];
