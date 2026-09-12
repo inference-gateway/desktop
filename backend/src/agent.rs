@@ -54,6 +54,7 @@ pub(crate) enum AgentEvent {
         total_tool_calls: i64,
         last_input: i64,
         context_window: i64,
+        cost: f64,
     },
     Cancelled,
     ComputerUsePaused,
@@ -310,6 +311,10 @@ impl AgentParser {
                     .and_then(|s| s.get("contextWindow"))
                     .map(json_val_i64)
                     .unwrap_or(0);
+                let cost = stats
+                    .and_then(|s| s.get("cost"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 Some(AgentEvent::TokenUsage {
                     input,
                     output,
@@ -317,6 +322,7 @@ impl AgentParser {
                     total_tool_calls: tools,
                     last_input,
                     context_window,
+                    cost,
                 })
             }
             "RUN_ERROR" => {
@@ -1340,17 +1346,30 @@ mod tests {
         let (events, _) = parse_all(&[
             r#"{"type":"RUN_FINISHED","result":{"inputTokens":4821,"outputTokens":310,"cacheReadTokens":3100,"totalToolCalls":3,"cost":0.042,"lastInputTokens":912,"contextWindow":128000}}"#,
         ]);
-        assert!(matches!(
-            &events[0],
-            AgentEvent::TokenUsage {
-                input: 4821,
-                output: 310,
-                cached_read: 3100,
-                total_tool_calls: 3,
-                last_input: 912,
-                context_window: 128000
-            }
-        ));
+        let AgentEvent::TokenUsage {
+            input,
+            output,
+            cached_read,
+            total_tool_calls,
+            last_input,
+            context_window,
+            cost,
+        } = &events[0]
+        else {
+            panic!("expected TokenUsage");
+        };
+        assert_eq!(
+            (
+                *input,
+                *output,
+                *cached_read,
+                *total_tool_calls,
+                *last_input,
+                *context_window
+            ),
+            (4821, 310, 3100, 3, 912, 128000)
+        );
+        assert!((cost - 0.042).abs() < f64::EPSILON);
     }
 
     #[test]

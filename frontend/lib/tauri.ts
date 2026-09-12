@@ -30,6 +30,7 @@ export type AgentEvent =
       total_tool_calls: number;
       last_input: number;
       context_window: number;
+      cost: number;
     }
   | { kind: "Cancelled" }
   | { kind: "ComputerUsePaused" }

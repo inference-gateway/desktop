@@ -530,6 +530,7 @@ test("TokenUsage keeps the CLI's session totals per conversation and resets on n
       total_tool_calls: 1,
       last_input: input,
       context_window: 128000,
+      cost: input / 1000,
     });
   const a = run([usage(10, 5), usage(11, 6)]);
   const b = run([usage(100, 50)]);
@@ -540,6 +541,7 @@ test("TokenUsage keeps the CLI's session totals per conversation and resets on n
     total_tool_calls: 1,
     last_input: 11,
     context_window: 128000,
+    cost: 0.011,
   });
   expect(b.usage).toEqual({
     input: 100,
@@ -548,6 +550,7 @@ test("TokenUsage keeps the CLI's session totals per conversation and resets on n
     total_tool_calls: 1,
     last_input: 100,
     context_window: 128000,
+    cost: 0.1,
   });
   expect(chatReducer(a, { type: "newChat" }).usage).toEqual(initialChatState.usage);
 });
