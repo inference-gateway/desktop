@@ -91,6 +91,7 @@ export type DesktopConfig = {
   projects_max_file_size_mb: string;
   projects_allowed_mimes: string;
   text_to_speech_enabled: boolean;
+  status_bar_enabled: boolean;
   vision_annotator_model: string;
 };
 export type Timelines = { dir: string; names: string[] };

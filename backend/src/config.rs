@@ -132,6 +132,14 @@ pub(crate) struct DesktopConfig {
     /// (vision.annotator in the CLI config); empty disables the annotator.
     #[serde(default)]
     pub(crate) vision_annotator_model: String,
+    /// Show the status row above the composer (chat.status_bar.enabled in the
+    /// CLI config, shared with the CLI's own status bar).
+    #[serde(default = "default_true")]
+    pub(crate) status_bar_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub(crate) fn default_config() -> DesktopConfig {
@@ -177,6 +185,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_max_file_size_mb: "500".into(),
         projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".into(),
         text_to_speech_enabled: false,
+        status_bar_enabled: true,
         vision_annotator_model: String::new(),
     }
 }
@@ -326,6 +335,7 @@ pub(crate) fn config_from_value(
         ])
         .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
+        status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
         vision_annotator_model: if bool_at(&["vision", "annotator", "enabled"]).unwrap_or(false) {
             str_at(&["vision", "annotator", "model"]).unwrap_or_default()
         } else {
@@ -485,6 +495,17 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         "text_to_speech",
         vec![("enabled", cfg.text_to_speech_enabled.into())],
     );
+
+    let chat = map
+        .entry("chat".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if let Some(cmap) = chat.as_mapping_mut() {
+        set_section(
+            cmap,
+            "status_bar",
+            vec![("enabled", cfg.status_bar_enabled.into())],
+        );
+    }
 
     let annotator_model = cfg.vision_annotator_model.trim();
     let vision = map
@@ -732,6 +753,26 @@ mod tests {
             config_from_value(&val, std::path::Path::new("/home/tester")).vision_annotator_model,
             ""
         );
+    }
+
+    #[test]
+    fn merge_config_round_trips_status_bar() {
+        let existing = "chat:\n  theme: dark\n";
+        let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
+        assert_eq!(
+            val.get("chat")
+                .and_then(|c| c.get("status_bar"))
+                .and_then(|s| s.get("enabled"))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(str_field(&val, &["chat", "theme"]), Some("dark"));
+
+        let mut cfg = default_config();
+        cfg.status_bar_enabled = false;
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert!(!cfg2.status_bar_enabled);
     }
 
     #[test]

@@ -2,7 +2,6 @@ import { ArrowUp, Folder, Mic, Paperclip, Square, Terminal, X } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
-import { TokenReadout } from "./TokenReadout";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
@@ -43,6 +42,7 @@ export function Composer() {
     initSelecting,
     initSelection,
     cancelInitSelection,
+    tools,
   } = useDesktop();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
@@ -60,12 +60,10 @@ export function Composer() {
   const [activeSkillIdx, setActiveSkillIdx] = useState(0);
   const [pendingDownload, setPendingDownload] = useState<SkillMetadata | null>(null);
   const skillsRef = useRef<HTMLDivElement>(null);
-  const [tools, setTools] = useState<string[]>([]);
   const [toolQuery, setToolQuery] = useState("");
   const [showTools, setShowTools] = useState(false);
   const [activeToolIdx, setActiveToolIdx] = useState(0);
   const [bashMode, setBashMode] = useState(false);
-  const toolsLoadedRef = useRef(false);
   const toolsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -120,15 +118,6 @@ export function Composer() {
     e.target.value = "";
   };
 
-  const ensureTools = () => {
-    if (toolsLoadedRef.current) return;
-    toolsLoadedRef.current = true;
-    api
-      .listTools()
-      .then(setTools)
-      .catch(() => {});
-  };
-
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     autoGrow(el);
@@ -141,7 +130,6 @@ export function Composer() {
     setBashMode(false);
     if (el.value.startsWith("!!")) {
       setShowSkills(false);
-      ensureTools();
       if (!el.value.slice(2).includes("(")) {
         setToolQuery(el.value.slice(2).toLowerCase());
         setShowTools(true);
@@ -317,7 +305,6 @@ export function Composer() {
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
-      <TokenReadout />
       {currentProject && (
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />

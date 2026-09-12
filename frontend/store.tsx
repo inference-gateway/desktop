@@ -114,7 +114,8 @@ function useDesktopStore() {
   const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
-  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
+  const [tools, setTools] = useState<string[]>([]);
+  const [showStatusBar, setShowStatusBar] = useState(true);
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
   const [projectNames, setProjectNames] = useState<string[]>(() => []);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
@@ -375,6 +376,10 @@ function useDesktopStore() {
               setReady(true);
               startGatewayThenModels(force, restart).then(() => checkForUpdates(true));
               refreshConversations();
+              api
+                .listTools()
+                .then(setTools)
+                .catch(() => {});
               break;
             case "Error":
               setError(`Error: ${event.message}`);
@@ -420,16 +425,15 @@ function useDesktopStore() {
       }
     }
 
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      api
-        .getConfig()
-        .then((cfg) => {
-          if (cfg.default_model && !localStorage.getItem(STORAGE_KEY)) {
-            localStorage.setItem(STORAGE_KEY, cfg.default_model);
-          }
-        })
-        .catch(() => {});
-    }
+    api
+      .getConfig()
+      .then((cfg) => {
+        setShowStatusBar(cfg.status_bar_enabled);
+        if (cfg.default_model && !localStorage.getItem(STORAGE_KEY)) {
+          localStorage.setItem(STORAGE_KEY, cfg.default_model);
+        }
+      })
+      .catch(() => {});
     initBackend();
     api
       .readHistory()
@@ -653,14 +657,6 @@ function useDesktopStore() {
         const ch = new Channel<AgentEvent>();
         ch.onmessage = (event) => {
           dispatchTo(runId, { type: "event", event });
-          if (event.kind === "TokenUsage") {
-            setTokenUsage((prev) => ({
-              input: prev.input + event.input,
-              output: prev.output + event.output,
-              cached_read: prev.cached_read + event.cached_read,
-              total_tool_calls: prev.total_tool_calls + event.total_tool_calls,
-            }));
-          }
           switch (event.kind) {
             case "ApprovalRequest":
               if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
@@ -1405,7 +1401,10 @@ function useDesktopStore() {
     loadProjects,
     setStatus,
     setError,
-    tokenUsage,
+    tokenUsage: active.usage,
+    tools,
+    showStatusBar,
+    setShowStatusBar,
     projects,
     projectNames,
     collapsedProjects,

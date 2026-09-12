@@ -35,8 +35,11 @@ export type TranscriptItem =
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
+export type TokenUsage = { input: number; output: number; cached_read: number; total_tool_calls: number };
+
 export type ChatState = {
   items: TranscriptItem[];
+  usage: TokenUsage;
   typing: boolean;
   seq: number;
   currentAssistantId: string | null;
@@ -141,6 +144,7 @@ export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
 
 export const initialChatState: ChatState = {
   items: [],
+  usage: { input: 0, output: 0, cached_read: 0, total_tool_calls: 0 },
   typing: false,
   seq: 0,
   currentAssistantId: null,
@@ -251,7 +255,15 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         paused: false,
       };
     case "TokenUsage":
-      return state;
+      return {
+        ...state,
+        usage: {
+          input: state.usage.input + event.input,
+          output: state.usage.output + event.output,
+          cached_read: state.usage.cached_read + event.cached_read,
+          total_tool_calls: state.usage.total_tool_calls + event.total_tool_calls,
+        },
+      };
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
@@ -529,5 +541,7 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     }
   }
 
+  // ponytail: reopened history starts at zero usage - accumulate from the
+  // persisted stats once the CLI writes them to the session file.
   return { ...initialChatState, items, seq, seenImages };
 }

@@ -373,6 +373,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   projects_max_file_size_mb: "500",
   projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv",
   text_to_speech_enabled: false,
+  status_bar_enabled: true,
   vision_annotator_model: "",
 };
 
@@ -386,7 +387,7 @@ const SCHEDULER_GITHUB_FIELDS: readonly StorageField[] = [
 ];
 
 function GeneralTab() {
-  const { maxSessions, setMaxSessions, models, model, setModel } = useDesktop();
+  const { maxSessions, setMaxSessions, models, model, setModel, setShowStatusBar } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [computerUsePermissions, setComputerUsePermissions] = useState<ComputerUsePermissionStatus | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -429,6 +430,7 @@ function GeneralTab() {
     setSaving(true);
     try {
       await api.setConfig(config);
+      setShowStatusBar(config.status_bar_enabled);
       setDirty(false);
       setSaved(true);
       setError("");
@@ -649,6 +651,25 @@ function GeneralTab() {
           onChange={(e) => set("gateway_url", e.target.value)}
           placeholder="http://localhost:8080"
         />
+      </div>
+
+      {/* Status bar */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Status bar</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        The row above the composer with agent state, tool count and token usage. Shared with the CLI status bar
+        (chat.status_bar.enabled).
+      </p>
+      <div className="mb-5 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="status-bar-enabled"
+          checked={config.status_bar_enabled}
+          onChange={(e) => set("status_bar_enabled", e.target.checked)}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="status-bar-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Show status bar
+        </Label>
       </div>
 
       {/* Text to speech */}
