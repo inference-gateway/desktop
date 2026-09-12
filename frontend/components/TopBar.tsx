@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChartColumn, Circle, LoaderCircle, RotateCw, Settings, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { emit } from "@tauri-apps/api/event";
 import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
 import { useDesktop } from "@/store";
@@ -35,6 +36,7 @@ export function TopBar() {
   }, []);
 
   useEffect(() => {
+    emit("screen-recording", { recording }).catch(() => {});
     if (!recording) return;
     startedAtRef.current = Date.now();
     setElapsed(0);

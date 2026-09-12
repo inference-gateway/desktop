@@ -3,7 +3,9 @@
 // session is active, a cursor dot glides to each Computer move/scroll target,
 // a ring ripples on a Computer click, and a key-cast pill at the bottom shows what
 // the agent is typing. Fed by the backend's global "agent-event" broadcast;
-// all animation is CSS inside this webview, so no per-frame IPC.
+// all animation is CSS inside this webview, so no per-frame IPC. The same
+// frame turns red while a workflow recording is running ("screen-recording"
+// event from the top bar).
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -19,6 +21,7 @@ import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
+const RECORD = "239, 68, 68";
 const API_WIDTH = 1024;
 const API_HEIGHT = 768;
 
@@ -31,6 +34,10 @@ const STYLE = `
   box-shadow: 0 0 18px rgba(${ACCENT}, 0.5), inset 0 0 24px rgba(${ACCENT}, 0.25);
   animation: breathe 3s ease-in-out infinite;
   pointer-events: none;
+}
+#frame.recording {
+  border-color: rgba(${RECORD}, 0.75);
+  box-shadow: 0 0 18px rgba(${RECORD}, 0.5), inset 0 0 24px rgba(${RECORD}, 0.25);
 }
 @keyframes breathe {
   50% { opacity: 0.45; }
@@ -91,6 +98,7 @@ export default function Overlay() {
   const [ripple, setRipple] = useState<Ripple | null>(null);
   const [keycast, setKeycast] = useState<Keycast | null>(null);
   const [active, setActive] = useState(false);
+  const [recording, setRecording] = useState(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const activeSessions = useRef<Set<string>>(new Set());
   const seqRef = useRef(0);
@@ -131,6 +139,7 @@ export default function Overlay() {
       }, IDLE_HIDE_MS);
     };
 
+    let recordingNow = false;
     const endSession = (sessionId: string) => {
       if (!activeSessions.current.delete(sessionId)) return;
       if (activeSessions.current.size > 0) return;
@@ -139,8 +148,18 @@ export default function Overlay() {
       setKeycast(null);
       setRipple(null);
       cursorRef.current = null;
-      win.hide().catch(() => {});
+      if (!recordingNow) win.hide().catch(() => {});
     };
+
+    const unlistenRecording = listen<{ recording: boolean }>("screen-recording", (e) => {
+      recordingNow = e.payload.recording;
+      setRecording(recordingNow);
+      if (recordingNow) {
+        wake();
+      } else if (activeSessions.current.size === 0) {
+        win.hide().catch(() => {});
+      }
+    });
 
     const unlisten = listen<{ sessionId: string; event: AgentEvent }>("agent-event", (e) => {
       const ev = e.payload.event;
@@ -176,6 +195,7 @@ export default function Overlay() {
     });
     return () => {
       unlisten.then((f) => f());
+      unlistenRecording.then((f) => f());
       window.clearTimeout(hideTimer.current);
     };
   }, []);
@@ -183,7 +203,7 @@ export default function Overlay() {
   return (
     <>
       <style>{STYLE}</style>
-      {active && <div id="frame" />}
+      {(active || recording) && <div id="frame" className={recording ? "recording" : undefined} />}
       {cursor && <div id="cursor" style={{ left: cursor.x, top: cursor.y }} />}
       {ripple && <div key={ripple.seq} className="ripple" style={{ left: ripple.x, top: ripple.y }} />}
       {keycast && (
