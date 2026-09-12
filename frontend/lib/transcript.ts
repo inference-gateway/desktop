@@ -541,7 +541,5 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     }
   }
 
-  // ponytail: reopened history starts at zero usage - accumulate from the
-  // persisted stats once the CLI writes them to the session file.
   return { ...initialChatState, items, seq, seenImages };
 }
