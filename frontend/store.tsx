@@ -22,6 +22,7 @@ import {
 } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
+import { isBashCommand } from "@/lib/tools";
 import {
   loadSnippets,
   saveSnippets,
@@ -109,6 +110,7 @@ function useDesktopStore() {
   const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "timeline">("chat");
   const [timelineProject, setTimelineProject] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
@@ -419,6 +421,10 @@ function useDesktopStore() {
       .readHistory()
       .then(setHistory)
       .catch(() => {});
+    api
+      .readBashHistory()
+      .then(setBashHistory)
+      .catch(() => {});
     loadProjects();
     const t = setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
     return () => clearInterval(t);
@@ -621,7 +627,9 @@ function useDesktopStore() {
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
       if (runningIds.has(runId)) return;
-      if (!model) {
+      // `!cmd` runs in bash mode without a model turn (the CLI's headless
+      // direct path); a model is only needed for real prompts.
+      if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
         return;
       }
@@ -817,7 +825,7 @@ function useDesktopStore() {
       return;
     }
     if (activeId && runningIds.has(activeId)) return;
-    if (!model) {
+    if (!model && !isBashCommand(text)) {
       setError("Please select a model first");
       return;
     }
@@ -829,8 +837,14 @@ function useDesktopStore() {
     if (!activeId && activeProject) assignProject(runId, activeProject);
     setActiveId(runId);
     activeIdRef.current = runId;
-    api.appendHistory(text).catch(() => {});
-    setHistory((h) => [...h, text]);
+    // Bash commands live in their own history, separate from chat (#185).
+    if (isBashCommand(text)) {
+      api.appendBashHistory(text).catch(() => {});
+      setBashHistory((h) => [...h, text]);
+    } else {
+      api.appendHistory(text).catch(() => {});
+      setHistory((h) => [...h, text]);
+    }
     if (el) {
       el.value = "";
       autoGrow(el);
@@ -1341,6 +1355,7 @@ function useDesktopStore() {
     applyUpdates,
     composerRef,
     history,
+    bashHistory,
     snippets,
     insertSnippet,
     updateSnippet,

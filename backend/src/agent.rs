@@ -702,11 +702,16 @@ pub(crate) async fn list_models() -> Result<Vec<String>, String> {
         .collect();
     Ok(models)
 }
-/// Resolve the history file path. If the canonical `~/.infer/history` is a
-/// directory (as created by some versions of the CLI), fall back to
-/// `~/.infer/history/history`. Returns the path and whether it existed at
-/// the time of checking.
-fn history_path() -> (PathBuf, bool) {
+/// Resolve a history file path. Chat history is the canonical `~/.infer/history`
+/// (shared with the CLI; a directory there means some CLI version nests it at
+/// `history/history`). Bash history (issue #185) is a sibling file so it stays
+/// separate from chat history. Returns the path and whether it existed at the
+/// time of checking.
+fn history_path(bash: bool) -> (PathBuf, bool) {
+    if bash {
+        let path = home_dir().join(".infer").join("bash_history");
+        return (path.clone(), path.exists());
+    }
     let base = home_dir().join(".infer").join("history");
     if base.is_dir() {
         let inner = base.join("history");
@@ -716,11 +721,12 @@ fn history_path() -> (PathBuf, bool) {
     }
 }
 
-/// Read prompt history shared with the CLI. Returns an empty vec when no
-/// history file exists yet.
+/// Read prompt history shared with the CLI (`bash` selects the desktop's
+/// separate bash-command history). Returns an empty vec when no history file
+/// exists yet.
 #[tauri::command]
-pub(crate) fn read_history() -> Result<Vec<String>, String> {
-    let (path, exists) = history_path();
+pub(crate) fn read_history(bash: Option<bool>) -> Result<Vec<String>, String> {
+    let (path, exists) = history_path(bash.unwrap_or(false));
     if !exists {
         return Ok(Vec::new());
     }
@@ -728,11 +734,11 @@ pub(crate) fn read_history() -> Result<Vec<String>, String> {
     Ok(content.lines().map(|l| l.to_string()).collect())
 }
 
-/// Append a line to the prompt history file (creates the file and parent
-/// directories if missing).
+/// Append a line to a history file (creates the file and parent directories if
+/// missing).
 #[tauri::command]
-pub(crate) fn append_history(line: String) -> Result<(), String> {
-    let (path, _) = history_path();
+pub(crate) fn append_history(line: String, bash: Option<bool>) -> Result<(), String> {
+    let (path, _) = history_path(bash.unwrap_or(false));
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

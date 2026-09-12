@@ -1,5 +1,11 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 
+// Bash mode mirrors the CLI: a single leading `!` runs the rest as a shell
+// command; `!!` (two) is a direct tool call and takes precedence.
+export function isBashCommand(text: string): boolean {
+  return text.startsWith("!") && !text.startsWith("!!");
+}
+
 export type ParsedToolResult = {
   name: string;
   args: string;

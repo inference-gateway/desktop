@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+import { isBashCommand, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+
+test("isBashCommand: single ! is bash, !! is a direct tool call", () => {
+  expect(isBashCommand("ls -la")).toBe(false);
+  expect(isBashCommand("!")).toBe(true);
+  expect(isBashCommand("!echo hi")).toBe(true);
+  expect(isBashCommand('!!Bash(command="ls")')).toBe(false);
+  expect(isBashCommand("!!")).toBe(false);
+});
 
 test("ImageDecode result with an uploads source does not produce an image item", () => {
   const parsed = parseToolResult(
