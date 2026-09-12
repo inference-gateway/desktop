@@ -86,8 +86,6 @@ export function Composer() {
     if (skills.length === 0) loadSkills();
   }, [loadSkills]);
 
-  // Re-read ~/.infer/skills whenever the / popup opens so skills the agent just
-  // wrote to disk appear without a restart.
   useEffect(() => {
     if (!showSkills) return;
     api
