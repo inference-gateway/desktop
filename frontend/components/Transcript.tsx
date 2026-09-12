@@ -153,7 +153,7 @@ const RECOMMENDED = /\(Recommended\)\s*$/;
 
 function answerSummary(a: UserQuestionAnswer): string {
   const parts = [a.selectedLabels.join(", "), a.otherText ? `Other: "${a.otherText}"` : ""].filter(Boolean);
-  return `[${a.header}] ${parts.join("; ") || "(no selection)"}`;
+  return `[${a.header}] ${a.question} -> ${parts.join("; ") || "(no selection)"}`;
 }
 
 // Native radio/checkbox/text inputs so the e2e harness can drive the form
@@ -181,7 +181,7 @@ function QuestionCard({
       <div className={cn("self-start text-[0.8rem]", color)}>
         {label}
         {item.answers.map((a) => (
-          <div key={a.header + a.question} className="text-muted-foreground">
+          <div key={a.header + a.question} className="whitespace-pre-wrap text-foreground">
             {answerSummary(a)}
           </div>
         ))}
