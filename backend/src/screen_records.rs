@@ -1,6 +1,7 @@
 //! Screen recording for workflow capture (macOS only).
 //!
-//! One directory per recording under `~/.infer/tmp/captures/<start-timestamp>/`:
+//! One directory per recording under `/tmp/infer/captures/<start-timestamp>/`
+//! (the CLI sandbox blocks every path under `.infer/`, `/tmp` is allowed):
 //! `frames/NNNNNN.jpg` (one per second via `screencapture`) plus `events.jsonl`
 //! (timestamped key presses and mouse clicks from a listen-only `CGEventTap`).
 //! On stop the directory is returned so the UI can reference it in the composer
@@ -8,7 +9,7 @@
 //! `MAX_FRAMES` (3 minutes at 1 fps) so a forgotten recording cannot fill the disk;
 //! event logging continues until Stop.
 
-use crate::env::{home_dir, mock_mode};
+use crate::env::mock_mode;
 #[cfg(any(target_os = "macos", test))]
 use serde::Serialize;
 #[cfg(any(target_os = "macos", test))]
@@ -47,7 +48,7 @@ pub(crate) struct RecordingHandle {
 const MAX_FRAMES: u32 = 180;
 
 pub(crate) fn records_dir() -> PathBuf {
-    home_dir().join(".infer").join("tmp").join("captures")
+    PathBuf::from("/tmp").join("infer").join("captures")
 }
 
 #[cfg(any(target_os = "macos", test))]
