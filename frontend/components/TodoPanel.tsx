@@ -80,8 +80,6 @@ export function TodoPanel() {
     const ok = await sendText(
       `Update the session todo list to exactly the following by calling the TodoWrite tool now with this argument:\n${JSON.stringify({ todos: list })}`,
     );
-    // A hand-off from the empty state keys its draft as "new"; once the send
-    // creates the session that draft would orphan there, so drop it.
     if (ok && sessionId === null) setTodoDraft("new", null);
   };
 

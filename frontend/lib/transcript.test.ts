@@ -465,7 +465,6 @@ test("todosFrom returns the latest TodoWrite list with sane status defaults", ()
     { content: "b", status: "in_progress" },
     { content: "c", status: "pending" },
   ]);
-  // A malformed/streaming call falls through to the previous list.
   expect(todosFrom([first, toolItem("TodoWrite", "not json")])).toEqual([{ content: "a", status: "completed" }]);
   expect(todosFrom([toolItem("TodoWrite", '{"todos":"nope"}')])).toEqual([]);
   expect(todosFrom([toolItem("TodoWrite", '{"todos":[{"status":"completed"}]}')])).toEqual([]);
