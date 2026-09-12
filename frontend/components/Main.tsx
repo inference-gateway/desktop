@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Transcript } from "./Transcript";
+import { TodoPanel } from "./TodoPanel";
 import { Composer } from "./Composer";
 import { lazy, Suspense } from "react";
 import { useDesktop } from "@/store";
@@ -42,6 +43,7 @@ export function Main() {
       <Sidebar />
       <div id="content" className="flex min-w-0 flex-1 flex-col">
         <Transcript />
+        <TodoPanel />
         <Composer />
       </div>
     </div>
