@@ -523,9 +523,6 @@ function historyDoc(text: string): { entries: any[]; metadata?: any } {
   return { entries };
 }
 
-/** Session totals persisted by the CLI (`metadata.token_stats`, CLI >= 0.192);
-    tool calls are counted from tool-result entries. The context window is only
-    known from RUN_FINISHED, so it stays 0 here. */
 export function historyUsage(ndjson: string): TokenUsage {
   const { entries, metadata } = historyDoc(ndjson);
   const t = metadata?.token_stats ?? {};
