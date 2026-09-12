@@ -329,7 +329,7 @@ export function Composer() {
         {bashMode && (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
             <Terminal size={13} className="shrink-0" />
-            <span>bash mode — Enter runs the command in the workspace, output lands in the conversation</span>
+            <span>bash mode - Enter runs the command in the workspace, output lands in the conversation</span>
           </div>
         )}
         {pending.length > 0 && (
