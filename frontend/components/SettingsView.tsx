@@ -26,6 +26,10 @@ import {
 import { cn } from "@/lib/utils";
 import {
   api,
+  DEFAULT_SCREEN_RECORD_KEEP,
+  SCREEN_RECORD_KEEP_KEY,
+  isMacOS,
+  screenRecordKeep,
   type A2aAgent,
   type ComputerUsePermissionStatus,
   type DesktopConfig,
@@ -391,6 +395,13 @@ function GeneralTab() {
   const [error, setError] = useState("");
   // Value as last read from disk; saving with a changed TTS toggle restarts the gateway.
   const [savedTts, setSavedTts] = useState(false);
+  const [recordKeep, setRecordKeepState] = useState(screenRecordKeep());
+
+  const setRecordKeep = (n: number) => {
+    const v = Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_SCREEN_RECORD_KEEP;
+    setRecordKeepState(v);
+    localStorage.setItem(SCREEN_RECORD_KEEP_KEY, String(v));
+  };
 
   useEffect(() => {
     api
@@ -518,6 +529,28 @@ function GeneralTab() {
           className="w-24"
         />
       </div>
+
+      {/* Screen recording */}
+      {isMacOS && (
+        <div className="mt-5 mb-5 flex flex-col gap-1">
+          <h3 className="text-[0.9rem] font-semibold">Screen recording</h3>
+          <p className="mb-3 text-[0.75rem] text-muted-foreground">
+            Recordings from the top-bar Record button. They capture everything typed while recording, including
+            passwords.
+          </p>
+          <Label htmlFor="screen-record-keep" className="text-[0.8rem] text-muted-foreground">
+            Screen recordings to keep
+          </Label>
+          <Input
+            id="screen-record-keep"
+            type="number"
+            min={1}
+            value={recordKeep}
+            onChange={(e) => setRecordKeep(parseInt(e.target.value, 10))}
+            className="w-24"
+          />
+        </div>
+      )}
 
       {/* Storage */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Storage</h3>

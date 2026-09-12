@@ -1,8 +1,12 @@
-import { useState } from "react";
-import { ChartColumn, LoaderCircle, RotateCw, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChartColumn, Circle, LoaderCircle, RotateCw, Settings, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
+import { autoGrow } from "@/lib/textarea";
 import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
+
+const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
 
 export function TopBar() {
   const {
@@ -13,8 +17,56 @@ export function TopBar() {
     restartBackend,
     openSettings,
     openObservability,
+    composerRef,
+    setError,
   } = useDesktop();
   const [isUpdating, setIsUpdating] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const startedAtRef = useRef(0);
+
+  // Rehydrate the button after a webview reload.
+  useEffect(() => {
+    if (!isMacOS) return;
+    api
+      .screenRecordingStatus()
+      .then(setRecording)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    startedAtRef.current = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [recording]);
+
+  const toggleRecording = async () => {
+    if (recording) {
+      try {
+        const dir = await api.stopScreenRecording();
+        setRecording(false);
+        const el = composerRef.current;
+        if (el) {
+          const ref = `[Attached screen recording: ${dir} - frames/*.jpg at 1 fps, events.jsonl with timestamped key presses and clicks]`;
+          const text = el.value.trim();
+          el.value = text ? `${ref}\n\n${text}` : ref;
+          autoGrow(el);
+          el.focus();
+        }
+      } catch (e) {
+        setError(`Failed to stop recording: ${e}`);
+      }
+    } else {
+      try {
+        await api.startScreenRecording(screenRecordKeep());
+        setRecording(true);
+      } catch (e) {
+        setError(`Failed to start recording: ${e}`);
+      }
+    }
+  };
 
   const handleUpdate = async () => {
     if (isUpdating) return;
@@ -59,6 +111,26 @@ export function TopBar() {
           <RotateCw size={16} />
         </Button>
       </div>
+      {isMacOS && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            title={recording ? "Stop recording - key presses are captured in the events log" : RECORDING_TITLE}
+            aria-label={recording ? "Stop recording" : "Record workflow"}
+            onClick={toggleRecording}
+            className={recording ? "text-destructive" : "text-muted-foreground"}
+          >
+            {recording ? <Square size={16} /> : <Circle size={16} />}
+          </Button>
+          {recording && (
+            <span aria-live="polite" className="flex items-center gap-1.5 text-[0.7rem] font-medium text-destructive">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" aria-hidden="true" />
+              {`${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`}
+            </span>
+          )}
+        </>
+      )}
       <Button
         variant="ghost"
         size="icon-sm"
