@@ -91,19 +91,27 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
     env
 }
 
-/// PATH for spawned infer children. Finder-launched apps inherit launchd's
+/// PATH for spawned infer children and for PATH lookups in this process
+/// (stt.rs find_on_path). On unix, Finder-launched apps inherit launchd's
 /// minimal PATH (no /opt/homebrew/bin), so tools like `gh` are unresolvable
 /// inside agent bash sessions; prepend the dirs launchd omits, mirroring
-/// download.rs gh_bin(). Duplicates in a dev shell PATH are harmless.
-#[cfg(unix)]
+/// download.rs gh_bin(). Duplicates in a dev shell PATH are harmless. Windows
+/// GUI launches already inherit the user's normal PATH, so pass it through.
 pub(crate) fn composed_path() -> String {
-    let base = std::env::var("PATH").unwrap_or_default();
-    let home = home_dir();
-    format!(
-        "/opt/homebrew/bin:/usr/local/bin:{}:{}:{base}",
-        home.join(".local/bin").display(),
-        home.join(".infer/bin").display()
-    )
+    #[cfg(not(windows))]
+    {
+        let base = std::env::var("PATH").unwrap_or_default();
+        let home = home_dir();
+        format!(
+            "/opt/homebrew/bin:/usr/local/bin:{}:{}:{base}",
+            home.join(".local/bin").display(),
+            home.join(".infer/bin").display()
+        )
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("PATH").unwrap_or_default()
+    }
 }
 
 /// Prompt customisation env vars for the spawned agent. The CLI applies these
