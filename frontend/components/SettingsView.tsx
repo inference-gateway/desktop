@@ -393,7 +393,6 @@ function GeneralTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  // Value as last read from disk; saving with a changed TTS toggle restarts the gateway.
   const [savedTts, setSavedTts] = useState(false);
   const [recordKeep, setRecordKeepState] = useState(screenRecordKeep());
 
