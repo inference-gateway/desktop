@@ -8,6 +8,7 @@ import { autoGrow } from "@/lib/textarea";
 // Rust transcribe_audio command (whisper.cpp). Mic is greyed when whisper is
 // unavailable, permission is denied, or the agent is running.
 const MAX_REC_MS = 30000;
+const INTERIM_MS = 2000; // interim transcription cadence while recording
 
 type Options = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -39,6 +40,10 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
   const recChunks = useRef<Float32Array[]>([]);
   const recSampleRate = useRef(48000);
   const recTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interimTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const interimBusy = useRef(false); // single in-flight transcribe call; overlapping ticks are skipped
+  const interimFlight = useRef<Promise<void> | null>(null);
+  const baseText = useRef(""); // composer content before dictation started
 
   const refreshSttStatus = useCallback(async (): Promise<SttStatus | null> => {
     try {
@@ -70,6 +75,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     })();
     return () => {
       if (recTimer.current) clearTimeout(recTimer.current);
+      if (interimTimer.current) clearInterval(interimTimer.current);
       mediaStream.current?.getTracks().forEach((t) => t.stop());
       audioCtx.current?.close();
     };
@@ -100,11 +106,32 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     await api.prepareStt(ch);
   }, [setStatus]);
 
+  // Composes dictated text into the composer over what was there before
+  // dictation started; null reverts to that base text (drops provisional text).
+  const setComposer = useCallback(
+    (text: string | null) => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.value =
+        text === null
+          ? baseText.current
+          : baseText.current
+            ? baseText.current.trimEnd() + " " + text.trim()
+            : text.trim();
+      autoGrow(el);
+      el.focus();
+    },
+    [textareaRef],
+  );
+
   const stopRecording = useCallback(async () => {
     if (!recordingRef.current) return;
     recordingRef.current = false;
     setRecording(false);
     if (recTimer.current) clearTimeout(recTimer.current);
+    if (interimTimer.current) clearInterval(interimTimer.current);
+    interimTimer.current = null;
+    textareaRef.current?.removeAttribute("data-dictating");
     if (recNode.current) {
       recNode.current.disconnect();
       recNode.current.onaudioprocess = null;
@@ -118,6 +145,10 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
       audioCtx.current = null;
     }
 
+    // Let an in-flight interim pass settle so it cannot clobber the final text.
+    const flight = interimFlight.current;
+    if (flight) await flight;
+
     const samples = mergeChunks(recChunks.current);
     recChunks.current = [];
     if (samples.length === 0) {
@@ -129,21 +160,41 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     setStatus("Transcribing...");
     try {
       const text = await api.transcribeAudio(Array.from(wav));
-      const el = textareaRef.current;
       if (text && text.trim()) {
-        if (el) {
-          el.value = el.value ? el.value.trimEnd() + " " + text.trim() : text.trim();
-          autoGrow(el);
-          el.focus();
-        }
+        setComposer(text);
         setStatus("Ready");
       } else {
+        setComposer(null); // drop any stale interim text
         setStatus("No speech detected");
       }
     } catch (err) {
+      setComposer(null); // drop any stale interim text
       setError(`Transcription failed: ${err}`);
     }
-  }, [setStatus, setError, textareaRef]);
+  }, [setStatus, setError, textareaRef, setComposer]);
+
+  // Periodically re-transcribe the whole buffer so words appear while talking.
+  // ponytail: O(n²) in recording length; fine under the 30 s cap. If the cap is
+  // ever raised, keep a committed prefix and only re-run the last ~10 s window.
+  const tickInterim = useCallback(() => {
+    if (!recordingRef.current || interimBusy.current) return;
+    const samples = mergeChunks(recChunks.current);
+    if (samples.length === 0) return;
+    interimBusy.current = true;
+    const wav = encodeWav(downsample(samples, recSampleRate.current, 16000), 16000);
+    interimFlight.current = api
+      .transcribeAudio(Array.from(wav))
+      .then((text) => {
+        if (recordingRef.current && text.trim()) setComposer(text);
+      })
+      .catch(() => {
+        // Interim failure: keep listening; the final pass reports errors.
+      })
+      .finally(() => {
+        interimBusy.current = false;
+        interimFlight.current = null;
+      });
+  }, [setComposer]);
 
   const startRecording = useCallback(async () => {
     try {
@@ -170,9 +221,14 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     recNode.current = node;
     recordingRef.current = true;
     setRecording(true);
-    setStatus("Recording... click the mic to stop");
+    baseText.current = textareaRef.current?.value ?? "";
+    textareaRef.current?.setAttribute("data-dictating", "true");
+    interimBusy.current = false;
+    interimFlight.current = null;
+    setStatus("Listening...");
+    interimTimer.current = setInterval(tickInterim, INTERIM_MS);
     recTimer.current = setTimeout(stopRecording, MAX_REC_MS);
-  }, [setStatus, setError, stopRecording]);
+  }, [setStatus, setError, stopRecording, tickInterim, textareaRef]);
 
   const onClick = useCallback(async () => {
     if (recordingRef.current) {
