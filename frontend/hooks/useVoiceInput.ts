@@ -167,7 +167,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
         setStatus("No speech detected");
       }
     } catch (err) {
-      setComposer(null); // drop any stale interim text
+      setComposer(null);
       setError(`Transcription failed: ${err}`);
     }
   }, [setStatus, setError, textareaRef, setComposer]);
