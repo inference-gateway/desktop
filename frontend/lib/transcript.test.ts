@@ -4,7 +4,10 @@ import {
   delegationsFrom,
   initialChatState,
   subagentParentId,
+  todosDiffer,
+  todosFrom,
   type ChatState,
+  type TodoItem,
   type TranscriptItem,
 } from "./transcript";
 import type { AgentEvent } from "./tauri";
@@ -450,4 +453,52 @@ test("subagentParentId extracts the orchestrator id from subagent session ids", 
   );
   expect(subagentParentId("28f1b14b-7b10-4950-9487-8c0e10bf4917")).toBeNull();
   expect(subagentParentId("subagent-not-a-uuid")).toBeNull();
+});
+
+test("todosFrom returns the latest TodoWrite list with sane status defaults", () => {
+  const first = toolItem("TodoWrite", JSON.stringify({ todos: [{ content: "a", status: "completed" }] }));
+  const second = toolItem(
+    "TodoWrite",
+    JSON.stringify({ todos: [{ id: "1", content: "b", status: "in_progress" }, { content: "c" }] }),
+  );
+  expect(todosFrom([first, second])).toEqual([
+    { content: "b", status: "in_progress" },
+    { content: "c", status: "pending" },
+  ]);
+  // A malformed/streaming call falls through to the previous list.
+  expect(todosFrom([first, toolItem("TodoWrite", "not json")])).toEqual([{ content: "a", status: "completed" }]);
+  expect(todosFrom([toolItem("TodoWrite", '{"todos":"nope"}')])).toEqual([]);
+  expect(todosFrom([toolItem("TodoWrite", '{"todos":[{"status":"completed"}]}')])).toEqual([]);
+  expect(todosFrom([toolItem("Read", "{}")])).toEqual([]);
+  expect(todosFrom([])).toEqual([]);
+});
+
+test("todosDiffer compares content and status in order", () => {
+  const a: TodoItem[] = [{ content: "a", status: "pending" }];
+  expect(todosDiffer(a, a)).toBe(false);
+  expect(todosDiffer(a, [{ content: "a", status: "completed" }])).toBe(true);
+  expect(todosDiffer(a, [{ content: "b", status: "pending" }])).toBe(true);
+  expect(todosDiffer(a, [])).toBe(true);
+  expect(todosDiffer([], [])).toBe(false);
+  expect(
+    todosDiffer(a, [
+      { content: "a", status: "pending" },
+      { content: "b", status: "pending" },
+    ]),
+  ).toBe(true);
+});
+
+test("todosFrom survives a history reload of the last TodoWrite call", () => {
+  const args = JSON.stringify({ todos: [{ content: "ship it", status: "in_progress" }] });
+  const result = JSON.stringify({
+    tool_name: "TodoWrite",
+    arguments: { todos: [{ content: "ship it", status: "in_progress" }] },
+    success: true,
+  });
+  const ndjson = [
+    JSON.stringify({ role: "user", content: "make a plan" }),
+    JSON.stringify({ role: "tool", content: result }),
+  ].join("\n");
+  const reloaded = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(todosFrom(reloaded.items)).toEqual(todosFrom([toolItem("TodoWrite", args)]));
 });

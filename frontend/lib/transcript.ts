@@ -102,6 +102,43 @@ export function delegationsFrom(items: TranscriptItem[]): Delegation[] {
   return out;
 }
 
+export type TodoStatus = "pending" | "in_progress" | "completed";
+
+export type TodoItem = { content: string; status: TodoStatus };
+
+// The pinned todo panel shows the list written by the latest TodoWrite call.
+// Scanning backwards covers history reloads and lets partially-streamed or
+// malformed args fall through to the previous call instead of blanking out.
+export function todosFrom(items: TranscriptItem[]): TodoItem[] {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind !== "tool" || it.name !== "TodoWrite") continue;
+    try {
+      const parsed: unknown = JSON.parse(it.args);
+      const todos = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>).todos : null;
+      if (!Array.isArray(todos)) continue;
+      const out: TodoItem[] = [];
+      for (const raw of todos) {
+        const t = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+        if (typeof t.content !== "string" || !t.content.trim()) continue;
+        out.push({
+          content: t.content,
+          status: t.status === "in_progress" || t.status === "completed" ? t.status : "pending",
+        });
+      }
+      return out;
+    } catch {
+      continue;
+    }
+  }
+  return [];
+}
+
+// Panel edits are dirty when they differ from the agent's last written list.
+export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
+  return a.length !== b.length || a.some((t, i) => t.content !== b[i].content || t.status !== b[i].status);
+}
+
 export const initialChatState: ChatState = {
   items: [],
   typing: false,
