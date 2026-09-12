@@ -52,6 +52,8 @@ pub(crate) enum AgentEvent {
         output: i64,
         cached_read: i64,
         total_tool_calls: i64,
+        last_input: i64,
+        context_window: i64,
     },
     Cancelled,
     ComputerUsePaused,
@@ -300,11 +302,22 @@ impl AgentParser {
                     .and_then(|s| s.get("totalToolCalls"))
                     .map(json_val_i64)
                     .unwrap_or(0);
+                let last_input = stats
+                    .and_then(|s| s.get("lastInputTokens"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
+                // Omitted by the CLI when the model's context window is unknown.
+                let context_window = stats
+                    .and_then(|s| s.get("contextWindow"))
+                    .map(json_val_i64)
+                    .unwrap_or(0);
                 Some(AgentEvent::TokenUsage {
                     input,
                     output,
                     cached_read: cached,
                     total_tool_calls: tools,
+                    last_input,
+                    context_window,
                 })
             }
             "RUN_ERROR" => {
@@ -1311,13 +1324,22 @@ mod tests {
     fn test_parse_run_finished_returns_token_usage() {
         let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
         assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], AgentEvent::TokenUsage { .. }));
+        assert!(matches!(
+            &events[0],
+            AgentEvent::TokenUsage {
+                input: 0,
+                output: 0,
+                last_input: 0,
+                context_window: 0,
+                ..
+            }
+        ));
     }
 
     #[test]
     fn test_parse_run_finished_reads_stats_from_result() {
         let (events, _) = parse_all(&[
-            r#"{"type":"RUN_FINISHED","result":{"inputTokens":4821,"outputTokens":310,"cacheReadTokens":3100,"totalToolCalls":3,"cost":0.042}}"#,
+            r#"{"type":"RUN_FINISHED","result":{"inputTokens":4821,"outputTokens":310,"cacheReadTokens":3100,"totalToolCalls":3,"cost":0.042,"lastInputTokens":912,"contextWindow":128000}}"#,
         ]);
         assert!(matches!(
             &events[0],
@@ -1325,7 +1347,9 @@ mod tests {
                 input: 4821,
                 output: 310,
                 cached_read: 3100,
-                total_tool_calls: 3
+                total_tool_calls: 3,
+                last_input: 912,
+                context_window: 128000
             }
         ));
     }

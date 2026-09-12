@@ -22,7 +22,15 @@ export type AgentEvent =
   | { kind: "AgentError"; message: string }
   | { kind: "RawLine"; line: string }
   | { kind: "Done"; exit_code: number; stderr: string }
-  | { kind: "TokenUsage"; input: number; output: number; cached_read: number; total_tool_calls: number }
+  | {
+      kind: "TokenUsage";
+      input: number;
+      output: number;
+      cached_read: number;
+      total_tool_calls: number;
+      last_input: number;
+      context_window: number;
+    }
   | { kind: "Cancelled" }
   | { kind: "ComputerUsePaused" }
   | { kind: "ComputerUseResumed" };

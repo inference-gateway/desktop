@@ -35,7 +35,14 @@ export type TranscriptItem =
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
-export type TokenUsage = { input: number; output: number; cached_read: number; total_tool_calls: number };
+export type TokenUsage = {
+  input: number;
+  output: number;
+  cached_read: number;
+  total_tool_calls: number;
+  last_input: number;
+  context_window: number;
+};
 
 export type ChatState = {
   items: TranscriptItem[];
@@ -144,7 +151,7 @@ export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
 
 export const initialChatState: ChatState = {
   items: [],
-  usage: { input: 0, output: 0, cached_read: 0, total_tool_calls: 0 },
+  usage: { input: 0, output: 0, cached_read: 0, total_tool_calls: 0, last_input: 0, context_window: 0 },
   typing: false,
   seq: 0,
   currentAssistantId: null,
