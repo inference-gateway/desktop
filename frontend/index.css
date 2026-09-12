@@ -332,4 +332,9 @@
       box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
     }
   }
+
+  /* ---- Interim dictation text ---- */
+  #prompt-input[data-dictating="true"] {
+    color: var(--muted-foreground);
+  }
 }
