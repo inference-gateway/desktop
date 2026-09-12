@@ -18,6 +18,7 @@ import {
   initialChatState,
   pendingInput,
   COMPUTER_USE_TOOLS,
+  historyUsage,
   type ChatAction,
   type ChatState,
   type Delegation,
@@ -716,6 +717,10 @@ function useDesktopStore() {
                 if (sessionId === runId) computerApprovalsRef.current.delete(callId);
               }
               recordTerminal(runId, { label: "Stopped", error: false });
+              api
+                .getConversation(runId, undefined, projectName)
+                .then((ndjson) => dispatchTo(runId, { type: "setUsage", usage: historyUsage(ndjson) }))
+                .catch(() => {});
               break;
           }
         };

@@ -179,6 +179,7 @@ export const initialChatState: ChatState = {
 export type ChatAction =
   | { type: "newChat" }
   | { type: "loadHistory"; ndjson: string }
+  | { type: "setUsage"; usage: TokenUsage }
   | { type: "userSend"; text: string }
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
@@ -194,6 +195,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...initialChatState, seq: state.seq };
     case "loadHistory":
       return loadHistory(state, action.ndjson);
+    case "setUsage":
+      return { ...state, usage: action.usage };
     case "userSend": {
       let seq = state.seq;
       const items = [...state.items, { kind: "user", id: String(seq++), text: action.text } as TranscriptItem];
@@ -503,21 +506,38 @@ function finalizeTools(state: ChatState): ChatState {
 
 /** `infer conversations show --format json` returns one pretty-printed
     `{ metadata, entries }` document (CLI >= 0.190); older CLIs streamed NDJSON. */
-function historyRecords(text: string): any[] {
+function historyDoc(text: string): { entries: any[]; metadata?: any } {
   const trimmed = text.trim();
   if (trimmed.startsWith("{")) {
     try {
       const doc = JSON.parse(trimmed);
-      if (Array.isArray(doc?.entries)) return doc.entries;
+      if (Array.isArray(doc?.entries)) return { entries: doc.entries, metadata: doc.metadata };
     } catch {}
   }
-  const records: any[] = [];
+  const entries: any[] = [];
   for (const line of trimmed.split("\n")) {
     try {
-      records.push(JSON.parse(line.trim()));
+      entries.push(JSON.parse(line.trim()));
     } catch {}
   }
-  return records;
+  return { entries };
+}
+
+/** Session totals persisted by the CLI (`metadata.token_stats`, CLI >= 0.192);
+    tool calls are counted from tool-result entries. The context window is only
+    known from RUN_FINISHED, so it stays 0 here. */
+export function historyUsage(ndjson: string): TokenUsage {
+  const { entries, metadata } = historyDoc(ndjson);
+  const t = metadata?.token_stats ?? {};
+  return {
+    input: t.total_input_tokens ?? 0,
+    output: t.total_output_tokens ?? 0,
+    cached_read: t.total_cached_tokens ?? 0,
+    last_input: t.last_input_tokens ?? 0,
+    cost: metadata?.total_cost ?? 0,
+    total_tool_calls: entries.filter((e) => (e?.entry?.message ?? e)?.role === "tool").length,
+    context_window: 0,
+  };
 }
 
 function loadHistory(state: ChatState, ndjson: string): ChatState {
@@ -543,7 +563,7 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     items.push({ kind: "audio", id: String(seq++), src, filename: file, path: audioPath });
   };
 
-  for (const raw of historyRecords(ndjson)) {
+  for (const raw of historyDoc(ndjson).entries) {
     const entry: HistoryLine = raw?.entry?.message ?? raw;
     if (!entry || typeof entry !== "object") continue;
     const content = entry.content || "";
@@ -588,5 +608,5 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     }
   }
 
-  return { ...initialChatState, items, seq, seenImages };
+  return { ...initialChatState, items, seq, seenImages, usage: historyUsage(ndjson) };
 }
