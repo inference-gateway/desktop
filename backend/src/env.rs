@@ -85,6 +85,9 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
         env.push(("INFER_TOOLS_SANDBOX_DIRECTORIES".into(), dirs));
     }
     env.push(("INFER_COMPUTER_USE_APPROVAL".into(), "destructive".into()));
+    // ponytail: fixed 500 - the CLI default of 50 is one computer-use click per
+    // turn; make it a Settings field if anyone asks.
+    env.push(("INFER_AGENT_MAX_TURNS".into(), "500".into()));
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }

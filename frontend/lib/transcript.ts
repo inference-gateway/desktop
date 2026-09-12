@@ -286,7 +286,11 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       });
     case "AgentError": {
       let seq = state.seq;
-      const items = [...state.items, { kind: "error", id: String(seq++), text: event.message } as TranscriptItem];
+      const text =
+        event.message === "max_turns_reached"
+          ? 'Turn limit reached. Send a message (e.g. "continue") to keep going.'
+          : event.message;
+      const items = [...state.items, { kind: "error", id: String(seq++), text } as TranscriptItem];
       return { ...state, items, seq, typing: false };
     }
     case "ComputerUsePaused":

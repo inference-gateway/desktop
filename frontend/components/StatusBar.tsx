@@ -94,8 +94,8 @@ export function StatusBar() {
             ? "ready"
             : "idle";
   const autoModeDescription = autoMode
-    ? "Auto approval is on - new runs do not ask before tool actions"
-    : "Auto approval is off - new runs ask before protected tool actions";
+    ? "Auto approval is on - tool actions run without asking"
+    : "Auto approval is off - protected tool actions ask first";
   const contextPct =
     tokenUsage.context_window > 0 ? Math.round((tokenUsage.last_input / tokenUsage.context_window) * 100) : null;
   const stats: [string, string][] = [
