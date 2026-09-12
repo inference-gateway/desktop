@@ -283,7 +283,7 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
-                let stats = val.get("stats");
+                let stats = val.get("result").or_else(|| val.get("stats"));
                 let input = stats
                     .and_then(|s| s.get("inputTokens"))
                     .map(json_val_i64)
@@ -1312,6 +1312,22 @@ mod tests {
         let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], AgentEvent::TokenUsage { .. }));
+    }
+
+    #[test]
+    fn test_parse_run_finished_reads_stats_from_result() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"RUN_FINISHED","result":{"inputTokens":4821,"outputTokens":310,"cacheReadTokens":3100,"totalToolCalls":3,"cost":0.042}}"#,
+        ]);
+        assert!(matches!(
+            &events[0],
+            AgentEvent::TokenUsage {
+                input: 4821,
+                output: 310,
+                cached_read: 3100,
+                total_tool_calls: 3
+            }
+        ));
     }
 
     #[test]

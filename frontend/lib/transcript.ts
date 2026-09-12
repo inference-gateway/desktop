@@ -254,16 +254,10 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         currentReasoningMessageId: null,
         paused: false,
       };
-    case "TokenUsage":
-      return {
-        ...state,
-        usage: {
-          input: state.usage.input + event.input,
-          output: state.usage.output + event.output,
-          cached_read: state.usage.cached_read + event.cached_read,
-          total_tool_calls: state.usage.total_tool_calls + event.total_tool_calls,
-        },
-      };
+    case "TokenUsage": {
+      const { kind: _kind, ...usage } = event;
+      return { ...state, usage };
+    }
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;
