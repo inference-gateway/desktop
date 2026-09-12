@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Flox** - the dev environment (Rust 1.95 toolchain, `task`, `bun`, `infer`) is defined in the [flox manifest](.flox/env/manifest.toml). Install [flox](https://flox.dev), then run `flox activate` from the repo root.
+- **Flox** - the dev environment (Rust toolchain, `cargo`, `cargo-tauri`, `task`, `bun`, `infer`) is defined in the [flox manifest](.flox/env/manifest.toml). Install [flox](https://flox.dev), then run `flox activate` from the repo root.
 - **Linux system dependencies** - on Debian/Ubuntu:
 
   ```bash
@@ -21,8 +21,6 @@ task dev
 ```
 
 `task dev` rebuilds the React frontend into `dist/` before launching Tauri. The frontend is not hot-reloaded - after editing `frontend/`, re-run `task web` (or relaunch).
-
-The flox manifest doesn't include `cargo` or the Tauri CLI yet - add them once from the repo root with `flox install cargo cargo-tauri`.
 
 ## Building
 
