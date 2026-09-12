@@ -1041,16 +1041,6 @@ function useDesktopStore() {
     [placeInGroup],
   );
 
-  const moveProject = useCallback(
-    (name: string, group: string) => {
-      api
-        .moveProject(name, group)
-        .then((path) => placeInGroup(name, group, path))
-        .catch((e) => setError(String(e)));
-    },
-    [placeInGroup],
-  );
-
   const importProjects = useCallback(
     (repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
       setProjectNames((prev) => {
@@ -1138,6 +1128,21 @@ function useDesktopStore() {
     });
     setActiveProject((p) => (p === oldName ? newName : p));
   }, []);
+
+  const moveProject = useCallback(
+    (name: string, group: string) => {
+      const oldPrefix = projectGroups[name] ? `${projectGroups[name]}/` : "";
+      const renamed = name.startsWith(oldPrefix) && oldPrefix ? `${group}/${name.slice(oldPrefix.length)}` : name;
+      api
+        .moveProject(name, group)
+        .then((path) => {
+          if (renamed !== name) renameProject(name, renamed);
+          placeInGroup(renamed, group, path);
+        })
+        .catch((e) => setError(String(e)));
+    },
+    [placeInGroup, projectGroups, renameProject],
+  );
 
   // Content projects need ffmpeg, whisper-cli and the whisper model in
   // ~/.infer/bin/tools so the agent never has to fetch tools itself.

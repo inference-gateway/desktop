@@ -54,6 +54,7 @@ function ChatItem({ index }: { index: number }) {
       onClick={(e) => onChatClick(index, e)}
       draggable
       onDragStart={(e) => {
+        e.stopPropagation();
         const ids = isSelected ? Array.from(selected) : [conv.id];
         e.dataTransfer.setData("text/plain", JSON.stringify(ids));
         e.dataTransfer.effectAllowed = "move";

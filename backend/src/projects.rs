@@ -55,37 +55,69 @@ pub(crate) fn sanitize_name(name: &str) -> String {
     }
 }
 
+/// A sidebar group as a relative directory under the projects root (what
+/// `scan_git_repos_in` reports): `..`, absolute and empty groups are rejected.
+fn group_rel(group: &str) -> Option<&Path> {
+    let group = group.trim().trim_matches('/');
+    let rel = Path::new(group);
+    let ok = !group.is_empty()
+        && rel
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    ok.then_some(rel)
+}
+
+/// The project's own folder name: the display name minus a leading
+/// `<group>/`, so "core/cli" in group "core" maps to `core/cli`, not
+/// `core/core-cli`.
+fn leaf_name<'a>(name: &'a str, group: &str) -> &'a str {
+    group_rel(group)
+        .and_then(|g| name.strip_prefix(&format!("{}/", g.display())))
+        .unwrap_or(name)
+}
+
 /// Deterministic per-project directory mapping: names are processed in sorted
-/// order, sanitized, and a numeric suffix is appended on collision ("a/b" and
-/// "a:b" both sanitize to "a-b"; the second sorted name gets "a-b-2"). Pure
-/// function of (root, names) so grants can be re-derived from projects.json
-/// alone and repeated calls are idempotent.
-fn assign_dirs(root: &Path, names: &[String]) -> BTreeMap<String, PathBuf> {
-    let mut taken: BTreeSet<String> = BTreeSet::new();
+/// order, sanitized under their group folder (`root/<group>/<leaf>`, or
+/// `root/<name>` without a group), and a numeric suffix is appended on
+/// collision ("a/b" and "a:b" both sanitize to "a-b"; the second sorted name
+/// gets "a-b-2"). Pure function of (root, names, groups) so grants can be
+/// re-derived from projects.json alone and repeated calls are idempotent.
+fn assign_dirs(
+    root: &Path,
+    names: &[String],
+    groups: &BTreeMap<String, String>,
+) -> BTreeMap<String, PathBuf> {
+    let mut taken: BTreeSet<PathBuf> = BTreeSet::new();
     let mut map = BTreeMap::new();
     for name in names.iter().collect::<BTreeSet<_>>() {
-        let base = sanitize_name(name);
-        let mut dir = base.clone();
+        let group = groups.get(name).map_or("", String::as_str);
+        let base = sanitize_name(leaf_name(name, group));
+        let parent = group_rel(group).map_or_else(|| root.to_path_buf(), |g| root.join(g));
+        let mut dir = parent.join(&base);
         let mut n = 2;
         while !taken.insert(dir.clone()) {
-            dir = format!("{base}-{n}");
+            dir = parent.join(format!("{base}-{n}"));
             n += 1;
         }
-        map.insert(name.to_string(), root.join(dir));
+        map.insert(name.to_string(), dir);
     }
     map
+}
+
+/// Raw ~/.infer/projects.json (the sidebar's persisted state); Null when
+/// missing or unparseable.
+fn projects_json() -> serde_json::Value {
+    let path = crate::env::home_dir().join(".infer").join("projects.json");
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(serde_json::Value::Null)
 }
 
 /// Project names known to the app: the explicit `names` list plus every value
 /// in `assignments`, from ~/.infer/projects.json (same sources the sidebar uses).
 fn project_names() -> Vec<String> {
-    let path = crate::env::home_dir().join(".infer").join("projects.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return Vec::new();
-    };
+    let val = projects_json();
     let mut names: BTreeSet<String> = BTreeSet::new();
     if let Some(list) = val.get("names").and_then(|v| v.as_array()) {
         names.extend(
@@ -111,13 +143,7 @@ fn project_names() -> Vec<String> {
 /// trimmed, `~`-expanded, and only absolute paths (a relative override would
 /// grant a meaningless relative sandbox entry).
 fn project_paths() -> BTreeMap<String, PathBuf> {
-    let path = crate::env::home_dir().join(".infer").join("projects.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return BTreeMap::new();
-    };
-    let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return BTreeMap::new();
-    };
+    let val = projects_json();
     let Some(paths) = val.get("paths").and_then(|v| v.as_object()) else {
         return BTreeMap::new();
     };
@@ -131,15 +157,28 @@ fn project_paths() -> BTreeMap<String, PathBuf> {
         .collect()
 }
 
+/// Per-project sidebar group from the `groups` object in projects.json.
+fn project_groups() -> BTreeMap<String, String> {
+    let val = projects_json();
+    let Some(groups) = val.get("groups").and_then(|v| v.as_object()) else {
+        return BTreeMap::new();
+    };
+    groups
+        .iter()
+        .filter_map(|(name, v)| Some((name.clone(), v.as_str()?.to_string())))
+        .collect()
+}
+
 /// Default name->dir mapping with per-project overrides applied on top.
 /// ponytail: two projects may point at the same dir; harmless (duplicate
 /// grant, shared files) - validate only if users hit it.
 fn resolved_dirs(
     root: &Path,
     names: &[String],
+    groups: &BTreeMap<String, String>,
     overrides: &BTreeMap<String, PathBuf>,
 ) -> BTreeMap<String, PathBuf> {
-    let mut dirs = assign_dirs(root, names);
+    let mut dirs = assign_dirs(root, names, groups);
     for (name, dir) in overrides {
         if dirs.contains_key(name) {
             dirs.insert(name.clone(), dir.clone());
@@ -158,7 +197,7 @@ pub(crate) fn sandbox_allowed_dirs() -> Option<String> {
         return None;
     }
     let root = PathBuf::from(read_config().projects_root);
-    let dirs = resolved_dirs(&root, &names, &project_paths());
+    let dirs = resolved_dirs(&root, &names, &project_groups(), &project_paths());
     let mut value = String::from(CLI_DEFAULT_SANDBOX_DIRS);
     for dir in dirs.values() {
         value.push(',');
@@ -176,7 +215,7 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         names.push(name.to_string());
     }
     let root = PathBuf::from(read_config().projects_root);
-    resolved_dirs(&root, &names, &project_paths())
+    resolved_dirs(&root, &names, &project_groups(), &project_paths())
         .get(name)
         .cloned()
 }
@@ -479,7 +518,7 @@ pub(crate) async fn git_project_status() -> Result<GitProjectStatus, String> {
         let names = project_names();
         let root = PathBuf::from(read_config().projects_root);
         let mut status = GitProjectStatus::default();
-        for (name, dir) in resolved_dirs(&root, &names, &project_paths()) {
+        for (name, dir) in resolved_dirs(&root, &names, &project_groups(), &project_paths()) {
             if !dir.join(".git").exists() {
                 continue;
             }
@@ -617,16 +656,7 @@ pub(crate) fn refresh_project_context(name: String) -> Result<Option<String>, St
 /// `group` is a relative path under the root (what `scan_git_repos_in` reports),
 /// so `..` and absolute components are rejected to keep it under the root.
 fn grouped_dir(root: &Path, group: &str, name: &str) -> Result<PathBuf, String> {
-    let group = group.trim().trim_matches('/');
-    let rel = Path::new(group);
-    if group.is_empty()
-        || rel.is_absolute()
-        || rel
-            .components()
-            .any(|c| !matches!(c, std::path::Component::Normal(_)))
-    {
-        return Err(format!("invalid project group: {group:?}"));
-    }
+    let rel = group_rel(group).ok_or_else(|| format!("invalid project group: {group:?}"))?;
     Ok(root.join(rel).join(sanitize_name(name)))
 }
 
@@ -636,7 +666,11 @@ fn grouped_dir(root: &Path, group: &str, name: &str) -> Result<PathBuf, String> 
 #[tauri::command]
 pub(crate) fn create_project_dir(name: String, group: Option<String>) -> Result<String, String> {
     let dir = match group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
-        Some(group) => grouped_dir(&PathBuf::from(read_config().projects_root), group, &name)?,
+        Some(group) => grouped_dir(
+            &PathBuf::from(read_config().projects_root),
+            group,
+            leaf_name(&name, group),
+        )?,
         None => project_dir(&name).ok_or("project directory not resolved")?,
     };
     std::fs::create_dir_all(&dir)
@@ -645,11 +679,14 @@ pub(crate) fn create_project_dir(name: String, group: Option<String>) -> Result<
 }
 
 /// Move a project's directory under `root/<group>/` and return the new path.
-/// A missing source just creates the destination.
+/// A `<old group>/` prefix on the name is dropped so the folder keeps its
+/// leaf name. A missing source just creates the destination.
 #[tauri::command]
 pub(crate) fn move_project(name: String, group: String) -> Result<String, String> {
     let from = project_dir(&name).ok_or("project directory not resolved")?;
-    let to = grouped_dir(&PathBuf::from(read_config().projects_root), &group, &name)?;
+    let old_group = project_groups().remove(&name).unwrap_or_default();
+    let leaf = leaf_name(&name, &old_group);
+    let to = grouped_dir(&PathBuf::from(read_config().projects_root), &group, leaf)?;
     if from == to {
         return Ok(to.to_string_lossy().to_string());
     }
@@ -962,6 +999,24 @@ mod tests {
     }
 
     #[test]
+    fn assign_dirs_places_grouped_projects_under_their_group_folder() {
+        let root = Path::new("/tmp/projects-root");
+        let names: Vec<String> = vec!["core/cli".into(), "cli".into(), "loose".into()];
+        let groups = BTreeMap::from([
+            ("core/cli".to_string(), "core".to_string()),
+            ("cli".to_string(), "../evil".to_string()),
+        ]);
+        let dirs = assign_dirs(root, &names, &groups);
+        assert_eq!(dirs["core/cli"], root.join("core").join("cli"));
+        assert_eq!(
+            dirs["cli"],
+            root.join("cli"),
+            "invalid group falls back to root"
+        );
+        assert_eq!(dirs["loose"], root.join("loose"));
+    }
+
+    #[test]
     fn grouped_dir_stays_under_root() {
         let root = Path::new("/tmp/projects-root");
         assert_eq!(
@@ -986,13 +1041,13 @@ mod tests {
             "A?".into(),
             "A/B".into(),
         ];
-        let dirs = assign_dirs(root, &names);
+        let dirs = assign_dirs(root, &names, &BTreeMap::new());
         assert_eq!(dirs["A"], root.join("A"));
         assert_eq!(dirs["B"], root.join("B"));
         assert_eq!(dirs["A?"], root.join("A-2"));
         assert_eq!(dirs["A/B"], root.join("A-B"));
         assert_eq!(dirs["A:B"], root.join("A-B-2"));
-        let again = assign_dirs(root, &names);
+        let again = assign_dirs(root, &names, &BTreeMap::new());
         assert_eq!(dirs, again);
     }
 
@@ -1004,11 +1059,11 @@ mod tests {
             "A".to_string(),
             PathBuf::from("/elsewhere/repo with spaces"),
         )]);
-        let dirs = resolved_dirs(root, &names, &overrides);
+        let dirs = resolved_dirs(root, &names, &BTreeMap::new(), &overrides);
         assert_eq!(dirs["A"], PathBuf::from("/elsewhere/repo with spaces"));
         assert_eq!(dirs["B"], root.join("B"));
         let unknown = BTreeMap::from([("Ghost".to_string(), PathBuf::from("/x"))]);
-        assert!(!resolved_dirs(root, &names, &unknown).contains_key("Ghost"));
+        assert!(!resolved_dirs(root, &names, &BTreeMap::new(), &unknown).contains_key("Ghost"));
     }
 
     #[test]
