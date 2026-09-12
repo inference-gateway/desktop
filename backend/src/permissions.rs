@@ -143,6 +143,29 @@ mod macos {
     }
 }
 
+/// Screen recording needs Screen Recording (frames) and Accessibility (key
+/// presses). Request whichever is missing via the existing helpers and name
+/// it in the error; grant buttons live in Settings > General (Computer Use).
+#[cfg(target_os = "macos")]
+pub(crate) fn ensure_recording_permissions() -> Result<(), String> {
+    let (accessibility, screen_recording) = macos::permission_status();
+    if !screen_recording {
+        macos::request_screen_recording();
+    }
+    if !accessibility {
+        macos::request_accessibility();
+    }
+    let missing = match (!screen_recording, !accessibility) {
+        (true, true) => "Screen Recording and Accessibility",
+        (true, false) => "Screen Recording",
+        (false, true) => "Accessibility",
+        (false, false) => return Ok(()),
+    };
+    Err(format!(
+        "{missing} permission is required to record the screen and key presses - grant it in System Settings > Privacy & Security (grant buttons live in Settings > General), then try again"
+    ))
+}
+
 fn write_computer_use_enabled(path: &Path, enabled: bool) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
