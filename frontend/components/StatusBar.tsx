@@ -28,6 +28,9 @@ export function StatusBar() {
     runningCount,
     autoMode,
     setAutoMode,
+    tokenUsage,
+    tools,
+    showStatusBar,
   } = useDesktop();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +94,14 @@ export function StatusBar() {
   const autoModeDescription = autoMode
     ? "Auto approval is on - new runs do not ask before tool actions"
     : "Auto approval is off - new runs ask before protected tool actions";
+  const stats: [string, number][] = [
+    ["Tools", tools.length],
+    ["in", tokenUsage.input],
+    ["out", tokenUsage.output],
+    ["cached", tokenUsage.cached_read],
+    ["tool calls", tokenUsage.total_tool_calls],
+  ];
+  if (!showStatusBar) return null;
   return (
     <div
       id="status-bar"
@@ -167,6 +178,16 @@ export function StatusBar() {
           </div>
         )}
       </div>
+      <span className="flex items-center gap-1 text-muted-foreground">
+        {stats.map(([name, n], i) => (
+          <Fragment key={name}>
+            {i > 0 && <span className="opacity-40">&middot;</span>}
+            <span>
+              {name}: {n.toLocaleString()}
+            </span>
+          </Fragment>
+        ))}
+      </span>
       <button
         aria-label={autoModeDescription}
         aria-pressed={autoMode}

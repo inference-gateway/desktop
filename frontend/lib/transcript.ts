@@ -35,8 +35,11 @@ export type TranscriptItem =
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
+export type TokenUsage = { input: number; output: number; cached_read: number; total_tool_calls: number };
+
 export type ChatState = {
   items: TranscriptItem[];
+  usage: TokenUsage;
   typing: boolean;
   seq: number;
   currentAssistantId: string | null;
@@ -141,6 +144,7 @@ export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
 
 export const initialChatState: ChatState = {
   items: [],
+  usage: { input: 0, output: 0, cached_read: 0, total_tool_calls: 0 },
   typing: false,
   seq: 0,
   currentAssistantId: null,
@@ -250,8 +254,10 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         currentReasoningMessageId: null,
         paused: false,
       };
-    case "TokenUsage":
-      return state;
+    case "TokenUsage": {
+      const { kind: _kind, ...usage } = event;
+      return { ...state, usage };
+    }
     case "Cancelled": {
       const finalized = finalizeTools(state);
       let seq = finalized.seq;

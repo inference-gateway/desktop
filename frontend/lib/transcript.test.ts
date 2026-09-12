@@ -519,3 +519,13 @@ test("todosFrom survives a history reload of the last TodoWrite call", () => {
   const reloaded = chatReducer(initialChatState, { type: "loadHistory", ndjson });
   expect(todosFrom(reloaded.items)).toEqual(todosFrom([toolItem("TodoWrite", args)]));
 });
+
+test("TokenUsage keeps the CLI's session totals per conversation and resets on newChat", () => {
+  const usage = (input: number, output: number) =>
+    ev({ kind: "TokenUsage", input, output, cached_read: 1, total_tool_calls: 1 });
+  const a = run([usage(10, 5), usage(11, 6)]);
+  const b = run([usage(100, 50)]);
+  expect(a.usage).toEqual({ input: 11, output: 6, cached_read: 1, total_tool_calls: 1 });
+  expect(b.usage).toEqual({ input: 100, output: 50, cached_read: 1, total_tool_calls: 1 });
+  expect(chatReducer(a, { type: "newChat" }).usage).toEqual(initialChatState.usage);
+});
