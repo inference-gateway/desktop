@@ -152,6 +152,7 @@ pub fn run() {
             agent::save_audio,
             agent::save_upload,
             projects::create_project_dir,
+            projects::move_project,
             projects::scan_git_repos,
             projects::clone_github_repo,
             projects::git_project_status,

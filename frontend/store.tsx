@@ -1025,10 +1025,21 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
-  const createProject = useCallback((name: string) => {
-    setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    api.createProjectDir(name).catch((e) => console.error("Failed to create project directory:", e));
+  const placeInGroup = useCallback((name: string, group: string, path: string) => {
+    setProjectGroups((prev) => ({ ...prev, [name]: group }));
+    setProjectPaths((prev) => ({ ...prev, [name]: path }));
   }, []);
+
+  const createProject = useCallback(
+    (name: string, group?: string) => {
+      setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      api
+        .createProjectDir(name, group)
+        .then((path) => group && placeInGroup(name, group, path))
+        .catch((e) => console.error("Failed to create project directory:", e));
+    },
+    [placeInGroup],
+  );
 
   const importProjects = useCallback(
     (repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
@@ -1117,6 +1128,21 @@ function useDesktopStore() {
     });
     setActiveProject((p) => (p === oldName ? newName : p));
   }, []);
+
+  const moveProject = useCallback(
+    (name: string, group: string) => {
+      const oldPrefix = projectGroups[name] ? `${projectGroups[name]}/` : "";
+      const renamed = name.startsWith(oldPrefix) && oldPrefix ? `${group}/${name.slice(oldPrefix.length)}` : name;
+      api
+        .moveProject(name, group)
+        .then((path) => {
+          if (renamed !== name) renameProject(name, renamed);
+          placeInGroup(renamed, group, path);
+        })
+        .catch((e) => setError(String(e)));
+    },
+    [placeInGroup, projectGroups, renameProject],
+  );
 
   // Content projects need ffmpeg, whisper-cli and the whisper model in
   // ~/.infer/bin/tools so the agent never has to fetch tools itself.
@@ -1400,6 +1426,7 @@ function useDesktopStore() {
     assignProject,
     unassignProject,
     createProject,
+    moveProject,
     importProjects,
     gitProjects,
     dirtyProjects,

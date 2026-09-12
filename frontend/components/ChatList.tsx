@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronDown,
   Pencil,
+  Plus,
   Settings2,
   Clapperboard,
   X,
@@ -53,6 +54,7 @@ function ChatItem({ index }: { index: number }) {
       onClick={(e) => onChatClick(index, e)}
       draggable
       onDragStart={(e) => {
+        e.stopPropagation();
         const ids = isSelected ? Array.from(selected) : [conv.id];
         e.dataTransfer.setData("text/plain", JSON.stringify(ids));
         e.dataTransfer.effectAllowed = "move";
@@ -280,6 +282,11 @@ function ProjectGroup({
 
   return (
     <div
+      draggable={!editing}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({ project: name }));
+        e.dataTransfer.effectAllowed = "move";
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
@@ -487,6 +494,7 @@ export function ChatList() {
     renameProject,
     toggleCollapseProject,
     createProject,
+    moveProject,
     initProject,
     initAllProjects,
     initSelecting,
@@ -515,7 +523,9 @@ export function ChatList() {
 
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectGroup, setNewProjectGroup] = useState("");
   const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [orchestratorsCollapsed, setOrchestratorsCollapsed] = useState(false);
   const [agentsCollapsed, setAgentsCollapsed] = useState(false);
 
@@ -554,6 +564,27 @@ export function ChatList() {
     }
   };
 
+  const draggedProject = (e: DragEvent): string | null => {
+    try {
+      const parsed = JSON.parse(e.dataTransfer.getData("text/plain"));
+      return typeof parsed?.project === "string" ? parsed.project : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleDropOnGroup = (e: DragEvent, label: string) => {
+    e.preventDefault();
+    setDragOverGroup(null);
+    const name = draggedProject(e);
+    if (!name || (projectGroups[name] ?? "") === label) return;
+    if (projectBusy(name)) {
+      setError(`${name} is running - stop it before moving`);
+      return;
+    }
+    moveProject(name, label);
+  };
+
   const handleDropOnProject = (e: DragEvent, projectName: string) => {
     e.preventDefault();
     for (const id of draggedIds(e)) assignProject(id, projectName);
@@ -567,9 +598,10 @@ export function ChatList() {
   const handleNewProject = () => {
     const trimmed = newProjectName.trim();
     if (trimmed) {
-      createProject(trimmed);
+      createProject(trimmed, newProjectGroup || undefined);
       setNewProjectInput(false);
       setNewProjectName("");
+      setNewProjectGroup("");
     }
   };
 
@@ -590,8 +622,33 @@ export function ChatList() {
       {projectClusters.map(([label, entries]) => (
         <div key={label || "(ungrouped)"} className="flex flex-col gap-[2px]">
           {label && (
-            <div className="mt-1 flex items-center justify-between px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase">
-              <span>{label}</span>
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDragOverGroup(label);
+              }}
+              onDragLeave={() => setDragOverGroup(null)}
+              onDrop={(e) => handleDropOnGroup(e, label)}
+              className={cn(
+                "mt-1 flex items-center justify-between rounded-md px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase",
+                dragOverGroup === label && "ring-1 ring-primary/30",
+              )}
+            >
+              <span className="flex items-center gap-1">
+                {label}
+                <button
+                  onClick={() => {
+                    setNewProjectGroup(label);
+                    setNewProjectInput(true);
+                  }}
+                  aria-label={`New project in ${label}`}
+                  title={`New project in ${label}`}
+                  className="rounded p-0.5 hover:text-foreground"
+                >
+                  <Plus size={11} />
+                </button>
+              </span>
               {initSelecting && (
                 <button
                   onClick={() => selectProjectsInGroup(label)}
@@ -715,9 +772,10 @@ export function ChatList() {
               if (e.key === "Escape") {
                 setNewProjectInput(false);
                 setNewProjectName("");
+                setNewProjectGroup("");
               }
             }}
-            placeholder="Project name..."
+            placeholder={newProjectGroup ? `Project name in ${newProjectGroup}...` : "Project name..."}
             autoFocus
             className="w-full rounded-md bg-card px-3 py-2 text-[0.83rem] text-foreground outline-none ring-1 ring-border placeholder:text-muted-foreground/50"
           />
