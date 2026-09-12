@@ -249,7 +249,7 @@ mod imp {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicU64;
     use std::thread::JoinHandle;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     // Listen-only tap: key down, flags (modifiers), left/right mouse down.
     // kCGEventLeftMouseDown = 1, RightMouseDown = 3, KeyDown = 10, FlagsChanged = 12.
@@ -318,14 +318,12 @@ mod imp {
     }
 
     fn log_event(context: &TapContext, event: Event) {
-        if let Ok(mut file) = context
+        let mut file = context
             .events
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-        {
-            let _ = write_event(&mut *file, &event);
-            let _ = file.flush();
-        }
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = write_event(&mut *file, &event);
+        let _ = file.flush();
     }
 
     /// `ctrl+alt+cmd+shift` prefix (when set) plus the lowercased key text, so
@@ -372,7 +370,10 @@ mod imp {
             let frames_dir = dir.join("frames");
             let frames = std::thread::Builder::new()
                 .name("screen-record-frames".into())
-                .spawn(move || frame_loop(&frames_dir, &stop))
+                .spawn({
+                    let stop = Arc::clone(&stop);
+                    move || frame_loop(&frames_dir, &stop)
+                })
                 .map_err(|e| format!("spawning frame thread: {e}"))?;
 
             let events = std::fs::OpenOptions::new()
@@ -385,11 +386,12 @@ mod imp {
                 events: Mutex::new(events),
             }));
             let run_loop = Arc::new(AtomicU64::new(0));
+            let context_addr = context as usize;
             let tap = std::thread::Builder::new()
                 .name("screen-record-tap".into())
                 .spawn({
                     let run_loop = Arc::clone(&run_loop);
-                    move || unsafe { tap_loop(context, Arc::clone(&stop), run_loop) }
+                    move || unsafe { tap_loop(context_addr as *mut TapContext, stop, run_loop) }
                 })
                 .map_err(|e| format!("spawning event tap thread: {e}"))?;
             Ok(Recorder {
@@ -438,36 +440,42 @@ mod imp {
         }
     }
 
+    /// SAFETY: `context` must stay valid until this thread exits; `Recorder::stop`
+    /// joins the thread before freeing it.
     unsafe fn tap_loop(context: *mut TapContext, stop: Arc<AtomicBool>, run_loop: Arc<AtomicU64>) {
-        let tap = CGEventTapCreate(
-            K_CG_SESSION_EVENT_TAP,
-            K_CG_TAIL_APPEND_EVENT_TAP,
-            K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
-            EVENT_TAP_MASK,
-            tap_callback,
-            context.cast(),
-        );
+        let tap = unsafe {
+            CGEventTapCreate(
+                K_CG_SESSION_EVENT_TAP,
+                K_CG_TAIL_APPEND_EVENT_TAP,
+                K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+                EVENT_TAP_MASK,
+                tap_callback,
+                context.cast(),
+            )
+        };
         if tap.is_null() {
             eprintln!("screen recording: CGEventTapCreate failed; key presses will not be logged");
             return;
         }
-        let source = CFMachPortCreateRunLoopSource(ptr::null(), tap, 0);
+        let source = unsafe { CFMachPortCreateRunLoopSource(ptr::null(), tap, 0) };
         if source.is_null() {
             eprintln!("screen recording: CFMachPortCreateRunLoopSource failed");
-            CFRelease(tap);
+            unsafe { CFRelease(tap) };
             return;
         }
-        let run_loop_ref = CFRunLoopGetCurrent();
-        CFRunLoopAddSource(run_loop_ref, source, kCFRunLoopCommonModes);
+        let run_loop_ref = unsafe { CFRunLoopGetCurrent() };
+        unsafe { CFRunLoopAddSource(run_loop_ref, source, kCFRunLoopCommonModes) };
         run_loop.store(run_loop_ref as u64, Ordering::SeqCst);
         // Re-check the stop flag: stop_screen_recording may have read the run
         // loop slot before this thread stored it; its CFRunLoopStop call is a
         // no-op then, so exiting here prevents a runaway loop.
         if !stop.load(Ordering::SeqCst) {
-            CFRunLoopRun();
+            unsafe { CFRunLoopRun() };
         }
-        CFRelease(source);
-        CFRelease(tap);
+        unsafe {
+            CFRelease(source);
+            CFRelease(tap);
+        }
     }
 
     unsafe extern "C" fn tap_callback(
@@ -476,24 +484,27 @@ mod imp {
         event: *mut c_void,
         user_info: *mut c_void,
     ) -> *mut c_void {
-        let context = &*(user_info.cast::<TapContext>());
+        let context = unsafe { &*(user_info.cast::<TapContext>()) };
         let t = context.start.elapsed().as_secs_f64();
         match event_type {
             K_CG_EVENT_KEY_DOWN | K_CG_EVENT_FLAGS_CHANGED => {
                 let mut buffer = [0u16; 64];
                 let mut length = 0usize;
-                CGEventKeyboardGetUnicodeString(
-                    event,
-                    buffer.len(),
-                    &mut length,
-                    buffer.as_mut_ptr(),
-                );
+                let flags = unsafe {
+                    CGEventKeyboardGetUnicodeString(
+                        event,
+                        buffer.len(),
+                        &mut length,
+                        buffer.as_mut_ptr(),
+                    );
+                    CGEventGetFlags(event)
+                };
                 let text = String::from_utf16_lossy(&buffer[..length.min(buffer.len())]);
-                let keys = keys_string(CGEventGetFlags(event), &text);
+                let keys = keys_string(flags, &text);
                 log_event(context, Event::Key { t, keys, text });
             }
             K_CG_EVENT_LEFT_MOUSE_DOWN | K_CG_EVENT_RIGHT_MOUSE_DOWN => {
-                let location = CGEventGetLocation(event);
+                let location = unsafe { CGEventGetLocation(event) };
                 log_event(
                     context,
                     Event::Click {
