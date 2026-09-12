@@ -8,7 +8,7 @@ import { autoGrow } from "@/lib/textarea";
 // Rust transcribe_audio command (whisper.cpp). Mic is greyed when whisper is
 // unavailable, permission is denied, or the agent is running.
 const MAX_REC_MS = 30000;
-const INTERIM_MS = 2000; // interim transcription cadence while recording
+const INTERIM_MS = 2000;
 
 type Options = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
