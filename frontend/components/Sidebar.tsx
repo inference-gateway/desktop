@@ -27,7 +27,7 @@ export function Sidebar() {
     if (!drag.current) return;
     drag.current = null;
     setDragging(false);
-    saveSidebarWidth(width); // persist on drag end, not on every move
+    saveSidebarWidth(width);
   };
   const resetWidth = () => {
     setWidth(DEFAULT_SIDEBAR_WIDTH);
