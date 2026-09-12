@@ -28,7 +28,6 @@ export function TopBar() {
   const startedAtRef = useRef(0);
   const stopRef = useRef<() => void>(() => {});
 
-  // Rehydrate the button after a webview reload.
   useEffect(() => {
     if (!isMacOS) return;
     api
