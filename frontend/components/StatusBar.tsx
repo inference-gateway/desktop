@@ -94,13 +94,16 @@ export function StatusBar() {
   const autoModeDescription = autoMode
     ? "Auto approval is on - new runs do not ask before tool actions"
     : "Auto approval is off - new runs ask before protected tool actions";
-  const stats: [string, number][] = [
-    ["Tools", tools.length],
-    ["in", tokenUsage.input],
-    ["out", tokenUsage.output],
-    ["cached", tokenUsage.cached_read],
-    ["tool calls", tokenUsage.total_tool_calls],
+  const contextPct =
+    tokenUsage.context_window > 0 ? Math.round((tokenUsage.last_input / tokenUsage.context_window) * 100) : null;
+  const stats: [string, string][] = [
+    ["Tools", tools.length.toLocaleString()],
+    ["in", tokenUsage.input.toLocaleString()],
+    ["out", tokenUsage.output.toLocaleString()],
+    ["cached", tokenUsage.cached_read.toLocaleString()],
+    ["tool calls", tokenUsage.total_tool_calls.toLocaleString()],
   ];
+  if (contextPct !== null) stats.unshift(["Context", `${contextPct}%`]);
   if (!showStatusBar) return null;
   return (
     <div
@@ -183,7 +186,7 @@ export function StatusBar() {
           <Fragment key={name}>
             {i > 0 && <span className="opacity-40">&middot;</span>}
             <span>
-              {name}: {n.toLocaleString()}
+              {name}: {n}
             </span>
           </Fragment>
         ))}
