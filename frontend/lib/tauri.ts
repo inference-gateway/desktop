@@ -287,7 +287,8 @@ export const api = {
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveAudio: (path: string) => invoke<string>("save_audio", { path }),
   saveUpload: (data: string, mime: string) => invoke<string>("save_upload", { data, mime }),
-  createProjectDir: (name: string) => invoke<string>("create_project_dir", { name }),
+  createProjectDir: (name: string, group?: string) => invoke<string>("create_project_dir", { name, group }),
+  moveProject: (name: string, group: string) => invoke<string>("move_project", { name, group }),
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
     invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),

@@ -613,13 +613,59 @@ pub(crate) fn refresh_project_context(name: String) -> Result<Option<String>, St
     Ok(repo_context(&dir))
 }
 
-/// Create (if needed) and return the files directory for a project.
+/// Directory for a project placed inside a sidebar group: `root/<group>/<name>`.
+/// `group` is a relative path under the root (what `scan_git_repos_in` reports),
+/// so `..` and absolute components are rejected to keep it under the root.
+fn grouped_dir(root: &Path, group: &str, name: &str) -> Result<PathBuf, String> {
+    let group = group.trim().trim_matches('/');
+    let rel = Path::new(group);
+    if group.is_empty()
+        || rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err(format!("invalid project group: {group:?}"));
+    }
+    Ok(root.join(rel).join(sanitize_name(name)))
+}
+
+/// Create (if needed) and return the files directory for a project. With a
+/// group, the directory is created under that group's folder instead of the
+/// default mapping; the caller stores the returned path as the override.
 #[tauri::command]
-pub(crate) fn create_project_dir(name: String) -> Result<String, String> {
-    let dir = project_dir(&name).ok_or("project directory not resolved")?;
+pub(crate) fn create_project_dir(name: String, group: Option<String>) -> Result<String, String> {
+    let dir = match group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        Some(group) => grouped_dir(&PathBuf::from(read_config().projects_root), group, &name)?,
+        None => project_dir(&name).ok_or("project directory not resolved")?,
+    };
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create project directory: {e}"))?;
     Ok(dir.to_string_lossy().to_string())
+}
+
+/// Move a project's directory under `root/<group>/` and return the new path.
+/// A missing source just creates the destination.
+#[tauri::command]
+pub(crate) fn move_project(name: String, group: String) -> Result<String, String> {
+    let from = project_dir(&name).ok_or("project directory not resolved")?;
+    let to = grouped_dir(&PathBuf::from(read_config().projects_root), &group, &name)?;
+    if from == to {
+        return Ok(to.to_string_lossy().to_string());
+    }
+    if to.exists() {
+        return Err(format!("{} already exists", to.display()));
+    }
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create group: {e}"))?;
+    }
+    if from.exists() {
+        std::fs::rename(&from, &to).map_err(|e| format!("Failed to move project: {e}"))?;
+    } else {
+        std::fs::create_dir_all(&to)
+            .map_err(|e| format!("Failed to create project directory: {e}"))?;
+    }
+    Ok(to.to_string_lossy().to_string())
 }
 
 /// One file entry of a project's files summary.
@@ -913,6 +959,21 @@ mod tests {
         std::fs::write(wt.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
         assert_eq!(git_dir(&wt), Some(wt.join("../repo/.git/worktrees/wt")));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn grouped_dir_stays_under_root() {
+        let root = Path::new("/tmp/projects-root");
+        assert_eq!(
+            grouped_dir(root, "videos", "my/clip").unwrap(),
+            root.join("videos").join("my-clip")
+        );
+        assert_eq!(
+            grouped_dir(root, "/adks/", "x").unwrap(),
+            root.join("adks").join("x")
+        );
+        assert!(grouped_dir(root, "", "x").is_err());
+        assert!(grouped_dir(root, "../etc", "x").is_err());
     }
 
     #[test]
