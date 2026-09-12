@@ -19,6 +19,7 @@ import {
   type ChatAction,
   type ChatState,
   type Delegation,
+  type TodoItem,
 } from "@/lib/transcript";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
@@ -111,6 +112,7 @@ function useDesktopStore() {
   const [timelineProject, setTimelineProject] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [bashHistory, setBashHistory] = useState<string[]>([]);
+  const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, cached_read: 0, total_tool_calls: 0 });
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
@@ -146,6 +148,18 @@ function useDesktopStore() {
   const setError = useCallback((t: string) => {
     setStatusText(t);
     setStatusErr(true);
+  }, []);
+
+  // Todo panel drafts are keyed by session so switching sessions never
+  // leaks a user-edited list into another chat (#196); null clears it.
+  const setTodoDraft = useCallback((key: string, items: TodoItem[] | null) => {
+    setTodoDrafts((prev) => {
+      if (items === null && !(key in prev)) return prev;
+      const next = { ...prev };
+      if (items === null) delete next[key];
+      else next[key] = items;
+      return next;
+    });
   }, []);
 
   const setModel = useCallback((m: string) => {
@@ -797,6 +811,36 @@ function useDesktopStore() {
   // `!!ToolName(arg="value")` from the composer: parse, execute through the
   // CLI's own tool registry (`infer tools execute`) and render the result
   // exactly like an AI-initiated tool call. No model turn involved.
+  // Send text through the normal message path (composer, todo panel hand-off).
+  // Returns false when the send was rejected so callers keep their text.
+  const sendText = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (activeId && runningIds.has(activeId)) return false;
+      if (!model && !isBashCommand(text)) {
+        setError("Please select a model first");
+        return false;
+      }
+      if (!activeId && runningIds.size >= maxSessions) {
+        setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
+        return false;
+      }
+      const runId = activeId ?? crypto.randomUUID();
+      if (!activeId && activeProject) assignProject(runId, activeProject);
+      setActiveId(runId);
+      activeIdRef.current = runId;
+      if (isBashCommand(text)) {
+        api.appendBashHistory(text).catch(() => {});
+        setBashHistory((h) => [...h, text]);
+      } else {
+        api.appendHistory(text).catch(() => {});
+        setHistory((h) => [...h, text]);
+      }
+      await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
+      return true;
+    },
+    [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError],
+  );
+
   const send = useCallback(async () => {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";
@@ -822,45 +866,13 @@ function useDesktopStore() {
       await broadcastPrompt(names, text);
       return;
     }
-    if (activeId && runningIds.has(activeId)) return;
-    if (!model && !isBashCommand(text)) {
-      setError("Please select a model first");
-      return;
+    if (await sendText(text)) {
+      if (el) {
+        el.value = "";
+        autoGrow(el);
+      }
     }
-    if (!activeId && runningIds.size >= maxSessions) {
-      setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
-      return;
-    }
-    const runId = activeId ?? crypto.randomUUID();
-    if (!activeId && activeProject) assignProject(runId, activeProject);
-    setActiveId(runId);
-    activeIdRef.current = runId;
-    if (isBashCommand(text)) {
-      api.appendBashHistory(text).catch(() => {});
-      setBashHistory((h) => [...h, text]);
-    } else {
-      api.appendHistory(text).catch(() => {});
-      setHistory((h) => [...h, text]);
-    }
-    if (el) {
-      el.value = "";
-      autoGrow(el);
-    }
-    await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
-  }, [
-    activeId,
-    runningIds,
-    model,
-    maxSessions,
-    activeProject,
-    assignProject,
-    projects,
-    sendPrompt,
-    setError,
-    initSelecting,
-    initSelection,
-    broadcastPrompt,
-  ]);
+  }, [initSelecting, initSelection, model, setError, broadcastPrompt, sendText]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -1327,6 +1339,7 @@ function useDesktopStore() {
     deleteConversation,
     bulkDelete,
     send,
+    sendText,
     cancel,
     approve,
     openConversation,
@@ -1353,6 +1366,8 @@ function useDesktopStore() {
     composerRef,
     history,
     bashHistory,
+    todoDrafts,
+    setTodoDraft,
     snippets,
     insertSnippet,
     updateSnippet,
