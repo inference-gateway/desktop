@@ -177,8 +177,6 @@ export type StoredMetric = {
   time_unix_nano: number;
 };
 
-// Recording is macOS-only (screencapture + CGEventTap); other platforms hide
-// the button. navigator.platform reads "MacIntel" in the macOS webview.
 export const isMacOS = navigator.platform.toUpperCase().includes("MAC");
 
 export const SCREEN_RECORD_KEEP_KEY = "screenRecordKeep";
