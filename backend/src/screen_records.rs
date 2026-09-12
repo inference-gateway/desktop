@@ -1,10 +1,12 @@
 //! Screen recording for workflow capture (macOS only).
 //!
-//! One directory per recording under `~/.infer/screen-records/<start-timestamp>/`:
+//! One directory per recording under `~/.infer/tmp/screen-records/<start-timestamp>/`:
 //! `frames/NNNNNN.jpg` (one per second via `screencapture`) plus `events.jsonl`
 //! (timestamped key presses and mouse clicks from a listen-only `CGEventTap`).
 //! On stop the directory is returned so the UI can reference it in the composer
-//! and the agent can turn the workflow into a skill.
+//! and the agent can turn the workflow into a skill. Frame capture stops after
+//! `MAX_FRAMES` (one hour at 1 fps) so a forgotten recording cannot fill the disk;
+//! event logging continues until Stop.
 
 use crate::env::{home_dir, mock_mode};
 #[cfg(any(target_os = "macos", test))]
@@ -39,8 +41,13 @@ pub(crate) struct RecordingHandle {
     recorder: Option<imp::Recorder>,
 }
 
+/// ponytail: fixed 1 fps JPEG, one hour cap - add interval/size settings only
+/// if disk use is reported.
+#[cfg(target_os = "macos")]
+const MAX_FRAMES: u32 = 3600;
+
 pub(crate) fn records_dir() -> PathBuf {
-    home_dir().join(".infer").join("screen-records")
+    home_dir().join(".infer").join("tmp").join("screen-records")
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -414,11 +421,13 @@ mod imp {
     }
 
     fn frame_loop(frames_dir: &Path, stop: &AtomicBool) {
-        // ponytail: fixed 1 fps JPEG, add a frame interval setting only if
-        // disk use is reported.
         let mut index: u32 = 0;
         loop {
             if stop.load(Ordering::SeqCst) {
+                return;
+            }
+            if index >= MAX_FRAMES {
+                eprintln!("screen recording: reached {MAX_FRAMES} frames; frame capture stopped");
                 return;
             }
             index += 1;
