@@ -34,6 +34,7 @@ export function TodoPanel() {
   const dirty = draft !== null && todosDiffer(draft, agentTodos);
   const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
+  const [dropAt, setDropAt] = useState<number | null>(null);
   const dragFrom = useRef<number | null>(null);
 
   // The agent's TodoWrite is the source of truth: once it catches up with a
@@ -114,11 +115,26 @@ export function TodoPanel() {
               return (
                 <li
                   key={i}
-                  className="flex items-center gap-1 border-b border-border px-2 py-1 last:border-b-0"
-                  onDragOver={(e) => e.preventDefault()}
+                  className={cn(
+                    "flex items-center gap-1 border-b border-border px-2 py-1 last:border-b-0",
+                    // Insertion indicator: move(from, i) lands the row after
+                    // the hovered row when dragging down, before it when
+                    // dragging up - mark exactly that edge.
+                    dropAt === i &&
+                      dragFrom.current !== null &&
+                      dragFrom.current !== i &&
+                      (i > dragFrom.current
+                        ? "shadow-[inset_0_-2px_0_0_var(--tool-fg)]"
+                        : "shadow-[inset_0_2px_0_0_var(--tool-fg)]"),
+                  )}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDropAt(i);
+                  }}
                   onDrop={() => {
                     if (dragFrom.current !== null) move(dragFrom.current, i);
                     dragFrom.current = null;
+                    setDropAt(null);
                   }}
                 >
                   <span
@@ -129,6 +145,7 @@ export function TodoPanel() {
                       e.dataTransfer.effectAllowed = "move";
                       e.dataTransfer.setData("text/plain", String(i));
                     }}
+                    onDragEnd={() => setDropAt(null)}
                     className="cursor-grab text-muted-foreground"
                   >
                     <GripVertical size={12} />
