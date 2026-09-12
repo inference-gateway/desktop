@@ -680,7 +680,14 @@ pub(crate) async fn list_conversations() -> Result<String, String> {
 pub(crate) async fn get_conversation(
     session_id: String,
     cwd: Option<String>,
+    project: Option<String>,
 ) -> Result<String, String> {
+    let cwd = cwd.or_else(|| {
+        project
+            .as_deref()
+            .and_then(crate::projects::project_dir)
+            .map(|dir| dir.to_string_lossy().into_owned())
+    });
     run_infer_in(
         cwd,
         &["conversations", "show", &session_id, "--format", "json"],

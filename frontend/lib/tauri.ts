@@ -233,8 +233,8 @@ export const api = {
     invoke<void>("send_computer_use_control", { sessionId, action }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),
   listConversations: () => invoke<string>("list_conversations"),
-  getConversation: (sessionId: string, cwd?: string) =>
-    invoke<string>("get_conversation", { sessionId, cwd: cwd ?? null }),
+  getConversation: (sessionId: string, cwd?: string, project?: string) =>
+    invoke<string>("get_conversation", { sessionId, cwd: cwd ?? null, project: project ?? null }),
   deleteConversation: (sessionId: string, cwd?: string) =>
     invoke<void>("delete_conversation", { sessionId, cwd: cwd ?? null }),
   moveConversation: (sessionId: string, fromCwd?: string, toProject?: string) =>

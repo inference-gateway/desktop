@@ -599,3 +599,33 @@ test("TokenUsage keeps the CLI's session totals per conversation and resets on n
   });
   expect(chatReducer(a, { type: "newChat" }).usage).toEqual(initialChatState.usage);
 });
+
+test("loadHistory restores session usage from the show document metadata", () => {
+  const ndjson = JSON.stringify({
+    metadata: {
+      token_stats: {
+        total_input_tokens: 120,
+        total_output_tokens: 30,
+        total_cached_tokens: 100,
+        last_input_tokens: 80,
+      },
+      total_cost: 0.42,
+    },
+    entries: [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "" },
+      { role: "tool", content: "Bash(command=ls)" },
+      { role: "tool", content: "Read(path=x)" },
+    ],
+  });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(s.usage).toEqual({
+    input: 120,
+    output: 30,
+    cached_read: 100,
+    last_input: 80,
+    cost: 0.42,
+    total_tool_calls: 2,
+    context_window: 0,
+  });
+});
