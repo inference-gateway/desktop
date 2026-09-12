@@ -21,7 +21,7 @@ Built with [Tauri](https://tauri.app) and a [React](https://react.dev) + [TypeSc
 
 On first run, the app downloads the `infer` CLI binary and installs it to `~/.infer/bin/infer`. The CLI manages the gateway server and routes requests to whatever provider you configure - OpenAI, Anthropic, Google, local Ollama models, or any OpenAI-compatible endpoint.
 
-The gateway binary lands at `~/.infer/bin/inference-gateway` and config lives under `~/.infer/`. The agent runs in the selected project's directory (falling back to `~/.infer/workspace` when no project is selected or the app was launched from Finder), and its file tools are sandboxed to that working directory, `/tmp`, and every project directory under the configured projects root.
+The gateway binary lands at `~/.infer/bin/inference-gateway` and config lives under `~/.infer/`. The agent runs in the selected project's directory (falling back to `~/.infer/workspace` when no project is selected or the app was launched from Finder), and its file tools are sandboxed to that working directory, `/tmp`, and every project directory under the configured projects root. The app also installs a bundled `desktop-projects` skill under `~/.infer/skills/`, so asking the agent to organise projects or chats (for example `/desktop-projects organise my projects under ~/Repositories`) edits `~/.infer/projects.json` and the projects root instead of the app.
 
 ### Updating
 

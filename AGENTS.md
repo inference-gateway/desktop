@@ -14,7 +14,7 @@
 ├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
 ├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, bun, infer)
 ├── Taskfile.yml                  # Task runner: common build/test/dev commands
-├── .agents/skills/               # Agent skill definitions
+├── .agents/skills/               # Agent skills: contributor skills + bundled end-user skills (video-editing, desktop-projects)
 ├── .claude/skills -> ../.agents/skills  # Symlink for Claude Code
 ├── package.json                  # Frontend deps + scripts (Bun)
 ├── bun.lock                      # Bun lockfile

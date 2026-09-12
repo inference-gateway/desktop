@@ -5,7 +5,7 @@ const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility
 
 const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and TextToSpeech WAVs inline in the transcript with playback and download controls. After generating one, state the file path in plain text and stop - do not run `open`, suggest a command to open it, or ask for approval to view or play it.";
 
-const PROJECTS_GUIDANCE: &str = "Chat organization: the desktop sidebar groups chats into projects via ~/.infer/projects.json, JSON of the shape {\"assignments\":{\"<conversation-id>\":\"<project>\"},\"names\":[\"<project>\"],\"contexts\":{\"<project>\":\"<extra instructions>\"},\"groups\":{\"<project>\":\"<label grouping sibling projects, e.g. their parent directory>\"},\"types\":{\"<project>\":\"content\"}} (a missing type means a code project). To organize chats, list them with `infer conversations list --format json` and edit that file (preserve entries you are not changing); the sidebar reloads it after your run. Do not modify the app's source code for this.";
+const PROJECTS_GUIDANCE: &str = "For anything about organising projects or chats (grouping, moving, renaming, the projects root, assigning conversations to a project), read and follow ~/.infer/skills/desktop-projects/SKILL.md, which is already installed. Do not modify the app's source code for this.";
 
 /// Map the running platform to the CLI release asset name.
 /// Returns `None` for unsupported platforms.
@@ -307,6 +307,7 @@ mod tests {
         let desktop_notes = compose_extras(None, cwd);
         assert!(desktop_notes.contains("`app:inference-gateway-desktop`"));
         assert!(desktop_notes.contains("instead of `frontmost`"));
+        assert!(desktop_notes.contains("desktop-projects/SKILL.md"));
         assert_eq!(
             desktop_notes,
             format!(

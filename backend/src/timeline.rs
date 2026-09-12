@@ -83,23 +83,6 @@ pub(crate) fn write_timeline(project: String, name: String, data: String) -> Res
     std::fs::write(&path, data).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
-const SKILL_MD: &str = include_str!("../skills/video-editing/SKILL.md");
-
-/// Write the bundled video-editing skill to ~/.infer/skills so the agent
-/// always finds it, whether or not the catalog copy is installed.
-fn install_bundled_skill() -> Result<(), String> {
-    let dir = crate::env::home_dir()
-        .join(".infer")
-        .join("skills")
-        .join("video-editing");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join("SKILL.md");
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(SKILL_MD) {
-        std::fs::write(&path, SKILL_MD).map_err(|e| format!("writing {}: {e}", path.display()))?;
-    }
-    Ok(())
-}
-
 fn has_video_filters(ffmpeg: &Path) -> bool {
     std::process::Command::new(ffmpeg)
         .args(["-hide_banner", "-filters"])
@@ -138,7 +121,7 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
     }
     tokio::task::spawn_blocking(move || {
         let _ = on_event.send(ProgressEvent::Checking);
-        install_bundled_skill()?;
+        crate::skills::install_bundled_skills();
         for name in ["ffmpeg", "whisper-cli"] {
             if owned_bin(name).is_none() {
                 let _ = on_event.send(ProgressEvent::Installing);
