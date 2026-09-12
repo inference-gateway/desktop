@@ -306,7 +306,6 @@ impl AgentParser {
                     .and_then(|s| s.get("lastInputTokens"))
                     .map(json_val_i64)
                     .unwrap_or(0);
-                // Omitted by the CLI when the model's context window is unknown.
                 let context_window = stats
                     .and_then(|s| s.get("contextWindow"))
                     .map(json_val_i64)
