@@ -8,7 +8,6 @@ import { useDesktop } from "@/store";
 import { ModelSelect } from "./ModelSelect";
 
 const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
-// ponytail: fixed 3 minute cap, matches MAX_FRAMES in screen_records.rs - make it a setting if asked.
 const MAX_RECORD_SECS = 180;
 
 export function TopBar() {
