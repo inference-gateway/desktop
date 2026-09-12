@@ -78,7 +78,7 @@ The hook checks that every tracked text file ends with a final newline (`.editor
 
 ## Build / Test / Dev Commands
 
-The dev environment - Rust 1.95, `task`, `bun`, `infer` - is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
+The dev environment - Rust toolchain, `cargo`, `cargo-tauri`, `task`, `bun`, `infer` - is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
 
 | Task            | Description                                                        |
 |-----------------|--------------------------------------------------------------------|
@@ -173,7 +173,7 @@ When working on a GitHub issue that belongs to a project board, keep its status 
 git clone git@github.com:inference-gateway/desktop.git
 cd desktop
 
-# Enter the flox dev environment (Rust 1.95 toolchain, task, infer)
+# Enter the flox dev environment (Rust toolchain, task, infer)
 flox activate
 
 # Activate git hooks
