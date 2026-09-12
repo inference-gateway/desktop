@@ -1,6 +1,6 @@
 //! Screen recording for workflow capture (macOS only).
 //!
-//! One directory per recording under `~/.infer/tmp/screen-records/<start-timestamp>/`:
+//! One directory per recording under `~/.infer/tmp/captures/<start-timestamp>/`:
 //! `frames/NNNNNN.jpg` (one per second via `screencapture`) plus `events.jsonl`
 //! (timestamped key presses and mouse clicks from a listen-only `CGEventTap`).
 //! On stop the directory is returned so the UI can reference it in the composer
@@ -47,7 +47,7 @@ pub(crate) struct RecordingHandle {
 const MAX_FRAMES: u32 = 180;
 
 pub(crate) fn records_dir() -> PathBuf {
-    home_dir().join(".infer").join("tmp").join("screen-records")
+    home_dir().join(".infer").join("tmp").join("captures")
 }
 
 #[cfg(any(target_os = "macos", test))]
