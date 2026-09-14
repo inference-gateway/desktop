@@ -1,4 +1,4 @@
-import { ArrowUp, Folder, Mic, Paperclip, Square, Terminal, X } from "lucide-react";
+import { ArrowUp, Folder, Mic, Plus, Square, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -459,7 +459,26 @@ export function Composer() {
             </button>
           </div>
         )}
-        <div className="flex items-end gap-[0.35rem] py-[0.35rem] pl-4 pr-[0.4rem]">
+        <div className="flex items-end gap-[0.35rem] px-[0.4rem] py-[0.35rem]">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif,image/svg+xml,application/pdf"
+            className="hidden"
+            onChange={onFilePick}
+          />
+          <button
+            aria-label="Attach file"
+            title="Attach image or file"
+            disabled={!enabled}
+            onClick={() => fileRef.current?.click()}
+            className={cn(
+              ROUND,
+              "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35",
+            )}
+          >
+            <Plus size={16} />
+          </button>
           <textarea
             id="prompt-input"
             ref={composerRef}
@@ -476,25 +495,6 @@ export function Composer() {
             className="max-h-[40vh] min-h-[2.2rem] flex-1 resize-none overflow-y-auto bg-transparent py-[0.44rem] text-[0.95rem] leading-[1.4] text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60"
           />
           <div id="composer-actions" className="flex items-center gap-1">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif,image/svg+xml,application/pdf"
-              className="hidden"
-              onChange={onFilePick}
-            />
-            <button
-              aria-label="Attach file"
-              title="Attach image or file"
-              disabled={!enabled}
-              onClick={() => fileRef.current?.click()}
-              className={cn(
-                ROUND,
-                "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35",
-              )}
-            >
-              <Paperclip size={16} />
-            </button>
             <button
               aria-label="Voice input"
               title={voice.title}
