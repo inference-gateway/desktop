@@ -16,12 +16,13 @@ export interface KeyInput {
 }
 
 export function matchShortcut(e: KeyInput): Shortcut | null {
-  if (e.repeat || e.defaultPrevented) return null;
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
-    return "newChat";
-  }
+  if (e.repeat) return null;
   if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
     return "cancel";
+  }
+  if (e.defaultPrevented) return null;
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
+    return "newChat";
   }
   if (e.key === "Tab" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.inComposer) {
     return "autoModeToggle";

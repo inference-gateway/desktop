@@ -188,6 +188,18 @@ export default function Monitor() {
     };
   }, [hasPending]);
 
+  useEffect(() => {
+    if (!id || !session || session.status === "done") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.repeat || e.defaultPrevented) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
+      void api.cancelAgent(id).catch(() => {});
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [id, session?.status]);
+
   if (!session) {
     return (
       <div className="m-1 flex h-[calc(100vh-0.5rem)] w-[calc(100vw-0.5rem)] items-center justify-center rounded-2xl border border-primary/50 bg-background/45 p-3 text-center text-sm text-muted-foreground shadow-[0_10px_32px_rgba(79,70,229,0.18)] backdrop-blur-sm">
