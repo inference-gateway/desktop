@@ -23,7 +23,7 @@ const cases: [string, Partial<KeyInput>, Shortcut | null][] = [
   ["cmd+alt+n passes through", { key: "n", metaKey: true, altKey: true }, null],
   ["plain n", { key: "n" }, null],
   ["escape", { key: "Escape" }, "cancel"],
-  ["escape already handled by a popover", { key: "Escape", defaultPrevented: true }, null],
+  ["escape still cancels when a popover preventDefaulted it", { key: "Escape", defaultPrevented: true }, "cancel"],
   ["escape with modifier", { key: "Escape", ctrlKey: true }, null],
   ["shift+tab in composer", { key: "Tab", shiftKey: true, inComposer: true }, "autoModeToggle"],
   ["shift+tab outside composer keeps focus nav", { key: "Tab", shiftKey: true }, null],
