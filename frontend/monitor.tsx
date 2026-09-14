@@ -188,9 +188,6 @@ export default function Monitor() {
     };
   }, [hasPending]);
 
-  // Esc cancels the selected session, mirroring the Stop button - this window
-  // can hold focus during a run, and the main window's Esc shortcut never
-  // sees keys typed here.
   useEffect(() => {
     if (!id || !session || session.status === "done") return;
     const onKeyDown = (e: KeyboardEvent) => {
