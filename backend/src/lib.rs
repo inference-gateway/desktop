@@ -32,7 +32,7 @@ pub(crate) struct AppState {
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
     screen_recording: std::sync::Mutex<Option<screen_records::RecordingHandle>>,
-    browser_bridge: browser_bridge::Bridge,
+    browser_bridge: Arc<browser_bridge::Bridge>,
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
@@ -69,16 +69,26 @@ pub fn run() {
             stored_traces,
             stored_metrics,
             screen_recording: std::sync::Mutex::new(None),
-            browser_bridge: browser_bridge::Bridge::default(),
+            browser_bridge: Arc::new(browser_bridge::Bridge::default()),
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             raise_overlay_above_dock(app);
             skills::install_bundled_skills();
-            browser_bridge::start_if_enabled(
-                &app.state::<AppState>().browser_bridge,
-                app.handle().clone(),
-            );
+            browser_bridge::start_if_enabled(&app.state::<AppState>(), app.handle().clone());
+            {
+                use tauri::Listener;
+                let bridge = Arc::clone(&app.state::<AppState>().browser_bridge);
+                app.listen_any("approval-resolved", move |event| {
+                    if let Some(call_id) =
+                        serde_json::from_str::<serde_json::Value>(event.payload())
+                            .ok()
+                            .and_then(|v| v.get("callId")?.as_str().map(String::from))
+                    {
+                        bridge.approval_resolved(&call_id);
+                    }
+                });
+            }
             if config::read_config().schedule_enabled {
                 let state = app.state::<AppState>();
                 if let Err(e) = scheduler::spawn_daemon(&state) {

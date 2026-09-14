@@ -834,6 +834,43 @@ function useDesktopStore() {
     };
   }, [sendPrompt, projects]);
 
+  // Commands from the opentask extension's side panel, relayed by the browser bridge.
+  useEffect(() => {
+    const activate = (id: string) => {
+      setActiveId(id);
+      activeIdRef.current = id;
+      setActiveProject(projects[id] ?? null);
+    };
+    const unlisten = listen<BrowserPanelCommand>("browser-panel", async (e) => {
+      const p = e.payload;
+      switch (p.kind) {
+        case "open":
+          await openConversation(p.id);
+          break;
+        case "new":
+          activate(p.id);
+          break;
+        case "send":
+          if (activeIdRef.current !== p.sessionId) {
+            if (conversations.some((c) => c.id === p.sessionId)) await openConversation(p.sessionId);
+            else activate(p.sessionId);
+          }
+          await sendPrompt(p.sessionId, p.text, p.project ?? projects[p.sessionId]);
+          break;
+        case "select_model":
+          setModelState(p.model);
+          localStorage.setItem(STORAGE_KEY, p.model);
+          break;
+        case "set_mode":
+          setAutoMode(p.auto);
+          break;
+      }
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [sendPrompt, openConversation, setAutoMode, projects, conversations]);
+
   // `!!ToolName(arg="value")` from the composer: parse, execute through the
   // CLI's own tool registry (`infer tools execute`) and render the result
   // exactly like an AI-initiated tool call. No model turn involved.
@@ -1492,6 +1529,13 @@ function useDesktopStore() {
 export type DesktopStore = ReturnType<typeof useDesktopStore>;
 
 const DesktopContext = createContext<DesktopStore | null>(null);
+
+type BrowserPanelCommand =
+  | { kind: "open"; id: string }
+  | { kind: "new"; id: string }
+  | { kind: "send"; sessionId: string; text: string; project?: string | null }
+  | { kind: "select_model"; model: string }
+  | { kind: "set_mode"; auto: boolean };
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
   const store = useDesktopStore();

@@ -2,16 +2,20 @@
 //! extension dials into, plus a per-turn relay that dials the child CLI's own
 //! extension bridge (moved to RELAY_PORT via INFER_BROWSER_USE_EXTENSION_PORT)
 //! and forwards browser_command / browser_result frames between the two.
+//! The extension's side-panel frames (conversations, chat, models, mode,
+//! approvals) are answered by the desktop itself from the same conversation
+//! store and agent sessions the sidebar uses.
 //! Wire contract: cli/docs/browser-extension-protocol.md.
 //!
 //! Threading: every WebSocket is owned by exactly one thread running `pump`,
 //! which polls the socket with a short read timeout and drains an mpsc queue
-//! for outbound frames, so no lock is ever held across socket I/O. `Links` is
-//! the single shared lock; `Bridge::running` is taken before `Links` when both
-//! are needed.
+//! for outbound frames, so no lock is ever held across socket I/O. `Links` and
+//! `Panel` are the only shared locks; lock order is `Bridge::running` ->
+//! `Links` -> `Panel`, and none is held while calling out.
 
-use crate::env::home_dir;
+use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_env};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -19,16 +23,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 use tungstenite::{Message, WebSocket};
 
 pub(crate) const RELAY_PORT: u16 = 52790;
 const DEFAULT_PORT: u16 = 52789;
 const CONFIG_FILE: &str = "browser_use.yaml";
 pub(crate) const EVENT: &str = "browser-bridge";
+/// Frontend-bound commands originating from the extension's side panel.
+const PANEL_EVENT: &str = "browser-panel";
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(50);
 const PING_EVERY: Duration = Duration::from_secs(20);
 const RELAY_DIAL_TIMEOUT: Duration = Duration::from_secs(10);
+const CONVERSATION_LIMIT: usize = 50;
 const ALLOWED_ORIGINS: [&str; 3] = [
     "chrome-extension://",
     "moz-extension://",
@@ -137,8 +145,8 @@ fn frame_type(frame: &str) -> Option<String> {
     value.get("type")?.as_str().map(str::to_owned)
 }
 
-/// Which peer a frame is relayed to; `None` means drop it (panel chat frames,
-/// keepalive pings, anything unknown).
+/// Which peer a frame is relayed to verbatim; `None` means it is either a
+/// side-panel frame the desktop answers itself or noise to drop.
 fn relay_target(frame: &str) -> Option<Peer> {
     match frame_type(frame)?.as_str() {
         "browser_command" => Some(Peer::Extension),
@@ -184,6 +192,18 @@ fn hello_frame(token: &str) -> String {
 
 const HELLO_ACK: &str = r#"{"type":"browser_hello_ack"}"#;
 
+fn new_session_id() -> String {
+    let b = hex::encode(rand::random::<[u8; 16]>());
+    format!(
+        "{}-{}-{}-{}-{}",
+        &b[0..8],
+        &b[8..12],
+        &b[12..16],
+        &b[16..20],
+        &b[20..32]
+    )
+}
+
 struct PeerHandle {
     tx: mpsc::Sender<String>,
     sock: TcpStream,
@@ -202,15 +222,30 @@ struct Links {
     cli: Option<PeerHandle>,
 }
 
-type Notify = Arc<dyn Fn(bool) + Send + Sync>;
+/// What the side panel is looking at: the desktop session its transcript
+/// mirrors, the project cwd of every conversation it has listed, and the
+/// agent mode it last chose.
+#[derive(Default)]
+struct Panel {
+    current: Option<String>,
+    projects: HashMap<String, String>,
+    auto: bool,
+}
+
+/// Everything a connection thread needs, shared behind one Arc.
+struct Host {
+    settings: Settings,
+    links: Mutex<Links>,
+    panel: Mutex<Panel>,
+    stop: AtomicBool,
+    app: Option<tauri::AppHandle>,
+    processes: Option<Arc<crate::process_manager::ProcessManager>>,
+}
 
 struct Running {
     addr: SocketAddr,
-    settings: Settings,
-    links: Arc<Mutex<Links>>,
-    stop: Arc<AtomicBool>,
+    host: Arc<Host>,
     accept: JoinHandle<()>,
-    notify: Notify,
 }
 
 #[derive(Default)]
@@ -279,7 +314,266 @@ fn check_request(
         .expect("static 403 response"))
 }
 
-fn serve_extension(stream: TcpStream, token: &str, links: &Arc<Mutex<Links>>, notify: &Notify) {
+impl Host {
+    fn notify(&self, connected: bool) {
+        let Some(app) = &self.app else { return };
+        let _ = app.emit(
+            EVENT,
+            BridgeStatus {
+                enabled: true,
+                connected,
+                port: self.settings.port,
+                token: self.settings.token.clone(),
+            },
+        );
+    }
+
+    fn to_ext(&self, frame: String) {
+        let tx = lock(&self.links).ext.as_ref().map(|h| h.tx.clone());
+        if let Some(tx) = tx {
+            let _ = tx.send(frame);
+        }
+    }
+
+    fn to_cli(&self, frame: String) {
+        let tx = lock(&self.links).cli.as_ref().map(|h| h.tx.clone());
+        if let Some(tx) = tx {
+            let _ = tx.send(frame);
+        }
+    }
+
+    fn to_panel_ui(&self, payload: serde_json::Value) {
+        if let Some(app) = &self.app {
+            let _ = app.emit(PANEL_EVENT, payload);
+        }
+    }
+
+    fn send_json(&self, value: serde_json::Value) {
+        self.to_ext(value.to_string());
+    }
+
+    fn send_snapshot(&self, id: Option<&str>) {
+        let (messages, tool_results) = id.map(|id| self.snapshot(id)).unwrap_or_default();
+        self.send_json(serde_json::json!({
+            "type": "conversation_snapshot",
+            "messages": messages,
+            "tool_results": tool_results,
+        }));
+    }
+
+    /// The CLI's per-cwd JSONL store, read directly (ponytail: a flat
+    /// `storage.directory` override is not resolved - the panel then shows an
+    /// empty transcript; route through `infer conversations show` if needed).
+    fn snapshot(
+        &self,
+        id: &str,
+    ) -> (
+        Vec<serde_json::Value>,
+        serde_json::Map<String, serde_json::Value>,
+    ) {
+        let cwd = lock(&self.panel)
+            .projects
+            .get(id)
+            .map(PathBuf::from)
+            .unwrap_or_else(agent_cwd);
+        let path = crate::agent::conversation_store_dir(&cwd).join(format!("{id}.jsonl"));
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Default::default();
+        };
+        let mut messages = Vec::new();
+        let mut tool_results = serde_json::Map::new();
+        for line in text.lines() {
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let Some(entry) = v.get("entry") else {
+                continue;
+            };
+            let Some(m) = entry.get("message") else {
+                continue;
+            };
+            if let (Some(call), Some(exec)) = (
+                m.get("tool_call_id").and_then(|c| c.as_str()),
+                entry.get("tool_execution"),
+            ) {
+                let ok = exec
+                    .get("success")
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false);
+                tool_results.insert(call.to_owned(), ok.into());
+            }
+            messages.push(m.clone());
+        }
+        (messages, tool_results)
+    }
+
+    fn send_conversations(&self) {
+        let output = std::process::Command::new(infer_bin_path())
+            .args([
+                "conversations",
+                "list",
+                "--all-projects",
+                "--format",
+                "json",
+            ])
+            .env("HOME", home_dir())
+            .envs(infer_env())
+            .current_dir(agent_cwd())
+            .output();
+        let list = output
+            .ok()
+            .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok())
+            .and_then(|v| v.get("conversations").and_then(|c| c.as_array()).cloned())
+            .unwrap_or_default();
+        let mut panel = lock(&self.panel);
+        for c in &list {
+            if let (Some(id), Some(project)) = (
+                c.get("id").and_then(|i| i.as_str()),
+                c.get("project").and_then(|p| p.as_str()),
+            ) {
+                panel.projects.insert(id.to_owned(), project.to_owned());
+            }
+        }
+        drop(panel);
+        let conversations: Vec<serde_json::Value> =
+            list.into_iter().take(CONVERSATION_LIMIT).collect();
+        self.send_json(
+            serde_json::json!({ "type": "conversations", "conversations": conversations }),
+        );
+    }
+
+    fn send_models(&self) {
+        let models = crate::agent::fetch_models().unwrap_or_default();
+        let current = crate::config::read_config().default_model;
+        self.send_json(
+            serde_json::json!({ "type": "models", "models": models, "current": current }),
+        );
+    }
+
+    fn send_mode(&self) {
+        let mode = if lock(&self.panel).auto {
+            "auto"
+        } else {
+            "standard"
+        };
+        self.send_json(serde_json::json!({ "type": "mode", "mode": mode }));
+    }
+
+    fn send_approval(&self, request_id: &str, approved: bool) {
+        let Some(session) = lock(&self.panel).current.clone() else {
+            return;
+        };
+        let line = format!(
+            "{}\n",
+            serde_json::json!({ "type": "approval_response", "tool_call_id": request_id, "approved": approved })
+        );
+        if let Some(p) = &self.processes {
+            let _ = p.write_agent(&session, line.as_bytes());
+        }
+        if let Some(app) = &self.app {
+            let status = if approved { "approved" } else { "denied" };
+            let _ = app.emit(
+                "approval-resolved",
+                serde_json::json!({ "sessionId": session, "callId": request_id, "status": status }),
+            );
+        }
+        self.send_json(
+            serde_json::json!({ "type": "approval_resolved", "request_id": request_id }),
+        );
+    }
+
+    /// Answer a side-panel frame. Anything that shells out runs on its own
+    /// thread so the extension pump keeps relaying browser frames meanwhile.
+    fn handle_panel_frame(self: &Arc<Self>, frame: &str) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(frame) else {
+            return;
+        };
+        let text = |key: &str| v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_owned();
+        let host = Arc::clone(self);
+        match v.get("type").and_then(|t| t.as_str()).unwrap_or("") {
+            "list_conversations" => {
+                std::thread::spawn(move || host.send_conversations());
+            }
+            "list_models" => {
+                std::thread::spawn(move || host.send_models());
+            }
+            "list_skills" => {
+                let skills: Vec<serde_json::Value> = crate::skills::list_installed_skills()
+                    .into_iter()
+                    .map(|name| {
+                        serde_json::json!({ "name": name, "description": "", "scope": "user" })
+                    })
+                    .collect();
+                self.send_json(serde_json::json!({ "type": "skills", "skills": skills }));
+            }
+            "list_history" => {
+                let history = crate::agent::read_history(None).unwrap_or_default();
+                self.send_json(serde_json::json!({ "type": "history", "history": history }));
+            }
+            "resume_conversation" => {
+                let id = text("id");
+                if id.is_empty() {
+                    return;
+                }
+                lock(&self.panel).current = Some(id.clone());
+                self.to_panel_ui(serde_json::json!({ "kind": "open", "id": id }));
+                std::thread::spawn(move || host.send_snapshot(Some(&id)));
+            }
+            "new_session" => {
+                let id = new_session_id();
+                lock(&self.panel).current = Some(id.clone());
+                self.to_panel_ui(serde_json::json!({ "kind": "new", "id": id }));
+                self.send_snapshot(None);
+            }
+            "user_message" => {
+                let content = text("content");
+                let mut panel = lock(&self.panel);
+                let id = panel.current.get_or_insert_with(new_session_id).clone();
+                let project = panel.projects.get(&id).cloned();
+                drop(panel);
+                self.to_panel_ui(serde_json::json!({
+                    "kind": "send", "sessionId": id, "text": content, "project": project,
+                }));
+            }
+            "interrupt" => {
+                let current = lock(&self.panel).current.clone();
+                if let (Some(p), Some(id)) = (&self.processes, current) {
+                    let _ = p.cancel_agent(&id);
+                }
+                self.send_json(serde_json::json!({ "type": "interrupted" }));
+            }
+            "select_model" => {
+                let model = text("model");
+                let _ = crate::config::update_config_file(|existing| {
+                    crate::config::merge_default_model(existing, &model)
+                });
+                self.to_panel_ui(serde_json::json!({ "kind": "select_model", "model": model }));
+                std::thread::spawn(move || {
+                    host.send_models();
+                    host.send_mode();
+                });
+            }
+            "set_mode" => {
+                let auto = text("mode") == "auto";
+                lock(&self.panel).auto = auto;
+                self.to_panel_ui(serde_json::json!({ "kind": "set_mode", "auto": auto }));
+                self.send_mode();
+            }
+            "approval_response" => {
+                self.send_approval(&text("request_id"), text("action") == "approve");
+            }
+            "tool_request" => {
+                self.send_json(serde_json::json!({
+                    "type": "tool_result", "id": text("id"), "success": false, "output": "",
+                    "error": "tool_request is not supported by the desktop bridge",
+                }));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn serve_extension(stream: TcpStream, host: &Arc<Host>) {
     let Ok(sock) = stream.try_clone() else { return };
     let id = sock.peer_addr().ok();
     let _ = stream.set_read_timeout(Some(HELLO_TIMEOUT));
@@ -287,7 +581,9 @@ fn serve_extension(stream: TcpStream, token: &str, links: &Arc<Mutex<Links>>, no
         return;
     };
     let authed = match ws.read() {
-        Ok(Message::Text(text)) => hello_token(&text).is_some_and(|got| token_matches(&got, token)),
+        Ok(Message::Text(text)) => {
+            hello_token(&text).is_some_and(|got| token_matches(&got, &host.settings.token))
+        }
         _ => false,
     };
     if !authed {
@@ -298,24 +594,20 @@ fn serve_extension(stream: TcpStream, token: &str, links: &Arc<Mutex<Links>>, no
         return;
     }
     let (tx, rx) = mpsc::channel();
-    if let Some(old) = lock(links).ext.replace(PeerHandle { tx, sock, id }) {
+    if let Some(old) = lock(&host.links).ext.replace(PeerHandle { tx, sock, id }) {
         old.close();
     }
-    notify(true);
-    pump(ws, rx, |frame| {
-        if relay_target(frame) != Some(Peer::Cli) {
-            return;
-        }
-        let cli_tx = lock(links).cli.as_ref().map(|h| h.tx.clone());
-        if let Some(tx) = cli_tx {
-            let _ = tx.send(frame.to_owned());
-        }
+    host.notify(true);
+    pump(ws, rx, |frame| match relay_target(frame) {
+        Some(Peer::Cli) => host.to_cli(frame.to_owned()),
+        Some(Peer::Extension) => {}
+        None => host.handle_panel_frame(frame),
     });
-    let mut l = lock(links);
+    let mut l = lock(&host.links);
     if l.ext.as_ref().is_some_and(|h| h.id == id) {
         l.ext = None;
         drop(l);
-        notify(false);
+        host.notify(false);
     }
 }
 
@@ -338,12 +630,12 @@ fn dial(port: u16, stop: &AtomicBool) -> Option<WebSocket<TcpStream>> {
     }
 }
 
-fn relay_cli(port: u16, settings: &Settings, links: &Arc<Mutex<Links>>, stop: &AtomicBool) {
-    let Some(mut ws) = dial(port, stop) else {
+fn relay_cli(port: u16, host: &Arc<Host>) {
+    let Some(mut ws) = dial(port, &host.stop) else {
         return;
     };
     if ws
-        .send(Message::text(hello_frame(&settings.token)))
+        .send(Message::text(hello_frame(&host.settings.token)))
         .is_err()
     {
         return;
@@ -358,15 +650,15 @@ fn relay_cli(port: u16, settings: &Settings, links: &Arc<Mutex<Links>>, stop: &A
     let id = sock.local_addr().ok();
     let (tx, rx) = mpsc::channel();
     let own_tx = tx.clone();
-    if let Some(old) = lock(links).cli.replace(PeerHandle { tx, sock, id }) {
+    if let Some(old) = lock(&host.links).cli.replace(PeerHandle { tx, sock, id }) {
         old.close();
     }
-    let ext_port = settings.port;
+    let ext_port = host.settings.port;
     pump(ws, rx, |frame| {
         if relay_target(frame) != Some(Peer::Extension) {
             return;
         }
-        let ext_tx = lock(links).ext.as_ref().map(|h| h.tx.clone());
+        let ext_tx = lock(&host.links).ext.as_ref().map(|h| h.tx.clone());
         match ext_tx {
             Some(tx) => {
                 let _ = tx.send(frame.to_owned());
@@ -378,14 +670,19 @@ fn relay_cli(port: u16, settings: &Settings, links: &Arc<Mutex<Links>>, stop: &A
             }
         }
     });
-    let mut l = lock(links);
+    let mut l = lock(&host.links);
     if l.cli.as_ref().is_some_and(|h| h.id == id) {
         l.cli = None;
     }
 }
 
 impl Bridge {
-    pub(crate) fn start(&self, settings: Settings, notify: Notify) -> Result<u16, String> {
+    pub(crate) fn start(
+        &self,
+        settings: Settings,
+        app: Option<tauri::AppHandle>,
+        processes: Option<Arc<crate::process_manager::ProcessManager>>,
+    ) -> Result<u16, String> {
         if settings.token.is_empty() {
             return Err("browser_use.extension.token is empty".into());
         }
@@ -397,35 +694,28 @@ impl Bridge {
             )
         })?;
         let addr = listener.local_addr().map_err(|e| e.to_string())?;
-        let links: Arc<Mutex<Links>> = Arc::default();
-        let stop = Arc::new(AtomicBool::new(false));
+        let host = Arc::new(Host {
+            settings,
+            links: Mutex::default(),
+            panel: Mutex::default(),
+            stop: AtomicBool::new(false),
+            app,
+            processes,
+        });
         let accept = {
-            let (links, stop, notify, token) = (
-                Arc::clone(&links),
-                Arc::clone(&stop),
-                Arc::clone(&notify),
-                settings.token.clone(),
-            );
+            let host = Arc::clone(&host);
             std::thread::spawn(move || {
                 for stream in listener.incoming() {
-                    if stop.load(Ordering::SeqCst) {
+                    if host.stop.load(Ordering::SeqCst) {
                         break;
                     }
                     let Ok(stream) = stream else { continue };
-                    let (links, notify, token) =
-                        (Arc::clone(&links), Arc::clone(&notify), token.clone());
-                    std::thread::spawn(move || serve_extension(stream, &token, &links, &notify));
+                    let host = Arc::clone(&host);
+                    std::thread::spawn(move || serve_extension(stream, &host));
                 }
             })
         };
-        *lock(&self.running) = Some(Running {
-            addr,
-            settings,
-            links,
-            stop,
-            accept,
-            notify,
-        });
+        *lock(&self.running) = Some(Running { addr, host, accept });
         Ok(addr.port())
     }
 
@@ -433,9 +723,9 @@ impl Bridge {
         let Some(running) = lock(&self.running).take() else {
             return;
         };
-        running.stop.store(true, Ordering::SeqCst);
+        running.host.stop.store(true, Ordering::SeqCst);
         {
-            let mut l = lock(&running.links);
+            let mut l = lock(&running.host.links);
             if let Some(h) = l.ext.take() {
                 h.close();
             }
@@ -445,13 +735,15 @@ impl Bridge {
         }
         let _ = TcpStream::connect(running.addr);
         let _ = running.accept.join();
-        (running.notify)(false);
+        running.host.notify(false);
+    }
+
+    fn host(&self) -> Option<Arc<Host>> {
+        lock(&self.running).as_ref().map(|r| Arc::clone(&r.host))
     }
 
     pub(crate) fn connected(&self) -> bool {
-        lock(&self.running)
-            .as_ref()
-            .is_some_and(|r| lock(&r.links).ext.is_some())
+        self.host().is_some_and(|h| lock(&h.links).ext.is_some())
     }
 
     /// Dial the CLI bridge of the turn just spawned and relay until it closes.
@@ -460,17 +752,58 @@ impl Bridge {
     }
 
     fn connect_relay_to(&self, port: u16) {
-        let snapshot = lock(&self.running).as_ref().map(|r| {
-            (
-                r.settings.clone(),
-                Arc::clone(&r.links),
-                Arc::clone(&r.stop),
-            )
-        });
-        let Some((settings, links, stop)) = snapshot else {
+        let Some(host) = self.host() else { return };
+        std::thread::spawn(move || relay_cli(port, &host));
+    }
+
+    fn for_session(&self, session_id: &str) -> Option<Arc<Host>> {
+        let host = self.host()?;
+        let matches = lock(&host.panel).current.as_deref() == Some(session_id);
+        matches.then_some(host)
+    }
+
+    /// Mirror one raw AG-UI line of the panel's session to the extension.
+    pub(crate) fn chat_event(&self, session_id: &str, line: &str) {
+        let Some(host) = self.for_session(session_id) else {
             return;
         };
-        std::thread::spawn(move || relay_cli(port, &settings, &links, &stop));
+        if !line.trim_start().starts_with('{') {
+            return;
+        }
+        host.to_ext(format!(r#"{{"type":"chat_event","event":{line}}}"#));
+    }
+
+    /// Echo the user's turn the way the CLI does, so the panel shows it.
+    pub(crate) fn user_turn(&self, session_id: &str, prompt: &str) {
+        let Some(host) = self.for_session(session_id) else {
+            return;
+        };
+        let id = new_session_id();
+        for event in [
+            serde_json::json!({ "type": "TEXT_MESSAGE_START", "messageId": id, "role": "user" }),
+            serde_json::json!({ "type": "TEXT_MESSAGE_CONTENT", "messageId": id, "delta": prompt }),
+            serde_json::json!({ "type": "TEXT_MESSAGE_END", "messageId": id }),
+        ] {
+            host.to_ext(serde_json::json!({ "type": "chat_event", "event": event }).to_string());
+        }
+    }
+
+    pub(crate) fn approval_request(&self, session_id: &str, call_id: &str, tool: &str, args: &str) {
+        let Some(host) = self.for_session(session_id) else {
+            return;
+        };
+        host.send_json(serde_json::json!({
+            "type": "approval_request", "request_id": call_id, "tool_name": tool, "tool_args": args,
+        }));
+    }
+
+    /// The desktop UI answered an approval; tell the panel to drop its card.
+    pub(crate) fn approval_resolved(&self, call_id: &str) {
+        if let Some(host) = self.host() {
+            host.send_json(
+                serde_json::json!({ "type": "approval_resolved", "request_id": call_id }),
+            );
+        }
     }
 }
 
@@ -484,30 +817,21 @@ fn status(bridge: &Bridge) -> BridgeStatus {
     }
 }
 
-fn notifier(app: tauri::AppHandle) -> Notify {
-    Arc::new(move |connected| {
-        use tauri::Emitter;
-        let settings = read_settings();
-        let _ = app.emit(
-            EVENT,
-            BridgeStatus {
-                enabled: settings.active(),
-                connected,
-                port: settings.port,
-                token: settings.token,
-            },
-        );
-    })
+fn start_with_app(state: &crate::AppState, app: tauri::AppHandle) -> Result<u16, String> {
+    state.browser_bridge.start(
+        read_settings(),
+        Some(app),
+        Some(Arc::clone(&state.processes)),
+    )
 }
 
 /// Start the extension server if browser use is enabled; a bind failure is
 /// reported, not fatal, so the app still launches.
-pub(crate) fn start_if_enabled(bridge: &Bridge, app: tauri::AppHandle) {
-    let settings = read_settings();
-    if !settings.active() {
+pub(crate) fn start_if_enabled(state: &crate::AppState, app: tauri::AppHandle) {
+    if !read_settings().active() {
         return;
     }
-    if let Err(e) = bridge.start(settings, notifier(app)) {
+    if let Err(e) = start_with_app(state, app) {
         eprintln!("browser bridge autostart failed: {e}");
     }
 }
@@ -524,13 +848,14 @@ pub(crate) fn set_browser_use_enabled(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<BridgeStatus, String> {
     write_enabled(&config_path(&home_dir()), enabled)?;
-    let bridge = &state.browser_bridge;
     if enabled {
-        bridge.start(read_settings(), notifier(app))?;
+        start_with_app(&state, app.clone())?;
     } else {
-        bridge.stop();
+        state.browser_bridge.stop();
     }
-    Ok(status(bridge))
+    let current = status(&state.browser_bridge);
+    let _ = app.emit(EVENT, current.clone());
+    Ok(current)
 }
 
 #[cfg(test)]
@@ -586,6 +911,13 @@ mod tests {
         assert_eq!(parse_settings("").port, DEFAULT_PORT);
     }
 
+    #[test]
+    fn session_ids_look_like_uuids() {
+        let id = new_session_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(id.matches('-').count(), 4);
+    }
+
     fn connect_ext(port: u16, hello: &str) -> WebSocket<TcpStream> {
         let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         stream
@@ -615,7 +947,7 @@ mod tests {
             port: 0,
             token: "tok".into(),
         };
-        let port = bridge.start(settings, Arc::new(|_| {})).unwrap();
+        let port = bridge.start(settings, None, None).unwrap();
 
         let mut bad = connect_ext(port, r#"{"type":"browser_hello","token":"nope"}"#);
         assert_eq!(read_text(&mut bad), None);
@@ -624,6 +956,28 @@ mod tests {
         let mut ext = connect_ext(port, r#"{"type":"browser_hello","token":"tok"}"#);
         assert_eq!(read_text(&mut ext).as_deref(), Some(HELLO_ACK));
         assert!(bridge.connected());
+
+        ext.send(Message::text(r#"{"type":"new_session"}"#))
+            .unwrap();
+        assert!(
+            read_text(&mut ext)
+                .unwrap()
+                .contains(r#""type":"conversation_snapshot""#)
+        );
+        ext.send(Message::text(r#"{"type":"set_mode","mode":"auto"}"#))
+            .unwrap();
+        assert_eq!(
+            read_text(&mut ext).as_deref(),
+            Some(r#"{"mode":"auto","type":"mode"}"#)
+        );
+        let session = lock(&bridge.host().unwrap().panel).current.clone().unwrap();
+        bridge.user_turn(&session, "hi");
+        assert!(read_text(&mut ext).unwrap().contains(r#""role":"user""#));
+        read_text(&mut ext).unwrap();
+        read_text(&mut ext).unwrap();
+        bridge.chat_event("other-session", r#"{"type":"RUN_STARTED"}"#);
+        bridge.chat_event(&session, r#"{"type":"RUN_STARTED"}"#);
+        assert!(read_text(&mut ext).unwrap().contains("RUN_STARTED"));
 
         let fake_cli = TcpListener::bind("127.0.0.1:0").unwrap();
         bridge.connect_relay_to(fake_cli.local_addr().unwrap().port());
@@ -646,8 +1000,7 @@ mod tests {
         .unwrap();
         let got = read_text(&mut ext).unwrap();
         assert_eq!(relay_target(&got), Some(Peer::Extension));
-        ext.send(Message::text(r#"{"type":"list_conversations"}"#))
-            .unwrap();
+        ext.send(Message::text(r#"{"type":"ping"}"#)).unwrap();
         ext.send(Message::text(
             r#"{"type":"browser_result","id":"c1","error":""}"#,
         ))

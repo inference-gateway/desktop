@@ -458,6 +458,8 @@ pub(crate) async fn send_message(
     if browser_use {
         state.browser_bridge.connect_relay();
     }
+    let bridge = Arc::clone(&state.browser_bridge);
+    bridge.user_turn(&session_id, &prompt);
 
     let sink = Arc::new(EventSink {
         channel: on_event,
@@ -482,9 +484,23 @@ pub(crate) async fn send_message(
             if line.trim().is_empty() {
                 continue;
             }
+            bridge.chat_event(&sink_clone.session_id, &line);
             if let Some(event) = p.parse_line(&line) {
                 if matches!(event, AgentEvent::AgentError { .. }) {
                     *had_error_clone.lock().unwrap() = true;
+                }
+                if let AgentEvent::ApprovalRequest {
+                    tool_name,
+                    tool_args,
+                    tool_call_id,
+                } = &event
+                {
+                    bridge.approval_request(
+                        &sink_clone.session_id,
+                        tool_call_id,
+                        tool_name,
+                        tool_args,
+                    );
                 }
                 sink_clone.send(event);
             }
@@ -715,7 +731,7 @@ pub(crate) async fn delete_conversation(
 
 /// The CLI's per-cwd conversation store: ~/.infer/projects/<slug>/conversations,
 /// where the slug is the absolute cwd with path separators replaced by '-'.
-fn conversation_store_dir(cwd: &Path) -> PathBuf {
+pub(crate) fn conversation_store_dir(cwd: &Path) -> PathBuf {
     let slug = cwd
         .to_string_lossy()
         .replace(std::path::MAIN_SEPARATOR, "-");
@@ -763,6 +779,10 @@ pub(crate) async fn move_conversation(
 
 #[tauri::command]
 pub(crate) async fn list_models() -> Result<Vec<String>, String> {
+    fetch_models()
+}
+
+pub(crate) fn fetch_models() -> Result<Vec<String>, String> {
     if mock_mode() {
         return Ok(vec![
             "openai/gpt-4o".into(),
