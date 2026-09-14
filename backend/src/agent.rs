@@ -965,7 +965,6 @@ pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> 
         .decode(&data)
         .map_err(|e| format!("Invalid upload data: {e}"))?;
 
-    // Enforce 25 MB max - a 48 MP iPhone HEIC original is ~5-15 MB.
     const MAX_BYTES: usize = 25 * 1024 * 1024;
     if bytes.len() > MAX_BYTES {
         return Err(format!("File too large: {} bytes (max 25 MB)", bytes.len()));
