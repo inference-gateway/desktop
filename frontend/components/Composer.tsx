@@ -459,7 +459,7 @@ export function Composer() {
             </button>
           </div>
         )}
-        <div className="flex items-end gap-[0.35rem] py-[0.35rem] pl-4 pr-[0.4rem]">
+        <div className="flex items-end gap-[0.35rem] px-[0.4rem] py-[0.35rem]">
           <input
             ref={fileRef}
             type="file"
