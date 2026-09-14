@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 mod agent;
+mod browser_bridge;
 mod cli_install;
 mod config;
 mod download;
@@ -31,6 +32,7 @@ pub(crate) struct AppState {
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
     screen_recording: std::sync::Mutex<Option<screen_records::RecordingHandle>>,
+    browser_bridge: Arc<browser_bridge::Bridge>,
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
@@ -67,11 +69,26 @@ pub fn run() {
             stored_traces,
             stored_metrics,
             screen_recording: std::sync::Mutex::new(None),
+            browser_bridge: Arc::new(browser_bridge::Bridge::default()),
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
             raise_overlay_above_dock(app);
             skills::install_bundled_skills();
+            browser_bridge::start_if_enabled(&app.state::<AppState>(), app.handle().clone());
+            {
+                use tauri::Listener;
+                let bridge = Arc::clone(&app.state::<AppState>().browser_bridge);
+                app.listen_any("approval-resolved", move |event| {
+                    if let Some(call_id) =
+                        serde_json::from_str::<serde_json::Value>(event.payload())
+                            .ok()
+                            .and_then(|v| v.get("callId")?.as_str().map(String::from))
+                    {
+                        bridge.approval_resolved(&call_id);
+                    }
+                });
+            }
             if config::read_config().schedule_enabled {
                 let state = app.state::<AppState>();
                 if let Err(e) = scheduler::spawn_daemon(&state) {
@@ -172,6 +189,8 @@ pub fn run() {
             observability::get_metrics,
             permissions::computer_use_permission_status,
             permissions::set_computer_use_enabled,
+            browser_bridge::browser_use_status,
+            browser_bridge::set_browser_use_enabled,
             permissions::request_accessibility_permission,
             permissions::request_screen_recording_permission,
             screen_records::start_screen_recording,
@@ -198,6 +217,7 @@ pub fn run() {
                 eprintln!("process shutdown during Tauri exit failed: {error}");
             }
             screen_records::stop_on_exit(&state);
+            state.browser_bridge.stop();
         }
     });
 }

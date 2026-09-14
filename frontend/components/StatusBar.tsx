@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
+import { BrowserBridgeDot } from "./BrowserBridgeDot";
 
 const DOT: Record<string, string> = {
   error: "bg-destructive",
@@ -194,20 +195,23 @@ export function StatusBar() {
           </Fragment>
         ))}
       </span>
-      <button
-        aria-label={autoModeDescription}
-        aria-pressed={autoMode}
-        title={`${autoModeDescription} (Shift+Tab in composer)`}
-        onClick={() => setAutoMode(!autoMode)}
-        className={cn(
-          "ml-auto inline-flex size-7 items-center justify-center rounded-full",
-          autoMode
-            ? "bg-primary text-primary-foreground hover:bg-primary-hover"
-            : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-        )}
-      >
-        <Zap size={16} aria-hidden="true" />
-      </button>
+      <span className="ml-auto inline-flex items-center gap-1">
+        <BrowserBridgeDot />
+        <button
+          aria-label={autoModeDescription}
+          aria-pressed={autoMode}
+          title={`${autoModeDescription} (Shift+Tab in composer)`}
+          onClick={() => setAutoMode(!autoMode)}
+          className={cn(
+            "inline-flex size-7 items-center justify-center rounded-full",
+            autoMode
+              ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+          )}
+        >
+          <Zap size={16} aria-hidden="true" />
+        </button>
+      </span>
     </div>
   );
 }

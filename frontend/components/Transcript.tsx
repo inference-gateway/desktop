@@ -481,7 +481,7 @@ export function Transcript() {
         return;
       }
       const key = event.key.toLowerCase();
-      if (key !== "a" && key !== "r") return;
+      if (key !== "a" && key !== "d") return;
       event.preventDefault();
       approve(pendingApproval.callId, key === "a");
     };

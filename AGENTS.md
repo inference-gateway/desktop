@@ -2,68 +2,6 @@
 
 ## Project Structure
 
-```
-.
-├── .github/workflows/tasks.yml   # CI/CD: agent-driven workflow (infer-action)
-├── .releaserc.json               # semantic-release config (conventional commits, release assets)
-├── README.md                     # Project overview
-├── AGENTS.md                     # This file - contributor & agent guide
-├── CLAUDE.md -> AGENTS.md        # Symlink for Claude Code compatibility
-├── CONTRIBUTING.md               # Contributor guidelines
-├── LICENSE                       # Apache-2.0
-├── .githooks/pre-commit          # Pre-commit hook (typecheck + tests)
-├── .flox/env/                    # Flox dev environment (pinned Rust toolchain, task, bun, infer)
-├── Taskfile.yml                  # Task runner: common build/test/dev commands
-├── .agents/skills/               # Agent skills: contributor skills + bundled end-user skills (video-editing, desktop-projects)
-├── .claude/skills -> ../.agents/skills  # Symlink for Claude Code
-├── package.json                  # Frontend deps + scripts (Bun)
-├── bun.lock                      # Bun lockfile
-├── vite.config.ts                # Vite (React + Tailwind v4 plugin, @ alias)
-├── tsconfig.json                 # TypeScript config
-├── tsconfig.node.json            # TypeScript config for Vite tooling
-├── components.json               # shadcn/ui config
-├── index.html                    # Vite entry (mounts frontend/main.tsx into #app)
-├── Cargo.toml                    # Root workspace: members = ["backend", "e2e"]
-├── Cargo.lock                    # Workspace lockfile
-├── dist/                         # Vite build output, embedded by Tauri (gitignored)
-├── frontend/                     # React + TypeScript frontend
-│   ├── main.tsx                  # Entry: mounts <App/>, system dark mode
-│   ├── App.tsx  store.tsx        # App shell + state store (context)
-│   ├── monitor.tsx               # Always-on-top monitor window (computer-use sessions)
-│   ├── overlay.tsx               # Fullscreen computer-use action overlay
-│   ├── index.css                 # Tailwind v4 entry + global styles
-│   ├── components/               # UI (TopBar, Sidebar, Transcript, Composer, Main, SettingsView, ...)
-│   ├── hooks/                    # useVoiceInput (speech-to-text)
-│   ├── lib/                      # tauri client, markdown, tools, transcript, monitor-state, shortcuts, ...
-│   └── public/                   # Static assets (logo.png)
-├── e2e/                          # macOS e2e harness (workspace member)
-└── backend/                      # Tauri v2 backend (Rust)
-    ├── Cargo.toml
-    ├── build.rs
-    ├── Info.plist                # macOS bundle config
-    ├── tauri.conf.json
-    ├── capabilities/default.json
-    ├── icons/                    # App icons (icns, ico, png)
-    └── src/
-        ├── lib.rs                # Wiring only: AppState, run(), command registration
-        ├── main.rs
-        ├── agent.rs              # AG-UI parser, sessions, approvals, A2A agents
-        ├── cli_install.rs        # CLI download/install
-        ├── config.rs             # config.yaml merging + auth store
-        ├── download.rs           # Shared download + checksum helpers
-        ├── env.rs                # Paths, env composition, agent cwd
-        ├── gateway.rs            # Gateway binary + lifecycle
-        ├── observability.rs      # OTLP collector, traces/metrics
-        ├── permissions.rs        # macOS permission states + mock grant flow (e2e)
-        ├── process_manager.rs    # Ownership + shutdown of long-lived child processes
-        ├── projects.rs           # Projects: repo import, per-project cwd/files
-        ├── scheduler.rs          # Background agent runs + log capture
-        ├── skills.rs             # Skill install/list (wraps `infer skills`)
-        ├── stt.rs                # Whisper voice input
-        ├── tasks.rs              # infer-action workflow template, version pin, task issue/PR commands
-        └── updates.rs            # CLI/gateway/desktop update checks
-```
-
 The repository is a scaffold for agent-driven development on `inference-gateway/desktop`. It pairs a **React + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) with a **Tauri v2 / Rust** backend. Cargo commands run from `backend/` (or the workspace root with `-p inference-gateway-desktop`); the Taskfile wraps them at the repo root and builds the frontend first where needed.
 
 ## Before You Start
@@ -79,16 +17,6 @@ The hook checks that every tracked text file ends with a final newline (`.editor
 ## Build / Test / Dev Commands
 
 The dev environment - Rust toolchain, `cargo`, `cargo-tauri`, `task`, `bun`, `infer` - is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
-
-| Task            | Description                                                        |
-|-----------------|--------------------------------------------------------------------|
-| `task install`  | Install frontend dependencies (`bun install`)                     |
-| `task web`      | Build the React frontend into `dist/` (`bun run build`)           |
-| `task build`    | Build the frontend then the Rust app (`cargo build`)              |
-| `task test`     | Build the frontend, then run all tests (`cargo test`)             |
-| `task clippy`   | Lint and format check (`cargo fmt --check`, `cargo clippy -- -D warnings`) |
-| `task check`    | Typecheck, no codegen (`cargo check`)                             |
-| `task dev`      | Run the app (`cargo tauri dev`; rebuilds the frontend on launch)  |
 
 The Rust build embeds the frontend from `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate first builds `dist/`**. Frontend unit tests run with `bun test`.
 
@@ -112,11 +40,8 @@ On CI (ubuntu), the app is built with `bun run build` and Rust checks run (fmt, 
 ## Coding Style
 
 - **Language**: Rust. Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and standard `rustfmt` style.
-- **Formatting**: `cargo fmt` - no debates.
 - **Simplicity**: Prefer the standard library over external dependencies. Favor boring, explicit code over clever abstractions.
 - **Dependencies**: Look up the latest stable version (`cargo search` / `cargo info`) and use it - never pin an older version.
-- **YAGNI**: Don't add code until it's needed. Delete dead code when you find it.
-- **Error handling**: Handle errors at trust boundaries. Don't swallow errors silently.
 - **`ponytail:` comments**: Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling and upgrade path (e.g. `ponytail: O(n^2) - fine for <100 items`).
 - **No inline comments in function bodies**: Code should be self-documenting. Use inline `//` comments only at the module level or as `ponytail:` debt markers.
 - **User-facing text uses regular dashes**: Use `-` (regular dash) instead of em dashes in README, CONTRIBUTING, and other user-facing docs. Em dashes are reserved for internal/agent-facing files.
@@ -165,20 +90,3 @@ When working on a GitHub issue that belongs to a project board, keep its status 
 ### Plugins
 - **ponytail** (`DietrichGebert/ponytail`): Lazy senior dev mode - forces the simplest, most minimal solution.
 - **i-have-adhd** (`ayghri/i-have-adhd`): ADHD-friendly workflow support.
-
-## Activating the Project Locally
-
-```bash
-# Clone
-git clone git@github.com:inference-gateway/desktop.git
-cd desktop
-
-# Enter the flox dev environment (Rust toolchain, task, infer)
-flox activate
-
-# Activate git hooks
-git config core.hooksPath .githooks
-
-# Run checks
-task check
-```

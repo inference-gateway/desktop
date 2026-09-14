@@ -40,6 +40,7 @@ import {
   type VoiceSample,
 } from "@/lib/tauri";
 import { AudioPlayer } from "@/components/AudioPlayer";
+import { useBrowserUseStatus } from "@/components/BrowserBridgeDot";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
@@ -390,6 +391,8 @@ function GeneralTab() {
   const { maxSessions, setMaxSessions, models, model, setModel, setShowStatusBar } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [computerUsePermissions, setComputerUsePermissions] = useState<ComputerUsePermissionStatus | null>(null);
+  const browserUse = useBrowserUseStatus();
+  const [browserUseError, setBrowserUseError] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -509,6 +512,57 @@ function GeneralTab() {
                 .then(refreshComputerUsePermissions);
             }}
           />
+        </div>
+      )}
+
+      {/* Browser use */}
+      <h3 className="text-[0.9rem] font-semibold">Browser Use</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Lets the agent drive your real browser through the opentask extension. Paste the port and token below into the
+        extension options; the desktop holds the port while running, so a standalone infer session cannot use it.
+      </p>
+      <div className="mb-3 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="browser-use-enabled"
+          checked={!!browserUse?.enabled}
+          onChange={(e) => {
+            setBrowserUseError("");
+            api.setBrowserUseEnabled(e.target.checked).catch((err) => setBrowserUseError(String(err)));
+          }}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="browser-use-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Enable Browser Use (extension)
+        </Label>
+      </div>
+      {browserUseError && (
+        <p role="alert" className="mb-3 text-[0.75rem] text-destructive">
+          {browserUseError}
+        </p>
+      )}
+      {browserUse?.enabled && (
+        <div className="mb-5 flex flex-col gap-2 text-[0.8rem]">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "h-[0.45rem] w-[0.45rem] shrink-0 rounded-full",
+                browserUse.connected ? "bg-emerald-500" : "bg-muted-foreground",
+              )}
+            />
+            {browserUse.connected ? "Extension connected" : "Extension not connected"}
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="w-12">Port</Label>
+            <Input readOnly value={browserUse.port} className="w-28" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="w-12">Token</Label>
+            <Input readOnly value={browserUse.token} className="max-w-[24rem]" />
+            <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(browserUse.token)}>
+              Copy
+            </Button>
+          </div>
         </div>
       )}
 
