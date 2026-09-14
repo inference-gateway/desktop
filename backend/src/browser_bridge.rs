@@ -192,6 +192,24 @@ fn hello_frame(token: &str) -> String {
 
 const HELLO_ACK: &str = r#"{"type":"browser_hello_ack"}"#;
 
+/// Persist one side-panel attachment (`{filename, mime_type, data}`) and return
+/// the `[Attached image: <path>]` line the agent already understands.
+fn save_panel_attachment(a: &serde_json::Value) -> Option<String> {
+    let mime = a.get("mime_type")?.as_str()?.to_owned();
+    let data = a.get("data")?.as_str()?.to_owned();
+    match crate::agent::save_upload(data, mime) {
+        Ok(path) => Some(format!("[Attached image: {path}]")),
+        Err(e) => {
+            let name = a
+                .get("filename")
+                .and_then(|x| x.as_str())
+                .unwrap_or("attachment");
+            eprintln!("browser bridge: dropped attachment {name}: {e}");
+            None
+        }
+    }
+}
+
 fn new_session_id() -> String {
     let b = hex::encode(rand::random::<[u8; 16]>());
     format!(
@@ -526,7 +544,15 @@ impl Host {
                 self.send_snapshot(None);
             }
             "user_message" => {
-                let content = text("content");
+                let refs: Vec<String> = v["attachments"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(save_panel_attachment).collect())
+                    .unwrap_or_default();
+                let content = if refs.is_empty() {
+                    text("content")
+                } else {
+                    format!("{}\n{}", text("content"), refs.join("\n"))
+                };
                 let mut panel = lock(&self.panel);
                 let id = panel.current.get_or_insert_with(new_session_id).clone();
                 let project = panel.projects.get(&id).cloned();
@@ -861,6 +887,18 @@ pub(crate) fn set_browser_use_enabled(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_panel_attachment_skips_unsupported_or_malformed_entries() {
+        let unsupported =
+            serde_json::json!({"filename": "a.txt", "mime_type": "text/plain", "data": "aGk="});
+        assert_eq!(save_panel_attachment(&unsupported), None);
+        let missing_data = serde_json::json!({"filename": "a.png", "mime_type": "image/png"});
+        assert_eq!(save_panel_attachment(&missing_data), None);
+        let bad_base64 =
+            serde_json::json!({"filename": "a.png", "mime_type": "image/png", "data": "***"});
+        assert_eq!(save_panel_attachment(&bad_base64), None);
+    }
 
     #[test]
     fn relay_target_passes_browser_frames_and_drops_the_rest() {
