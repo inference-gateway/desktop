@@ -32,6 +32,9 @@ export function Composer() {
     running,
     send,
     cancel,
+    queuedPrompt,
+    discardQueued,
+    popQueued,
     setStatus,
     setError,
     history,
@@ -273,6 +276,17 @@ export function Composer() {
       onSend();
       return;
     }
+    if (e.key === "ArrowUp") {
+      const queued = popQueued();
+      if (queued != null) {
+        e.preventDefault();
+        cursorRef.current = -1;
+        draftRef.current = "";
+        el.value = queued;
+        autoGrow(el);
+        return;
+      }
+    }
     const recall = bashMode ? bashHistory : history;
     if (e.key === "ArrowUp" && recall.length > 0) {
       e.preventDefault();
@@ -325,6 +339,19 @@ export function Composer() {
         id="composer"
         className="mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20"
       >
+        {queuedPrompt && (
+          <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">Queued: {queuedPrompt}</span>
+            <button
+              aria-label="Discard queued prompt"
+              title="Discard queued prompt"
+              onClick={discardQueued}
+              className="shrink-0 rounded p-0.5 hover:bg-secondary hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
         {bashMode && (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
             <Terminal size={13} className="shrink-0" />
@@ -488,7 +515,7 @@ export function Composer() {
                 ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
                 : "Message the orchestrator..."
             }
-            disabled={initSelecting ? !ready : !enabled}
+            disabled={!ready}
             onPaste={onPaste}
             onInput={handleInput}
             onKeyDown={onKeyDown}
