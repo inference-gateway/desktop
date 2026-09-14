@@ -436,6 +436,9 @@ pub(crate) async fn send_message(
         .filter(|dir| std::fs::create_dir_all(dir).is_ok())
         .unwrap_or_else(agent_cwd);
     let extras = compose_extras(extra_instructions.as_deref(), &cwd);
+    for path in attached_image_paths(&prompt) {
+        cmd.arg("-f").arg(path);
+    }
     cmd.arg(&prompt)
         .envs(infer_env())
         .envs(prompt_env(system_prompt.as_deref(), Some(&extras)))
@@ -948,6 +951,25 @@ fn copy_to_downloads(src: &Path, home: &Path) -> Result<String, String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
+/// Paths from the `[Attached image: <path>]` lines the composer and browser
+/// bridge prepend to a prompt, limited to formats the CLI can decode so they
+/// can be handed to `infer headless -f` and reach vision models as image parts.
+/// ponytail: HEIC/SVG/PDF stay text-only until the CLI can decode them.
+pub(crate) fn attached_image_paths(prompt: &str) -> Vec<String> {
+    const DECODABLE: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+    prompt
+        .lines()
+        .filter_map(|l| l.strip_prefix("[Attached image: ")?.strip_suffix(']'))
+        .filter(|p| {
+            std::path::Path::new(p)
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| DECODABLE.contains(&e.to_ascii_lowercase().as_str()))
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
 #[tauri::command]
 pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> {
     let ext = match mime.as_str() {
@@ -1188,6 +1210,16 @@ mod tests {
         assert!(
             matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello! How can I help you?")
         );
+    }
+
+    #[test]
+    fn attached_image_paths_picks_decodable_marker_lines_only() {
+        let prompt = "[Attached image: /u/.infer/tmp/uploads/a.jpg]\n[Attached image: /u/.infer/tmp/uploads/b.heic]\n[Attached image: /u/x.PNG]\n\nwhat is this? [Attached image: /u/inline.png]";
+        assert_eq!(
+            attached_image_paths(prompt),
+            vec!["/u/.infer/tmp/uploads/a.jpg", "/u/x.PNG"]
+        );
+        assert!(attached_image_paths("no images").is_empty());
     }
 
     #[test]
