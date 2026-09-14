@@ -954,7 +954,6 @@ fn copy_to_downloads(src: &Path, home: &Path) -> Result<String, String> {
 /// Paths from the `[Attached image: <path>]` lines the composer and browser
 /// bridge prepend to a prompt, limited to formats the CLI can decode so they
 /// can be handed to `infer headless -f` and reach vision models as image parts.
-/// ponytail: HEIC/SVG/PDF stay text-only until the CLI can decode them.
 pub(crate) fn attached_image_paths(prompt: &str) -> Vec<String> {
     const DECODABLE: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
     prompt
