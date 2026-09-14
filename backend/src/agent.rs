@@ -953,6 +953,8 @@ pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> 
     let ext = match mime.as_str() {
         "image/png" => "png",
         "image/jpeg" => "jpg",
+        "image/heic" => "heic",
+        "image/heif" => "heif",
         "image/svg+xml" => "svg",
         "application/pdf" => "pdf",
         _ => return Err(format!("Unsupported file type: {mime}")),
@@ -963,10 +965,9 @@ pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> 
         .decode(&data)
         .map_err(|e| format!("Invalid upload data: {e}"))?;
 
-    // Enforce 10 MB max.
-    const MAX_BYTES: usize = 10 * 1024 * 1024;
+    const MAX_BYTES: usize = 25 * 1024 * 1024;
     if bytes.len() > MAX_BYTES {
-        return Err(format!("File too large: {} bytes (max 10 MB)", bytes.len()));
+        return Err(format!("File too large: {} bytes (max 25 MB)", bytes.len()));
     }
 
     let nanos = std::time::SystemTime::now()

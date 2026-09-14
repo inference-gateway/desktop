@@ -772,6 +772,8 @@ fn mime_for_ext(ext: &str) -> Option<&'static str> {
         "pdf" => Some("application/pdf"),
         "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),
+        "heic" => Some("image/heic"),
+        "heif" => Some("image/heif"),
         "gif" => Some("image/gif"),
         "webp" => Some("image/webp"),
         "mp4" => Some("video/mp4"),
@@ -1212,7 +1214,7 @@ mod tests {
 
     #[test]
     fn every_default_allowlisted_extension_maps_to_a_mime() {
-        for ext in "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".split(',') {
+        for ext in "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv".split(',') {
             assert!(mime_for_ext(ext).is_some(), "{ext}");
         }
     }
