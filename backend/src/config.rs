@@ -183,7 +183,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_backend: "local".into(),
         projects_github_repository: ".projects".into(),
         projects_max_file_size_mb: "500".into(),
-        projects_allowed_mimes: "pdf,png,jpg,jpeg,gif,webp,mp4,mov,txt,md,csv".into(),
+        projects_allowed_mimes: "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv".into(),
         text_to_speech_enabled: false,
         status_bar_enabled: true,
         vision_annotator_model: String::new(),
