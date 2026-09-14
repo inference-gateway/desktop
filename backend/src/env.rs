@@ -168,9 +168,9 @@ pub(crate) fn agent_cwd() -> PathBuf {
     dir
 }
 
-/// Directory for user-uploaded/pasted images, created on first access.
+/// Directory for user-uploaded/pasted images (`~/.infer/tmp/uploads`), created on first access.
 pub(crate) fn uploads_dir() -> PathBuf {
-    let dir = home_dir().join(".infer").join("uploads");
+    let dir = home_dir().join(".infer").join("tmp").join("uploads");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
