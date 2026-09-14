@@ -132,6 +132,7 @@ export type ComputerUsePermissionStatus = {
   accessibility: OsPermissionState;
   screen_recording: OsPermissionState;
 };
+export type BrowserUseStatus = { enabled: boolean; connected: boolean; port: number; token: string };
 export type WorkflowStatus = {
   installed: boolean;
   url: string | null;
@@ -263,6 +264,8 @@ export const api = {
   listSchedules: () => invoke<ScheduleJob[]>("list_schedules"),
   computerUsePermissionStatus: () => invoke<ComputerUsePermissionStatus>("computer_use_permission_status"),
   setComputerUseEnabled: (enabled: boolean) => invoke<void>("set_computer_use_enabled", { enabled }),
+  browserUseStatus: () => invoke<BrowserUseStatus>("browser_use_status"),
+  setBrowserUseEnabled: (enabled: boolean) => invoke<BrowserUseStatus>("set_browser_use_enabled", { enabled }),
   requestAccessibilityPermission: () => invoke<void>("request_accessibility_permission"),
   requestScreenRecordingPermission: () => invoke<void>("request_screen_recording_permission"),
   startScreenRecording: (keep: number) => invoke<string>("start_screen_recording", { keep }),

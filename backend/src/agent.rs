@@ -422,6 +422,13 @@ pub(crate) async fn send_message(
         .arg(&session_id);
     apply_approval_mode(&mut cmd, auto_mode);
     cmd.arg("-m").arg(&model);
+    let browser_use = crate::browser_bridge::read_settings().active();
+    if browser_use {
+        cmd.env(
+            "INFER_BROWSER_USE_EXTENSION_PORT",
+            crate::browser_bridge::RELAY_PORT.to_string(),
+        );
+    }
 
     let cwd = project
         .as_deref()
@@ -448,6 +455,9 @@ pub(crate) async fn send_message(
     state
         .processes
         .insert_agent(session_id.clone(), child, child_stdin)?;
+    if browser_use {
+        state.browser_bridge.connect_relay();
+    }
 
     let sink = Arc::new(EventSink {
         channel: on_event,

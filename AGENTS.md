@@ -48,6 +48,7 @@
         ├── lib.rs                # Wiring only: AppState, run(), command registration
         ├── main.rs
         ├── agent.rs              # AG-UI parser, sessions, approvals, A2A agents
+        ├── browser_bridge.rs     # opentask extension WS server + per-turn relay to the CLI bridge
         ├── cli_install.rs        # CLI download/install
         ├── config.rs             # config.yaml merging + auth store
         ├── download.rs           # Shared download + checksum helpers
