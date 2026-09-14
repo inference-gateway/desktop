@@ -24,6 +24,13 @@ for (const type of ["dragover", "drop"] as const) {
   document.addEventListener(type, (e) => e.preventDefault());
 }
 
+// Native context menu is off everywhere; opt-in menus (project row) render
+// their own. Editable fields keep it for paste/spellcheck.
+document.addEventListener("contextmenu", (e) => {
+  if ((e.target as HTMLElement).closest("input, textarea, [contenteditable]")) return;
+  e.preventDefault();
+});
+
 const el = document.getElementById("app");
 const label = getCurrentWindow().label;
 if (label === "monitor" || label === "overlay") {
