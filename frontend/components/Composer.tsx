@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
-const ALLOWED = ["image/png", "image/jpeg", "image/svg+xml", "application/pdf"];
+const ALLOWED = ["image/png", "image/jpeg", "image/heic", "image/heif", "image/svg+xml", "application/pdf"];
 
 type PendingImage = { id: string; dataUrl: string; file: File };
 
@@ -479,7 +479,7 @@ export function Composer() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/png,image/jpeg,image/svg+xml,application/pdf"
+              accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif,image/svg+xml,application/pdf"
               className="hidden"
               onChange={onFilePick}
             />
