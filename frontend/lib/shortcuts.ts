@@ -17,10 +17,6 @@ export interface KeyInput {
 
 export function matchShortcut(e: KeyInput): Shortcut | null {
   if (e.repeat) return null;
-  // Esc is the documented app-wide "cancel the active run" shortcut: popups
-  // (tool-picker, skills, status-bar agents) preventDefault() Escape to close
-  // themselves, so match it before the defaultPrevented bail. Harmless when no
-  // run is active - the store only acts on "cancel" while a run is running.
   if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
     return "cancel";
   }
