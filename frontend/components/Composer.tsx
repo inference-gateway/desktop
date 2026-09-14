@@ -2,7 +2,6 @@ import { ArrowUp, Folder, Mic, Paperclip, Square, Terminal, X } from "lucide-rea
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
-import { BrowserBridgeDot } from "./BrowserBridgeDot";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
@@ -306,7 +305,6 @@ export function Composer() {
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
-      <BrowserBridgeDot />
       {currentProject && (
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />

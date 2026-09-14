@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
+import { Globe } from "lucide-react";
 import { api, type BrowserUseStatus } from "@/lib/tauri";
 import { useEffect, useState } from "react";
 
@@ -21,22 +22,21 @@ export function useBrowserUseStatus() {
 export function BrowserBridgeDot() {
   const status = useBrowserUseStatus();
   if (!status?.enabled) return null;
-  const title = status.connected
+  const label = status.connected
     ? "Browser extension connected"
     : `Browser extension not connected - set port ${status.port} and the token from Settings in the opentask extension`;
   return (
-    <div
+    <span
       id="browser-bridge"
-      title={title}
-      className="mx-auto mb-[0.45rem] flex max-w-[52rem] items-center gap-2 px-1 text-[0.7rem] text-muted-foreground"
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "inline-flex size-7 items-center justify-center rounded-full",
+        status.connected ? "text-emerald-500" : "text-muted-foreground opacity-50",
+      )}
     >
-      <span
-        className={cn(
-          "h-[0.45rem] w-[0.45rem] shrink-0 rounded-full",
-          status.connected ? "bg-emerald-500" : "bg-muted-foreground",
-        )}
-      />
-      Browser {status.connected ? "connected" : "disconnected"}
-    </div>
+      <Globe size={16} aria-hidden="true" />
+    </span>
   );
 }

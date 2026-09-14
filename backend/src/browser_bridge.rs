@@ -656,7 +656,10 @@ mod tests {
         assert!(back.contains(r#""id":"c1""#));
 
         drop(ext);
-        std::thread::sleep(Duration::from_millis(200));
+        let gone = Instant::now() + Duration::from_secs(3);
+        while bridge.connected() && Instant::now() < gone {
+            std::thread::sleep(POLL);
+        }
         assert!(!bridge.connected());
         cli.send(Message::text(
             r#"{"type":"browser_command","id":"c2","action":"tabs"}"#,
