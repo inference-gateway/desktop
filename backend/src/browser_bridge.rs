@@ -544,9 +544,6 @@ impl Host {
                 self.send_snapshot(None);
             }
             "user_message" => {
-                // ponytail: attachments are saved to ~/.infer/uploads and referenced by
-                // path in the prompt, same as the desktop composer. Pass them via
-                // `infer headless --files` if inline vision is ever needed.
                 let refs: Vec<String> = v["attachments"]
                     .as_array()
                     .map(|a| a.iter().filter_map(save_panel_attachment).collect())
