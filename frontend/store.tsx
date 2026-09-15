@@ -828,9 +828,6 @@ function useDesktopStore() {
     ],
   );
 
-  // Flush a session's queued follow-up as its next turn the moment the
-  // current one ends (Done, Cancelled or a failed turn) - #231. Deleting a
-  // conversation drops its queue first, so nothing is sent for it.
   const prevRunningRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const prev = prevRunningRef.current;
