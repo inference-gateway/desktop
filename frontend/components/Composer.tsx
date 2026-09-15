@@ -513,7 +513,9 @@ export function Composer() {
             placeholder={
               broadcasting
                 ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
-                : "Message the orchestrator..."
+                : queuedPrompt
+                  ? "Write a follow-up..."
+                  : "Message the orchestrator..."
             }
             disabled={!ready}
             onPaste={onPaste}
