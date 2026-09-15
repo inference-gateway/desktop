@@ -131,9 +131,6 @@ scenarios:
       - reasoning: "Let me work through this step by step. First I weigh the options, then the trade-offs. Therefore the answer is 42."
         content: "The answer is 42, plainly."
 
-  # Used by the queued-prompt e2e test (#231): the first prompt pauses at
-  # the Write approval while a second prompt is typed, and the second runs
-  # as the next turn after the first one ends.
   - name: queue-first
     match: '(?i)create a file named queue-first\.txt'
     turns:
