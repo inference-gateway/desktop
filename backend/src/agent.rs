@@ -667,6 +667,28 @@ pub(crate) async fn send_approval(
         .map_err(|error| format!("agent write task failed: {error}"))?
 }
 
+/// Pushes a follow-up prompt into a running headless session; the CLI queues
+/// it and drains it as the next turn (used while the run waits on tasks).
+#[tauri::command]
+pub(crate) async fn send_user_message(
+    session_id: String,
+    content: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let response = serde_json::json!({
+        "type": "user_message",
+        "content": content,
+    });
+    let line = format!(
+        "{}\n",
+        serde_json::to_string(&response).map_err(|e| e.to_string())?
+    );
+    let processes = Arc::clone(&state.processes);
+    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
+        .await
+        .map_err(|error| format!("agent write task failed: {error}"))?
+}
+
 /// Answers an AskUserQuestion form: `answers` is the frontend's
 /// `UserQuestionAnswer[]`, `None` dismisses the form.
 #[tauri::command]

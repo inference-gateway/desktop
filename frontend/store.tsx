@@ -1515,6 +1515,19 @@ function useDesktopStore() {
     [transcripts, runningIds, lastRun],
   );
 
+  useEffect(() => {
+    for (const id of Object.keys(queuedPrompts)) {
+      if (!runLabel(id)?.label.startsWith("Waiting on tasks")) continue;
+      const text = clearQueued(id);
+      if (!text) continue;
+      dispatchTo(id, { type: "userSend", text });
+      api.sendUserMessage(id, text).catch((err) => {
+        dispatchTo(id, { type: "error", text: `Follow-up failed: ${err}` });
+        queuePrompt(id, text);
+      });
+    }
+  }, [queuedPrompts, runLabel, clearQueued, dispatchTo, queuePrompt]);
+
   const delegations = useCallback(
     (id: string): Delegation[] => delegationsFrom(transcripts[id]?.items ?? [], transcripts[id]?.backgroundJobs ?? []),
     [transcripts],

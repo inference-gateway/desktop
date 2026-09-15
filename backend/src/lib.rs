@@ -101,6 +101,7 @@ pub fn run() {
             cli_install::check_and_install_cli,
             agent::send_message,
             agent::send_approval,
+            agent::send_user_message,
             agent::send_question_answers,
             agent::send_computer_use_control,
             agent::cancel_agent,

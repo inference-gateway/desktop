@@ -145,3 +145,9 @@ scenarios:
               - { name: Write, args: { file_path: "queue-second.txt", content: "second" } }
       - content: "Second file written."
 
+  - name: background-job
+    match: '(?i)start a slow background job'
+    turns:
+      - tool_calls:
+          - { name: Bash, args: { command: "sleep 20", detached: true } }
+      - content: "Job started in the background."

@@ -242,6 +242,7 @@ export const api = {
   }) => invoke<string | null>("send_message", args),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean, scope?: "always") =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved, scope: scope ?? null }),
+  sendUserMessage: (sessionId: string, content: string) => invoke<void>("send_user_message", { sessionId, content }),
   sendQuestionAnswers: (sessionId: string, toolCallId: string, answers: UserQuestionAnswer[] | null) =>
     invoke<void>("send_question_answers", { sessionId, toolCallId, answers }),
   sendComputerUseControl: (sessionId: string, action: "pause" | "resume") =>
