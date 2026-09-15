@@ -95,7 +95,6 @@ pub(crate) struct DesktopConfig {
     pub(crate) schedule_enabled: bool,
     /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
     /// config). A per-job model set at schedule time takes precedence.
-    pub(crate) agent_model: String,
     /// Scheduling backend: "local" (daemon cron) or "github" (.routines Actions).
     pub(crate) scheduler_backend: String,
     pub(crate) scheduler_github_repository: String,
@@ -166,7 +165,6 @@ pub(crate) fn default_config() -> DesktopConfig {
         extra_instructions: String::new(),
         system_prompt: String::new(),
         schedule_enabled: false,
-        agent_model: String::new(),
         scheduler_backend: "local".into(),
         scheduler_github_repository: String::new(),
         scheduler_github_app_client_id_secret: "APP_CLIENT_ID".into(),
@@ -232,7 +230,9 @@ pub(crate) fn config_from_value(
             })
             .unwrap_or_default(),
         gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
-        default_model: str_at(&["default_model"]).unwrap_or_default(),
+        default_model: str_at(&["agent", "model"])
+            .or_else(|| str_at(&["default_model"]))
+            .unwrap_or_default(),
         sqlite_path: str_at(&["storage", "sqlite", "path"]).unwrap_or(d.sqlite_path),
         postgres_host: str_at(&["storage", "postgres", "host"]).unwrap_or(d.postgres_host),
         postgres_port: int_at(&["storage", "postgres", "port"])
@@ -266,7 +266,6 @@ pub(crate) fn config_from_value(
             .and_then(|s| s.get("enabled"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        agent_model: str_at(&["agent", "model"]).unwrap_or_default(),
         scheduler_backend: str_at(&["scheduler", "backend"]).unwrap_or(d.scheduler_backend),
         projects_root: str_at(&["projects", "root"])
             .unwrap_or_else(|| crate::projects::default_projects_root(home)),
@@ -411,8 +410,8 @@ fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
 }
 
 /// Merge the Settings-managed storage + gateway fields into the existing config
-/// text, returning serialized YAML. `default_model` is owned by
-/// `merge_default_model` (written from the composer too), so it is deliberately
+/// text, returning serialized YAML. The default model (`agent.model`) is owned
+/// by `merge_default_model` (written from the composer), so it is deliberately
 /// not touched here - otherwise a stale Settings form would clobber a newer
 /// model chosen from the composer.
 pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
@@ -519,12 +518,6 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         set_section(vmap, "annotator", kvs);
     }
 
-    set_section(
-        map,
-        "agent",
-        vec![("model", cfg.agent_model.clone().into())],
-    );
-
     let scheduler = map
         .entry("scheduler".into())
         .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
@@ -605,7 +598,17 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
 pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result<String, String> {
     let mut yaml = config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    map.insert("default_model".into(), model.to_string().into());
+    map.remove("default_model");
+    let agent = map
+        .entry("agent".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if !agent.is_mapping() {
+        *agent = serde_norway::Value::Mapping(Default::default());
+    }
+    agent
+        .as_mapping_mut()
+        .ok_or("agent is not a mapping")?
+        .insert("model".into(), model.to_string().into());
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
@@ -995,11 +998,22 @@ mod tests {
     }
 
     #[test]
-    fn merge_default_model_sets_only_that_key() {
-        let existing = "storage:\n  type: jsonl\n";
+    fn merge_default_model_writes_agent_model_and_drops_legacy_key() {
+        let existing = "storage:\n  type: jsonl\nagent:\n  max_turns: 5\ndefault_model: old\n";
         let val = parse_yaml(&merge_default_model(Some(existing), "claude-x").unwrap());
-        assert_eq!(str_field(&val, &["default_model"]), Some("claude-x"));
+        assert_eq!(str_field(&val, &["agent", "model"]), Some("claude-x"));
+        assert_eq!(val.get("default_model"), None);
+        assert_eq!(val["agent"]["max_turns"].as_i64(), Some(5));
         assert_eq!(str_field(&val, &["storage", "type"]), Some("jsonl"));
+    }
+
+    #[test]
+    fn config_reads_agent_model_before_legacy_default_model() {
+        let home = PathBuf::from("/home/tester");
+        let val = parse_yaml("agent:\n  model: new\ndefault_model: old\n");
+        assert_eq!(config_from_value(&val, &home).default_model, "new");
+        let legacy = parse_yaml("default_model: old\n");
+        assert_eq!(config_from_value(&legacy, &home).default_model, "old");
     }
 
     #[test]

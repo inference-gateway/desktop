@@ -96,7 +96,7 @@ export function TasksPanel() {
       .catch(() => {});
     api
       .getConfig()
-      .then((cfg) => setAgentModel(cfg.agent_model))
+      .then((cfg) => setAgentModel(cfg.default_model))
       .catch(() => {});
   }, []);
 
