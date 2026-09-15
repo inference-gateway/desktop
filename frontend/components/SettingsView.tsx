@@ -355,7 +355,6 @@ const DEFAULT_CONFIG: DesktopConfig = {
   extra_instructions: "",
   system_prompt: "",
   schedule_enabled: false,
-  agent_model: "",
   scheduler_backend: "local",
   scheduler_github_repository: "",
   scheduler_github_app_client_id_secret: "APP_CLIENT_ID",
@@ -985,7 +984,6 @@ function ComputerUsePermissionSection({
 }
 
 function SchedulingTab() {
-  const { models } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1121,29 +1119,6 @@ function SchedulingTab() {
           </div>
         </>
       )}
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <Label htmlFor="schedule-model" className="text-[0.8rem] font-medium">
-          Default model for scheduled jobs
-        </Label>
-        <select
-          id="schedule-model"
-          value={config.agent_model}
-          onChange={(e) => set("agent_model", e.target.value)}
-          className="w-64 rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
-        >
-          <option value="">Not set - each job must specify one</option>
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </div>
-      <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Used when a scheduled job has no model of its own (writes{" "}
-        <code className="rounded bg-secondary px-1">agent.model</code>). A model chosen when scheduling a job always
-        takes precedence.
-      </p>
       <SchedulerLogView />
 
       <div className="sticky bottom-0 mt-6 flex items-center gap-3 border-t border-border bg-background/95 pb-1 pt-4 backdrop-blur">

@@ -110,7 +110,6 @@ export type DesktopConfig = {
   extra_instructions: string;
   system_prompt: string;
   schedule_enabled: boolean;
-  agent_model: string;
   scheduler_backend: string;
   scheduler_github_repository: string;
   scheduler_github_app_client_id_secret: string;
