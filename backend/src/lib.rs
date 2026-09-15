@@ -185,6 +185,8 @@ pub fn run() {
             skills::uninstall_skill,
             skills::list_installed_skills,
             tools::list_tools,
+            tools::mcp_status,
+            tools::a2a_status,
             observability::get_traces,
             observability::get_metrics,
             permissions::computer_use_permission_status,

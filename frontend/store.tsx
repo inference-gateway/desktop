@@ -3,8 +3,10 @@ import {
   api,
   Channel,
   type AgentEvent,
+  type A2aStatus,
   type Conversation,
   type DesktopConfig,
+  type McpStatus,
   type ProgressEvent,
   type UpdateInfo,
   type UserQuestionAnswer,
@@ -121,6 +123,18 @@ function useDesktopStore() {
   const queuedRef = useRef<PromptQueue>({});
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tools, setTools] = useState<string[]>([]);
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [a2aStatus, setA2aStatus] = useState<A2aStatus | null>(null);
+  const refreshStatus = useCallback(() => {
+    api
+      .mcpStatus()
+      .then(setMcpStatus)
+      .catch(() => {});
+    api
+      .a2aStatus()
+      .then(setA2aStatus)
+      .catch(() => {});
+  }, []);
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
   const [projectNames, setProjectNames] = useState<string[]>(() => []);
@@ -437,6 +451,7 @@ function useDesktopStore() {
                 .listTools()
                 .then(setTools)
                 .catch(() => {});
+              refreshStatus();
               break;
             case "Error":
               setError(`Error: ${event.message}`);
@@ -741,6 +756,7 @@ function useDesktopStore() {
               if (!document.hasFocus()) notifyApproval(event.tool_name);
               break;
             case "Done":
+              refreshStatus();
               setRunningIds((prev) => {
                 const next = new Set(prev);
                 next.delete(runId);
@@ -1560,6 +1576,8 @@ function useDesktopStore() {
     setError,
     tokenUsage: active.usage,
     tools,
+    mcpStatus,
+    a2aStatus,
     showStatusBar,
     setShowStatusBar,
     projects,
