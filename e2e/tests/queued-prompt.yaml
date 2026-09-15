@@ -1,0 +1,16 @@
+name: follow-up typed while running is queued and sent when the turn ends
+cleanup:
+  - queue-first.txt
+  - queue-second.txt
+steps:
+  - new_chat
+  - send: "create a file named queue-first.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - send: "create a file named queue-second.txt"
+  - wait_for: { text: "Queued:", timeout: 10 }
+  - assert_above_composer: { button: "Discard queued prompt" }
+  - click: { button: "Approve" }
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Second file written.", timeout: 30 }
+  - wait_for: { file: "queue-second.txt", timeout: 30 }

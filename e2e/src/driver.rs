@@ -213,6 +213,9 @@ impl AppDriver {
     }
 
     /// Set the textarea value, verify it stuck (read-back), then click Send.
+    /// While the session is running the Send button is swapped for Stop, so
+    /// fall back to focusing the composer and committing with Return (the
+    /// queued-prompt path).
     pub fn send(&self, text: &str) -> Result<()> {
         let set_and_read = format!(
             "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nset value of ta to \"{msg}\"\ndelay 0.3\nreturn value of ta as text\nend tell",
@@ -235,7 +238,15 @@ impl AppDriver {
                 got.trim()
             );
         }
-        self.click("Send")
+        self.click("Send").or_else(|_| {
+            let script = format!(
+                "tell application \"System Events\"\n{root}\nset ta to text area 1 of root\nclick ta\nend tell\ntell application \"System Events\"\nkey code 36\nend tell",
+                root = ax_root(),
+            );
+            osascript(&script)
+                .map(|_| ())
+                .map_err(|e| anyhow!("clicking Send and committing with Return both failed: {e}"))
+        })
     }
 
     /// Sidebar prompt inputs (e.g. "New project") auto-focus when revealed but

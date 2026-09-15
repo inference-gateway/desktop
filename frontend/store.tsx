@@ -27,6 +27,7 @@ import {
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
+import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import {
   loadSnippets,
   saveSnippets,
@@ -116,6 +117,8 @@ function useDesktopStore() {
   const [history, setHistory] = useState<string[]>([]);
   const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
+  const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
+  const queuedRef = useRef<PromptQueue>({});
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tools, setTools] = useState<string[]>([]);
   const [showStatusBar, setShowStatusBar] = useState(true);
@@ -169,6 +172,53 @@ function useDesktopStore() {
       return next;
     });
   }, []);
+
+  const recordHistory = useCallback((text: string) => {
+    if (isBashCommand(text)) {
+      api.appendBashHistory(text).catch(() => {});
+      setBashHistory((h) => [...h, text]);
+    } else {
+      api.appendHistory(text).catch(() => {});
+      setHistory((h) => [...h, text]);
+    }
+  }, []);
+
+  const queuePrompt = useCallback((id: string, text: string) => {
+    const next = enqueue(queuedRef.current, id, text);
+    queuedRef.current = next;
+    setQueuedPrompts(next);
+  }, []);
+
+  const dropQueued = useCallback((id: string) => {
+    if (!(id in queuedRef.current)) return;
+    const next = { ...queuedRef.current };
+    delete next[id];
+    queuedRef.current = next;
+    setQueuedPrompts(next);
+  }, []);
+
+  const clearQueued = useCallback((id: string): string | null => {
+    const { queue, text } = takeFirst(queuedRef.current, id);
+    if (text === null) return null;
+    queuedRef.current = queue;
+    setQueuedPrompts(queue);
+    return text;
+  }, []);
+
+  const popQueued = useCallback((): string | null => {
+    const id = activeIdRef.current;
+    if (!id) return null;
+    const { queue, text } = takeAll(queuedRef.current, id);
+    if (text === null) return null;
+    queuedRef.current = queue;
+    setQueuedPrompts(queue);
+    return text;
+  }, []);
+
+  const discardQueued = useCallback(() => {
+    const id = activeIdRef.current;
+    if (id) dropQueued(id);
+  }, [dropQueued]);
 
   const setModel = useCallback((m: string) => {
     setModelState(m);
@@ -506,6 +556,7 @@ function useDesktopStore() {
 
   const deleteConversation = useCallback(
     async (id: string) => {
+      dropQueued(id);
       if (runningIds.has(id)) {
         try {
           await api.cancelAgent(id);
@@ -533,7 +584,7 @@ function useDesktopStore() {
         setError(`Failed to delete conversation: ${err}`);
       }
     },
-    [runningIds, activeId, conversations, newChat, refreshConversations, setError, clearTerminal],
+    [runningIds, activeId, conversations, newChat, refreshConversations, setError, clearTerminal, dropQueued],
   );
 
   const onChatClick = useCallback(
@@ -777,6 +828,18 @@ function useDesktopStore() {
     ],
   );
 
+  const prevRunningRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const prev = prevRunningRef.current;
+    prevRunningRef.current = runningIds;
+    if (prev === runningIds) return;
+    for (const id of prev) {
+      if (runningIds.has(id)) continue;
+      const text = clearQueued(id);
+      if (text) void sendPrompt(id, text, projects[id]);
+    }
+  }, [runningIds, sendPrompt, projects, clearQueued]);
+
   const runOnProjects = useCallback(
     async (names: string[], runOne: (name: string) => Promise<void>) => {
       setInitAllRunning(true);
@@ -878,7 +941,11 @@ function useDesktopStore() {
   // Returns false when the send was rejected so callers keep their text.
   const sendText = useCallback(
     async (text: string): Promise<boolean> => {
-      if (activeId && runningIds.has(activeId)) return false;
+      if (activeId && runningIds.has(activeId)) {
+        recordHistory(text);
+        queuePrompt(activeId, text);
+        return true;
+      }
       if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
         return false;
@@ -891,17 +958,23 @@ function useDesktopStore() {
       if (!activeId && activeProject) assignProject(runId, activeProject);
       setActiveId(runId);
       activeIdRef.current = runId;
-      if (isBashCommand(text)) {
-        api.appendBashHistory(text).catch(() => {});
-        setBashHistory((h) => [...h, text]);
-      } else {
-        api.appendHistory(text).catch(() => {});
-        setHistory((h) => [...h, text]);
-      }
+      recordHistory(text);
       await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
       return true;
     },
-    [activeId, runningIds, model, maxSessions, activeProject, assignProject, projects, sendPrompt, setError],
+    [
+      activeId,
+      runningIds,
+      model,
+      maxSessions,
+      activeProject,
+      assignProject,
+      projects,
+      sendPrompt,
+      setError,
+      recordHistory,
+      queuePrompt,
+    ],
   );
 
   const send = useCallback(async () => {
@@ -1353,6 +1426,12 @@ function useDesktopStore() {
 
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
 
+  const queuedItems = activeId != null ? queuedPrompts[activeId] : undefined;
+  const queuedPrompt =
+    queuedItems && queuedItems.length > 0
+      ? (queuedItems[0] ?? "") + (queuedItems.length > 1 ? ` (+${queuedItems.length - 1} more)` : "")
+      : null;
+
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
   const activeAutoMode = (activeId != null ? autoModes[activeId] : undefined) ?? autoMode;
@@ -1439,6 +1518,9 @@ function useDesktopStore() {
     send,
     sendText,
     cancel,
+    queuedPrompt,
+    discardQueued,
+    popQueued,
     approve,
     answerQuestions,
     openConversation,
