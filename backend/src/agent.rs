@@ -63,6 +63,37 @@ pub(crate) enum AgentEvent {
     Cancelled,
     ComputerUsePaused,
     ComputerUseResumed,
+    AgentStatus {
+        name: String,
+        state: String,
+        message: String,
+        done: u64,
+        total: u64,
+    },
+    BackgroundNote {
+        content: String,
+    },
+    BackgroundTasks {
+        running: u64,
+        jobs: Vec<BackgroundJob>,
+    },
+}
+
+/// One supervised CLI job from the `background_tasks` AG-UI snapshot.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BackgroundJob {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) label: String,
+    #[serde(default)]
+    pub(crate) description: String,
+    #[serde(default)]
+    pub(crate) detail: String,
+    #[serde(default)]
+    pub(crate) status: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -258,6 +289,49 @@ impl AgentParser {
                 match val.get("name").and_then(|v| v.as_str()) {
                     Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
                     Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
+                    Some("agent_status") => {
+                        let v = val.get("value");
+                        let field = |k: &str| {
+                            v.and_then(|v| v.get(k))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string()
+                        };
+                        let num = |k: &str| {
+                            v.and_then(|v| v.get(k))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0)
+                        };
+                        return Some(AgentEvent::AgentStatus {
+                            name: field("name"),
+                            state: field("state"),
+                            message: field("message"),
+                            done: num("done"),
+                            total: num("total"),
+                        });
+                    }
+                    Some("queued_message") => {
+                        let content = val
+                            .get("value")
+                            .and_then(|v| v.get("content"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Some(AgentEvent::BackgroundNote { content });
+                    }
+                    Some("background_tasks") => {
+                        let value = val.get("value");
+                        let running = value
+                            .and_then(|v| v.get("running"))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let jobs = value
+                            .and_then(|v| v.get("jobs"))
+                            .cloned()
+                            .and_then(|j| serde_json::from_value(j).ok())
+                            .unwrap_or_default();
+                        return Some(AgentEvent::BackgroundTasks { running, jobs });
+                    }
                     _ => {}
                 }
                 if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
@@ -675,15 +749,16 @@ pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
 pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<String, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
+        let dir = cwd
+            .map(std::path::PathBuf::from)
+            .filter(|dir| std::fs::create_dir_all(dir).is_ok())
+            .unwrap_or_else(agent_cwd);
         let output = std::process::Command::new(infer_bin_path())
             .args(&args)
             .env("HOME", home_dir().to_str().unwrap_or(""))
             .envs(infer_env())
-            .current_dir(
-                cwd.map(std::path::PathBuf::from)
-                    .filter(|dir| std::fs::create_dir_all(dir).is_ok())
-                    .unwrap_or_else(agent_cwd),
-            )
+            .env("PWD", &dir)
+            .current_dir(&dir)
             .output()
             .map_err(|e| format!("Failed to run infer: {}", e))?;
         if !output.status.success() {
@@ -699,16 +774,48 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
     .map_err(|e| format!("infer task failed: {}", e))?
 }
 
+/// Keeps only the conversations stored under one of `owned` directories (the
+/// desktop's agent cwd and its project dirs). `infer conversations list
+/// --all-projects` also returns chats other CLI sessions created elsewhere,
+/// which the desktop can neither open nor delete from its own directories.
+/// Entries without a `project` field (older CLIs) are kept.
+pub(crate) fn owned_conversations(json: &str, owned: &[PathBuf]) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return json.to_string();
+    };
+    let owned: Vec<PathBuf> = owned
+        .iter()
+        .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
+        .collect();
+    if let Some(list) = value
+        .get_mut("conversations")
+        .and_then(|v| v.as_array_mut())
+    {
+        list.retain(|c| match c.get("project").and_then(|p| p.as_str()) {
+            None | Some("") => true,
+            Some(p) => {
+                let p = Path::new(p);
+                let p = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+                owned.contains(&p)
+            }
+        });
+    }
+    value.to_string()
+}
+
 #[tauri::command]
 pub(crate) async fn list_conversations() -> Result<String, String> {
-    run_infer(&[
+    let json = run_infer(&[
         "conversations",
         "list",
         "--all-projects",
         "--format",
         "json",
     ])
-    .await
+    .await?;
+    let mut owned = crate::projects::project_dirs();
+    owned.push(agent_cwd());
+    Ok(owned_conversations(&json, &owned))
 }
 
 #[tauri::command]
@@ -735,7 +842,10 @@ pub(crate) async fn delete_conversation(
     session_id: String,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    run_infer_in(cwd, &["conversations", "delete", &session_id]).await
+    match run_infer_in(cwd, &["conversations", "delete", &session_id]).await {
+        Err(e) if e.contains("conversation not found") => Ok(String::new()),
+        other => other,
+    }
 }
 
 /// The CLI's per-cwd conversation store: ~/.infer/projects/<slug>/conversations,
@@ -1548,6 +1658,36 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_custom_agent_status() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"agent_status","value":{"name":"browser-agent","state":"PullingImage","message":"Pulling image","done":3,"total":10}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], AgentEvent::AgentStatus { name, state, done: 3, total: 10, .. }
+            if name == "browser-agent" && state == "PullingImage")
+        );
+    }
+
+    #[test]
+    fn test_parse_custom_background_note_and_tasks() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"queued_message","value":{"content":"[A2A Task Completed: t1]\n\nok"}}"#,
+            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":1,"jobs":[{"id":"t1","kind":"a2a","label":"t1","description":"delay 15s","detail":"http://localhost:8081","status":"running","started_at":"2026-09-15T10:00:00Z"}]}}"#,
+            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":0}}"#,
+        ]);
+        assert_eq!(events.len(), 3);
+        assert!(matches!(&events[0], AgentEvent::BackgroundNote { content }
+            if content.starts_with("[A2A Task Completed: t1]")));
+        assert!(
+            matches!(&events[1], AgentEvent::BackgroundTasks { running: 1, jobs }
+            if jobs.len() == 1 && jobs[0].kind == "a2a" && jobs[0].description == "delay 15s" && jobs[0].status == "running")
+        );
+        assert!(
+            matches!(&events[2], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
+        );
+    }
+
+    #[test]
     fn test_parse_custom_unknown_type_is_raw() {
         let (events, _) =
             parse_all(&[r#"{"type":"CUSTOM","name":"other_event","value":{"key":"val"}}"#]);
@@ -1616,6 +1756,26 @@ mod tests {
             matches!(&events[4], AgentEvent::AgentError { message } if message == "API key not found")
         );
         assert_eq!(p.take_session_id(), Some("session-42".into()));
+    }
+
+    #[test]
+    fn owned_conversations_drops_chats_from_foreign_directories() {
+        let tmp = std::env::temp_dir().join("desktop-owned-conv-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json = format!(
+            r#"{{"conversations":[{{"id":"a","project":"{}"}},{{"id":"b","project":"/nowhere/else"}},{{"id":"c"}},{{"id":"d","project":""}}],"total":4}}"#,
+            tmp.display()
+        );
+        let out = owned_conversations(&json, &[tmp.clone()]);
+        let ids: Vec<String> =
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["id"].as_str().unwrap().to_string())
+                .collect();
+        assert_eq!(ids, vec!["a", "c", "d"]);
+        assert_eq!(owned_conversations("not json", &[]), "not json");
     }
 
     #[test]

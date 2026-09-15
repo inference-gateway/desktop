@@ -1,7 +1,7 @@
 // Pure transcript state machine. Maps agent stream events (and loaded history)
 // to a flat list of render items. A faithful port of the imperative DOM logic
 // in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
-import type { AgentEvent, HistoryLine, UserQuestion, UserQuestionAnswer } from "./tauri";
+import type { AgentEvent, BackgroundJob, HistoryLine, UserQuestion, UserQuestionAnswer } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
@@ -39,7 +39,8 @@ export type TranscriptItem =
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
-  | { kind: "cancelled"; id: string };
+  | { kind: "cancelled"; id: string }
+  | { kind: "task_result"; id: string; text: string };
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -64,6 +65,8 @@ export type ChatState = {
   currentReasoningMessageId: string | null;
   seenImages: string[];
   paused?: boolean;
+  backgroundJobs: BackgroundJob[];
+  agentStartup: Record<string, { message: string; done: number; total: number }>;
 };
 
 /** The run is blocked on the user: a pending approval or question card. */
@@ -74,7 +77,7 @@ export function pendingInput(items: TranscriptItem[]): "approval" | "question" |
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
-export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" };
+export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" | "shell" };
 
 // Subagent sessions are persisted by the CLI as "subagent-<parentId>-<childId>".
 // ponytail: correlation parsed from the id convention - replace with a real
@@ -93,8 +96,18 @@ function delegationLabel(text: unknown): string | null {
   return t.length > DELEGATION_LABEL_MAX ? `${t.slice(0, DELEGATION_LABEL_MAX)}…` : t;
 }
 
-export function delegationsFrom(items: TranscriptItem[]): Delegation[] {
+// Running tool calls give the live view while a submit is still open; the
+// CLI's background_tasks snapshot (jobs) takes over once the submit returns.
+export function delegationsFrom(items: TranscriptItem[], jobs: BackgroundJob[] = []): Delegation[] {
   const out: Delegation[] = [];
+  for (const j of jobs) {
+    if (j.status !== "running") continue;
+    out.push({
+      id: `job:${j.id}`,
+      label: delegationLabel(j.description) ?? delegationLabel(j.label) ?? delegationLabel(j.detail) ?? j.id,
+      kind: j.kind === "a2a" ? "a2a" : j.kind === "shell" ? "shell" : "subagent",
+    });
+  }
   for (const it of items) {
     if (it.kind !== "tool" || it.state !== "running") continue;
     const key = it.callId ?? it.id;
@@ -159,6 +172,15 @@ export function todosFrom(items: TranscriptItem[]): TodoItem[] {
   return [];
 }
 
+// A background job's landed note starts with the supervisor's header line,
+// e.g. "[A2A Task Completed: <label>]" (see the CLI's Supervisor.formatResult).
+const BACKGROUND_NOTE = /^\[(A2A Task|Background Shell|Subagent|Background Job) (Completed|Failed): (.*)\]/;
+
+export function backgroundNoteHeader(text: string): { kind: string; failed: boolean; label: string } | null {
+  const m = BACKGROUND_NOTE.exec(text.trimStart());
+  return m ? { kind: m[1], failed: m[2] === "Failed", label: m[3] } : null;
+}
+
 // Panel edits are dirty when they differ from the agent's last written list.
 export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
   return a.length !== b.length || a.some((t, i) => t.content !== b[i].content || t.status !== b[i].status);
@@ -174,6 +196,8 @@ export const initialChatState: ChatState = {
   currentReasoningId: null,
   currentReasoningMessageId: null,
   seenImages: [],
+  backgroundJobs: [],
+  agentStartup: {},
 };
 
 export type ChatAction =
@@ -300,6 +324,20 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return { ...state, paused: true };
     case "ComputerUseResumed":
       return { ...state, paused: false };
+    case "AgentStatus": {
+      const agentStartup = { ...state.agentStartup };
+      if (event.state === "Ready" || event.state === "Failed") delete agentStartup[event.name];
+      else agentStartup[event.name] = { message: event.message, done: event.done, total: event.total };
+      return { ...state, agentStartup };
+    }
+    case "BackgroundNote": {
+      if (!event.content.trim()) return state;
+      let seq = state.seq;
+      const items = [...state.items, { kind: "task_result", id: String(seq++), text: event.content } as TranscriptItem];
+      return { ...state, items, seq, currentAssistantId: null, currentAssistantMessageId: null };
+    }
+    case "BackgroundTasks":
+      return { ...state, backgroundJobs: Array.isArray(event.jobs) ? event.jobs : [] };
     case "Done":
       return {
         ...finalizeTools(state),
@@ -309,6 +347,8 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         currentReasoningId: null,
         currentReasoningMessageId: null,
         paused: false,
+        backgroundJobs: [],
+        agentStartup: {},
       };
     case "TokenUsage": {
       const { kind: _kind, ...usage } = event;
@@ -566,6 +606,10 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     const content = entry.content || "";
     if (entry.role === "user") {
       if (content.startsWith("<system-reminder>")) continue;
+      if (backgroundNoteHeader(content)) {
+        items.push({ kind: "task_result", id: String(seq++), text: content });
+        continue;
+      }
       items.push({ kind: "user", id: String(seq++), text: content });
     } else if (entry.role === "assistant") {
       if (entry.reasoning_content)
