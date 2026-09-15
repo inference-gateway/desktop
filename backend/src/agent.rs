@@ -770,30 +770,34 @@ pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
 // addressable; a `--project` flag on `infer conversations` would remove this.
 pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<String, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    tokio::task::spawn_blocking(move || {
-        let dir = cwd
-            .map(std::path::PathBuf::from)
-            .filter(|dir| std::fs::create_dir_all(dir).is_ok())
-            .unwrap_or_else(agent_cwd);
-        let output = std::process::Command::new(infer_bin_path())
-            .args(&args)
-            .env("HOME", home_dir().to_str().unwrap_or(""))
-            .envs(infer_env())
-            .env("PWD", &dir)
-            .current_dir(&dir)
-            .output()
-            .map_err(|e| format!("Failed to run infer: {}", e))?;
-        if !output.status.success() {
-            return Err(format!(
-                "infer {} failed: {}",
-                args.join(" "),
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    })
-    .await
-    .map_err(|e| format!("infer task failed: {}", e))?
+    tokio::task::spawn_blocking(move || run_infer_blocking(cwd, &args))
+        .await
+        .map_err(|e| format!("infer task failed: {}", e))?
+}
+
+/// Synchronous form of `run_infer_in` for paths without a runtime, such as
+/// the Tauri exit handler.
+pub(crate) fn run_infer_blocking(cwd: Option<String>, args: &[String]) -> Result<String, String> {
+    let dir = cwd
+        .map(std::path::PathBuf::from)
+        .filter(|dir| std::fs::create_dir_all(dir).is_ok())
+        .unwrap_or_else(agent_cwd);
+    let output = std::process::Command::new(infer_bin_path())
+        .args(args)
+        .env("HOME", home_dir().to_str().unwrap_or(""))
+        .envs(infer_env())
+        .env("PWD", &dir)
+        .current_dir(&dir)
+        .output()
+        .map_err(|e| format!("Failed to run infer: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "infer {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Keeps only the conversations stored under one of `owned` directories (the

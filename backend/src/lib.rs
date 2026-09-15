@@ -217,6 +217,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             let state = app_handle.state::<AppState>();
+            tools::stop_services();
             if let Err(error) = state.processes.shutdown() {
                 eprintln!("process shutdown during Tauri exit failed: {error}");
             }

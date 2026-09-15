@@ -1,4 +1,4 @@
-use crate::agent::run_infer_in;
+use crate::agent::{run_infer_blocking, run_infer_in};
 use serde_json::Value;
 
 /// `tools.<key>` config entries mapped to the CLI registry's tool names.
@@ -92,6 +92,17 @@ pub(crate) async fn a2a_status() -> Result<A2aStatus, String> {
 pub(crate) async fn start_services() {
     let _ = run_infer_in(None, &["mcp", "start"]).await;
     let _ = run_infer_in(None, &["agents", "start"]).await;
+}
+
+/// Stops the detached shared containers `start_services` started, so quitting
+/// the desktop leaves nothing running and the next launch recreates them from
+/// the installed CLI (an upgraded CLI may inject different env). Failures are
+/// ignored for the same reasons as start.
+pub(crate) fn stop_services() {
+    for args in [["mcp", "stop"], ["agents", "stop"]] {
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let _ = run_infer_blocking(None, &args);
+    }
 }
 
 #[cfg(test)]
