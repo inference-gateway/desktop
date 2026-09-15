@@ -85,11 +85,25 @@ pub(crate) async fn a2a_status() -> Result<A2aStatus, String> {
     serde_json::from_str(&dump).map_err(|e| e.to_string())
 }
 
+/// Serialises shared container startup against session spawns. A headless
+/// session that starts while `infer agents start` is still pulling an image
+/// cannot see the shared container in `docker ps` yet, so it starts its own
+/// and the two race for the port; the shared one loses and the session's
+/// container dies with the session.
+static SERVICES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Waits for an in-flight `start_services` to finish. Call before spawning a
+/// session that starts local agents on its own.
+pub(crate) async fn await_services() {
+    drop(SERVICES.lock().await);
+}
+
 /// Starts `run: true` MCP servers and A2A agents as detached shared containers
 /// so per-message `infer headless` sessions reuse them. Failures are ignored:
 /// an older CLI without the commands, or no Docker, just leaves the counts at 0.
 #[tauri::command]
 pub(crate) async fn start_services() {
+    let _guard = SERVICES.lock().await;
     let _ = run_infer_in(None, &["mcp", "start"]).await;
     let _ = run_infer_in(None, &["agents", "start"]).await;
 }
