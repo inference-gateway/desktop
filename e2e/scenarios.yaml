@@ -145,8 +145,6 @@ scenarios:
               - { name: Write, args: { file_path: "queue-second.txt", content: "second" } }
       - content: "Second file written."
 
-  # Detached Bash registers a background shell job, so the headless run sits in
-  # "Waiting on tasks" until it finishes (used by the queued-while-waiting test).
   - name: background-job
     match: '(?i)start a slow background job'
     turns:
