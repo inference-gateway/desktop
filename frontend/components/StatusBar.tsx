@@ -33,6 +33,8 @@ export function StatusBar() {
     setAutoMode,
     tokenUsage,
     tools,
+    mcpStatus,
+    a2aStatus,
     showStatusBar,
   } = useDesktop();
   const [open, setOpen] = useState(false);
@@ -101,6 +103,17 @@ export function StatusBar() {
     tokenUsage.context_window > 0 ? Math.round((tokenUsage.last_input / tokenUsage.context_window) * 100) : null;
   const stats: [string, string][] = [
     ["Tools", tools.length.toLocaleString()],
+    ...(mcpStatus?.enabled && mcpStatus.total_servers > 0
+      ? [
+          [
+            "🔌",
+            `${mcpStatus.connected_servers}/${mcpStatus.total_servers}${mcpStatus.total_tools > 0 ? ` (${mcpStatus.total_tools})` : ""}`,
+          ] as [string, string],
+        ]
+      : []),
+    ...(a2aStatus && a2aStatus.total_agents > 0
+      ? [["A2A", `${a2aStatus.ready_agents}/${a2aStatus.total_agents}`] as [string, string]]
+      : []),
     ["in", tokenUsage.input.toLocaleString()],
     ["out", tokenUsage.output.toLocaleString()],
     ["cached", tokenUsage.cached_read.toLocaleString()],

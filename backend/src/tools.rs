@@ -57,9 +57,74 @@ pub(crate) async fn list_tools() -> Result<Vec<String>, String> {
     Ok(enabled_tools_in(&dump))
 }
 
+/// Counts from `infer mcp status --format json`; per-server rows are ignored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct McpStatus {
+    pub(crate) enabled: bool,
+    pub(crate) total_servers: u64,
+    pub(crate) connected_servers: u64,
+    pub(crate) total_tools: u64,
+}
+
+/// Counts from `infer agents status --format json`; per-agent rows are ignored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct A2aStatus {
+    pub(crate) total_agents: u64,
+    pub(crate) ready_agents: u64,
+}
+
+#[tauri::command]
+pub(crate) async fn mcp_status() -> Result<McpStatus, String> {
+    let dump = run_infer_in(None, &["mcp", "status", "--format", "json"]).await?;
+    serde_json::from_str(&dump).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn a2a_status() -> Result<A2aStatus, String> {
+    let dump = run_infer_in(None, &["agents", "status", "--format", "json"]).await?;
+    serde_json::from_str(&dump).map_err(|e| e.to_string())
+}
+
+/// Starts `run: true` MCP servers and A2A agents as detached shared containers
+/// so per-message `infer headless` sessions reuse them. Failures are ignored:
+/// an older CLI without the commands, or no Docker, just leaves the counts at 0.
+#[tauri::command]
+pub(crate) async fn start_services() {
+    let _ = run_infer_in(None, &["mcp", "start"]).await;
+    let _ = run_infer_in(None, &["agents", "start"]).await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_reports_keep_the_counts_and_drop_the_rows() {
+        let mcp: McpStatus = serde_json::from_str(
+            r#"{"enabled":true,"total_servers":2,"connected_servers":1,"total_tools":14,
+                "servers":[{"name":"fs","connected":true,"tools":14}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            mcp,
+            McpStatus {
+                enabled: true,
+                total_servers: 2,
+                connected_servers: 1,
+                total_tools: 14
+            }
+        );
+
+        let a2a: A2aStatus =
+            serde_json::from_str(r#"{"total_agents":1,"ready_agents":0,"agents":[]}"#).unwrap();
+        assert_eq!(
+            a2a,
+            A2aStatus {
+                total_agents: 1,
+                ready_agents: 0
+            }
+        );
+    }
 
     #[test]
     fn enabled_tools_respects_the_master_switch_and_per_tool_flags() {
