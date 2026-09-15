@@ -6,7 +6,6 @@ steps:
   - send: "start a slow background job"
   - wait_for: { text: "Waiting on tasks (1)", timeout: 30 }
   - send: "create a file named queue-second.txt"
-  # The job sleeps 20s; the follow-up must be picked up long before that.
   - wait_for: { button: "Approve", timeout: 10 }
   - click: { button: "Approve" }
   - wait_for: { text: "Second file written.", timeout: 15 }
