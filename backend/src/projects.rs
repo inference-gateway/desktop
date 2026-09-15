@@ -209,6 +209,15 @@ pub(crate) fn sandbox_allowed_dirs() -> Option<String> {
 /// Files directory for a project: the same deterministic mapping the sandbox
 /// grant, dir creation, uploads and the agent cwd resolve through. None when
 /// the name cannot be mapped.
+/// Every directory the desktop spawns agents in: each project's files
+/// directory. Conversations stored elsewhere belong to other CLI sessions.
+pub(crate) fn project_dirs() -> Vec<PathBuf> {
+    let root = PathBuf::from(read_config().projects_root);
+    resolved_dirs(&root, &project_names(), &project_groups(), &project_paths())
+        .into_values()
+        .collect()
+}
+
 pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
     let mut names = project_names();
     if !names.iter().any(|n| n == name) {

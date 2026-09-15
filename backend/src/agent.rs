@@ -749,15 +749,16 @@ pub(crate) async fn run_infer(args: &[&str]) -> Result<String, String> {
 pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<String, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
+        let dir = cwd
+            .map(std::path::PathBuf::from)
+            .filter(|dir| std::fs::create_dir_all(dir).is_ok())
+            .unwrap_or_else(agent_cwd);
         let output = std::process::Command::new(infer_bin_path())
             .args(&args)
             .env("HOME", home_dir().to_str().unwrap_or(""))
             .envs(infer_env())
-            .current_dir(
-                cwd.map(std::path::PathBuf::from)
-                    .filter(|dir| std::fs::create_dir_all(dir).is_ok())
-                    .unwrap_or_else(agent_cwd),
-            )
+            .env("PWD", &dir)
+            .current_dir(&dir)
             .output()
             .map_err(|e| format!("Failed to run infer: {}", e))?;
         if !output.status.success() {
@@ -773,16 +774,48 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
     .map_err(|e| format!("infer task failed: {}", e))?
 }
 
+/// Keeps only the conversations stored under one of `owned` directories (the
+/// desktop's agent cwd and its project dirs). `infer conversations list
+/// --all-projects` also returns chats other CLI sessions created elsewhere,
+/// which the desktop can neither open nor delete from its own directories.
+/// Entries without a `project` field (older CLIs) are kept.
+pub(crate) fn owned_conversations(json: &str, owned: &[PathBuf]) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return json.to_string();
+    };
+    let owned: Vec<PathBuf> = owned
+        .iter()
+        .map(|d| d.canonicalize().unwrap_or_else(|_| d.clone()))
+        .collect();
+    if let Some(list) = value
+        .get_mut("conversations")
+        .and_then(|v| v.as_array_mut())
+    {
+        list.retain(|c| match c.get("project").and_then(|p| p.as_str()) {
+            None | Some("") => true,
+            Some(p) => {
+                let p = Path::new(p);
+                let p = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+                owned.contains(&p)
+            }
+        });
+    }
+    value.to_string()
+}
+
 #[tauri::command]
 pub(crate) async fn list_conversations() -> Result<String, String> {
-    run_infer(&[
+    let json = run_infer(&[
         "conversations",
         "list",
         "--all-projects",
         "--format",
         "json",
     ])
-    .await
+    .await?;
+    let mut owned = crate::projects::project_dirs();
+    owned.push(agent_cwd());
+    Ok(owned_conversations(&json, &owned))
 }
 
 #[tauri::command]
@@ -1723,6 +1756,26 @@ mod tests {
             matches!(&events[4], AgentEvent::AgentError { message } if message == "API key not found")
         );
         assert_eq!(p.take_session_id(), Some("session-42".into()));
+    }
+
+    #[test]
+    fn owned_conversations_drops_chats_from_foreign_directories() {
+        let tmp = std::env::temp_dir().join("desktop-owned-conv-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let json = format!(
+            r#"{{"conversations":[{{"id":"a","project":"{}"}},{{"id":"b","project":"/nowhere/else"}},{{"id":"c"}},{{"id":"d","project":""}}],"total":4}}"#,
+            tmp.display()
+        );
+        let out = owned_conversations(&json, &[tmp.clone()]);
+        let ids: Vec<String> =
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["id"].as_str().unwrap().to_string())
+                .collect();
+        assert_eq!(ids, vec!["a", "c", "d"]);
+        assert_eq!(owned_conversations("not json", &[]), "not json");
     }
 
     #[test]
