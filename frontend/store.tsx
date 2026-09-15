@@ -452,6 +452,7 @@ function useDesktopStore() {
                 .then(setTools)
                 .catch(() => {});
               refreshStatus();
+              api.startServices().finally(refreshStatus);
               break;
             case "Error":
               setError(`Error: ${event.message}`);

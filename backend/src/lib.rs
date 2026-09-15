@@ -187,6 +187,7 @@ pub fn run() {
             tools::list_tools,
             tools::mcp_status,
             tools::a2a_status,
+            tools::start_services,
             observability::get_traces,
             observability::get_metrics,
             permissions::computer_use_permission_status,

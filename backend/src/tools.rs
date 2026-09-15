@@ -85,6 +85,15 @@ pub(crate) async fn a2a_status() -> Result<A2aStatus, String> {
     serde_json::from_str(&dump).map_err(|e| e.to_string())
 }
 
+/// Starts `run: true` MCP servers and A2A agents as detached shared containers
+/// so per-message `infer headless` sessions reuse them. Failures are ignored:
+/// an older CLI without the commands, or no Docker, just leaves the counts at 0.
+#[tauri::command]
+pub(crate) async fn start_services() {
+    let _ = run_infer_in(None, &["mcp", "start"]).await;
+    let _ = run_infer_in(None, &["agents", "start"]).await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

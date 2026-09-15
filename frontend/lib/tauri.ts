@@ -337,6 +337,7 @@ export const api = {
   listTools: () => invoke<string[]>("list_tools"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
   a2aStatus: () => invoke<A2aStatus>("a2a_status"),
+  startServices: () => invoke<void>("start_services"),
   getTraces: () => invoke<StoredSpan[]>("get_traces"),
   getMetrics: () => invoke<StoredMetric[]>("get_metrics"),
   listA2aAgents: () => invoke<A2aAgent[]>("list_a2a_agents"),
