@@ -49,7 +49,18 @@ export type AgentEvent =
     }
   | { kind: "Cancelled" }
   | { kind: "ComputerUsePaused" }
-  | { kind: "ComputerUseResumed" };
+  | { kind: "ComputerUseResumed" }
+  | { kind: "BackgroundNote"; content: string }
+  | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] };
+
+export type BackgroundJob = {
+  id: string;
+  kind: string;
+  label: string;
+  description: string;
+  detail: string;
+  status: string;
+};
 
 export type ProgressEvent =
   | { kind: "Checking" }

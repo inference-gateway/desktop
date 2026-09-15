@@ -13,6 +13,8 @@ const DOT: Record<string, string> = {
   idle: "bg-muted-foreground",
 };
 
+const BADGE: Record<"a2a" | "subagent" | "shell", string> = { a2a: "A2A", subagent: "agent", shell: "shell" };
+
 const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1 ? 3 : 2)}`;
 
 export function StatusBar() {
@@ -25,6 +27,7 @@ export function StatusBar() {
     isRunning,
     runLabel,
     delegations,
+    runningTasks,
     sessionId,
     conversations,
     openConversation,
@@ -80,6 +83,7 @@ export function StatusBar() {
 
   const session = !statusError && sessionId ? runLabel(sessionId) : null;
   const sessionDelegations = sessionId ? delegations(sessionId) : [];
+  const sessionTasks = sessionId ? runningTasks(sessionId) : 0;
   const label =
     session?.label === "Running Agent..." && sessionDelegations.length > 0
       ? `Running Agent (${sessionDelegations.length})...`
@@ -114,6 +118,7 @@ export function StatusBar() {
     ...(a2aStatus && a2aStatus.total_agents > 0
       ? [["A2A", `${a2aStatus.ready_agents}/${a2aStatus.total_agents}`] as [string, string]]
       : []),
+    ...(sessionTasks > 0 ? [["Tasks", String(sessionTasks)] as [string, string]] : []),
     ["in", tokenUsage.input.toLocaleString()],
     ["out", tokenUsage.output.toLocaleString()],
     ["cached", tokenUsage.cached_read.toLocaleString()],
@@ -179,7 +184,7 @@ export function StatusBar() {
                   <button
                     key={d.id}
                     role="menuitem"
-                    aria-label={`${d.kind === "a2a" ? "A2A" : "agent"} ${d.label} under ${a.title}`}
+                    aria-label={`${BADGE[d.kind]} ${d.label} under ${a.title}`}
                     onClick={() => {
                       setOpen(false);
                       openConversation(a.id);
@@ -189,7 +194,7 @@ export function StatusBar() {
                     <span className={cn("h-[0.35rem] w-[0.35rem] shrink-0 rounded-full", DOT.running)} />
                     <span className="truncate text-muted-foreground">{d.label}</span>
                     <span className="ml-auto shrink-0 rounded-full bg-secondary px-1.5 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                      {d.kind === "a2a" ? "A2A" : "agent"}
+                      {BADGE[d.kind]}
                     </span>
                   </button>
                 ))}

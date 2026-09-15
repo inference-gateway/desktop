@@ -1490,8 +1490,10 @@ function useDesktopStore() {
       if (runningIds.has(id)) {
         if (chat?.currentReasoningId) return { label: "Thinking...", error: false };
         const tool = [...(chat?.items ?? [])].reverse().find((it) => it.kind === "tool" && it.state === "running");
+        if (tool?.kind === "tool") return { label: `Running ${tool.name}...`, error: false };
+        const tasks = (chat?.backgroundJobs ?? []).filter((j) => j.status === "running").length;
         return {
-          label: tool?.kind === "tool" ? `Running ${tool.name}...` : "Running...",
+          label: tasks > 0 ? `Waiting on tasks (${tasks})...` : "Running...",
           error: false,
         };
       }
@@ -1501,7 +1503,11 @@ function useDesktopStore() {
   );
 
   const delegations = useCallback(
-    (id: string): Delegation[] => delegationsFrom(transcripts[id]?.items ?? []),
+    (id: string): Delegation[] => delegationsFrom(transcripts[id]?.items ?? [], transcripts[id]?.backgroundJobs ?? []),
+    [transcripts],
+  );
+  const runningTasks = useCallback(
+    (id: string): number => (transcripts[id]?.backgroundJobs ?? []).filter((j) => j.status === "running").length,
     [transcripts],
   );
 
@@ -1527,6 +1533,7 @@ function useDesktopStore() {
     isAwaitingApproval,
     runLabel,
     delegations,
+    runningTasks,
     runningCount: runningIds.size,
     onChatClick,
     clearSelection,

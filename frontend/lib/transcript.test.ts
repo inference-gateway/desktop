@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
   initialChatState,
@@ -628,4 +629,42 @@ test("loadHistory restores session usage from the show document metadata", () =>
     total_tool_calls: 2,
     context_window: 0,
   });
+});
+
+test("a background note lands as its own task_result item and ends the open assistant bubble", () => {
+  const note = "[A2A Task Completed: delay]\n\nslow done";
+  const s = run([
+    ev({ kind: "AssistantMessage", content: "submitted", reasoning_content: null, tool_calls: [], message_id: "m1" }),
+    ev({ kind: "BackgroundNote", content: note }),
+    ev({ kind: "AssistantMessage", content: "it finished", reasoning_content: null, tool_calls: [], message_id: "m1" }),
+  ]);
+  expect(s.items.map((i) => i.kind)).toEqual(["assistant", "task_result", "assistant"]);
+  expect(s.items[1]).toMatchObject({ kind: "task_result", text: note });
+  expect(backgroundNoteHeader(note)).toEqual({ kind: "A2A Task", failed: false, label: "delay" });
+  expect(backgroundNoteHeader("[Background Shell Failed: build]\n\nexit 1")?.failed).toBe(true);
+  expect(backgroundNoteHeader("plain text")).toBeNull();
+});
+
+test("background_tasks snapshot feeds delegations and clears on Done", () => {
+  const jobs = [
+    {
+      id: "t1",
+      kind: "a2a",
+      label: "t1",
+      description: "delay 15s",
+      detail: "http://localhost:8081",
+      status: "running",
+    },
+    { id: "s1", kind: "shell", label: "build", description: "", detail: "", status: "completed" },
+  ];
+  const s = run([ev({ kind: "BackgroundTasks", running: 1, jobs })]);
+  expect(delegationsFrom(s.items, s.backgroundJobs)).toEqual([{ id: "job:t1", label: "delay 15s", kind: "a2a" }]);
+  const done = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(done.backgroundJobs).toEqual([]);
+});
+
+test("a persisted background note reloads as a task_result, not a user bubble", () => {
+  const line = JSON.stringify({ role: "user", content: "[A2A Task Completed: x]\n\nok" });
+  const s = run([{ type: "loadHistory", ndjson: line }]);
+  expect(s.items.map((i) => i.kind)).toEqual(["task_result"]);
 });

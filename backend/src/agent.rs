@@ -63,6 +63,30 @@ pub(crate) enum AgentEvent {
     Cancelled,
     ComputerUsePaused,
     ComputerUseResumed,
+    BackgroundNote {
+        content: String,
+    },
+    BackgroundTasks {
+        running: u64,
+        jobs: Vec<BackgroundJob>,
+    },
+}
+
+/// One supervised CLI job from the `background_tasks` AG-UI snapshot.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BackgroundJob {
+    #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) label: String,
+    #[serde(default)]
+    pub(crate) description: String,
+    #[serde(default)]
+    pub(crate) detail: String,
+    #[serde(default)]
+    pub(crate) status: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -258,6 +282,28 @@ impl AgentParser {
                 match val.get("name").and_then(|v| v.as_str()) {
                     Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
                     Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
+                    Some("queued_message") => {
+                        let content = val
+                            .get("value")
+                            .and_then(|v| v.get("content"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Some(AgentEvent::BackgroundNote { content });
+                    }
+                    Some("background_tasks") => {
+                        let value = val.get("value");
+                        let running = value
+                            .and_then(|v| v.get("running"))
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let jobs = value
+                            .and_then(|v| v.get("jobs"))
+                            .cloned()
+                            .and_then(|j| serde_json::from_value(j).ok())
+                            .unwrap_or_default();
+                        return Some(AgentEvent::BackgroundTasks { running, jobs });
+                    }
                     _ => {}
                 }
                 if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
@@ -1545,6 +1591,25 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(&events[0], AgentEvent::ComputerUsePaused));
         assert!(matches!(&events[1], AgentEvent::ComputerUseResumed));
+    }
+
+    #[test]
+    fn test_parse_custom_background_note_and_tasks() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"queued_message","value":{"content":"[A2A Task Completed: t1]\n\nok"}}"#,
+            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":1,"jobs":[{"id":"t1","kind":"a2a","label":"t1","description":"delay 15s","detail":"http://localhost:8081","status":"running","started_at":"2026-09-15T10:00:00Z"}]}}"#,
+            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":0}}"#,
+        ]);
+        assert_eq!(events.len(), 3);
+        assert!(matches!(&events[0], AgentEvent::BackgroundNote { content }
+            if content.starts_with("[A2A Task Completed: t1]")));
+        assert!(
+            matches!(&events[1], AgentEvent::BackgroundTasks { running: 1, jobs }
+            if jobs.len() == 1 && jobs[0].kind == "a2a" && jobs[0].description == "delay 15s" && jobs[0].status == "running")
+        );
+        assert!(
+            matches!(&events[2], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
+        );
     }
 
     #[test]

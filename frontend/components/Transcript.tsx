@@ -9,7 +9,7 @@ import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
-import { COMPUTER_USE_TOOLS, type TranscriptItem } from "@/lib/transcript";
+import { COMPUTER_USE_TOOLS, backgroundNoteHeader, type TranscriptItem } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
@@ -56,6 +56,48 @@ function ReasoningBlock({ paragraphs }: { paragraphs: string[] }) {
         <p className="whitespace-pre-wrap px-[0.65rem] py-2 italic leading-[1.5]">{paragraphs.join("")}</p>
       </div>
     </details>
+  );
+}
+
+function TaskResultCard({ item }: { item: Extract<TranscriptItem, { kind: "task_result" }> }) {
+  const header = backgroundNoteHeader(item.text);
+  const failed = header?.failed ?? false;
+  const body = header
+    ? item.text
+        .trimStart()
+        .slice(item.text.trimStart().indexOf("]") + 1)
+        .trim()
+    : item.text;
+  return (
+    <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start" data-testid="task-result">
+      <details
+        className={cn(
+          "disclosure overflow-hidden rounded-md border border-l-[3px] font-mono text-[0.82rem]",
+          failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg",
+        )}
+      >
+        <summary className="overflow-hidden text-ellipsis whitespace-nowrap px-[0.65rem] py-[0.35rem]">
+          {failed ? (
+            <X className="mr-[0.4rem] inline h-3.5 w-3.5 text-err" aria-hidden />
+          ) : (
+            <Check className="mr-[0.4rem] inline h-3.5 w-3.5 text-tool" aria-hidden />
+          )}
+          <span className={cn("font-bold", failed ? "text-err" : "text-tool")}>
+            {header ? `${header.kind} ${failed ? "failed" : "completed"}` : "Background task"}
+          </span>
+          {header && <span className="ml-[0.4rem] text-muted-foreground">{header.label}</span>}
+        </summary>
+        <pre
+          className={cn(
+            "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
+            failed ? "bg-err-bg" : "bg-tool-bg",
+          )}
+        >
+          {body}
+        </pre>
+      </details>
+      <CopyButton text={item.text} />
+    </div>
   );
 }
 
@@ -345,6 +387,8 @@ function Item({
       return <ReasoningBlock paragraphs={item.paragraphs} />;
     case "tool":
       return <ToolCard item={item} />;
+    case "task_result":
+      return <TaskResultCard item={item} />;
     case "approval":
       return <ApprovalCard item={item} approve={approve} />;
     case "question":
