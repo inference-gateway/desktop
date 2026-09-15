@@ -1,7 +1,3 @@
-// Pending follow-up prompts keyed by session: typed in the composer while the
-// session's turn is running (#231). The first item is sent when the turn ends
-// (Done or Cancelled); ArrowUp pops the whole list back into the composer for
-// editing, the queued banner discards it.
 export type PromptQueue = Record<string, string[]>;
 
 export const enqueue = (queue: PromptQueue, id: string, text: string): PromptQueue => ({
