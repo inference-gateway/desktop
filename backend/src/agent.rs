@@ -486,6 +486,7 @@ pub(crate) async fn send_message(
     auto_mode: bool,
     project: Option<String>,
 ) -> Result<Option<String>, String> {
+    crate::tools::await_services().await;
     let bin_path = infer_bin_path();
 
     let mut cmd = Command::new(&bin_path);
