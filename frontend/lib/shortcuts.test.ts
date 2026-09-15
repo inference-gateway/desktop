@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { matchShortcut, type KeyInput, type Shortcut } from "./shortcuts";
+import { matchApprovalShortcut, matchShortcut, type ApprovalShortcut, type KeyInput, type Shortcut } from "./shortcuts";
 
 function key(overrides: Partial<KeyInput>): KeyInput {
   return {
@@ -34,5 +34,23 @@ const cases: [string, Partial<KeyInput>, Shortcut | null][] = [
 for (const [name, input, expected] of cases) {
   test(name, () => {
     expect(matchShortcut(key(input))).toBe(expected);
+  });
+}
+
+const approvalCases: [string, KeyInput, ApprovalShortcut | null][] = [
+  ["a in the composer approves", key({ key: "a", inComposer: true, editable: true }), "approve"],
+  ["d in the composer denies", key({ key: "d", inComposer: true, editable: true }), "deny"],
+  ["a with caps approves", key({ key: "A" }), "approve"],
+  ["a outside any editable approves", key({ key: "a" }), "approve"],
+  ["other letters keep typing in the composer", key({ key: "x", inComposer: true, editable: true }), null],
+  ["a typed into another editable passes through", key({ key: "a", editable: true }), null],
+  ["modifier combos pass through", key({ key: "a", metaKey: true }), null],
+  ["held key repeat", key({ key: "a", repeat: true }), null],
+  ["preventDefaulted key passes through", key({ key: "a", defaultPrevented: true }), null],
+];
+
+for (const [name, input, expected] of approvalCases) {
+  test(name, () => {
+    expect(matchApprovalShortcut(input)).toBe(expected);
   });
 }

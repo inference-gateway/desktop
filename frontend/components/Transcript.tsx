@@ -6,6 +6,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
+import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
 import { prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
@@ -182,7 +183,7 @@ function ApprovalCard({
         >
           Deny
           <kbd aria-hidden="true" className="rounded border border-white/35 px-1.5 font-mono text-[0.7rem]">
-            R
+            D
           </kbd>
         </button>
       </div>
@@ -495,8 +496,18 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const { items, typing, approve, answerQuestions, runLabel, sessionId, currentProject, projectTypes, openTimeline } =
-    useDesktop();
+  const {
+    items,
+    typing,
+    approve,
+    answerQuestions,
+    runLabel,
+    sessionId,
+    currentProject,
+    projectTypes,
+    openTimeline,
+    composerRef,
+  } = useDesktop();
   const contentProject = currentProject && projectTypes[currentProject] === "content" ? currentProject : null;
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -511,27 +522,31 @@ export function Transcript() {
   useEffect(() => {
     if (!pendingApproval) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
-        return;
-      }
       const target = event.target;
-      if (
+      const editable =
         target instanceof HTMLElement &&
         (target.isContentEditable ||
           (target instanceof HTMLInputElement && !target.disabled && !target.readOnly) ||
           (target instanceof HTMLTextAreaElement && !target.disabled && !target.readOnly) ||
-          (target instanceof HTMLSelectElement && !target.disabled))
-      ) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      if (key !== "a" && key !== "d") return;
+          (target instanceof HTMLSelectElement && !target.disabled));
+      const action = matchApprovalShortcut({
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+        repeat: event.repeat,
+        defaultPrevented: event.defaultPrevented,
+        inComposer: target === composerRef.current,
+        editable,
+      });
+      if (!action) return;
       event.preventDefault();
-      approve(pendingApproval.callId, key === "a");
+      approve(pendingApproval.callId, action === "approve");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [approve, pendingApproval]);
+  }, [approve, pendingApproval, composerRef]);
 
   const checkAtBottom = useCallback(() => {
     const el = ref.current;
