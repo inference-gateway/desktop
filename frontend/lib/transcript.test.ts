@@ -668,3 +668,23 @@ test("a persisted background note reloads as a task_result, not a user bubble", 
   const s = run([{ type: "loadHistory", ndjson: line }]);
   expect(s.items.map((i) => i.kind)).toEqual(["task_result"]);
 });
+
+test("agent_status tracks agents still starting and drops them once ready", () => {
+  const s = run([
+    ev({
+      kind: "AgentStatus",
+      name: "browser-agent",
+      state: "PullingImage",
+      message: "Pulling image",
+      done: 3,
+      total: 10,
+    }),
+    ev({ kind: "AgentStatus", name: "mock-agent", state: "Ready", message: "Ready", done: 0, total: 0 }),
+  ]);
+  expect(s.agentStartup).toEqual({ "browser-agent": { message: "Pulling image", done: 3, total: 10 } });
+  const ready = chatReducer(
+    s,
+    ev({ kind: "AgentStatus", name: "browser-agent", state: "Ready", message: "Ready", done: 0, total: 0 }),
+  );
+  expect(ready.agentStartup).toEqual({});
+});

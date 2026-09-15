@@ -1413,7 +1413,7 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
 }
 
 function AgentsTab() {
-  const { models } = useDesktop();
+  const { models, startServices } = useDesktop();
   const [agents, setAgents] = useState<A2aAgent[]>([]);
   const [catalog, setCatalog] = useState<CatalogAgent[]>([]);
   const [catalogError, setCatalogError] = useState(false);
@@ -1448,6 +1448,7 @@ function AgentsTab() {
       if (configured.has(c.name)) await api.removeA2aAgent(c.name);
       else await api.addA2aAgent(c.name, "");
       await loadAgents();
+      startServices();
     } catch (e) {
       console.error("Failed to toggle A2A agent:", e);
     }
@@ -1457,6 +1458,7 @@ function AgentsTab() {
     try {
       await api.setA2aAgentModel(name, model);
       await loadAgents();
+      startServices();
     } catch (e) {
       console.error("Failed to set agent model:", e);
     }

@@ -63,6 +63,13 @@ pub(crate) enum AgentEvent {
     Cancelled,
     ComputerUsePaused,
     ComputerUseResumed,
+    AgentStatus {
+        name: String,
+        state: String,
+        message: String,
+        done: u64,
+        total: u64,
+    },
     BackgroundNote {
         content: String,
     },
@@ -282,6 +289,27 @@ impl AgentParser {
                 match val.get("name").and_then(|v| v.as_str()) {
                     Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
                     Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
+                    Some("agent_status") => {
+                        let v = val.get("value");
+                        let field = |k: &str| {
+                            v.and_then(|v| v.get(k))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string()
+                        };
+                        let num = |k: &str| {
+                            v.and_then(|v| v.get(k))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0)
+                        };
+                        return Some(AgentEvent::AgentStatus {
+                            name: field("name"),
+                            state: field("state"),
+                            message: field("message"),
+                            done: num("done"),
+                            total: num("total"),
+                        });
+                    }
                     Some("queued_message") => {
                         let content = val
                             .get("value")
@@ -781,7 +809,10 @@ pub(crate) async fn delete_conversation(
     session_id: String,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    run_infer_in(cwd, &["conversations", "delete", &session_id]).await
+    match run_infer_in(cwd, &["conversations", "delete", &session_id]).await {
+        Err(e) if e.contains("conversation not found") => Ok(String::new()),
+        other => other,
+    }
 }
 
 /// The CLI's per-cwd conversation store: ~/.infer/projects/<slug>/conversations,
@@ -1591,6 +1622,17 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(&events[0], AgentEvent::ComputerUsePaused));
         assert!(matches!(&events[1], AgentEvent::ComputerUseResumed));
+    }
+
+    #[test]
+    fn test_parse_custom_agent_status() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"agent_status","value":{"name":"browser-agent","state":"PullingImage","message":"Pulling image","done":3,"total":10}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], AgentEvent::AgentStatus { name, state, done: 3, total: 10, .. }
+            if name == "browser-agent" && state == "PullingImage")
+        );
     }
 
     #[test]

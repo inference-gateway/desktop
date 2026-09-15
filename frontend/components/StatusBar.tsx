@@ -28,6 +28,7 @@ export function StatusBar() {
     runLabel,
     delegations,
     runningTasks,
+    clearError,
     sessionId,
     conversations,
     openConversation,
@@ -143,6 +144,20 @@ export function StatusBar() {
           >
             <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[tone])} />
             <span className={isError ? "text-err" : "text-muted-foreground"}>{label}</span>
+            {statusError && (
+              <span
+                role="button"
+                aria-label="Dismiss error"
+                title="Dismiss"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearError();
+                }}
+                className="ml-1 rounded px-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                ×
+              </span>
+            )}
             {runningCount > 0 && (
               <span
                 title={`${runningCount} orchestrator${runningCount === 1 ? "" : "s"} running`}

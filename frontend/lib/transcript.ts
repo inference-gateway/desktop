@@ -66,6 +66,7 @@ export type ChatState = {
   seenImages: string[];
   paused?: boolean;
   backgroundJobs: BackgroundJob[];
+  agentStartup: Record<string, { message: string; done: number; total: number }>;
 };
 
 /** The run is blocked on the user: a pending approval or question card. */
@@ -196,6 +197,7 @@ export const initialChatState: ChatState = {
   currentReasoningMessageId: null,
   seenImages: [],
   backgroundJobs: [],
+  agentStartup: {},
 };
 
 export type ChatAction =
@@ -322,6 +324,12 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return { ...state, paused: true };
     case "ComputerUseResumed":
       return { ...state, paused: false };
+    case "AgentStatus": {
+      const agentStartup = { ...state.agentStartup };
+      if (event.state === "Ready" || event.state === "Failed") delete agentStartup[event.name];
+      else agentStartup[event.name] = { message: event.message, done: event.done, total: event.total };
+      return { ...state, agentStartup };
+    }
     case "BackgroundNote": {
       if (!event.content.trim()) return state;
       let seq = state.seq;
@@ -340,6 +348,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         currentReasoningMessageId: null,
         paused: false,
         backgroundJobs: [],
+        agentStartup: {},
       };
     case "TokenUsage": {
       const { kind: _kind, ...usage } = event;

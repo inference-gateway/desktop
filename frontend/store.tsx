@@ -135,6 +135,9 @@ function useDesktopStore() {
       .then(setA2aStatus)
       .catch(() => {});
   }, []);
+  const startServices = useCallback(() => {
+    api.startServices().finally(refreshStatus);
+  }, [refreshStatus]);
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
   const [projectNames, setProjectNames] = useState<string[]>(() => []);
@@ -173,6 +176,10 @@ function useDesktopStore() {
   const setError = useCallback((t: string) => {
     setStatusText(t);
     setStatusErr(true);
+  }, []);
+  const clearError = useCallback(() => {
+    setStatusErr(false);
+    setStatusText((t) => (t.startsWith("Failed") || t.startsWith("Error") ? "Ready" : t));
   }, []);
 
   // Todo panel drafts are keyed by session so switching sessions never
@@ -452,7 +459,7 @@ function useDesktopStore() {
                 .then(setTools)
                 .catch(() => {});
               refreshStatus();
-              api.startServices().finally(refreshStatus);
+              startServices();
               break;
             case "Error":
               setError(`Error: ${event.message}`);
@@ -1488,6 +1495,12 @@ function useDesktopStore() {
         return { label: pending === "approval" ? "Awaiting approval..." : "Awaiting answer...", error: false };
       }
       if (runningIds.has(id)) {
+        const starting = Object.entries(chat?.agentStartup ?? {})[0];
+        if (starting) {
+          const [name, st] = starting;
+          const pct = st.total > 0 ? ` ${Math.round((st.done / st.total) * 100)}%` : "";
+          return { label: `Starting ${name} (${st.message}${pct})...`, error: false };
+        }
         if (chat?.currentReasoningId) return { label: "Thinking...", error: false };
         const tool = [...(chat?.items ?? [])].reverse().find((it) => it.kind === "tool" && it.state === "running");
         if (tool?.kind === "tool") return { label: `Running ${tool.name}...`, error: false };
@@ -1582,6 +1595,8 @@ function useDesktopStore() {
     loadProjects,
     setStatus,
     setError,
+    clearError,
+    startServices,
     tokenUsage: active.usage,
     tools,
     mcpStatus,

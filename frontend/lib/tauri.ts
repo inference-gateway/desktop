@@ -50,6 +50,7 @@ export type AgentEvent =
   | { kind: "Cancelled" }
   | { kind: "ComputerUsePaused" }
   | { kind: "ComputerUseResumed" }
+  | { kind: "AgentStatus"; name: string; state: string; message: string; done: number; total: number }
   | { kind: "BackgroundNote"; content: string }
   | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] };
 
