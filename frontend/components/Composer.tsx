@@ -513,7 +513,7 @@ export function Composer() {
             placeholder={
               broadcasting
                 ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
-                : queuedPrompt
+                : running
                   ? "Write a follow-up..."
                   : "Message the orchestrator..."
             }
