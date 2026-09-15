@@ -1515,12 +1515,6 @@ function useDesktopStore() {
     [transcripts, runningIds, lastRun],
   );
 
-  // While the CLI sits in "Waiting on tasks" its queue drain is the only way
-  // forward, so push the queued prompt over stdin instead of holding it until
-  // the process exits. The exit flush above stays as the fallback.
-  // ponytail: runLabel still says "Waiting on tasks" while the follow-up turn
-  // streams (jobs stay running), so a second queued prompt forwards mid-stream;
-  // the CLI queue batches it at the next CheckingQueue, as the TUI does.
   useEffect(() => {
     for (const id of Object.keys(queuedPrompts)) {
       if (!runLabel(id)?.label.startsWith("Waiting on tasks")) continue;
