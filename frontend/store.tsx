@@ -183,9 +183,6 @@ function useDesktopStore() {
     }
   }, []);
 
-  // Follow-up prompts typed while a session is running (#231): the first is
-  // flushed when the turn ends, the queued banner discards them, ArrowUp pops
-  // them all back into the composer for editing.
   const queuePrompt = useCallback((id: string, text: string) => {
     const next = enqueue(queuedRef.current, id, text);
     queuedRef.current = next;
