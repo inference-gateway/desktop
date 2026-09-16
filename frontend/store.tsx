@@ -114,8 +114,7 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "timeline">("chat");
-  const [timelineProject, setTimelineProject] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
   const [history, setHistory] = useState<string[]>([]);
   const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
@@ -1128,11 +1127,6 @@ function useDesktopStore() {
     setCurrentView("observability");
   }, []);
 
-  const openTimeline = useCallback((project: string) => {
-    setTimelineProject(project);
-    setCurrentView("timeline");
-  }, []);
-
   // Start a fresh chat in a project with a given prompt (the timeline's
   // "Generate" button) and switch to it so progress and approvals are visible.
   const promptProject = useCallback(
@@ -1579,8 +1573,6 @@ function useDesktopStore() {
     currentView,
     openSettings,
     openObservability,
-    openTimeline,
-    timelineProject,
     promptProject,
     runningIds,
     setCurrentView,

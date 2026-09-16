@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Clapperboard, FilePlus, FolderOpen, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { FilePlus, FolderOpen, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
@@ -34,6 +34,12 @@ function clipSrc(dir: string, src: string): string | null {
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
 const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", voice: "Voice", audio: "Audio" };
+const TRACK_SWATCH: Record<Track["kind"], string> = {
+  video: "bg-primary",
+  voice: "bg-primary",
+  audio: "bg-emerald-500",
+};
+const RULER_TICKS = 8;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 
 function sourceAudioInstruction(mode: SourceAudio): string {
@@ -47,12 +53,12 @@ function sourceAudioInstruction(mode: SourceAudio): string {
   }
 }
 
-// Editable view of <stem>.timeline.json: video preview, one row per track,
-// clips positioned by time, and a text editor for the selected voice
-// clip. Edits mark clips draft and are debounced to disk; the agent
-// synthesizes drafts and remuxes when asked via "Generate".
+// Editable view of <stem>.timeline.json for the current content project:
+// video stage, one lane per track with clips positioned by time, and an
+// inspector for the selected voice clip. Edits mark clips draft and are
+// debounced to disk; the agent synthesizes drafts when asked via "Add voice".
 export function TimelineView() {
-  const { timelineProject: project, setCurrentView, promptProject, runningIds, setError } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -229,58 +235,43 @@ export function TimelineView() {
   };
 
   return (
-    <div id="timeline-view" className="flex min-h-0 flex-1">
-      <nav className="flex w-[240px] shrink-0 flex-col gap-1 border-r border-border bg-secondary p-3">
-        <button
-          onClick={() => setCurrentView("chat")}
-          className="mb-2 inline-flex items-center gap-1.5 rounded-md px-2 py-[0.45rem] text-[0.85rem] font-medium text-muted-foreground hover:bg-primary/10 hover:text-foreground"
-        >
-          <ArrowLeft size={15} /> Back
-        </button>
-        <span className="mb-1 truncate px-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-          {project}
-        </span>
-        {names.map((n) => (
-          <button
-            key={n}
-            aria-pressed={n === name}
-            onClick={() => load(n)}
-            className={cn(
-              "inline-flex items-center gap-2 truncate rounded-md px-3 py-[0.5rem] text-left text-[0.85rem] font-medium",
-              n === name
-                ? "bg-primary/15 text-foreground"
-                : "text-muted-foreground hover:bg-primary/10 hover:text-foreground",
-            )}
+    <div id="timeline-view" className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+        {names.length > 1 ? (
+          <select
+            aria-label="Timeline"
+            value={name}
+            onChange={(e) => load(e.target.value)}
+            className="h-8 rounded-md border border-input bg-transparent px-1 text-[0.85rem] font-semibold text-foreground"
           >
-            <Clapperboard size={14} className="shrink-0" />
-            {n.replace(/\.timeline\.json$/, "")}
-          </button>
-        ))}
-        {names.length === 0 && (
-          <p className="px-2 text-[0.78rem] text-muted-foreground">No timeline yet. Add a recording to get started.</p>
+            {names.map((n) => (
+              <option key={n} value={n}>
+                {n.replace(/\.timeline\.json$/, "")}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <h2 className="truncate text-[0.95rem] font-semibold">
+            {name ? name.replace(/\.timeline\.json$/, "") : project}
+          </h2>
         )}
-      </nav>
-
-      <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
-        {!timeline && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-[0.9rem] font-semibold">Recordings in this project</h2>
-              <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
-                <FilePlus size={14} /> Add recording
-              </Button>
-            </div>
-            {videos.length === 0 && (
-              <p className="text-[0.8rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
+        {timeline && (
+          <>
+            <span className="font-mono text-[0.75rem] tabular-nums text-muted-foreground">
+              {fmtTime(time)} / {fmtTime(duration)}
+            </span>
+            {drafts > 0 && (
+              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.7rem] font-medium text-amber-600 dark:text-amber-400">
+                {drafts} draft{drafts === 1 ? "" : "s"}
+              </span>
             )}
-            <label className="flex items-center gap-2 text-[0.78rem] text-muted-foreground">
-              Original audio
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
               <select
                 aria-label="Original audio"
-                value={newSourceAudio}
-                onChange={(e) => setNewSourceAudio(e.target.value as SourceAudio)}
-                className="h-7 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                title="What to do with the recording's own audio"
+                value={timeline.source_audio ?? "mute"}
+                onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
+                className="h-8 max-w-[180px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
               >
                 {SOURCE_AUDIO.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -288,32 +279,70 @@ export function TimelineView() {
                   </option>
                 ))}
               </select>
-            </label>
-            {videos.map((v) => (
-              <div key={v.name} className="flex items-center gap-2 text-[0.85rem]">
-                <span className="truncate">{v.name}</span>
-                <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => addVoiceTo(v.name)}>
-                  <Sparkles size={14} /> Add voice
+              <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
+                <Plus size={14} /> Add marker
+              </Button>
+              <Button size="sm" onClick={generate} disabled={running > 0}>
+                <Sparkles size={14} /> {hasVoice ? "Redo drafts" : "Add voice"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                title="Render the timeline to an MP4 with ffmpeg"
+                onClick={exportVideo}
+                disabled={exporting || running > 0 || hasVoice === 0}
+              >
+                <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-3 p-4">
+        {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
+
+        <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
+          {timeline && videoSrc ? (
+            <video
+              ref={videoRef}
+              key={videoSrc}
+              src={videoSrc}
+              controls
+              muted={timeline.source_audio !== "keep"}
+              onTimeUpdate={(e) => {
+                setTime(e.currentTarget.currentTime);
+                syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused);
+              }}
+              onPlay={(e) => syncAudio(e.currentTarget.currentTime, true)}
+              onPause={(e) => syncAudio(e.currentTarget.currentTime, false)}
+              onSeeked={(e) => syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused)}
+              onError={() => setLoadError(`Cannot play ${videoPath}`)}
+              className="max-h-[50vh] w-full object-contain"
+            />
+          ) : timeline ? (
+            <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
+              Preview unavailable for {videoPath ?? "this timeline"} (only files under the default projects root can be
+              previewed).
+            </p>
+          ) : (
+            <div className="flex w-full max-w-md flex-col gap-2 p-6 text-[0.85rem]">
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold text-white">Recordings in this project</h2>
+                <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
+                  <FilePlus size={14} /> Add recording
                 </Button>
               </div>
-            ))}
-          </div>
-        )}
-        {timeline && (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[0.95rem] font-semibold">{name.replace(/\.timeline\.json$/, "")}</h2>
-              <span className="text-[0.75rem] text-muted-foreground">
-                {fmtTime(time)} / {fmtTime(duration)}
-                {drafts > 0 && ` · ${drafts} draft${drafts === 1 ? "" : "s"}`}
-              </span>
-              <div className="ml-auto flex items-center gap-1.5">
+              {videos.length === 0 && (
+                <p className="text-[0.8rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
+              )}
+              <label className="flex items-center gap-2 text-[0.78rem] text-muted-foreground">
+                Original audio
                 <select
                   aria-label="Original audio"
-                  title="What to do with the recording's own audio"
-                  value={timeline.source_audio ?? "mute"}
-                  onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
-                  className="h-8 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                  value={newSourceAudio}
+                  onChange={(e) => setNewSourceAudio(e.target.value as SourceAudio)}
+                  className="h-7 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-white"
                 >
                   {SOURCE_AUDIO.map((o) => (
                     <option key={o.value} value={o.value}>
@@ -321,126 +350,122 @@ export function TimelineView() {
                     </option>
                   ))}
                 </select>
-                <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
-                  <Plus size={14} /> Add marker
-                </Button>
-                <Button size="sm" onClick={generate} disabled={running > 0}>
-                  <Sparkles size={14} /> {hasVoice ? "Redo drafts" : "Add voice"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  title="Render the timeline to an MP4 with ffmpeg"
-                  onClick={exportVideo}
-                  disabled={exporting || running > 0 || hasVoice === 0}
-                >
-                  <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
-                </Button>
-              </div>
+              </label>
+              {videos.map((v) => (
+                <div key={v.name} className="flex items-center gap-2 text-white">
+                  <span className="truncate">{v.name}</span>
+                  <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => addVoiceTo(v.name)}>
+                    <Sparkles size={14} /> Add voice
+                  </Button>
+                </div>
+              ))}
             </div>
+          )}
+        </div>
+        {clipAudio.map((c) => (
+          <audio
+            key={c.id}
+            src={c.src}
+            preload="auto"
+            ref={(el) => {
+              if (el) audioRefs.current.set(c.id, el);
+              else audioRefs.current.delete(c.id);
+            }}
+          />
+        ))}
 
-            {videoSrc ? (
-              <video
-                ref={videoRef}
-                key={videoSrc}
-                src={videoSrc}
-                controls
-                muted={timeline.source_audio !== "keep"}
-                onTimeUpdate={(e) => {
-                  setTime(e.currentTarget.currentTime);
-                  syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused);
-                }}
-                onPlay={(e) => syncAudio(e.currentTarget.currentTime, true)}
-                onPause={(e) => syncAudio(e.currentTarget.currentTime, false)}
-                onSeeked={(e) => syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused)}
-                onError={() => setLoadError(`Cannot play ${videoPath}`)}
-                className="max-h-[45vh] w-full rounded-lg bg-black"
-              />
-            ) : null}
-            {clipAudio.map((c) => (
-              <audio
-                key={c.id}
-                src={c.src}
-                preload="auto"
-                ref={(el) => {
-                  if (el) audioRefs.current.set(c.id, el);
-                  else audioRefs.current.delete(c.id);
-                }}
-              />
-            ))}
-            {videoSrc ? null : (
-              <p className="rounded-lg border border-border p-3 text-[0.8rem] text-muted-foreground">
-                Preview unavailable for {videoPath ?? "this timeline"} (only files under the default projects root can
-                be previewed).
-              </p>
-            )}
-
-            <div className="flex flex-col gap-1.5">
+        {timeline && (
+          <div className="flex rounded-lg border border-border bg-secondary/30">
+            <div className="flex w-20 shrink-0 flex-col border-r border-border">
+              <div className="h-6" />
+              {timeline.tracks.map((tr) => (
+                <div key={tr.id} className="flex h-12 items-center gap-1.5 px-2 text-[0.72rem] font-medium">
+                  <span className={cn("size-2 rounded-sm", TRACK_SWATCH[tr.kind])} />
+                  {TRACK_LABEL[tr.kind]}
+                </div>
+              ))}
+            </div>
+            <div className="relative min-w-0 flex-1">
               <div
-                className="relative h-4 cursor-pointer text-[0.65rem] text-muted-foreground"
+                role="slider"
+                aria-label="Playhead"
+                aria-valuemin={0}
+                aria-valuemax={duration}
+                aria-valuenow={time}
+                className="relative h-6 cursor-pointer border-b border-border font-mono text-[0.62rem] text-muted-foreground"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
                   seek(((e.clientX - r.left) / r.width) * duration);
                 }}
               >
-                {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-                  <span key={f} className="absolute -translate-x-1/2" style={{ left: `${f * 100}%` }}>
-                    {fmtTime(f * duration)}
+                {Array.from({ length: RULER_TICKS + 1 }, (_, i) => i / RULER_TICKS).map((f) => (
+                  <span
+                    key={f}
+                    className={cn(
+                      "absolute bottom-0 border-l border-border pl-1",
+                      i4(f) ? "h-4" : "h-2",
+                      f === 1 && "-translate-x-full border-l-0 pl-0 pr-1",
+                    )}
+                    style={{ left: `${f * 100}%` }}
+                  >
+                    {i4(f) && fmtTime(f * duration)}
                   </span>
                 ))}
               </div>
               {timeline.tracks.map((tr) => (
-                <div key={tr.id} className="flex items-center gap-2">
-                  <span className="w-20 shrink-0 text-[0.72rem] text-muted-foreground">{TRACK_LABEL[tr.kind]}</span>
-                  <div className="relative h-8 flex-1 rounded-md bg-secondary">
-                    {tr.clips.map((c) => (
-                      <button
-                        key={c.id}
-                        title={c.text || c.src || c.id}
-                        aria-pressed={selected?.track === tr.id && selected.clip === c.id}
-                        onClick={() => {
-                          setSelected({ track: tr.id, clip: c.id });
-                          seek(c.start);
-                        }}
-                        style={clipLayout(c, duration)}
-                        className={cn(
-                          "absolute top-0.5 bottom-0.5 truncate rounded px-1 text-left text-[0.68rem] leading-7 outline-none",
-                          tr.kind === "video" && "bg-primary/30",
-                          tr.kind === "audio" && "bg-emerald-500/30",
-                          tr.kind === "voice" && (c.status === "draft" ? "bg-amber-500/40" : "bg-primary/50"),
-                          selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
-                        )}
-                      >
-                        {c.text || c.id}
-                      </button>
-                    ))}
-                    {duration > 0 && (
-                      <div
-                        className="pointer-events-none absolute top-0 bottom-0 w-px bg-foreground"
-                        style={{ left: `${(time / duration) * 100}%` }}
-                      />
-                    )}
-                  </div>
+                <div key={tr.id} className="relative h-12 border-b border-border/50 last:border-b-0">
+                  {tr.clips.map((c) => (
+                    <button
+                      key={c.id}
+                      title={c.text || c.src || c.id}
+                      aria-pressed={selected?.track === tr.id && selected.clip === c.id}
+                      onClick={() => {
+                        setSelected({ track: tr.id, clip: c.id });
+                        seek(c.start);
+                      }}
+                      style={clipLayout(c, duration)}
+                      className={cn(
+                        "absolute top-1.5 bottom-1.5 truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none",
+                        tr.kind === "video" && "border-primary/50 bg-primary/25",
+                        tr.kind === "audio" && "border-emerald-600/50 bg-emerald-500/30",
+                        tr.kind === "voice" &&
+                          (c.status === "draft"
+                            ? "border-amber-600/60 bg-amber-500/40"
+                            : "border-primary/70 bg-primary/50"),
+                        selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
+                      )}
+                    >
+                      {c.text || c.id}
+                    </button>
+                  ))}
                 </div>
               ))}
+              {duration > 0 && (
+                <div
+                  className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-red-500"
+                  style={{ left: `${(time / duration) * 100}%` }}
+                />
+              )}
             </div>
+          </div>
+        )}
 
-            {track && clip && (
-              <ClipEditor
-                track={track}
-                clip={clip}
-                dir={dir}
-                timeline={timeline}
-                onChange={update}
-                onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
-              />
-            )}
-          </>
+        {timeline && track && clip && (
+          <ClipEditor
+            track={track}
+            clip={clip}
+            dir={dir}
+            timeline={timeline}
+            onChange={update}
+            onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
+          />
         )}
       </div>
     </div>
   );
 }
+
+const i4 = (f: number) => (f * 4) % 1 === 0;
 
 function ClipEditor({
   track,
@@ -459,9 +484,9 @@ function ClipEditor({
 }) {
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3">
       <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
-        <span className="font-medium text-foreground">{clip.id}</span>
+        <span className="font-medium text-foreground">Clip {clip.id}</span>
         <span>
           {fmtTime(clip.start)} - {fmtTime(clip.end)}
         </span>
