@@ -372,7 +372,7 @@ export function TimelineView() {
             {shown.tracks.map((tr) => (
               <div key={tr.id} className="flex h-12 items-center gap-1.5 px-2 text-[0.72rem] font-medium">
                 <span className={cn("size-2 rounded-sm", TRACK_SWATCH[tr.kind])} />
-                {TRACK_LABEL[tr.kind]}
+                {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
               </div>
             ))}
             <div className="flex h-8 items-center gap-1 px-1.5">
@@ -412,7 +412,7 @@ export function TimelineView() {
                   )}
                   style={{ left: `${f * 100}%` }}
                 >
-                  {i4(f) && fmtTime(f * duration)}
+                  {i4(f) && duration > 0 && fmtTime(f * duration)}
                 </span>
               ))}
             </div>
