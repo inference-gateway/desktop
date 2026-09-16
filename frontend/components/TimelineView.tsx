@@ -4,6 +4,7 @@ import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
+  addClip,
   addMarker,
   addTrack,
   clipLayout,
@@ -43,6 +44,8 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
   audio: "bg-emerald-500",
 };
 const RULER_TICKS = 8;
+// ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
+const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
 // Name used when the user starts layering tracks before the agent wrote any timeline.
@@ -80,6 +83,8 @@ export function TimelineView() {
   const [media, setMedia] = useState<ProjectFile[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
+  const dragRef = useRef<string | null>(null);
+  const [dropLane, setDropLane] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRefs = useRef(new Map<string, HTMLAudioElement>());
   const { setStatus } = useDesktop();
@@ -248,6 +253,20 @@ export function TimelineView() {
 
   // Clicking a media item drops its file name into the composer so the user
   // can say "put X first, then Y" without retyping names.
+  const laneAccepts = (tr: Track, file: string | null) =>
+    !!file && (VIDEO_EXT.test(file) ? tr.kind === "video" : tr.kind === "audio");
+
+  const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
+    const file = dragRef.current;
+    dragRef.current = null;
+    setDropLane(null);
+    if (!laneAccepts(tr, file)) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const at = duration > 0 ? ((e.clientX - r.left) / r.width) * duration : 0;
+    update(addClip(shown, tr.id, file!, durations[file!] ?? FALLBACK_CLIP_S, at));
+  };
+
   const mention = (file: string) => {
     const el = composerRef.current;
     if (!el) return;
@@ -417,7 +436,22 @@ export function TimelineView() {
               ))}
             </div>
             {shown.tracks.map((tr) => (
-              <div key={tr.id} className="relative h-12 border-b border-border/50 last:border-b-0">
+              <div
+                key={tr.id}
+                aria-label={`${TRACK_LABEL[tr.kind]} lane ${tr.id}`}
+                onDragOver={(e) => {
+                  if (!laneAccepts(tr, dragRef.current)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  if (dropLane !== tr.id) setDropLane(tr.id);
+                }}
+                onDragLeave={() => dropLane === tr.id && setDropLane(null)}
+                onDrop={(e) => dropOn(tr, e)}
+                className={cn(
+                  "relative h-12 border-b border-border/50 last:border-b-0",
+                  dropLane === tr.id && "bg-primary/10 ring-1 ring-inset ring-ring",
+                )}
+              >
                 {tr.clips.map((c) => (
                   <button
                     key={c.id}
@@ -473,7 +507,17 @@ export function TimelineView() {
             return (
               <div key={f.name} className="flex items-center gap-2 text-[0.8rem]">
                 <button
-                  title="Mention this file in the chat"
+                  title="Drag onto a lane, or click to mention it in the chat"
+                  draggable
+                  onDragStart={(e) => {
+                    dragRef.current = f.name;
+                    e.dataTransfer.setData("text/plain", f.name);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onDragEnd={() => {
+                    dragRef.current = null;
+                    setDropLane(null);
+                  }}
                   onClick={() => mention(f.name)}
                   className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-primary/10"
                 >

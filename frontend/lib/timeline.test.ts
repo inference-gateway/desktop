@@ -80,3 +80,15 @@ test("addTrack layers lanes with unique ids", () => {
   const t = addTrack(addTrack(emptyTimeline(), "audio"), "video");
   expect(t.tracks.map((tr) => tr.id)).toEqual(["video", "audio", "audio2", "video2"]);
 });
+
+test("addClip places at the drop time or after the last clip when taken", () => {
+  const a = addClip(emptyTimeline(), "video", "intro.mp4", 6, 0);
+  expect(a.tracks[0].clips[0]).toMatchObject({ id: "v1", start: 0, end: 6, src: "intro.mp4" });
+  expect(a.duration).toBe(6);
+  const b = addClip(a, "video", "demo.mov", 4, 2);
+  expect(b.tracks[0].clips.map((c) => [c.id, c.start, c.end])).toEqual([
+    ["v1", 0, 6],
+    ["v2", 6, 10],
+  ]);
+  expect(addClip(a, "nope", "x.mp4", 1, 0)).toBe(a);
+});

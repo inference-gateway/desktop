@@ -157,6 +157,24 @@ export function addTrack(t: Timeline, kind: TrackKind): Timeline {
   return { ...t, tracks: [...t.tracks, { id: n === 1 ? kind : `${kind}${n}`, kind, clips: [] }] };
 }
 
+// Drop a media file onto a lane: the clip starts at `at`, or right after the
+// last clip if that spot is taken, and the timeline grows to fit it.
+export function addClip(t: Timeline, trackId: string, src: string, length: number, at: number): Timeline {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  if (!track) return t;
+  const lastEnd = Math.max(0, ...track.clips.map((c) => c.end));
+  const wanted = Math.max(0, at);
+  const free = !track.clips.some((c) => wanted < c.end && wanted + length > c.start);
+  const start = free ? wanted : lastEnd;
+  const clip: Clip = { id: nextId(track, track.kind[0]), start, end: start + length, src };
+  const clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
+  return {
+    ...t,
+    duration: Math.max(t.duration, clip.end),
+    tracks: t.tracks.map((tr) => (tr.id === trackId ? { ...tr, clips } : tr)),
+  };
+}
+
 export function draftCount(t: Timeline): number {
   return t.tracks.flatMap((tr) => tr.clips).filter((c) => c.status === "draft").length;
 }
