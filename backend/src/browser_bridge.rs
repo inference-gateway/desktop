@@ -616,14 +616,12 @@ fn serve_extension(stream: TcpStream, host: &Arc<Host>) {
         let _ = ws.close(None);
         return;
     }
-    if ws.send(Message::text(HELLO_ACK)).is_err() {
-        return;
-    }
     let (tx, rx) = mpsc::channel();
     if let Some(old) = lock(&host.links).ext.replace(PeerHandle { tx, sock, id }) {
         old.close();
     }
     host.notify(true);
+    let _ = ws.send(Message::text(HELLO_ACK));
     pump(ws, rx, |frame| match relay_target(frame) {
         Some(Peer::Cli) => host.to_cli(frame.to_owned()),
         Some(Peer::Extension) => {}
