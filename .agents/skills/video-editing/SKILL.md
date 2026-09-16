@@ -29,7 +29,8 @@ not download, build, symlink or search the disk for tools, and do not create dir
 under `~/.infer`; the only place you write is the working directory.
 
 - `ffmpeg` on `PATH` (the desktop's own copy lives in `~/.infer/bin/tools/ffmpeg`). There is no `ffprobe`;
-  probe with `ffmpeg -i`.
+  probe with `ffmpeg -hide_banner -i <file> 2>&1 | grep -E 'Duration|Stream'` (bare `ffmpeg -i` always
+  exits 1 for lack of an output file; the `grep` exits 0 when the file was read).
 - `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (only for
   `source_audio: transcribe`). Use a larger model only if one already exists in that directory.
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
@@ -127,9 +128,9 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 
 ## Steps
 
-1. **Probe.** `ffmpeg -hide_banner -i <video>` (it exits with an error without an output file; read
-   stderr). The `Duration: HH:MM:SS.ms` line gives `duration` in seconds; a `Stream ... Audio:` line
-   means the recording has sound.
+1. **Probe.** `ffmpeg -hide_banner -i <video> 2>&1 | grep -E 'Duration|Stream'`. The
+   `Duration: HH:MM:SS.ms` line gives `duration` in seconds; a `Stream ... Audio:` line means the
+   recording has sound.
 2. **Keyframes.** Prefer scene changes; fall back to fixed sampling on static screens:
 
    ```sh
@@ -223,8 +224,9 @@ prints `1`. If a render fails because HyperFrames or its browser is missing, tel
   not wait for a GSAP timeline. No files outside the working directory, no network fonts.
 - Render: `npx --yes hyperframes render -c cards/<id>-<kind>.html --format mov -o media/<id>-<kind>.mov --quiet`.
   Always `mov` (ProRes 4444): the desktop's preview drops the alpha of a WebM, and mp4 has none.
-  Check the duration with `ffmpeg -hide_banner -i media/<id>-<kind>.mov`; render again after fixing
-  the HTML if it is off. Keep cards under 10 s, ProRes is large.
+  Check the duration and size with
+  `ffmpeg -hide_banner -i media/<id>-<kind>.mov 2>&1 | grep -E 'Duration|Stream'`; render again
+  after fixing the HTML if it is off. Keep cards under 10 s, ProRes is large.
 - Place the clip on the overlay track (create the track if missing), write the timeline, and stop as
   in step 6: no ffmpeg on the video, no export. To change a card, edit the file named by its `html`,
   render to the same `src`, leave `start`/`end` alone unless asked; placement changes need no render.
