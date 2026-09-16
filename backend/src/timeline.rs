@@ -155,7 +155,7 @@ fn has_video_filters(ffmpeg: &Path) -> bool {
         .output()
         .map(|out| {
             let filters = String::from_utf8_lossy(&out.stdout);
-            [" adelay ", " amix ", " apad ", " scale "]
+            [" adelay ", " amix ", " apad ", " scale ", " overlay "]
                 .iter()
                 .all(|f| filters.contains(f))
         })
@@ -289,6 +289,16 @@ struct ClipFile {
     end: Option<f64>,
     offset: Option<f64>,
     src: Option<String>,
+    x: Option<f64>,
+    y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+}
+
+impl ClipFile {
+    fn has_src(&self) -> bool {
+        self.src.as_deref().is_some_and(|s| !s.is_empty())
+    }
 }
 
 /// The part of the source file a clip plays: from `offset` for the clip's
@@ -316,10 +326,38 @@ fn resolve_src(dir: &Path, src: &str) -> PathBuf {
     }
 }
 
+/// The filter that composites one overlay clip onto the running picture
+/// label: the card is shifted to its start time, sized against the main
+/// frame when `width`/`height` are set, and shown only inside its range.
+fn overlay_filter(c: &ClipFile, input: usize, prev: &str, end: f64) -> String {
+    let start = c.start.max(0.0);
+    let dim = |v: Option<f64>, side: &str| v.map_or("-1".to_string(), |v| format!("{side}*{v}"));
+    let mut chain = vec![format!(
+        "[{input}:v]setpts=PTS-STARTPTS+{start}/TB[o{input}]"
+    )];
+    let (card, base) = if c.width.is_none() && c.height.is_none() {
+        (format!("[o{input}]"), prev.to_string())
+    } else {
+        chain.push(format!(
+            "[o{input}]{prev}scale2ref=w={}:h={}[s{input}][b{input}]",
+            dim(c.width, "iw"),
+            dim(c.height, "ih")
+        ));
+        (format!("[s{input}]"), format!("[b{input}]"))
+    };
+    chain.push(format!(
+        "{base}{card}overlay=x=W*{}:y=H*{}:eof_action=pass:enable='between(t,{start},{end})'[v{input}]",
+        c.x.unwrap_or(0.0),
+        c.y.unwrap_or(0.0)
+    ));
+    chain.join(";")
+}
+
 /// Build the ffmpeg invocation that renders a timeline: the video's picture,
 /// every audio clip (spoken or plain file) delayed to its start time and mixed together,
-/// plus the original sound when `source_audio` is `keep`. Returns the
-/// arguments and the output file name. Pure, so it is testable.
+/// plus the original sound when `source_audio` is `keep`, and every overlay
+/// card composited over the picture. Returns the arguments and the output
+/// file name. Pure, so it is testable.
 fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
     let t: TimelineFile =
         serde_json::from_str(json).map_err(|e| format!("invalid timeline: {e}"))?;
@@ -345,12 +383,12 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
         mix.push("[0:a]".into());
     }
     let mut input = 1;
-    for tr in t.tracks.iter().filter(|tr| tr.kind != "video") {
-        for c in tr
-            .clips
-            .iter()
-            .filter(|c| c.src.as_deref().is_some_and(|s| !s.is_empty()))
-        {
+    for tr in t
+        .tracks
+        .iter()
+        .filter(|tr| tr.kind != "video" && tr.kind != "overlay")
+    {
+        for c in tr.clips.iter().filter(|c| c.has_src()) {
             let src = resolve_src(dir, c.src.as_deref().unwrap_or_default());
             if !src.is_file() {
                 return Err(format!("missing clip audio: {}", src.display()));
@@ -371,30 +409,55 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
             input += 1;
         }
     }
-    if mix.is_empty() {
-        return Err("nothing to export: the timeline has no audio clips".into());
+    let mut picture = "[0:v]".to_string();
+    for tr in t.tracks.iter().filter(|tr| tr.kind == "overlay") {
+        for c in tr.clips.iter().filter(|c| c.has_src()) {
+            let src = resolve_src(dir, c.src.as_deref().unwrap_or_default());
+            if !src.is_file() {
+                return Err(format!("missing overlay: {}", src.display()));
+            }
+            let end = c.end.filter(|e| *e > c.start).ok_or_else(|| {
+                format!(
+                    "overlay clip {} needs an end after its start",
+                    src.display()
+                )
+            })?;
+            if src
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("webm"))
+            {
+                args.push("-c:v".into());
+                args.push("libvpx-vp9".into());
+            }
+            args.push("-i".into());
+            args.push(src.to_string_lossy().into_owned());
+            filters.push(overlay_filter(c, input, &picture, end));
+            picture = format!("[v{input}]");
+            input += 1;
+        }
     }
-    filters.push(format!(
-        "{}amix=inputs={}:normalize=0[mix];[mix]apad[a]",
-        mix.concat(),
-        mix.len()
-    ));
-    args.extend(
-        [
-            "-filter_complex",
-            &filters.join(";"),
-            "-map",
-            "0:v",
-            "-map",
-            "[a]",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-shortest",
-        ]
-        .map(String::from),
-    );
+    if mix.is_empty() && picture == "[0:v]" {
+        return Err("nothing to export: the timeline has no audio or overlay clips".into());
+    }
+    let audio_map = if mix.is_empty() {
+        "0:a?"
+    } else {
+        filters.push(format!(
+            "{}amix=inputs={}:normalize=0[mix];[mix]apad[a]",
+            mix.concat(),
+            mix.len()
+        ));
+        "[a]"
+    };
+    let video: &[&str] = if picture == "[0:v]" {
+        &["-map", "0:v", "-c:v", "copy"]
+    } else {
+        &["-map", &picture, "-c:v", "libx264", "-pix_fmt", "yuv420p"]
+    };
+    args.push("-filter_complex".into());
+    args.push(filters.join(";"));
+    args.extend(video.iter().map(|s| s.to_string()));
+    args.extend(["-map", audio_map, "-c:a", "aac", "-shortest"].map(String::from));
     args.push(dir.join(&output).to_string_lossy().into_owned());
     Ok((args, output))
 }
@@ -521,7 +584,7 @@ mod tests {
                     .to_string()
             )
         );
-        assert!(joined.contains("-c:v copy -c:a aac -shortest"));
+        assert!(joined.contains("-map 0:v -c:v copy -map [a] -c:a aac -shortest"));
 
         let muted = json.replace("\"keep\"", "\"mute\"");
         let (args, _) = export_args(&dir, "demo", &muted).unwrap();
@@ -535,6 +598,37 @@ mod tests {
             )
             .is_err()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_args_composites_every_overlay_card() {
+        let dir = std::env::temp_dir().join(format!("infer-overlay-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("title.webm"), b"x").unwrap();
+        std::fs::write(dir.join("logo.mov"), b"x").unwrap();
+        let json = r#"{"tracks":[
+            {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
+            {"kind":"overlay","clips":[
+                {"start":1,"end":4,"src":"title.webm"},
+                {"start":6,"end":9,"src":"logo.mov","x":0.1,"y":0.8,"width":0.5}]}]}"#;
+        let (args, _) = export_args(&dir, "demo", json).unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("-c:v libvpx-vp9 -i "), "{joined}");
+        assert!(joined.contains("logo.mov -filter_complex "), "{joined}");
+        assert!(
+            joined.contains(
+                "[1:v]setpts=PTS-STARTPTS+1/TB[o1];[0:v][o1]overlay=x=W*0:y=H*0:eof_action=pass:enable='between(t,1,4)'[v1];\
+                 [2:v]setpts=PTS-STARTPTS+6/TB[o2];[o2][v1]scale2ref=w=iw*0.5:h=-1[s2][b2];[b2][s2]overlay=x=W*0.1:y=H*0.8:eof_action=pass:enable='between(t,6,9)'[v2]"
+            ),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("-map [v2] -c:v libx264 -pix_fmt yuv420p -map 0:a? -c:a aac -shortest"),
+            "{joined}"
+        );
+        assert!(export_args(&dir, "demo", &json.replace(r#""end":4,"#, "")).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
