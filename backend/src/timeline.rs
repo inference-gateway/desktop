@@ -328,25 +328,24 @@ fn resolve_src(dir: &Path, src: &str) -> PathBuf {
 
 /// The filter that composites one overlay clip onto the running picture
 /// label: the card is shifted to its start time, sized against the main
-/// frame when `width`/`height` are set, and shown only inside its range.
+/// frame (`width`/`height`, else the full frame width, as the preview does)
+/// and shown only inside its range.
 fn overlay_filter(c: &ClipFile, input: usize, prev: &str, end: f64) -> String {
     let start = c.start.max(0.0);
     let dim = |v: Option<f64>, side: &str| v.map_or("-1".to_string(), |v| format!("{side}*{v}"));
     let mut chain = vec![format!(
         "[{input}:v]setpts=PTS-STARTPTS+{start}/TB[o{input}]"
     )];
-    let (card, base) = if c.width.is_none() && c.height.is_none() {
-        (format!("[o{input}]"), prev.to_string())
-    } else {
-        chain.push(format!(
-            "[o{input}]{prev}scale2ref=w={}:h={}[s{input}][b{input}]",
-            dim(c.width, "iw"),
-            dim(c.height, "ih")
-        ));
-        (format!("[s{input}]"), format!("[b{input}]"))
-    };
+    let width = c
+        .width
+        .or(if c.height.is_none() { Some(1.0) } else { None });
     chain.push(format!(
-        "{base}{card}overlay=x=W*{}:y=H*{}:eof_action=pass:enable='between(t,{start},{end})'[v{input}]",
+        "[o{input}]{prev}scale2ref=w={}:h={}[s{input}][b{input}]",
+        dim(width, "iw"),
+        dim(c.height, "ih")
+    ));
+    chain.push(format!(
+        "[b{input}][s{input}]overlay=x=W*{}:y=H*{}:eof_action=pass:enable='between(t,{start},{end})'[v{input}]",
         c.x.unwrap_or(0.0),
         c.y.unwrap_or(0.0)
     ));
@@ -619,7 +618,7 @@ mod tests {
         assert!(joined.contains("logo.mov -filter_complex "), "{joined}");
         assert!(
             joined.contains(
-                "[1:v]setpts=PTS-STARTPTS+1/TB[o1];[0:v][o1]overlay=x=W*0:y=H*0:eof_action=pass:enable='between(t,1,4)'[v1];\
+                "[1:v]setpts=PTS-STARTPTS+1/TB[o1];[o1][0:v]scale2ref=w=iw*1:h=-1[s1][b1];[b1][s1]overlay=x=W*0:y=H*0:eof_action=pass:enable='between(t,1,4)'[v1];\
                  [2:v]setpts=PTS-STARTPTS+6/TB[o2];[o2][v1]scale2ref=w=iw*0.5:h=-1[s2][b2];[b2][s2]overlay=x=W*0.1:y=H*0.8:eof_action=pass:enable='between(t,6,9)'[v2]"
             ),
             "{joined}"
