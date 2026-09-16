@@ -286,7 +286,25 @@ struct TrackFile {
 #[derive(serde::Deserialize)]
 struct ClipFile {
     start: f64,
+    end: Option<f64>,
+    offset: Option<f64>,
     src: Option<String>,
+}
+
+/// The part of the source file a clip plays: from `offset` for the clip's
+/// length. Empty when the clip plays the whole file.
+fn trim_filter(c: &ClipFile) -> String {
+    let offset = c.offset.unwrap_or(0.0).max(0.0);
+    match c.end {
+        Some(end) if end > c.start => {
+            format!(
+                "atrim=start={offset}:end={},asetpts=PTS-STARTPTS,",
+                offset + end - c.start
+            )
+        }
+        _ if offset > 0.0 => format!("atrim=start={offset},asetpts=PTS-STARTPTS,"),
+        _ => String::new(),
+    }
 }
 
 fn resolve_src(dir: &Path, src: &str) -> PathBuf {
@@ -345,7 +363,10 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
                 .filter(|g| (*g - 1.0).abs() > f64::EPSILON)
                 .map(|g| format!(",volume={g}"))
                 .unwrap_or_default();
-            filters.push(format!("[{input}]adelay={ms}|{ms}{volume}[a{input}]"));
+            filters.push(format!(
+                "[{input}]{}adelay={ms}|{ms}{volume}[a{input}]",
+                trim_filter(c)
+            ));
             mix.push(format!("[a{input}]"));
             input += 1;
         }
@@ -487,12 +508,12 @@ mod tests {
         std::fs::write(dir.join("music.mp3"), b"x").unwrap();
         let json = r#"{"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
-            {"kind":"audio","clips":[{"start":1.5,"src":"s1.wav"},{"start":9,"text":"draft"}]},
+            {"kind":"audio","clips":[{"start":1.5,"end":4.5,"offset":2,"src":"s1.wav"},{"start":9,"text":"draft"}]},
             {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3"}]}]}"#;
         let (args, output) = export_args(&dir, "demo", json).unwrap();
         assert_eq!(output, "demo.with-voice.mp4");
         let joined = args.join(" ");
-        assert!(joined.contains("[1]adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
+        assert!(joined.contains("[1]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
         assert!(
             joined.ends_with(
                 &dir.join("demo.with-voice.mp4")

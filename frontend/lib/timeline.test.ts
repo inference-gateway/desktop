@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   addClip,
   moveClip,
+  rulerStep,
+  snapPoints,
+  snapTime,
+  trimClip,
   spokenCount,
   spokenTrack,
   addMarker,
@@ -84,9 +88,12 @@ describe("edits", () => {
   });
 });
 
-test("clipLayout maps seconds to percentages", () => {
-  expect(clipLayout({ id: "x", start: 5, end: 10 }, 20)).toEqual({ left: "25%", width: "25%" });
-  expect(clipLayout({ id: "x", start: 0, end: 1 }, 0)).toEqual({ left: "0%", width: "0%" });
+test("clipLayout maps seconds to pixels at the zoom", () => {
+  expect(clipLayout({ id: "c", start: 2, end: 5 }, 10)).toEqual({ left: 20, width: 30 });
+  expect(clipLayout({ id: "c", start: 2, end: 2.01 }, 10).width).toBe(2);
+  expect(rulerStep(10)).toBe(10);
+  expect(rulerStep(100)).toBe(1);
+  expect(rulerStep(0.01)).toBe(600);
 });
 
 test("addTrack layers lanes with unique ids", () => {
@@ -127,4 +134,26 @@ test("moveClip slides between neighbours and grows the timeline", () => {
   expect(past.duration).toBe(33);
   expect(moveClip(t, "audio", "a1", -5).tracks[1].clips[0].start).toBe(0);
   expect(moveClip(t, "audio", "zzz", 1)).toBe(t);
+});
+
+test("trimClip moves the head with its offset, stops at neighbours and the source end", () => {
+  const t = addClip(addClip(emptyTimeline(), "audio", "a.mp3", 4, 0), "audio", "b.mp3", 6, 6);
+  const head = trimClip(t, "audio", "a2", "start", 8);
+  expect(head.tracks[1].clips[1]).toMatchObject({ start: 8, end: 12, offset: 2 });
+  const back = trimClip(head, "audio", "a2", "start", 0);
+  expect(back.tracks[1].clips[1]).toMatchObject({ start: 6, end: 12 });
+  expect(back.tracks[1].clips[1].offset).toBeUndefined();
+  expect(trimClip(t, "audio", "a1", "end", 30).tracks[1].clips[0].end).toBe(6);
+  expect(trimClip(t, "audio", "a1", "end", 30, 5).tracks[1].clips[0].end).toBe(5);
+  expect(trimClip(t, "audio", "a2", "end", 0).tracks[1].clips[1].end).toBe(6.25);
+  const longer = trimClip(t, "audio", "a2", "end", 20);
+  expect(longer.duration).toBe(20);
+});
+
+test("snapTime picks the nearest point within tolerance", () => {
+  const t = addClip(addClip(emptyTimeline(), "audio", "a.mp3", 4, 0), "audio", "b.mp3", 6, 6);
+  expect(snapPoints(t, "a2", 9).sort((a, b) => a - b)).toEqual([0, 0, 4, 9]);
+  expect(snapTime(3.9, [0, 4, 9], 0.2)).toBe(4);
+  expect(snapTime(3.5, [0, 4, 9], 0.2)).toBe(3.5);
+  expect(snapTime(4.1, [4, 4.15], 0.2)).toBe(4.15);
 });

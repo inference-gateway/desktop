@@ -17,6 +17,8 @@ export type Clip = {
   id: string;
   start: number;
   end: number;
+  // Seconds into `src` where the clip begins; set by trimming a clip's head.
+  offset?: number;
   src?: string;
   text?: string;
   status?: ClipStatus;
@@ -59,6 +61,7 @@ export function parseTimeline(json: string): Timeline {
         id: typeof c?.id === "string" && c.id ? c.id : `${t?.id ?? "clip"}-${j + 1}`,
         start: num(c?.start),
         end: num(c?.end),
+        offset: c?.offset === undefined ? undefined : num(c.offset),
         src: typeof c?.src === "string" ? c.src : undefined,
         text: typeof c?.text === "string" ? c.text : undefined,
         status: (c?.status === "done" ? "done" : c?.status === "draft" ? "draft" : undefined) as ClipStatus | undefined,
@@ -97,11 +100,14 @@ export function spokenTrack(t: Timeline): Track | undefined {
   );
 }
 
-export function clipLayout(clip: Clip, duration: number): { left: string; width: string } {
-  if (duration <= 0) return { left: "0%", width: "0%" };
-  const left = Math.max(0, Math.min(1, clip.start / duration));
-  const width = Math.max(0.004, Math.min(1 - left, (clip.end - clip.start) / duration));
-  return { left: `${left * 100}%`, width: `${width * 100}%` };
+export function clipLayout(clip: Clip, pxPerSec: number): { left: number; width: number } {
+  return { left: clip.start * pxPerSec, width: Math.max(2, (clip.end - clip.start) * pxPerSec) };
+}
+
+// The ruler labels every `step` seconds, the smallest step that keeps labels
+// at least `minPx` apart at this zoom.
+export function rulerStep(pxPerSec: number, minPx = 80): number {
+  return [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => s * pxPerSec >= minPx) ?? 600;
 }
 
 export function resolveSrc(dir: string, src: string): string {
@@ -208,6 +214,74 @@ export function moveClip(t: Timeline, trackId: string, clipId: string, start: nu
       tr.id !== trackId ? tr : { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? moved : c)) },
     ),
   };
+}
+
+export const MIN_CLIP_S = 0.25;
+
+// Drag one edge of a clip. The head of a file clip keeps its content in place
+// by moving `offset`, like an in-point; the tail cannot pass the source's end
+// when `sourceLength` is known. Neither edge crosses a neighbour.
+export function trimClip(
+  t: Timeline,
+  trackId: string,
+  clipId: string,
+  edge: "start" | "end",
+  time: number,
+  sourceLength?: number,
+): Timeline {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  const clip = track?.clips.find((c) => c.id === clipId);
+  if (!track || !clip) return t;
+  const others = track.clips.filter((c) => c.id !== clipId);
+  const offset = clip.offset ?? 0;
+  let next: Clip;
+  if (edge === "start") {
+    const lo = Math.max(
+      0,
+      clip.src ? clip.start - offset : 0,
+      ...others.filter((c) => c.end <= clip.start).map((c) => c.end),
+    );
+    const start = Math.min(Math.max(time, lo), clip.end - MIN_CLIP_S);
+    next = { ...clip, start };
+    if (clip.src) next.offset = offset + (start - clip.start);
+  } else {
+    const hi = Math.min(
+      ...others.filter((c) => c.start >= clip.end).map((c) => c.start),
+      clip.src && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
+    );
+    next = { ...clip, end: Math.max(Math.min(time, hi), clip.start + MIN_CLIP_S) };
+  }
+  if (next.offset !== undefined && next.offset < 1e-6) delete next.offset;
+  return {
+    ...t,
+    duration: Math.max(t.duration, next.end),
+    tracks: t.tracks.map((tr) =>
+      tr.id !== trackId ? tr : { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? next : c)) },
+    ),
+  };
+}
+
+// Edges a dragged clip snaps to: the origin, the playhead and every other
+// clip's start and end on any track.
+export function snapPoints(t: Timeline, excludeClipId: string, playhead: number): number[] {
+  return [
+    0,
+    playhead,
+    ...t.tracks.flatMap((tr) => tr.clips.filter((c) => c.id !== excludeClipId).flatMap((c) => [c.start, c.end])),
+  ];
+}
+
+export function snapTime(time: number, points: number[], tolerance: number): number {
+  let best = time;
+  let dist = tolerance;
+  for (const p of points) {
+    const d = Math.abs(p - time);
+    if (d <= dist) {
+      dist = d;
+      best = p;
+    }
+  }
+  return best;
 }
 
 export function draftCount(t: Timeline): number {

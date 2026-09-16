@@ -84,6 +84,8 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 
 - Times are seconds. `src` is relative to the working directory; media and clip audio live in
   `media/` so the project folder is self-contained and the pool shows every clip.
+- `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
+  the user trims a clip's head on the timeline. Keep it as is and never add it yourself.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text

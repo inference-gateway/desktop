@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   FilePlus,
@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,10 @@ import {
   fmtTime,
   isSpoken,
   moveClip,
+  rulerStep,
+  snapPoints,
+  snapTime,
+  trimClip,
   spokenCount,
   parseTimeline,
   removeClip,
@@ -55,8 +61,28 @@ function clipSrc(dir: string, src: string): string | null {
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
 const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio" };
-const TRACK_SWATCH: Record<Track["kind"], string> = { video: "bg-primary", audio: "bg-emerald-500" };
-const RULER_TICKS = 8;
+const TRACK_SWATCH: Record<Track["kind"], string> = { video: "bg-sky-500", audio: "bg-emerald-500" };
+// px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
+const MIN_PPS = 2;
+const MAX_PPS = 400;
+const SNAP_PX = 8;
+const ZOOM_STEP = 1.5;
+const ZOOM_BTN =
+  "inline-flex h-5 min-w-5 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100";
+const isEditable = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  (t.isContentEditable ||
+    t instanceof HTMLInputElement ||
+    t instanceof HTMLTextAreaElement ||
+    t instanceof HTMLSelectElement);
+const clipClass = (tr: Track, c: Clip) =>
+  tr.kind === "video"
+    ? "border-sky-400/60 bg-sky-700/80"
+    : !isSpoken(c)
+      ? "border-emerald-400/60 bg-emerald-700/80"
+      : c.status === "draft"
+        ? "border-amber-300/70 bg-amber-600/85"
+        : "border-violet-400/60 bg-violet-700/85";
 // ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
@@ -96,7 +122,11 @@ export function TimelineView() {
   const [media, setMedia] = useState<ProjectFile[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
-  const dragClipRef = useRef<{ track: string; clip: string; x0: number; start: number; secPerPx: number } | null>(null);
+  const dragClipRef = useRef<{ kind: "move" | "start" | "end"; track: string; clip: Clip; x0: number } | null>(null);
+  const scrubRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [laneWidth, setLaneWidth] = useState(0);
+  const [zoom, setZoom] = useState<number | null>(null);
   const dragRef = useRef<string | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -117,9 +147,8 @@ export function TimelineView() {
         const el = audioRefs.current.get(c.id);
         if (!el) continue;
         el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
-        const offset = t - c.start;
-        const length = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : c.end - c.start;
-        const inside = offset >= 0 && offset < length;
+        const offset = (c.offset ?? 0) + (t - c.start);
+        const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
         if (playing && inside) {
           if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
           if (el.paused) el.play().catch(() => {});
@@ -235,20 +264,36 @@ export function TimelineView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target;
-      const editable =
-        t instanceof HTMLElement &&
-        (t.isContentEditable ||
-          t instanceof HTMLInputElement ||
-          t instanceof HTMLTextAreaElement ||
-          t instanceof HTMLSelectElement);
-      if (e.code !== "Space" || editable || e.defaultPrevented) return;
+      if (e.code !== "Space" || isEditable(e.target) || e.defaultPrevented) return;
       e.preventDefault();
       togglePlay();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePlay]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline || !selected) return;
+      const tr = timeline.tracks.find((t) => t.id === selected.track);
+      if (tr?.kind !== "audio") return;
+      e.preventDefault();
+      update(removeClip(timeline, tr.id, selected.clip));
+      setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeline, selected]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setLaneWidth(el.clientWidth));
+    ro.observe(el);
+    setLaneWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, [project]);
 
   if (!project) return null;
 
@@ -268,6 +313,73 @@ export function TimelineView() {
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
   const hasVoice = timeline ? spokenCount(timeline) : 0;
+
+  const fitPps = duration > 0 ? Math.max(MIN_PPS, (laneWidth - 24) / duration) : 40;
+  const pps = zoom ?? fitPps;
+  const contentWidth = Math.max(laneWidth, duration * pps + 24);
+  const step = rulerStep(pps);
+  const ticks = Array.from({ length: Math.floor(duration / step) + 1 }, (_, i) => i * step);
+  const timeAt = (clientX: number) => {
+    const el = scrollRef.current;
+    if (!el) return 0;
+    const t = (el.scrollLeft + clientX - el.getBoundingClientRect().left) / pps;
+    return Math.max(0, Math.min(duration, t));
+  };
+  const zoomBy = (factor: number, aroundX?: number) => {
+    const el = scrollRef.current;
+    const next = Math.min(MAX_PPS, Math.max(MIN_PPS, pps * factor));
+    if (el && aroundX !== undefined) {
+      const t = (el.scrollLeft + aroundX) / pps;
+      requestAnimationFrame(() => {
+        el.scrollLeft = t * next - aroundX;
+      });
+    }
+    setZoom(next);
+  };
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - el.getBoundingClientRect().left);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
+
+  // Clips on audio lanes move and trim by pointer; video clips only select
+  // (the export always plays the recording whole). Edges snap to other clips
+  // and the playhead within SNAP_PX.
+  const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: "move" | "start" | "end", tr: Track, c: Clip) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setSelected({ track: tr.id, clip: c.id });
+    if (tr.kind !== "audio") return;
+    dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const dragTo = (e: ReactPointerEvent<HTMLElement>, c: Clip) => {
+    const d = dragClipRef.current;
+    if (!d || d.clip.id !== c.id) return;
+    const dx = (e.clientX - d.x0) / pps;
+    const tol = SNAP_PX / pps;
+    const points = snapPoints(shown, c.id, time);
+    if (d.kind === "move") {
+      const len = d.clip.end - d.clip.start;
+      const start = snapTime(d.clip.start + dx, points, tol);
+      const end = snapTime(d.clip.end + dx, points, tol);
+      update(moveClip(shown, d.track, c.id, start !== d.clip.start + dx ? start : end - len));
+      return;
+    }
+    const base = d.kind === "start" ? d.clip.start : d.clip.end;
+    const el = audioRefs.current.get(c.id);
+    const sourceLength = el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : undefined;
+    update(trimClip(shown, d.track, c.id, d.kind, snapTime(base + dx, points, tol), sourceLength));
+  };
+  const endDrag = () => {
+    dragClipRef.current = null;
+  };
 
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
@@ -342,8 +454,7 @@ export function TimelineView() {
     setDropLane(null);
     if (!laneAccepts(tr, file)) return;
     e.preventDefault();
-    const r = e.currentTarget.getBoundingClientRect();
-    const at = duration > 0 ? ((e.clientX - r.left) / r.width) * duration : 0;
+    const at = duration > 0 ? timeAt(e.clientX) : 0;
     update(addClip(shown, tr.id, file!, durations[file!] ?? FALLBACK_CLIP_S, at));
   };
 
@@ -486,13 +597,48 @@ export function TimelineView() {
           />
         ))}
 
-        <div className="flex rounded-lg border border-border bg-secondary/30">
-          <div className="flex w-20 shrink-0 flex-col border-r border-border">
-            <div className="h-6" />
+        <div className="flex overflow-hidden rounded-md border border-zinc-800 bg-[#141416] text-zinc-200">
+          <div className="flex w-28 shrink-0 flex-col border-r border-zinc-800 bg-[#1b1b1e]">
+            <div className="flex h-7 items-center justify-end gap-0.5 border-b border-zinc-800 px-1">
+              <button
+                aria-label="Zoom out"
+                title="Zoom out (⌘/Ctrl + wheel)"
+                onClick={() => zoomBy(1 / ZOOM_STEP)}
+                className={ZOOM_BTN}
+              >
+                <ZoomOut size={12} />
+              </button>
+              <button
+                aria-label="Zoom in"
+                title="Zoom in (⌘/Ctrl + wheel)"
+                onClick={() => zoomBy(ZOOM_STEP)}
+                className={ZOOM_BTN}
+              >
+                <ZoomIn size={12} />
+              </button>
+              <button
+                aria-label="Zoom to fit"
+                title="Zoom to fit"
+                onClick={() => setZoom(null)}
+                className={cn(ZOOM_BTN, "px-1 text-[0.62rem] font-medium")}
+              >
+                Fit
+              </button>
+            </div>
             {shown.tracks.map((tr) => (
-              <div key={tr.id} className="flex h-12 items-center gap-1.5 px-2 text-[0.72rem] font-medium">
-                <span className={cn("size-2 rounded-sm", TRACK_SWATCH[tr.kind])} />
-                {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
+              <div
+                key={tr.id}
+                className="flex h-14 items-center gap-1.5 border-b border-zinc-800/70 px-2 text-[0.72rem] font-medium"
+              >
+                <span className={cn("h-8 w-1 shrink-0 rounded-sm", TRACK_SWATCH[tr.kind])} />
+                <span className="truncate">
+                  {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
+                </span>
+                {tr.kind === "video" ? (
+                  <Film size={11} className="ml-auto shrink-0 text-zinc-500" />
+                ) : (
+                  <Music size={11} className="ml-auto shrink-0 text-zinc-500" />
+                )}
               </div>
             ))}
             <div className="flex h-8 items-center gap-1 px-1.5">
@@ -502,111 +648,121 @@ export function TimelineView() {
                   aria-label={`Add ${k} track`}
                   title={`Add ${k} track`}
                   onClick={() => update(addTrack(shown, k))}
-                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
                 >
                   <Plus size={10} /> {k === "video" ? <Film size={11} /> : <Music size={11} />}
                 </button>
               ))}
             </div>
           </div>
-          <div className="relative min-w-0 flex-1">
-            <div
-              role="slider"
-              aria-label="Playhead"
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={time}
-              className="relative h-6 cursor-pointer border-b border-border font-mono text-[0.62rem] text-muted-foreground"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                seek(((e.clientX - r.left) / r.width) * duration);
-              }}
-            >
-              {Array.from({ length: RULER_TICKS + 1 }, (_, i) => i / RULER_TICKS).map((f) => (
-                <span
-                  key={f}
-                  className={cn(
-                    "absolute bottom-0 border-l border-border pl-1",
-                    i4(f) ? "h-4" : "h-2",
-                    f === 1 && "-translate-x-full border-l-0 pl-0 pr-1",
-                  )}
-                  style={{ left: `${f * 100}%` }}
-                >
-                  {i4(f) && duration > 0 && fmtTime(f * duration)}
-                </span>
-              ))}
-            </div>
-            {shown.tracks.map((tr) => (
+          <div ref={scrollRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+            <div className="relative" style={{ width: contentWidth }}>
               <div
-                key={tr.id}
-                aria-label={`${TRACK_LABEL[tr.kind]} lane ${tr.id}`}
-                onDragOver={(e) => {
-                  if (!laneAccepts(tr, dragRef.current)) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "copy";
-                  if (dropLane !== tr.id) setDropLane(tr.id);
+                role="slider"
+                aria-label="Playhead"
+                aria-valuemin={0}
+                aria-valuemax={duration}
+                aria-valuenow={time}
+                className="relative h-7 cursor-ew-resize touch-none border-b border-zinc-800 bg-[#1b1b1e] font-mono text-[0.6rem] text-zinc-400 select-none"
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  scrubRef.current = true;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  seek(timeAt(e.clientX));
                 }}
-                onDragLeave={() => dropLane === tr.id && setDropLane(null)}
-                onDrop={(e) => dropOn(tr, e)}
-                className={cn(
-                  "relative h-12 border-b border-border/50 last:border-b-0",
-                  dropLane === tr.id && "bg-primary/10 ring-1 ring-inset ring-ring",
-                )}
+                onPointerMove={(e) => scrubRef.current && seek(timeAt(e.clientX))}
+                onPointerUp={() => {
+                  scrubRef.current = false;
+                }}
+                onPointerCancel={() => {
+                  scrubRef.current = false;
+                }}
               >
-                {tr.clips.map((c) => (
-                  <button
-                    key={c.id}
-                    title={c.text || c.src || c.id}
-                    aria-pressed={selected?.track === tr.id && selected.clip === c.id}
-                    onClick={() => {
-                      setSelected({ track: tr.id, clip: c.id });
-                      seek(c.start);
-                    }}
-                    onPointerDown={(e) => {
-                      if (e.button !== 0 || duration <= 0) return;
-                      const lane = e.currentTarget.parentElement!.getBoundingClientRect();
-                      dragClipRef.current = {
-                        track: tr.id,
-                        clip: c.id,
-                        x0: e.clientX,
-                        start: c.start,
-                        secPerPx: duration / lane.width,
-                      };
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                    }}
-                    onPointerMove={(e) => {
-                      const d = dragClipRef.current;
-                      if (!d || d.clip !== c.id) return;
-                      update(moveClip(shown, d.track, d.clip, d.start + (e.clientX - d.x0) * d.secPerPx));
-                    }}
-                    onPointerUp={() => {
-                      dragClipRef.current = null;
-                    }}
-                    style={clipLayout(c, duration)}
-                    className={cn(
-                      "absolute top-1.5 bottom-1.5 cursor-grab touch-none truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none active:cursor-grabbing",
-                      tr.kind === "video" && "border-primary/50 bg-primary/25",
-                      tr.kind === "audio" && !isSpoken(c) && "border-emerald-600/50 bg-emerald-500/30",
-                      tr.kind === "audio" &&
-                        isSpoken(c) &&
-                        (c.status === "draft"
-                          ? "border-amber-600/60 bg-amber-500/40"
-                          : "border-primary/70 bg-primary/50"),
-                      selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
-                    )}
+                {ticks.map((t) => (
+                  <span
+                    key={t}
+                    className="absolute bottom-0 h-3 border-l border-zinc-600 pl-1 leading-3"
+                    style={{ left: t * pps }}
                   >
-                    {c.text || c.id}
-                  </button>
+                    {fmtTime(t)}
+                  </span>
                 ))}
+                {ticks.flatMap((t) =>
+                  [1, 2, 3].map((k) => (
+                    <span
+                      key={`${t}-${k}`}
+                      className="absolute bottom-0 h-1.5 border-l border-zinc-700"
+                      style={{ left: (t + (step * k) / 4) * pps }}
+                    />
+                  )),
+                )}
               </div>
-            ))}
-            {duration > 0 && (
-              <div
-                className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-red-500"
-                style={{ left: `${(time / duration) * 100}%` }}
-              />
-            )}
-            <div className="h-8" />
+              {shown.tracks.map((tr) => (
+                <div
+                  key={tr.id}
+                  aria-label={`${TRACK_LABEL[tr.kind]} lane ${tr.id}`}
+                  onDragOver={(e) => {
+                    if (!laneAccepts(tr, dragRef.current)) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "copy";
+                    if (dropLane !== tr.id) setDropLane(tr.id);
+                  }}
+                  onDragLeave={() => dropLane === tr.id && setDropLane(null)}
+                  onDrop={(e) => dropOn(tr, e)}
+                  className={cn(
+                    "relative h-14 border-b border-zinc-800/70",
+                    dropLane === tr.id && "bg-primary/15 ring-1 ring-inset ring-primary",
+                  )}
+                >
+                  {tr.clips.map((c) => {
+                    const isSel = selected?.track === tr.id && selected.clip === c.id;
+                    const editable = tr.kind === "audio";
+                    return (
+                      <button
+                        key={c.id}
+                        title={c.text || c.src || c.id}
+                        aria-pressed={isSel}
+                        onPointerDown={(e) => beginDrag(e, "move", tr, c)}
+                        onPointerMove={(e) => dragTo(e, c)}
+                        onPointerUp={endDrag}
+                        onPointerCancel={endDrag}
+                        style={clipLayout(c, pps)}
+                        className={cn(
+                          "absolute top-1 bottom-1 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none",
+                          editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+                          clipClass(tr, c),
+                          isSel && "ring-2 ring-white",
+                        )}
+                      >
+                        <span className="block truncate px-1.5 leading-5">
+                          {c.text || c.src?.replace(/^media\//, "") || c.id}
+                        </span>
+                        {editable && (
+                          <>
+                            <span
+                              aria-hidden="true"
+                              className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                              onPointerDown={(e) => beginDrag(e, "start", tr, c)}
+                            />
+                            <span
+                              aria-hidden="true"
+                              className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                              onPointerDown={(e) => beginDrag(e, "end", tr, c)}
+                            />
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              {duration > 0 && (
+                <div className="pointer-events-none absolute top-0 bottom-0 z-10" style={{ left: time * pps }}>
+                  <div className="absolute top-0 -ml-[5px] h-0 w-0 border-x-[5px] border-t-[7px] border-x-transparent border-t-red-500" />
+                  <div className="absolute top-0 bottom-0 w-px bg-red-500" />
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -727,8 +883,6 @@ export function TimelineView() {
     </div>
   );
 }
-
-const i4 = (f: number) => (f * 4) % 1 === 0;
 
 function ClipEditor({
   track,
