@@ -160,6 +160,7 @@ pub fn run() {
             timeline::write_timeline,
             timeline::reveal_project_file,
             timeline::add_project_video,
+            timeline::import_project_file,
             timeline::prepare_content_tools,
             timeline::export_timeline,
             agent::list_a2a_agents,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FilePlus, Film, FolderOpen, Music, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { FilePlus, Film, FolderOpen, Music, Pause, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
@@ -85,6 +85,9 @@ export function TimelineView() {
   const dirtyRef = useRef(false);
   const dragRef = useRef<string | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [poolOver, setPoolOver] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRefs = useRef(new Map<string, HTMLAudioElement>());
   const { setStatus } = useDesktop();
@@ -191,6 +194,30 @@ export function TimelineView() {
       .finally(() => setExporting(false));
   };
 
+  const togglePlay = useCallback(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) el.play().catch(() => {});
+    else el.pause();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      const editable =
+        t instanceof HTMLElement &&
+        (t.isContentEditable ||
+          t instanceof HTMLInputElement ||
+          t instanceof HTMLTextAreaElement ||
+          t instanceof HTMLSelectElement);
+      if (e.code !== "Space" || editable || e.defaultPrevented) return;
+      e.preventDefault();
+      togglePlay();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePlay]);
+
   if (!project) return null;
 
   const shown = timeline ?? emptyTimeline();
@@ -234,6 +261,26 @@ export function TimelineView() {
         ),
       )
       .catch((e) => setError(String(e)));
+  };
+
+  // Finder drops reach the page as File objects without a path, so the bytes
+  // are copied into the project through the import command.
+  const importFiles = async (files: FileList) => {
+    const media = Array.from(files).filter((f) => MEDIA_EXT.test(f.name));
+    if (media.length === 0) return;
+    setImporting(true);
+    try {
+      for (const f of media) {
+        setStatus(`Importing ${f.name}...`);
+        await api.importProjectFile(project, f.name, await f.arrayBuffer());
+      }
+      setStatus(`Imported ${media.length} file${media.length === 1 ? "" : "s"}`);
+      await load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImporting(false);
+    }
   };
 
   const addRecording = () => {
@@ -301,6 +348,15 @@ export function TimelineView() {
             <span className="font-mono text-[0.75rem] tabular-nums text-muted-foreground">
               {fmtTime(time)} / {fmtTime(duration)}
             </span>
+            <button
+              aria-label={playing ? "Pause" : "Play"}
+              title="Play / pause (Space)"
+              disabled={!videoSrc}
+              onClick={togglePlay}
+              className="inline-flex size-7 items-center justify-center rounded-md border border-input text-foreground hover:bg-primary/10 disabled:opacity-40"
+            >
+              {playing ? <Pause size={13} /> : <Play size={13} />}
+            </button>
             {drafts > 0 && (
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.7rem] font-medium text-amber-600 dark:text-amber-400">
                 {drafts} draft{drafts === 1 ? "" : "s"}
@@ -355,8 +411,15 @@ export function TimelineView() {
                 setTime(e.currentTarget.currentTime);
                 syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused);
               }}
-              onPlay={(e) => syncAudio(e.currentTarget.currentTime, true)}
-              onPause={(e) => syncAudio(e.currentTarget.currentTime, false)}
+              onPlay={(e) => {
+                setPlaying(true);
+                syncAudio(e.currentTarget.currentTime, true);
+              }}
+              onPause={(e) => {
+                setPlaying(false);
+                syncAudio(e.currentTarget.currentTime, false);
+              }}
+              onEnded={() => setPlaying(false)}
               onSeeked={(e) => syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused)}
               onError={() => setLoadError(`Cannot play ${videoPath}`)}
               className="max-h-[50vh] w-full object-contain"
@@ -488,7 +551,26 @@ export function TimelineView() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1 rounded-lg border border-border bg-secondary/30 p-3">
+        <div
+          aria-label="Media pool"
+          onDragOver={(e) => {
+            if (dragRef.current || !e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!poolOver) setPoolOver(true);
+          }}
+          onDragLeave={() => setPoolOver(false)}
+          onDrop={(e) => {
+            if (dragRef.current) return;
+            e.preventDefault();
+            setPoolOver(false);
+            importFiles(e.dataTransfer.files);
+          }}
+          className={cn(
+            "flex flex-col gap-1 rounded-lg border border-border bg-secondary/30 p-3",
+            poolOver && "border-dashed border-ring bg-primary/10",
+          )}
+        >
           <div className="flex items-center gap-2">
             <h3 className="text-[0.8rem] font-semibold">Media pool</h3>
             <span className="text-[0.72rem] text-muted-foreground">
@@ -498,8 +580,11 @@ export function TimelineView() {
               <FilePlus size={14} /> Add recording
             </Button>
           </div>
-          {media.length === 0 && (
-            <p className="text-[0.78rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
+          {importing && <p className="text-[0.78rem] text-muted-foreground">Importing...</p>}
+          {media.length === 0 && !importing && (
+            <p className="text-[0.78rem] text-muted-foreground">
+              No media yet. Drop video or audio files here, or add a recording.
+            </p>
           )}
           {media.map((f) => {
             const video = VIDEO_EXT.test(f.name);

@@ -5,6 +5,7 @@ use crate::download::ProgressEvent;
 use crate::projects::project_dir;
 use crate::stt::{download_binary, ensure_whisper_model, find_on_path, owned_bin};
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 use tauri::ipc::Channel;
 use tauri_plugin_dialog::DialogExt;
 
@@ -58,9 +59,13 @@ fn list_in(dir: &Path) -> Vec<String> {
     names
 }
 
+// Project directories can live anywhere (custom paths, a custom projects
+// root), so the asset scope is widened per project when its timeline opens
+// instead of being fixed in tauri.conf.json.
 #[tauri::command]
-pub(crate) fn list_timelines(project: String) -> Result<Timelines, String> {
+pub(crate) fn list_timelines(app: tauri::AppHandle, project: String) -> Result<Timelines, String> {
     let dir = dir_for(&project)?;
+    let _ = app.asset_protocol_scope().allow_directory(&dir, true);
     Ok(Timelines {
         dir: dir.to_string_lossy().into_owned(),
         names: list_in(&dir),
@@ -166,6 +171,42 @@ pub(crate) async fn add_project_video(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::copy(&src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
     Ok(Some(name.to_string()))
+}
+
+/// Files dropped from Finder arrive as raw bytes (the webview keeps Tauri's
+/// own drag-drop off so in-page drag-and-drop works). The name travels in a
+/// hex-encoded header because header values are ASCII only.
+#[tauri::command]
+pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let header = |key: &str| -> Result<String, String> {
+        request
+            .headers()
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| format!("missing {key} header"))
+    };
+    let project = header("x-project")?;
+    let name = hex_decode(&header("x-name")?)?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw file bytes".into());
+    };
+    let dir = dir_for(&project)?;
+    let dest = bare_name(&dir, &name)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(&dest, bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    Ok(name)
+}
+
+fn hex_decode(hex: &str) -> Result<String, String> {
+    if !hex.len().is_multiple_of(2) {
+        return Err("odd hex length".into());
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<u8>, _>>()?;
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -335,6 +376,14 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hex_decode_round_trips_utf8_names() {
+        let name = "Screen Recording 2026-09-16 at 18.57.04.mov";
+        let hex: String = name.bytes().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex_decode(&hex).unwrap(), name);
+        assert!(hex_decode("abc").is_err());
+    }
 
     #[test]
     fn timeline_path_accepts_only_bare_timeline_names() {

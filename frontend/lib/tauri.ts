@@ -320,6 +320,13 @@ export const api = {
     invoke<void>("write_timeline", { project, name, data }),
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
+  importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>
+    invoke<string>("import_project_file", bytes, {
+      headers: {
+        "x-project": project,
+        "x-name": Array.from(new TextEncoder().encode(name), (b) => b.toString(16).padStart(2, "0")).join(""),
+      },
+    }),
   prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
   exportTimeline: (project: string, name: string) => invoke<string>("export_timeline", { project, name }),
   readHistory: () => invoke<string[]>("read_history"),
