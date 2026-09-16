@@ -2,8 +2,10 @@
 // a duration plus video and audio tracks of clips. An audio clip with
 // `text` is spoken by the agent (cloned voice); one with only `src` is a
 // plain file the user placed. "voice" is accepted as a legacy track kind.
+// An overlay clip is a rendered card (webm with alpha) composited over the
+// video; `x`/`y`/`width`/`height` are fractions of the frame.
 export type ClipStatus = "draft" | "done";
-export type TrackKind = "video" | "audio";
+export type TrackKind = "video" | "audio" | "overlay";
 // What to do with the recording's own audio track: transcribe it and replace
 // it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
@@ -22,6 +24,12 @@ export type Clip = {
   src?: string;
   text?: string;
   status?: ClipStatus;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  // The HTML composition an overlay's `src` was rendered from.
+  html?: string;
 };
 
 export type Track = {
@@ -40,13 +48,15 @@ export type Timeline = {
   tracks: Track[];
 };
 
-const KINDS: TrackKind[] = ["video", "audio"];
+const KINDS: TrackKind[] = ["video", "audio", "overlay"];
 const MARKER_SECONDS = 5;
 
 function num(v: unknown, fallback = 0): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
   return Number.isFinite(n) ? n : fallback;
 }
+
+const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
 
 export function parseTimeline(json: string): Timeline {
   const raw = JSON.parse(json) as Partial<Timeline> | null;
@@ -61,10 +71,15 @@ export function parseTimeline(json: string): Timeline {
         id: typeof c?.id === "string" && c.id ? c.id : `${t?.id ?? "clip"}-${j + 1}`,
         start: num(c?.start),
         end: num(c?.end),
-        offset: c?.offset === undefined ? undefined : num(c.offset),
+        offset: optNum(c?.offset),
         src: typeof c?.src === "string" ? c.src : undefined,
         text: typeof c?.text === "string" ? c.text : undefined,
         status: (c?.status === "done" ? "done" : c?.status === "draft" ? "draft" : undefined) as ClipStatus | undefined,
+        x: optNum(c?.x),
+        y: optNum(c?.y),
+        width: optNum(c?.width),
+        height: optNum(c?.height),
+        html: typeof c?.html === "string" ? c.html : undefined,
       }))
       .sort((a, b) => a.start - b.start),
   }));
@@ -90,6 +105,16 @@ export const isSpoken = (c: Clip): boolean => c.text !== undefined;
 
 export function spokenCount(t: Timeline): number {
   return t.tracks.flatMap((tr) => tr.clips).filter(isSpoken).length;
+}
+
+export function overlayCount(t: Timeline): number {
+  return t.tracks.filter((tr) => tr.kind === "overlay").flatMap((tr) => tr.clips).length;
+}
+
+// Lanes as the editor stacks them: overlays above the video, everything else
+// in file order. The file itself is never reordered.
+export function laneOrder(tracks: Track[]): Track[] {
+  return [...tracks.filter((tr) => tr.kind === "overlay"), ...tracks.filter((tr) => tr.kind !== "overlay")];
 }
 
 // The lane markers go on: the audio track that already carries speech,

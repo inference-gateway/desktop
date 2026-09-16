@@ -13,6 +13,8 @@ import {
   clipLayout,
   emptyTimeline,
   draftCount,
+  laneOrder,
+  overlayCount,
   parseTimeline,
   removeClip,
   setClipText,
@@ -33,6 +35,13 @@ const SAMPLE = JSON.stringify({
         { id: "s1", start: 0, end: 10, text: "first", status: "done" },
       ],
     },
+    {
+      id: "cards",
+      kind: "overlay",
+      clips: [
+        { id: "o1", src: "media/title.webm", html: "cards/title.html", start: 1, end: 4, x: 0.1, y: "0.8", width: 0.5 },
+      ],
+    },
   ],
 });
 
@@ -46,6 +55,30 @@ describe("parseTimeline", () => {
     expect(t.source_audio).toBeUndefined();
     expect(parseTimeline('{"source_audio":"keep","tracks":[]}').source_audio).toBe("keep");
     expect(parseTimeline('{"source_audio":"bogus","tracks":[]}').source_audio).toBeUndefined();
+  });
+
+  test("keeps overlay clips with their placement", () => {
+    const t = parseTimeline(SAMPLE);
+    expect(t.tracks[2].kind).toBe("overlay");
+    expect(t.tracks[2].clips[0]).toEqual({
+      id: "o1",
+      start: 1,
+      end: 4,
+      offset: undefined,
+      src: "media/title.webm",
+      text: undefined,
+      status: undefined,
+      x: 0.1,
+      y: 0.8,
+      width: 0.5,
+      height: undefined,
+      html: "cards/title.html",
+    });
+    expect(overlayCount(t)).toBe(1);
+    expect(laneOrder(t.tracks).map((tr) => tr.id)).toEqual(["cards", "video", "voice"]);
+    const moved = moveClip(t, "cards", "o1", 2.5).tracks[2].clips[0];
+    expect(moved).toMatchObject({ start: 2.5, end: 5.5, x: 0.1 });
+    expect(trimClip(t, "cards", "o1", "end", 6).tracks[2].clips[0].end).toBe(6);
   });
 
   test("rejects files without tracks and derives duration from clips", () => {
