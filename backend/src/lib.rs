@@ -63,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(timeline::ProjectWatcher(std::sync::Mutex::new(None)))
         .manage(AppState {
             processes: Arc::clone(&processes),
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
@@ -156,10 +157,13 @@ pub fn run() {
             tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
             timeline::list_timelines,
+            timeline::watch_project,
             timeline::read_timeline,
             timeline::write_timeline,
             timeline::reveal_project_file,
             timeline::add_project_video,
+            timeline::import_project_file,
+            timeline::list_project_media,
             timeline::prepare_content_tools,
             timeline::export_timeline,
             agent::list_a2a_agents,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Clapperboard, Download, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
@@ -347,7 +347,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   }, [status]);
   const Icon = status === "saving" ? Loader2 : status === "saved" ? Check : status === "error" ? X : Download;
   return (
-    <div className="group relative my-2 inline-block max-w-full">
+    <div className="relative my-2 inline-block max-w-full">
       <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
       {path && (
         <Button
@@ -358,7 +358,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
           disabled={status === "saving"}
           aria-label="Download image"
           className={cn(
-            "absolute right-2 top-2 opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100",
+            "absolute right-2 top-2 shadow-sm backdrop-blur-sm",
             status === "saved" && "text-green-600 dark:text-green-500",
             status === "error" && "text-destructive",
           )}
@@ -496,19 +496,7 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const {
-    items,
-    typing,
-    approve,
-    answerQuestions,
-    runLabel,
-    sessionId,
-    currentProject,
-    projectTypes,
-    openTimeline,
-    composerRef,
-  } = useDesktop();
-  const contentProject = currentProject && projectTypes[currentProject] === "content" ? currentProject : null;
+  const { items, typing, approve, answerQuestions, runLabel, sessionId, composerRef } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -600,14 +588,7 @@ export function Transcript() {
         className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
       >
         {items.length === 0 && !typing && (
-          <div className="m-auto flex flex-col items-center gap-3 text-[0.95rem] text-muted-foreground">
-            Start a conversation
-            {contentProject && (
-              <Button variant="outline" size="sm" onClick={() => openTimeline(contentProject)}>
-                <Clapperboard size={14} /> Open timeline
-              </Button>
-            )}
-          </div>
+          <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
         )}
         {items.map((item) => (
           <Item key={item.id} item={item} approve={approve} answer={answerQuestions} />

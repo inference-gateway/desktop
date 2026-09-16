@@ -34,16 +34,21 @@ under `~/.infer`; the only place you write is the working directory.
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
   `~/.infer/models/tts/samples/`. `TextToSpeech` only accepts a bare file name inside the working
-  directory, so copy the chosen sample to `./voice.wav` once. When the recording itself contains the
-  user's speech (`source_audio: transcribe`), the sample can be cut from it instead (see Source
-  audio).
+  directory, so copy the chosen sample to `./voice.wav` once. When the track's `voice_sample` in the
+  timeline names a file from that folder, the user chose it on the timeline: use exactly that one and
+  keep the field as written. Otherwise pick one and write its bare library name into `voice_sample`
+  so the desktop shows which voice was used. When the recording itself contains the user's speech
+  (`source_audio: transcribe`) and no sample is chosen, the sample can be cut from it instead (see
+  Source audio); then set `voice_sample` to `"recording"`.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
 installed by switching the project to Content in Settings > Projects; the two agent tools are
 enabled in Settings > General; voice samples are recorded in Settings > Voice samples.
 
-Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) and the clip audio (`clips/`)
-live in the working directory next to the video and the timeline.
+Media lives in `media/` inside the working directory: the recordings and music the user added
+(the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
+`src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
+Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at the root.
 
 ## Timeline contract (`<stem>.timeline.json`)
 
@@ -57,19 +62,19 @@ live in the working directory next to the video and the timeline.
     {
       "id": "video",
       "kind": "video",
-      "clips": [{ "id": "v1", "src": "demo.mov", "start": 0, "end": 42.3 }]
+      "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 42.3 }]
     },
     {
       "id": "voice",
-      "kind": "voice",
-      "voice_sample": "voice.wav",
+      "kind": "audio",
+      "voice_sample": "eden.wav",
       "clips": [
         {
           "id": "s1",
           "start": 0.0,
           "end": 6.2,
           "text": "First we open the settings panel.",
-          "src": "clips/demo-s1.wav",
+          "src": "media/demo-s1.wav",
           "status": "done"
         },
         { "id": "s2", "start": 6.2, "end": 12.0, "text": "", "status": "draft" }
@@ -80,14 +85,19 @@ live in the working directory next to the video and the timeline.
 }
 ```
 
-- Times are seconds. `src` is relative to the working directory; clip audio lives in `clips/` so the
-  project folder is self-contained.
+- Times are seconds. `src` is relative to the working directory; media and clip audio live in
+  `media/` so the project folder is self-contained and the pool shows every clip.
+- `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
+  the user trims a clip's head on the timeline. Keep it as is and never add it yourself.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
   means "suggest something for this range".
-- `kind: "audio"` tracks (music, SFX) are mixed in by the desktop's export with their `gain`; never
-  invent them.
+- Tracks are `video` or `audio` (the older `voice` kind still loads as `audio`). On an audio track,
+  a clip with `text` is spoken: you synthesize it. A clip with only `src` (music, SFX, a file the
+  user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
+  export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
+  already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
 - `source_audio` says what to do with the recording's own audio track: `transcribe` (reuse the
   user's own speech as the script and as the voice sample, then replace it), `mute` (drop
   it), or `keep` (mix it under the voice). Missing means: `transcribe` when the recording has
@@ -111,7 +121,10 @@ live in the working directory next to the video and the timeline.
    `-vf "fps=1/5,scale=640:-1"` (one frame every 5 s) instead.
 
 3. **Describe.** Call `ImageDecode` on every frame with the prompt
-   "One sentence: what is the user doing on screen right now?" Keep the answers with their timestamps.
+   "One sentence: what is the user doing on screen right now?" If you can see images, the frame
+   itself comes back attached: describe it yourself in one sentence. Otherwise use the text
+   description the tool returns. Keep the answers with their timestamps. Never open frames in a
+   browser or guess their content.
    With `source_audio: transcribe`, also run the Source audio steps below; the transcript is the
    primary script and the frame descriptions only fill gaps.
 4. **Plan.** Group consecutive frames that describe the same activity into segments. Each segment
@@ -123,8 +136,8 @@ live in the working directory next to the video and the timeline.
    `TextToSpeech { text, voice_sample: "voice.wav", output_path: "<stem>-<id>.wav" }`.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
-   `mkdir -p clips && cp "<reported path>" "clips/<stem>-<id>.wav"`, set `src` to
-   `clips/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
+   `mkdir -p media && cp "<reported path>" "media/<stem>-<id>.wav"`, set `src` to
+   `media/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
    show progress.
 6. **Stop here.** Do not mux, render or export anything, and do not run ffmpeg on the output:
    the user reviews the clips on the timeline and presses Export, which renders the video

@@ -7,11 +7,15 @@ export function clampSidebarWidth(width: number, windowWidth: number): number {
   return Math.min(Math.max(Math.round(width), MIN_SIDEBAR_WIDTH), max);
 }
 
-export function loadSidebarWidth(windowWidth: number): number {
-  const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(stored) && stored > 0 ? clampSidebarWidth(stored, windowWidth) : DEFAULT_SIDEBAR_WIDTH;
+export function loadSidebarWidth(
+  windowWidth: number,
+  key = SIDEBAR_WIDTH_KEY,
+  fallback = DEFAULT_SIDEBAR_WIDTH,
+): number {
+  const stored = Number(localStorage.getItem(key));
+  return Number.isFinite(stored) && stored > 0 ? clampSidebarWidth(stored, windowWidth) : fallback;
 }
 
-export function saveSidebarWidth(width: number): void {
-  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+export function saveSidebarWidth(width: number, key = SIDEBAR_WIDTH_KEY): void {
+  localStorage.setItem(key, String(width));
 }

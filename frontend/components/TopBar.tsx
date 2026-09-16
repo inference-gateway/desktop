@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ChartColumn, Circle, LoaderCircle, RotateCw, Settings, Square } from "lucide-react";
+import {
+  ChartColumn,
+  Circle,
+  LoaderCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RotateCw,
+  Settings,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { emit } from "@tauri-apps/api/event";
 import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
@@ -21,6 +30,8 @@ export function TopBar() {
     openObservability,
     composerRef,
     setError,
+    sidebarOpen,
+    setSidebarOpen,
   } = useDesktop();
   const [isUpdating, setIsUpdating] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -93,6 +104,17 @@ export function TopBar() {
 
   return (
     <header id="top-bar" className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-[0.6rem]">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-label="Toggle sidebar"
+        aria-pressed={sidebarOpen}
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="text-muted-foreground"
+      >
+        {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+      </Button>
       <img src="/logo.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0 rounded-[5px]" />
       <span className="text-[0.95rem] font-[650] tracking-[-0.01em]">Inference Gateway</span>
       <span title="Installed versions" className="shrink-0 text-[0.65rem] text-muted-foreground">

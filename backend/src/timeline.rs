@@ -2,10 +2,13 @@
 // contract between the video-editing skill and the desktop timeline view.
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::download::ProgressEvent;
-use crate::projects::project_dir;
+use crate::projects::{ProjectFile, list_local_files, project_dir};
 use crate::stt::{download_binary, ensure_whisper_model, find_on_path, owned_bin};
+use notify::{RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::ipc::Channel;
+use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 const VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "mov", "m4v", "webm"];
@@ -20,6 +23,37 @@ pub(crate) struct Timelines {
 
 fn dir_for(project: &str) -> Result<PathBuf, String> {
     project_dir(project).ok_or_else(|| "project directory not resolved".to_string())
+}
+
+/// The media pool: every recording, music file and generated clip of a
+/// project lives in `<project>/media` so the timeline's `src` paths and the
+/// pool stay one thing. Root-level media files are listed too for projects
+/// that predate the folder.
+const MEDIA_DIR: &str = "media";
+
+fn media_listing(dir: &Path) -> Vec<ProjectFile> {
+    let mut files: Vec<ProjectFile> = list_local_files(&dir.join(MEDIA_DIR))
+        .into_iter()
+        .map(|f| ProjectFile {
+            name: format!("{MEDIA_DIR}/{}", f.name),
+            size: f.size,
+        })
+        .collect();
+    files.extend(list_local_files(dir));
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+#[tauri::command]
+pub(crate) fn list_project_media(project: String) -> Result<Vec<ProjectFile>, String> {
+    Ok(media_listing(&dir_for(&project)?))
+}
+
+fn media_dest(dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let media = dir.join(MEDIA_DIR);
+    let dest = bare_name(&media, name)?;
+    std::fs::create_dir_all(&media).map_err(|e| e.to_string())?;
+    Ok(dest)
 }
 
 /// Confine a file name to the project directory: bare names only.
@@ -58,13 +92,45 @@ fn list_in(dir: &Path) -> Vec<String> {
     names
 }
 
+// Project directories can live anywhere (custom paths, a custom projects
+// root), so the asset scope is widened per project when its timeline opens
+// instead of being fixed in tauri.conf.json.
 #[tauri::command]
-pub(crate) fn list_timelines(project: String) -> Result<Timelines, String> {
+pub(crate) fn list_timelines(app: tauri::AppHandle, project: String) -> Result<Timelines, String> {
     let dir = dir_for(&project)?;
+    let _ = app.asset_protocol_scope().allow_directory(&dir, true);
     Ok(Timelines {
         dir: dir.to_string_lossy().into_owned(),
         names: list_in(&dir),
     })
+}
+
+/// The one live filesystem watcher: only one project is on screen at a time,
+/// so replacing it drops (and unwatches) the previous project.
+pub(crate) struct ProjectWatcher(pub(crate) Mutex<Option<notify::RecommendedWatcher>>);
+
+/// Watch the project directory and emit `project-changed` with the project
+/// name on every change, so the timeline view reloads while the agent writes.
+#[tauri::command]
+pub(crate) fn watch_project(
+    app: tauri::AppHandle,
+    state: tauri::State<ProjectWatcher>,
+    project: String,
+) -> Result<(), String> {
+    let dir = dir_for(&project)?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = project.clone();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.is_ok() {
+            let _ = app.emit("project-changed", &name);
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher
+        .watch(&dir, RecursiveMode::Recursive)
+        .map_err(|e| format!("watching {}: {e}", dir.display()))?;
+    *state.0.lock().map_err(|e| e.to_string())? = Some(watcher);
+    Ok(())
 }
 
 #[tauri::command]
@@ -162,10 +228,43 @@ pub(crate) async fn add_project_video(
     let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
         return Err(format!("invalid file name: {}", src.display()));
     };
-    let dest = bare_name(&dir, name)?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = media_dest(&dir, name)?;
     std::fs::copy(&src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
-    Ok(Some(name.to_string()))
+    Ok(Some(format!("{MEDIA_DIR}/{name}")))
+}
+
+/// Files dropped from Finder arrive as raw bytes (the webview keeps Tauri's
+/// own drag-drop off so in-page drag-and-drop works). The name travels in a
+/// hex-encoded header because header values are ASCII only.
+#[tauri::command]
+pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let header = |key: &str| -> Result<String, String> {
+        request
+            .headers()
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| format!("missing {key} header"))
+    };
+    let project = header("x-project")?;
+    let name = hex_decode(&header("x-name")?)?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw file bytes".into());
+    };
+    let dest = media_dest(&dir_for(&project)?, &name)?;
+    std::fs::write(&dest, bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    Ok(format!("{MEDIA_DIR}/{name}"))
+}
+
+fn hex_decode(hex: &str) -> Result<String, String> {
+    if !hex.len().is_multiple_of(2) {
+        return Err("odd hex length".into());
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<u8>, _>>()?;
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -187,7 +286,25 @@ struct TrackFile {
 #[derive(serde::Deserialize)]
 struct ClipFile {
     start: f64,
+    end: Option<f64>,
+    offset: Option<f64>,
     src: Option<String>,
+}
+
+/// The part of the source file a clip plays: from `offset` for the clip's
+/// length. Empty when the clip plays the whole file.
+fn trim_filter(c: &ClipFile) -> String {
+    let offset = c.offset.unwrap_or(0.0).max(0.0);
+    match c.end {
+        Some(end) if end > c.start => {
+            format!(
+                "atrim=start={offset}:end={},asetpts=PTS-STARTPTS,",
+                offset + end - c.start
+            )
+        }
+        _ if offset > 0.0 => format!("atrim=start={offset},asetpts=PTS-STARTPTS,"),
+        _ => String::new(),
+    }
 }
 
 fn resolve_src(dir: &Path, src: &str) -> PathBuf {
@@ -200,7 +317,7 @@ fn resolve_src(dir: &Path, src: &str) -> PathBuf {
 }
 
 /// Build the ffmpeg invocation that renders a timeline: the video's picture,
-/// every voice and audio clip delayed to its start time and mixed together,
+/// every audio clip (spoken or plain file) delayed to its start time and mixed together,
 /// plus the original sound when `source_audio` is `keep`. Returns the
 /// arguments and the output file name. Pure, so it is testable.
 fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
@@ -246,7 +363,10 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
                 .filter(|g| (*g - 1.0).abs() > f64::EPSILON)
                 .map(|g| format!(",volume={g}"))
                 .unwrap_or_default();
-            filters.push(format!("[{input}]adelay={ms}|{ms}{volume}[a{input}]"));
+            filters.push(format!(
+                "[{input}]{}adelay={ms}|{ms}{volume}[a{input}]",
+                trim_filter(c)
+            ));
             mix.push(format!("[a{input}]"));
             input += 1;
         }
@@ -337,6 +457,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn media_listing_prefixes_the_media_folder_and_keeps_root_files() {
+        let dir = std::env::temp_dir().join(format!("infer-media-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("media")).unwrap();
+        std::fs::write(dir.join("media/a.mp4"), b"x").unwrap();
+        std::fs::write(dir.join("old.mov"), b"y").unwrap();
+        let names: Vec<String> = media_listing(&dir).into_iter().map(|f| f.name).collect();
+        assert_eq!(names, ["media/a.mp4", "old.mov"]);
+        assert!(media_dest(&dir, "../x.wav").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_decode_round_trips_utf8_names() {
+        let name = "Screen Recording 2026-09-16 at 18.57.04.mov";
+        let hex: String = name.bytes().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex_decode(&hex).unwrap(), name);
+        assert!(hex_decode("abc").is_err());
+    }
+
+    #[test]
     fn timeline_path_accepts_only_bare_timeline_names() {
         let dir = Path::new("/tmp/project");
         for bad in [
@@ -367,12 +508,12 @@ mod tests {
         std::fs::write(dir.join("music.mp3"), b"x").unwrap();
         let json = r#"{"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
-            {"kind":"voice","clips":[{"start":1.5,"src":"s1.wav"},{"start":9,"text":"draft"}]},
+            {"kind":"audio","clips":[{"start":1.5,"end":4.5,"offset":2,"src":"s1.wav"},{"start":9,"text":"draft"}]},
             {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3"}]}]}"#;
         let (args, output) = export_args(&dir, "demo", json).unwrap();
         assert_eq!(output, "demo.with-voice.mp4");
         let joined = args.join(" ");
-        assert!(joined.contains("[1]adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
+        assert!(joined.contains("[1]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
         assert!(
             joined.ends_with(
                 &dir.join("demo.with-voice.mp4")

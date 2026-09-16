@@ -737,7 +737,7 @@ pub(crate) async fn list_project_files(project: String) -> Result<Vec<ProjectFil
     }
 }
 
-fn list_local_files(dir: &Path) -> Vec<ProjectFile> {
+pub(crate) fn list_local_files(dir: &Path) -> Vec<ProjectFile> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };

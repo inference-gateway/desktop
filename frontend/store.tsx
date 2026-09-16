@@ -45,7 +45,7 @@ const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 
 const CONTENT_GUIDANCE =
-  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
+  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline.';
 
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
@@ -114,8 +114,9 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "timeline">("chat");
-  const [timelineProject, setTimelineProject] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
   const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
@@ -1128,11 +1129,6 @@ function useDesktopStore() {
     setCurrentView("observability");
   }, []);
 
-  const openTimeline = useCallback((project: string) => {
-    setTimelineProject(project);
-    setCurrentView("timeline");
-  }, []);
-
   // Start a fresh chat in a project with a given prompt (the timeline's
   // "Generate" button) and switch to it so progress and approvals are visible.
   const promptProject = useCallback(
@@ -1577,10 +1573,12 @@ function useDesktopStore() {
     newChat,
     restartBackend,
     currentView,
+    sidebarOpen,
+    setSidebarOpen,
+    chatOpen,
+    setChatOpen,
     openSettings,
     openObservability,
-    openTimeline,
-    timelineProject,
     promptProject,
     runningIds,
     setCurrentView,

@@ -315,11 +315,19 @@ export const api = {
   saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
   listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
+  watchProject: (project: string) => invoke<void>("watch_project", { project }),
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
   writeTimeline: (project: string, name: string, data: string) =>
     invoke<void>("write_timeline", { project, name, data }),
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
+  importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>
+    invoke<string>("import_project_file", bytes, {
+      headers: {
+        "x-project": project,
+        "x-name": Array.from(new TextEncoder().encode(name), (b) => b.toString(16).padStart(2, "0")).join(""),
+      },
+    }),
   prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
   exportTimeline: (project: string, name: string) => invoke<string>("export_timeline", { project, name }),
   readHistory: () => invoke<string[]>("read_history"),
@@ -336,6 +344,7 @@ export const api = {
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
     invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
+  listProjectMedia: (project: string) => invoke<ProjectFile[]>("list_project_media", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
   gitProjectStatus: () => invoke<GitProjectStatus>("git_project_status"),
