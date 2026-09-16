@@ -8,9 +8,9 @@ export type TrackKind = "video" | "audio";
 // it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
 export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
-  { value: "transcribe", label: "Redo my voice: write down what I say, clean it up, clone my voice" },
+  { value: "transcribe", label: "Replace with my cloned voice" },
   { value: "mute", label: "Mute" },
-  { value: "keep", label: "Keep it under my voice" },
+  { value: "keep", label: "Keep under the voice" },
 ];
 
 export type Clip = {

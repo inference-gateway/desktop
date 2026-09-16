@@ -34,9 +34,12 @@ under `~/.infer`; the only place you write is the working directory.
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
   `~/.infer/models/tts/samples/`. `TextToSpeech` only accepts a bare file name inside the working
-  directory, so copy the chosen sample to `./voice.wav` once. When the recording itself contains the
-  user's speech (`source_audio: transcribe`), the sample can be cut from it instead (see Source
-  audio).
+  directory, so copy the chosen sample to `./voice.wav` once. When the track's `voice_sample` in the
+  timeline names a file from that folder, the user chose it on the timeline: use exactly that one and
+  keep the field as written. Otherwise pick one and write its bare library name into `voice_sample`
+  so the desktop shows which voice was used. When the recording itself contains the user's speech
+  (`source_audio: transcribe`) and no sample is chosen, the sample can be cut from it instead (see
+  Source audio); then set `voice_sample` to `"recording"`.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
 installed by switching the project to Content in Settings > Projects; the two agent tools are
@@ -64,7 +67,7 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
     {
       "id": "voice",
       "kind": "audio",
-      "voice_sample": "voice.wav",
+      "voice_sample": "eden.wav",
       "clips": [
         {
           "id": "s1",

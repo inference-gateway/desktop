@@ -16,7 +16,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { api, type ProjectFile } from "@/lib/tauri";
+import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
@@ -49,6 +49,7 @@ import {
 } from "@/lib/timeline";
 import { useDesktop } from "@/store";
 import { AudioPlayer } from "./AudioPlayer";
+import { Thumbnails, Waveform } from "./ClipMedia";
 import { Button } from "@/components/ui/button";
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -66,6 +67,8 @@ const TRACK_SWATCH: Record<Track["kind"], string> = { video: "bg-sky-500", audio
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 const SNAP_PX = 8;
+// Lane height minus the clip inset, the height clip media draws at.
+const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
 const ZOOM_BTN =
   "inline-flex h-5 min-w-5 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100";
@@ -120,6 +123,7 @@ export function TimelineView() {
   const [exporting, setExporting] = useState(false);
   const [time, setTime] = useState(0);
   const [media, setMedia] = useState<ProjectFile[]>([]);
+  const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
   const dragClipRef = useRef<{ kind: "move" | "start" | "end"; track: string; clip: Clip; x0: number } | null>(null);
@@ -188,6 +192,10 @@ export function TimelineView() {
 
   useEffect(() => {
     load();
+    api
+      .listVoiceSamples()
+      .then(setSamples)
+      .catch(() => setSamples([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
@@ -503,19 +511,24 @@ export function TimelineView() {
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {timeline && (
             <>
-              <select
-                aria-label="Original audio"
-                title="What to do with the recording's own audio"
-                value={timeline.source_audio ?? "mute"}
-                onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
-                className="h-8 max-w-[180px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+              <label
+                className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
+                title="What happens to the recording's own soundtrack: the agent transcribes it and re-voices it with your clone, it is dropped, or it plays under the voice clips"
               >
-                {SOURCE_AUDIO.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                Recording audio
+                <select
+                  aria-label="Recording audio"
+                  value={timeline.source_audio ?? "mute"}
+                  onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
+                  className="h-8 max-w-[200px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                >
+                  {SOURCE_AUDIO.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
                 <Plus size={14} /> Add marker
               </Button>
@@ -598,7 +611,7 @@ export function TimelineView() {
         ))}
 
         <div className="flex overflow-hidden rounded-md border border-zinc-800 bg-[#141416] text-zinc-200">
-          <div className="flex w-28 shrink-0 flex-col border-r border-zinc-800 bg-[#1b1b1e]">
+          <div className="flex w-40 shrink-0 flex-col border-r border-zinc-800 bg-[#1b1b1e]">
             <div className="flex h-7 items-center justify-end gap-0.5 border-b border-zinc-800 px-1">
               <button
                 aria-label="Zoom out"
@@ -631,13 +644,38 @@ export function TimelineView() {
                 className="flex h-14 items-center gap-1.5 border-b border-zinc-800/70 px-2 text-[0.72rem] font-medium"
               >
                 <span className={cn("h-8 w-1 shrink-0 rounded-sm", TRACK_SWATCH[tr.kind])} />
-                <span className="truncate">
-                  {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
-                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate">
+                    {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
+                  </span>
+                  {tr.kind === "audio" && (tr.voice_sample || tr.clips.some(isSpoken)) && (
+                    <select
+                      aria-label={`Voice sample for ${tr.id}`}
+                      title="The voice sample this track's speech is cloned from (recorded in Settings > Voice samples)"
+                      value={samples.some((v) => v.name === tr.voice_sample) ? tr.voice_sample : ""}
+                      onChange={(e) =>
+                        update({
+                          ...shown,
+                          tracks: shown.tracks.map((t) =>
+                            t.id === tr.id ? { ...t, voice_sample: e.target.value || undefined } : t,
+                          ),
+                        })
+                      }
+                      className="h-5 w-full truncate rounded border border-zinc-700 bg-zinc-900 px-1 text-[0.65rem] font-normal text-zinc-300"
+                    >
+                      <option value="">{tr.voice_sample ? `Voice: ${tr.voice_sample}` : "Voice: agent picks"}</option>
+                      {samples.map((v) => (
+                        <option key={v.name} value={v.name}>
+                          Voice: {v.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
                 {tr.kind === "video" ? (
-                  <Film size={11} className="ml-auto shrink-0 text-zinc-500" />
+                  <Film size={11} className="shrink-0 text-zinc-500" />
                 ) : (
-                  <Music size={11} className="ml-auto shrink-0 text-zinc-500" />
+                  <Music size={11} className="shrink-0 text-zinc-500" />
                 )}
               </div>
             ))}
@@ -717,6 +755,12 @@ export function TimelineView() {
                   {tr.clips.map((c) => {
                     const isSel = selected?.track === tr.id && selected.clip === c.id;
                     const editable = tr.kind === "audio";
+                    const layout = clipLayout(c, pps);
+                    const mediaSrc = c.src
+                      ? tr.kind === "video"
+                        ? safeProjectMediaSrc(resolveSrc(dir, c.src))
+                        : clipSrc(dir, c.src)
+                      : null;
                     return (
                       <button
                         key={c.id}
@@ -726,7 +770,7 @@ export function TimelineView() {
                         onPointerMove={(e) => dragTo(e, c)}
                         onPointerUp={endDrag}
                         onPointerCancel={endDrag}
-                        style={clipLayout(c, pps)}
+                        style={layout}
                         className={cn(
                           "absolute top-1 bottom-1 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none",
                           editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
@@ -734,7 +778,25 @@ export function TimelineView() {
                           isSel && "ring-2 ring-white",
                         )}
                       >
-                        <span className="block truncate px-1.5 leading-5">
+                        {mediaSrc &&
+                          (tr.kind === "video" ? (
+                            <Thumbnails
+                              src={mediaSrc}
+                              start={c.offset ?? 0}
+                              length={c.end - c.start}
+                              width={layout.width}
+                              height={CLIP_H}
+                            />
+                          ) : (
+                            <Waveform
+                              src={mediaSrc}
+                              offset={c.offset ?? 0}
+                              length={c.end - c.start}
+                              width={layout.width}
+                              height={CLIP_H}
+                            />
+                          ))}
+                        <span className="relative block truncate bg-black/35 px-1.5 leading-5">
                           {c.text || c.src?.replace(/^media\//, "") || c.id}
                         </span>
                         {editable && (
