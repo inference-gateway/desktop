@@ -13,6 +13,7 @@ import {
   emptyTimeline,
   fmtTime,
   isSpoken,
+  moveClip,
   spokenCount,
   parseTimeline,
   removeClip,
@@ -82,6 +83,7 @@ export function TimelineView() {
   const [media, setMedia] = useState<ProjectFile[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
+  const dragClipRef = useRef<{ track: string; clip: string; x0: number; start: number; secPerPx: number } | null>(null);
   const dragRef = useRef<string | null>(null);
   const [dropLane, setDropLane] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -534,9 +536,29 @@ export function TimelineView() {
                       setSelected({ track: tr.id, clip: c.id });
                       seek(c.start);
                     }}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0 || duration <= 0) return;
+                      const lane = e.currentTarget.parentElement!.getBoundingClientRect();
+                      dragClipRef.current = {
+                        track: tr.id,
+                        clip: c.id,
+                        x0: e.clientX,
+                        start: c.start,
+                        secPerPx: duration / lane.width,
+                      };
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    }}
+                    onPointerMove={(e) => {
+                      const d = dragClipRef.current;
+                      if (!d || d.clip !== c.id) return;
+                      update(moveClip(shown, d.track, d.clip, d.start + (e.clientX - d.x0) * d.secPerPx));
+                    }}
+                    onPointerUp={() => {
+                      dragClipRef.current = null;
+                    }}
                     style={clipLayout(c, duration)}
                     className={cn(
-                      "absolute top-1.5 bottom-1.5 truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none",
+                      "absolute top-1.5 bottom-1.5 cursor-grab touch-none truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none active:cursor-grabbing",
                       tr.kind === "video" && "border-primary/50 bg-primary/25",
                       tr.kind === "audio" && !isSpoken(c) && "border-emerald-600/50 bg-emerald-500/30",
                       tr.kind === "audio" &&

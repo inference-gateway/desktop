@@ -187,6 +187,29 @@ export function addClip(t: Timeline, trackId: string, src: string, length: numbe
   };
 }
 
+// Drag a clip to a new start, keeping its length and its place between its
+// neighbours: it slides freely inside the gap and stops at the clips on
+// either side. The timeline grows if the clip moves past the end.
+export function moveClip(t: Timeline, trackId: string, clipId: string, start: number): Timeline {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  const clip = track?.clips.find((c) => c.id === clipId);
+  if (!track || !clip) return t;
+  const length = clip.end - clip.start;
+  const lo = Math.max(0, ...track.clips.filter((c) => c.id !== clipId && c.end <= clip.start).map((c) => c.end));
+  const hi = Math.min(
+    ...track.clips.filter((c) => c.id !== clipId && c.start >= clip.end).map((c) => c.start - length),
+  );
+  const next = Math.min(Math.max(start, lo), hi);
+  const moved = { ...clip, start: next, end: next + length };
+  return {
+    ...t,
+    duration: Math.max(t.duration, moved.end),
+    tracks: t.tracks.map((tr) =>
+      tr.id !== trackId ? tr : { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? moved : c)) },
+    ),
+  };
+}
+
 export function draftCount(t: Timeline): number {
   return t.tracks.flatMap((tr) => tr.clips).filter((c) => c.status === "draft").length;
 }

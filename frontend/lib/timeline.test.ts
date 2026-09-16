@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  addClip,
+  moveClip,
   spokenCount,
   spokenTrack,
   addMarker,
@@ -102,4 +104,27 @@ test("addClip places at the drop time or after the last clip when taken", () => 
     ["v2", 6, 10],
   ]);
   expect(addClip(a, "nope", "x.mp4", 1, 0)).toBe(a);
+});
+
+test("moveClip slides between neighbours and grows the timeline", () => {
+  const t = addClip(
+    addClip(addClip(emptyTimeline(), "audio", "a.mp3", 4, 0), "audio", "b.mp3", 2, 6),
+    "audio",
+    "c.mp3",
+    3,
+    10,
+  );
+  const starts = (x: ReturnType<typeof moveClip>) => x.tracks[1].clips.map((c) => [c.id, c.start, c.end]);
+  expect(starts(moveClip(t, "audio", "a2", 7))).toEqual([
+    ["a1", 0, 4],
+    ["a2", 7, 9],
+    ["a3", 10, 13],
+  ]);
+  expect(starts(moveClip(t, "audio", "a2", 1))[1]).toEqual(["a2", 4, 6]);
+  expect(starts(moveClip(t, "audio", "a2", 30))[1]).toEqual(["a2", 8, 10]);
+  const past = moveClip(t, "audio", "a3", 30);
+  expect(starts(past)[2]).toEqual(["a3", 30, 33]);
+  expect(past.duration).toBe(33);
+  expect(moveClip(t, "audio", "a1", -5).tracks[1].clips[0].start).toBe(0);
+  expect(moveClip(t, "audio", "zzz", 1)).toBe(t);
 });
