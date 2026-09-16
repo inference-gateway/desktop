@@ -1,9 +1,10 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
 import { ChatList } from "./ChatList";
+import { ResizeHandle } from "./ResizeHandle";
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
 export function Sidebar() {
@@ -11,23 +12,6 @@ export function Sidebar() {
     useDesktop();
   const [width, setWidth] = useState(() => loadSidebarWidth(window.innerWidth));
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ x: number; w: number } | null>(null);
-
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    drag.current = { x: e.clientX, w: width };
-    setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    setWidth(clampSidebarWidth(drag.current.w + e.clientX - drag.current.x, window.innerWidth));
-  };
-  const endDrag = () => {
-    if (!drag.current) return;
-    drag.current = null;
-    setDragging(false);
-    saveSidebarWidth(width);
-  };
   const resetWidth = () => {
     setWidth(DEFAULT_SIDEBAR_WIDTH);
     saveSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
@@ -58,15 +42,15 @@ export function Sidebar() {
         </Button>
       </div>
       <ChatList />
-      <div
-        aria-hidden="true"
+      <ResizeHandle
+        edge="right"
+        width={width}
+        clamp={(w) => clampSidebarWidth(w, window.innerWidth)}
+        onChange={setWidth}
+        onEnd={() => saveSidebarWidth(width)}
+        onReset={resetWidth}
+        onDragging={setDragging}
         title="Drag to resize sidebar (double-click resets)"
-        className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-primary/30"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onDoubleClick={resetWidth}
       />
     </aside>
   );

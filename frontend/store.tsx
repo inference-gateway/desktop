@@ -115,6 +115,8 @@ function useDesktopStore() {
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
   const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
   const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
@@ -1571,6 +1573,10 @@ function useDesktopStore() {
     newChat,
     restartBackend,
     currentView,
+    sidebarOpen,
+    setSidebarOpen,
+    chatOpen,
+    setChatOpen,
     openSettings,
     openObservability,
     promptProject,

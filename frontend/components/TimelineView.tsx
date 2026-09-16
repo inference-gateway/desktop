@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { FilePlus, Film, FolderOpen, Music, Pause, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import {
+  FilePlus,
+  Film,
+  FolderOpen,
+  Music,
+  PanelRightClose,
+  PanelRightOpen,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
@@ -71,7 +84,7 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError, chatOpen, setChatOpen } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -374,7 +387,11 @@ export function TimelineView() {
                 {drafts} draft{drafts === 1 ? "" : "s"}
               </span>
             )}
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          </>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {timeline && (
+            <>
               <select
                 aria-label="Original audio"
                 title="What to do with the recording's own audio"
@@ -403,9 +420,18 @@ export function TimelineView() {
               >
                 <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
               </Button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+          <button
+            aria-label="Toggle chat"
+            aria-pressed={chatOpen}
+            title={chatOpen ? "Hide chat" : "Show chat"}
+            onClick={() => setChatOpen(!chatOpen)}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+          >
+            {chatOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 p-4">
