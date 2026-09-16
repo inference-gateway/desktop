@@ -64,6 +64,8 @@ pub struct WaitTarget {
     pub button: Option<String>,
     pub text: Option<String>,
     pub file: Option<PathBuf>,
+    /// With `file`: also wait until the file's contents include this string.
+    pub contains: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
 }

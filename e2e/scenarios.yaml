@@ -35,6 +35,24 @@ scenarios:
       - tool_calls:
           - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
 
+  - name: title-card
+    match: '(?i)add a title card'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "title-card.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 20,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 20 }] },
+                    { "id": "cards", "kind": "overlay", "clips": [{ "id": "o1", "src": "media/o1-title.webm", "html": "cards/o1-title.html", "start": 0, "end": 3 }] }
+                  ]
+                }
+      - content: "Title card added."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:

@@ -1,0 +1,10 @@
+name: title card overlay - the agent writes an overlay track to the timeline
+cleanup:
+  - title-card.timeline.json
+steps:
+  - new_chat
+  - send: "add a title card saying Hello"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: title-card.timeline.json, contains: '"kind": "overlay"', timeout: 15 }
+  - wait_for: { text: "Title card added.", timeout: 15 }
