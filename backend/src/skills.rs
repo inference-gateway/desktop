@@ -25,10 +25,14 @@ pub(crate) fn installed_skills_in(home: &std::path::Path) -> Vec<String> {
 
 /// Skills shipped inside the app binary, written to ~/.infer/skills at startup
 /// so the agent always finds them, whether or not the catalog copy is installed.
-const BUNDLED_SKILLS: [(&str, &str); 2] = [
+const BUNDLED_SKILLS: [(&str, &str); 3] = [
     (
         "video-editing",
         include_str!("../../.agents/skills/video-editing/SKILL.md"),
+    ),
+    (
+        "motion-cards",
+        include_str!("../../.agents/skills/motion-cards/SKILL.md"),
     ),
     (
         "desktop-projects",
@@ -104,7 +108,7 @@ mod tests {
         }
         let mut names = installed_skills_in(&home);
         names.sort();
-        assert_eq!(names, ["desktop-projects", "video-editing"]);
+        assert_eq!(names, ["desktop-projects", "motion-cards", "video-editing"]);
         let path = home.join(".infer/skills/desktop-projects/SKILL.md");
         assert!(
             std::fs::read_to_string(&path)
