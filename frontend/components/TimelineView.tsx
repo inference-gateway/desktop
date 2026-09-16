@@ -594,6 +594,7 @@ export function TimelineView() {
                   syncMedia(e.currentTarget.currentTime, false);
                 }}
                 onEnded={() => setPlaying(false)}
+                onLoadedMetadata={(e) => syncMedia(e.currentTarget.currentTime, false)}
                 onSeeked={(e) => syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused)}
                 onError={() => setLoadError(`Cannot play ${videoPath}`)}
                 className="max-h-[50vh] max-w-full"
