@@ -10,6 +10,14 @@ export type TrackKind = "video" | "audio" | "overlay";
 // What to do with the recording's own audio track: transcribe it and replace
 // it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
+// Export frame size: the standard delivery sizes. The recording is scaled to
+// fit and padded; overlays are placed in this frame.
+export const DEFAULT_RESOLUTION = "1920x1080";
+export const RESOLUTIONS: { value: string; label: string }[] = [
+  { value: "1920x1080", label: "1920x1080 Landscape" },
+  { value: "1080x1920", label: "1080x1920 Portrait" },
+  { value: "1350x1350", label: "1350x1350 Square" },
+];
 export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
   { value: "transcribe", label: "Replace with my cloned voice" },
   { value: "mute", label: "Mute" },
@@ -45,6 +53,7 @@ export type Timeline = {
   version: number;
   duration: number;
   output?: string;
+  resolution?: string;
   source_audio?: SourceAudio;
   tracks: Track[];
 };
@@ -89,6 +98,7 @@ export function parseTimeline(json: string): Timeline {
     version: num(raw.version, 1),
     duration: num(raw.duration, clipEnd) || clipEnd,
     output: typeof raw.output === "string" ? raw.output : undefined,
+    resolution: typeof raw.resolution === "string" && /^\d+x\d+$/.test(raw.resolution) ? raw.resolution : undefined,
     source_audio: SOURCE_AUDIO.some((o) => o.value === raw.source_audio) ? raw.source_audio : undefined,
     tracks,
   };
@@ -106,6 +116,12 @@ export const isSpoken = (c: Clip): boolean => c.text !== undefined;
 
 export function spokenCount(t: Timeline): number {
   return t.tracks.flatMap((tr) => tr.clips).filter(isSpoken).length;
+}
+
+// Width / height of the export frame.
+export function frameAspect(t: Timeline): number {
+  const [w, h] = (t.resolution ?? DEFAULT_RESOLUTION).split("x").map(Number);
+  return w > 0 && h > 0 ? w / h : 16 / 9;
 }
 
 export function overlayCount(t: Timeline): number {

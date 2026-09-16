@@ -67,19 +67,21 @@ Check them in this order and stop at the first one missing, telling the user exa
   overlay track.
 - `start`/`end` are seconds on the video; the card plays from its first frame at `start` and is cut
   at `end`. Render each card exactly `end - start` seconds long (its `data-duration`).
-- `x`, `y`, `width`, `height` are fractions of the video frame (0-1), top-left origin. Omit all four
-  for a full-frame card: render it at the recording's own size so it needs no scaling. Set them only
-  for a card rendered smaller than the frame (a lower third, a callout, a badge); `width` alone keeps
-  the aspect ratio.
+- `x`, `y`, `width`, `height` are fractions of the export frame (0-1), top-left origin. Omit all four
+  for a full-frame card rendered at the frame's `resolution`; it is scaled to the frame width. Set
+  them only for a card rendered smaller than the frame (a lower third, a callout, a badge); `width`
+  alone keeps the aspect ratio.
 - Use one overlay track with `id: "cards"` unless cards must overlap in time; then add
   `"cards2"`. Clips on one track must not overlap. Clip ids stay stable; the user can move and trim
   cards on the timeline, so read the file back before changing it.
 
 ## Steps
 
-1. **Frame size.** `ffmpeg -hide_banner -i <video>` and read `Video: ... 1920x1080` from stderr. Full-frame
-   cards use that size; smaller cards use a size that keeps the same pixel density (a 1920-wide
-   frame with `width: 0.4` means a 768 px wide card).
+1. **Frame size.** The export frame is the timeline's `resolution` (`"WxH"`: `1920x1080` by default, `1080x1920` or `1350x1350`;
+   the user picks it on the timeline, so never change it). The recording is scaled to fit and padded
+   into that frame, and cards are placed in it. Full-frame cards use exactly that size; smaller
+   cards use a size that keeps the same pixel density (a 1920-wide frame with `width: 0.4` means a
+   768 px wide card).
 2. **Write the card.** `mkdir -p cards media`, then `Write` `cards/<id>-<kind>.html` from the catalogue
    below, changing only the text, the numbers and the tokens block. Keep `data-no-timeline` on the
    root (the cards animate with CSS, there is no GSAP timeline to wait for) and set
@@ -95,7 +97,7 @@ Check them in this order and stop at the first one missing, telling the user exa
 4. **Place it.** Read the timeline, add the clip to the overlay track (create the track if missing),
    write the file back. Repeat from step 2 for the next card.
 5. **Stop.** Do not run ffmpeg on the video, do not export: the user previews the cards on the
-   timeline and presses Export. Say which cards you placed and that each can be moved, trimmed or
+   timeline and presses Export, which writes `export/<output>`. Say which cards you placed and that each can be moved, trimmed or
    deleted on the timeline, and that asking for a change to a card re-renders just that one.
 
 ## Re-rendering

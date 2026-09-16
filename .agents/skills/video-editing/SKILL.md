@@ -57,6 +57,7 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
   "version": 1,
   "duration": 42.3,
   "output": "demo.with-voice.mp4",
+  "resolution": "1920x1080",
   "source_audio": "transcribe",
   "tracks": [
     {
@@ -87,6 +88,8 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 
 - Times are seconds. `src` is relative to the working directory; media and clip audio live in
   `media/` so the project folder is self-contained and the pool shows every clip.
+- `resolution` (`"WxH"`, default `1920x1080`) is the export frame the user picks on the timeline:
+  the recording is scaled to fit and padded into it. Keep it as is. Export writes `export/<output>`.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is and never add it yourself.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a

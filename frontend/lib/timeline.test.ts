@@ -13,6 +13,7 @@ import {
   clipLayout,
   emptyTimeline,
   draftCount,
+  frameAspect,
   laneOrder,
   overlayCount,
   parseTimeline,
@@ -55,6 +56,10 @@ describe("parseTimeline", () => {
     expect(t.source_audio).toBeUndefined();
     expect(parseTimeline('{"source_audio":"keep","tracks":[]}').source_audio).toBe("keep");
     expect(parseTimeline('{"source_audio":"bogus","tracks":[]}').source_audio).toBeUndefined();
+    expect(parseTimeline('{"resolution":"1080x1920","tracks":[]}').resolution).toBe("1080x1920");
+    expect(parseTimeline('{"resolution":"tall","tracks":[]}').resolution).toBeUndefined();
+    expect(frameAspect(parseTimeline('{"resolution":"1350x1350","tracks":[]}'))).toBe(1);
+    expect(frameAspect(parseTimeline('{"tracks":[]}'))).toBeCloseTo(16 / 9);
   });
 
   test("keeps overlay clips with their placement", () => {

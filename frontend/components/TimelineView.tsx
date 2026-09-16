@@ -19,6 +19,8 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
+  DEFAULT_RESOLUTION,
+  RESOLUTIONS,
   addClip,
   addMarker,
   addTrack,
@@ -26,6 +28,7 @@ import {
   draftCount,
   emptyTimeline,
   fmtTime,
+  frameAspect,
   isSpoken,
   laneOrder,
   moveClip,
@@ -533,6 +536,26 @@ export function TimelineView() {
             <>
               <label
                 className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
+                title="The exported frame size: the recording is scaled to fit and padded, cards are placed in this frame"
+              >
+                Frame
+                <select
+                  aria-label="Frame size"
+                  value={
+                    RESOLUTIONS.some((r) => r.value === timeline.resolution) ? timeline.resolution : DEFAULT_RESOLUTION
+                  }
+                  onChange={(e) => update({ ...timeline, resolution: e.target.value })}
+                  className="h-8 max-w-[200px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                >
+                  {RESOLUTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label
+                className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
                 title="What happens to the recording's own soundtrack: the agent transcribes it and re-voices it with your clone, it is dropped, or it plays under the voice clips"
               >
                 Recording audio
@@ -574,7 +597,10 @@ export function TimelineView() {
 
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
           {timeline && videoSrc ? (
-            <div className="relative max-h-[50vh] max-w-full">
+            <div
+              className="relative"
+              style={{ aspectRatio: frameAspect(timeline), width: `min(100%, calc(50vh * ${frameAspect(timeline)}))` }}
+            >
               <video
                 ref={videoRef}
                 key={videoSrc}
@@ -597,7 +623,7 @@ export function TimelineView() {
                 onLoadedMetadata={(e) => syncMedia(e.currentTarget.currentTime, false)}
                 onSeeked={(e) => syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused)}
                 onError={() => setLoadError(`Cannot play ${videoPath}`)}
-                className="max-h-[50vh] max-w-full"
+                className="absolute inset-0 size-full object-contain"
               />
               {clipOverlays.map(({ clip: c, src }) => (
                 <video
