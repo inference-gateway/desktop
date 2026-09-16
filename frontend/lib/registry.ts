@@ -19,7 +19,7 @@ export function toCatalogAgents(data: RawCatalog | null | undefined): CatalogAge
 }
 
 export async function fetchAgentCatalog(): Promise<CatalogAgent[]> {
-  const res = await fetch(CATALOG_URL);
+  const res = await fetch(CATALOG_URL, { cache: "no-cache" });
   if (!res.ok) throw new Error(`catalog ${res.status}`);
   return toCatalogAgents(await res.json());
 }
