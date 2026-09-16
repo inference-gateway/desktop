@@ -289,9 +289,12 @@ export function TimelineView() {
       .catch((e) => setError(String(e)));
   };
 
+  // Leaves source_audio to the skill: transcribe when whisper finds speech,
+  // otherwise mute and narrate the keyframes. Asserting "I am talking" made
+  // the agent chase silent tracks.
   const addVoiceTo = (video: string) => {
-    const stem = video.replace(VIDEO_EXT, "");
-    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "transcribe" and make the audio for every clip. ${sourceAudioInstruction("transcribe")}`;
+    const target = timeline && source === video && name ? name : `${video.replace(VIDEO_EXT, "")}.timeline.json`;
+    const prompt = `Add my cloned voice to ${video}: write ${target} and make the audio for every clip. Set "source_audio" yourself: "transcribe" only if the recording has speech that whisper can transcribe, otherwise "mute" and narrate what happens on screen from the keyframes. Never boost, filter or retry the audio.`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
