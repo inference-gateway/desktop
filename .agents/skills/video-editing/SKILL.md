@@ -215,9 +215,12 @@ prints `1`. If a render fails because HyperFrames or its browser is missing, tel
   picks it, never change it). A full-frame card is a composition of exactly that size; a smaller
   card keeps the same pixel density (a 1920-wide frame with `width: 0.4` is a 768 px wide card).
   The composition's duration is `end - start`.
-- Write `cards/<id>-<kind>.html` (`mkdir -p cards media`). Cards that animate with CSS only carry
-  `data-no-timeline` on the root so the renderer does not wait for a GSAP timeline. No files outside
-  the working directory, no network fonts.
+- Write `cards/<id>-<kind>.html` (`mkdir -p cards media`). Everything visible sits inside one root
+  `<div id="stage" data-composition-id="<id>-<kind>" data-start="0" data-duration="<s>" data-fps="30"
+  data-width="<W>" data-height="<H>" style="position:relative;width:<W>px;height:<H>px">` in
+  `<body>`; attributes on `<body>` are ignored and the render fails with "Composition duration is 0".
+  Cards that animate with CSS only also carry `data-no-timeline` on that root so the renderer does
+  not wait for a GSAP timeline. No files outside the working directory, no network fonts.
 - Render: `npx --yes hyperframes render -c cards/<id>-<kind>.html --format mov -o media/<id>-<kind>.mov --quiet`.
   Always `mov` (ProRes 4444): the desktop's preview drops the alpha of a WebM, and mp4 has none.
   Check the duration with `ffmpeg -hide_banner -i media/<id>-<kind>.mov`; render again after fixing
