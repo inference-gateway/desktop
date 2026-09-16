@@ -4,6 +4,7 @@ import {
   FilePlus,
   Film,
   FolderOpen,
+  Layers,
   Music,
   Pause,
   Play,
@@ -18,6 +19,8 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
+  DEFAULT_RESOLUTION,
+  RESOLUTIONS,
   addClip,
   addMarker,
   addTrack,
@@ -25,8 +28,11 @@ import {
   draftCount,
   emptyTimeline,
   fmtTime,
+  frameAspect,
   isSpoken,
+  laneOrder,
   moveClip,
+  overlayCount,
   rulerStep,
   snapPoints,
   snapTime,
@@ -59,8 +65,13 @@ function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
-const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio" };
-const TRACK_SWATCH: Record<Track["kind"], string> = { video: "bg-sky-500", audio: "bg-emerald-500" };
+const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio", overlay: "Overlay" };
+const TRACK_SWATCH: Record<Track["kind"], string> = {
+  video: "bg-sky-500",
+  audio: "bg-emerald-500",
+  overlay: "bg-fuchsia-500",
+};
+const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers };
 // px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
@@ -79,11 +90,13 @@ const isEditable = (t: EventTarget | null) =>
 const clipClass = (tr: Track, c: Clip) =>
   tr.kind === "video"
     ? "border-sky-400/60 bg-sky-700/80"
-    : !isSpoken(c)
-      ? "border-emerald-400/60 bg-emerald-700/80"
-      : c.status === "draft"
-        ? "border-amber-300/70 bg-amber-600/85"
-        : "border-violet-400/60 bg-violet-700/85";
+    : tr.kind === "overlay"
+      ? "border-fuchsia-400/60 bg-fuchsia-700/80"
+      : !isSpoken(c)
+        ? "border-emerald-400/60 bg-emerald-700/80"
+        : c.status === "draft"
+          ? "border-amber-300/70 bg-amber-600/85"
+          : "border-violet-400/60 bg-violet-700/85";
 // ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
@@ -92,6 +105,11 @@ const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+
+function TrackIcon({ kind }: { kind: TrackKind }) {
+  const Icon = TRACK_ICON[kind];
+  return <Icon size={11} className="shrink-0 text-zinc-500" />;
+}
 
 function sourceAudioInstruction(mode: SourceAudio): string {
   switch (mode) {
@@ -136,21 +154,23 @@ export function TimelineView() {
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRefs = useRef(new Map<string, HTMLAudioElement>());
+  const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
   const { setStatus } = useDesktop();
 
-  // The preview plays whatever the timeline holds: every clip's audio is kept
-  // in step with the video's clock; the original sound stays only with "keep".
-  const syncAudio = (t: number, playing: boolean) => {
+  // The preview plays whatever the timeline holds: every audio clip and
+  // overlay card is kept in step with the video's clock; the original sound
+  // stays only with "keep". Overlays are shown only inside their range.
+  const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
     for (const tr of timeline.tracks) {
       if (tr.kind === "video") continue;
       for (const c of tr.clips) {
-        const el = audioRefs.current.get(c.id);
+        const el = mediaRefs.current.get(c.id);
         if (!el) continue;
-        el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
         const offset = (c.offset ?? 0) + (t - c.start);
         const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
+        if (tr.kind === "overlay") el.hidden = !inside;
+        else el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
         if (playing && inside) {
           if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
           if (el.paused) el.play().catch(() => {});
@@ -244,7 +264,7 @@ export function TimelineView() {
     const el = videoRef.current;
     if (el) el.currentTime = t;
     setTime(t);
-    syncAudio(t, !!el && !el.paused);
+    syncMedia(t, !!el && !el.paused);
   };
 
   const exportVideo = () => {
@@ -282,7 +302,7 @@ export function TimelineView() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline || !selected) return;
       const tr = timeline.tracks.find((t) => t.id === selected.track);
-      if (tr?.kind !== "audio") return;
+      if (!tr || tr.kind === "video") return;
       e.preventDefault();
       update(removeClip(timeline, tr.id, selected.clip));
       setSelected(null);
@@ -307,18 +327,20 @@ export function TimelineView() {
   const source = timeline ? videoSource(timeline) : undefined;
   const videoPath = source;
   const videoSrc = videoPath ? safeProjectMediaSrc(resolveSrc(dir, videoPath)) : null;
-  const clipAudio = timeline
-    ? timeline.tracks
-        .filter((tr) => tr.kind !== "video")
-        .flatMap((tr) => tr.clips)
-        .flatMap((c) => (c.src ? [{ id: c.id, src: clipSrc(dir, c.src) }] : []))
-        .filter((c): c is { id: string; src: string } => !!c.src)
-    : [];
+  const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
+    (timeline?.tracks ?? [])
+      .filter((tr) => tr.kind === kind)
+      .flatMap((tr) => tr.clips)
+      .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
+      .filter((c): c is { clip: Clip; src: string } => !!c.src);
+  const clipAudio = clipsOf("audio", (src) => clipSrc(dir, src));
+  const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
   const hasVoice = timeline ? spokenCount(timeline) : 0;
+  const overlays = timeline ? overlayCount(timeline) : 0;
 
   const fitPps = duration > 0 ? Math.max(MIN_PPS, (laneWidth - 24) / duration) : 40;
   const pps = zoom ?? fitPps;
@@ -354,14 +376,14 @@ export function TimelineView() {
     return () => el.removeEventListener("wheel", onWheel);
   });
 
-  // Clips on audio lanes move and trim by pointer; video clips only select
-  // (the export always plays the recording whole). Edges snap to other clips
-  // and the playhead within SNAP_PX.
+  // Clips on audio and overlay lanes move and trim by pointer; video clips
+  // only select (the export always plays the recording whole). Edges snap to
+  // other clips and the playhead within SNAP_PX.
   const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: "move" | "start" | "end", tr: Track, c: Clip) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
-    if (tr.kind !== "audio") return;
+    if (tr.kind === "video") return;
     dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -379,7 +401,7 @@ export function TimelineView() {
       return;
     }
     const base = d.kind === "start" ? d.clip.start : d.clip.end;
-    const el = audioRefs.current.get(c.id);
+    const el = mediaRefs.current.get(c.id);
     const sourceLength = el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : undefined;
     update(trimClip(shown, d.track, c.id, d.kind, snapTime(base + dx, points, tol), sourceLength));
   };
@@ -455,7 +477,7 @@ export function TimelineView() {
   };
 
   const laneAccepts = (tr: Track, file: string | null) =>
-    !!file && (VIDEO_EXT.test(file) ? tr.kind === "video" : tr.kind === "audio");
+    !!file && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
 
   const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
     const file = dragRef.current;
@@ -514,6 +536,26 @@ export function TimelineView() {
             <>
               <label
                 className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
+                title="The exported frame size: the recording is scaled to fit and padded, cards are placed in this frame"
+              >
+                Frame
+                <select
+                  aria-label="Frame size"
+                  value={
+                    RESOLUTIONS.some((r) => r.value === timeline.resolution) ? timeline.resolution : DEFAULT_RESOLUTION
+                  }
+                  onChange={(e) => update({ ...timeline, resolution: e.target.value })}
+                  className="h-8 max-w-[200px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
+                >
+                  {RESOLUTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label
+                className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
                 title="What happens to the recording's own soundtrack: the agent transcribes it and re-voices it with your clone, it is dropped, or it plays under the voice clips"
               >
                 Recording audio
@@ -541,7 +583,7 @@ export function TimelineView() {
                 size="sm"
                 title="Render the timeline to an MP4 with ffmpeg"
                 onClick={exportVideo}
-                disabled={exporting || running > 0 || hasVoice === 0}
+                disabled={exporting || running > 0 || (hasVoice === 0 && overlays === 0)}
               >
                 <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
               </Button>
@@ -555,29 +597,56 @@ export function TimelineView() {
 
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
           {timeline && videoSrc ? (
-            <video
-              ref={videoRef}
-              key={videoSrc}
-              src={videoSrc}
-              controls
-              muted={timeline.source_audio !== "keep"}
-              onTimeUpdate={(e) => {
-                setTime(e.currentTarget.currentTime);
-                syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused);
-              }}
-              onPlay={(e) => {
-                setPlaying(true);
-                syncAudio(e.currentTarget.currentTime, true);
-              }}
-              onPause={(e) => {
-                setPlaying(false);
-                syncAudio(e.currentTarget.currentTime, false);
-              }}
-              onEnded={() => setPlaying(false)}
-              onSeeked={(e) => syncAudio(e.currentTarget.currentTime, !e.currentTarget.paused)}
-              onError={() => setLoadError(`Cannot play ${videoPath}`)}
-              className="max-h-[50vh] w-full object-contain"
-            />
+            <div
+              className="relative"
+              style={{ aspectRatio: frameAspect(timeline), width: `min(100%, calc(50vh * ${frameAspect(timeline)}))` }}
+            >
+              <video
+                ref={videoRef}
+                key={videoSrc}
+                src={videoSrc}
+                controls
+                muted={timeline.source_audio !== "keep"}
+                onTimeUpdate={(e) => {
+                  setTime(e.currentTarget.currentTime);
+                  syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused);
+                }}
+                onPlay={(e) => {
+                  setPlaying(true);
+                  syncMedia(e.currentTarget.currentTime, true);
+                }}
+                onPause={(e) => {
+                  setPlaying(false);
+                  syncMedia(e.currentTarget.currentTime, false);
+                }}
+                onEnded={() => setPlaying(false)}
+                onLoadedMetadata={(e) => syncMedia(e.currentTarget.currentTime, false)}
+                onSeeked={(e) => syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused)}
+                onError={() => setLoadError(`Cannot play ${videoPath}`)}
+                className="absolute inset-0 size-full object-contain"
+              />
+              {clipOverlays.map(({ clip: c, src }) => (
+                <video
+                  key={c.id}
+                  src={src}
+                  muted
+                  playsInline
+                  preload="auto"
+                  hidden
+                  ref={(el) => {
+                    if (el) mediaRefs.current.set(c.id, el);
+                    else mediaRefs.current.delete(c.id);
+                  }}
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: `${(c.x ?? 0) * 100}%`,
+                    top: `${(c.y ?? 0) * 100}%`,
+                    width: c.width === undefined ? (c.height === undefined ? "100%" : "auto") : `${c.width * 100}%`,
+                    height: c.height === undefined ? "auto" : `${c.height * 100}%`,
+                  }}
+                />
+              ))}
+            </div>
           ) : timeline && videoPath ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
               Preview unavailable for {videoPath} (only files under the default projects root can be previewed).
@@ -590,14 +659,14 @@ export function TimelineView() {
             </p>
           )}
         </div>
-        {clipAudio.map((c) => (
+        {clipAudio.map(({ clip: c, src }) => (
           <audio
             key={c.id}
-            src={c.src}
+            src={src}
             preload="auto"
             ref={(el) => {
-              if (el) audioRefs.current.set(c.id, el);
-              else audioRefs.current.delete(c.id);
+              if (el) mediaRefs.current.set(c.id, el);
+              else mediaRefs.current.delete(c.id);
             }}
           />
         ))}
@@ -630,7 +699,7 @@ export function TimelineView() {
                 Fit
               </button>
             </div>
-            {shown.tracks.map((tr) => (
+            {laneOrder(shown.tracks).map((tr) => (
               <div
                 key={tr.id}
                 className="flex h-14 items-center gap-1.5 border-b border-zinc-800/70 px-2 text-[0.72rem] font-medium"
@@ -664,15 +733,11 @@ export function TimelineView() {
                     </select>
                   )}
                 </div>
-                {tr.kind === "video" ? (
-                  <Film size={11} className="shrink-0 text-zinc-500" />
-                ) : (
-                  <Music size={11} className="shrink-0 text-zinc-500" />
-                )}
+                <TrackIcon kind={tr.kind} />
               </div>
             ))}
             <div className="flex h-8 items-center gap-1 px-1.5">
-              {(["video", "audio"] as TrackKind[]).map((k) => (
+              {(["video", "audio", "overlay"] as TrackKind[]).map((k) => (
                 <button
                   key={k}
                   aria-label={`Add ${k} track`}
@@ -680,7 +745,7 @@ export function TimelineView() {
                   onClick={() => update(addTrack(shown, k))}
                   className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
                 >
-                  <Plus size={10} /> {k === "video" ? <Film size={11} /> : <Music size={11} />}
+                  <Plus size={10} /> <TrackIcon kind={k} />
                 </button>
               ))}
             </div>
@@ -727,7 +792,7 @@ export function TimelineView() {
                   )),
                 )}
               </div>
-              {shown.tracks.map((tr) => (
+              {laneOrder(shown.tracks).map((tr) => (
                 <div
                   key={tr.id}
                   aria-label={`${TRACK_LABEL[tr.kind]} lane ${tr.id}`}
@@ -746,12 +811,12 @@ export function TimelineView() {
                 >
                   {tr.clips.map((c) => {
                     const isSel = selected?.track === tr.id && selected.clip === c.id;
-                    const editable = tr.kind === "audio";
+                    const editable = tr.kind !== "video";
                     const layout = clipLayout(c, pps);
                     const mediaSrc = c.src
-                      ? tr.kind === "video"
-                        ? safeProjectMediaSrc(resolveSrc(dir, c.src))
-                        : clipSrc(dir, c.src)
+                      ? tr.kind === "audio"
+                        ? clipSrc(dir, c.src)
+                        : safeProjectMediaSrc(resolveSrc(dir, c.src))
                       : null;
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
@@ -770,7 +835,7 @@ export function TimelineView() {
                           )}
                         >
                           {mediaSrc &&
-                            (tr.kind === "video" ? (
+                            (tr.kind !== "audio" ? (
                               <Thumbnails
                                 src={mediaSrc}
                                 start={c.offset ?? 0}

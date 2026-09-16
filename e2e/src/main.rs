@@ -238,7 +238,13 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
                 app.poll(timeout, || app.text_exists(text))?
             } else if let Some(file) = &wait_for.file {
                 let path = app.resolve(file);
-                app.poll(timeout, || Ok(path.exists()))?
+                app.poll(timeout, || {
+                    Ok(match &wait_for.contains {
+                        None => path.exists(),
+                        Some(needle) => std::fs::read_to_string(&path)
+                            .is_ok_and(|text| text.contains(needle.as_str())),
+                    })
+                })?
             } else {
                 bail!("wait_for needs one of button/text/file");
             };

@@ -37,7 +37,7 @@ export function hydrateRegistry(url: string): void {
 }
 
 export async function fetchSkillsCatalog(url?: string): Promise<SkillsCatalog> {
-  const res = await fetch(url || getRegistryUrl());
+  const res = await fetch(url || getRegistryUrl(), { cache: "no-cache" });
   if (!res.ok) throw new Error(`skills catalog ${res.status}`);
   return res.json();
 }
