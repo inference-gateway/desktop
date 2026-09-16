@@ -5,8 +5,6 @@ import {
   Film,
   FolderOpen,
   Music,
-  PanelRightClose,
-  PanelRightOpen,
   Pause,
   Play,
   Plus,
@@ -113,7 +111,7 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError, chatOpen, setChatOpen } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -448,7 +446,10 @@ export function TimelineView() {
   // otherwise mute and narrate the keyframes. Asserting "I am talking" made
   // the agent chase silent tracks.
   const addVoiceTo = (video: string) => {
-    const target = timeline && source === video && name ? name : `${video.replace(VIDEO_EXT, "")}.timeline.json`;
+    const target =
+      timeline && source === video && name
+        ? name
+        : `${video.replace(/^media\//, "").replace(VIDEO_EXT, "")}.timeline.json`;
     const prompt = `Add my cloned voice to ${video}: write ${target} and make the audio for every clip. Set "source_audio" yourself: "transcribe" only if the recording has speech that whisper can transcribe, otherwise "mute" and narrate what happens on screen from the keyframes. Never boost, filter or retry the audio.`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
@@ -546,15 +547,6 @@ export function TimelineView() {
               </Button>
             </>
           )}
-          <button
-            aria-label="Toggle chat"
-            aria-pressed={chatOpen}
-            title={chatOpen ? "Hide chat" : "Show chat"}
-            onClick={() => setChatOpen(!chatOpen)}
-            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-foreground"
-          >
-            {chatOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-          </button>
         </div>
       </div>
 
@@ -762,58 +754,71 @@ export function TimelineView() {
                         : clipSrc(dir, c.src)
                       : null;
                     return (
-                      <button
-                        key={c.id}
-                        title={c.text || c.src || c.id}
-                        aria-pressed={isSel}
-                        onPointerDown={(e) => beginDrag(e, "move", tr, c)}
-                        onPointerMove={(e) => dragTo(e, c)}
-                        onPointerUp={endDrag}
-                        onPointerCancel={endDrag}
-                        style={layout}
-                        className={cn(
-                          "absolute top-1 bottom-1 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none",
-                          editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
-                          clipClass(tr, c),
-                          isSel && "ring-2 ring-white",
+                      <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
+                        <button
+                          title={c.text || c.src || c.id}
+                          aria-pressed={isSel}
+                          onPointerDown={(e) => beginDrag(e, "move", tr, c)}
+                          onPointerMove={(e) => dragTo(e, c)}
+                          onPointerUp={endDrag}
+                          onPointerCancel={endDrag}
+                          className={cn(
+                            "absolute inset-0 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none",
+                            editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+                            clipClass(tr, c),
+                            isSel && "ring-2 ring-white",
+                          )}
+                        >
+                          {mediaSrc &&
+                            (tr.kind === "video" ? (
+                              <Thumbnails
+                                src={mediaSrc}
+                                start={c.offset ?? 0}
+                                length={c.end - c.start}
+                                width={layout.width}
+                                height={CLIP_H}
+                              />
+                            ) : (
+                              <Waveform
+                                src={mediaSrc}
+                                offset={c.offset ?? 0}
+                                length={c.end - c.start}
+                                width={layout.width}
+                                height={CLIP_H}
+                              />
+                            ))}
+                          <span className="relative block truncate bg-black/35 px-1.5 leading-5">
+                            {c.text || c.src?.replace(/^media\//, "") || c.id}
+                          </span>
+                          {editable && (
+                            <>
+                              <span
+                                aria-hidden="true"
+                                className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                                onPointerDown={(e) => beginDrag(e, "start", tr, c)}
+                              />
+                              <span
+                                aria-hidden="true"
+                                className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                                onPointerDown={(e) => beginDrag(e, "end", tr, c)}
+                              />
+                            </>
+                          )}
+                        </button>
+                        {tr.kind === "video" && c.src && (
+                          <button
+                            aria-label={`Add voice to ${c.src}`}
+                            title={
+                              hasVoice ? "Redo the voice for this recording" : "Add my cloned voice to this recording"
+                            }
+                            disabled={running > 0}
+                            onClick={() => addVoiceTo(c.src!)}
+                            className="absolute top-1 right-1 z-10 hidden size-6 items-center justify-center rounded-md bg-primary text-primary-foreground shadow group-hover:flex hover:bg-primary-hover disabled:opacity-50"
+                          >
+                            <Sparkles size={13} />
+                          </button>
                         )}
-                      >
-                        {mediaSrc &&
-                          (tr.kind === "video" ? (
-                            <Thumbnails
-                              src={mediaSrc}
-                              start={c.offset ?? 0}
-                              length={c.end - c.start}
-                              width={layout.width}
-                              height={CLIP_H}
-                            />
-                          ) : (
-                            <Waveform
-                              src={mediaSrc}
-                              offset={c.offset ?? 0}
-                              length={c.end - c.start}
-                              width={layout.width}
-                              height={CLIP_H}
-                            />
-                          ))}
-                        <span className="relative block truncate bg-black/35 px-1.5 leading-5">
-                          {c.text || c.src?.replace(/^media\//, "") || c.id}
-                        </span>
-                        {editable && (
-                          <>
-                            <span
-                              aria-hidden="true"
-                              className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
-                              onPointerDown={(e) => beginDrag(e, "start", tr, c)}
-                            />
-                            <span
-                              aria-hidden="true"
-                              className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/40"
-                              onPointerDown={(e) => beginDrag(e, "end", tr, c)}
-                            />
-                          </>
-                        )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -911,16 +916,6 @@ export function TimelineView() {
                         setDurations((prev) => ({ ...prev, [f.name]: d }));
                       }}
                     />
-                  )}
-                  {video && (
-                    <Button
-                      size="sm"
-                      className="h-7 px-2 text-[0.72rem]"
-                      disabled={running > 0}
-                      onClick={() => addVoiceTo(f.name)}
-                    >
-                      <Sparkles size={12} /> Add voice
-                    </Button>
                   )}
                 </div>
                 {!video && src && selectedFile === f.name && (
