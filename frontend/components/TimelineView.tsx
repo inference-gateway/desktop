@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { FilePlus, Film, FolderOpen, Music, Pause, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ import { AudioPlayer } from "./AudioPlayer";
 import { Button } from "@/components/ui/button";
 
 const SAVE_DEBOUNCE_MS = 600;
+const RELOAD_DEBOUNCE_MS = 200;
 const SYNC_TOLERANCE_S = 0.3;
 
 // Clip audio lives either in ~/.infer/tts (voice) or in the project dir (music).
@@ -145,12 +147,29 @@ export function TimelineView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
-  // Reload when an agent run finishes, unless local edits are pending.
   const running = runningIds.size;
+
+  // Reload whenever the project directory changes on disk (agent writes, new
+  // media, external editors), unless local edits are pending.
+  // ponytail: a half-written JSON can briefly fail to parse; the trailing
+  // debounce makes it rare. Retry once on parse error if it shows up.
   useEffect(() => {
-    if (!dirtyRef.current) load();
+    if (!project) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    api.watchProject(project).catch(() => {});
+    const unlisten = listen<string>("project-changed", (e) => {
+      if (e.payload !== project) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!dirtyRef.current) load();
+      }, RELOAD_DEBOUNCE_MS);
+    });
+    return () => {
+      clearTimeout(timer);
+      unlisten.then((f) => f());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
+  }, [project]);
 
   useEffect(() => {
     if (!dirtyRef.current || !timeline || !project || !name) return;

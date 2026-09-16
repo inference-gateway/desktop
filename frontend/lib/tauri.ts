@@ -315,6 +315,7 @@ export const api = {
   saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
   listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
+  watchProject: (project: string) => invoke<void>("watch_project", { project }),
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
   writeTimeline: (project: string, name: string, data: string) =>
     invoke<void>("write_timeline", { project, name, data }),

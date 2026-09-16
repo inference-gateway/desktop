@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-updater = "2"
+notify = "8.2.0"
 tauri-plugin-notification = "2"
 tauri-plugin-global-shortcut = "2"
 base64 = "0.23"
