@@ -7,7 +7,7 @@ import { api } from "@/lib/tauri";
 // WhatsApp-style voice message bubble: play/pause, a real waveform decoded
 // from the WAV (flat bars until decoding finishes or if it fails), a playhead
 // line over played-vs-unplayed bar coloring, click to seek, elapsed/total
-// time, and a hover download button (copies to ~/Downloads via save_audio).
+// time, and a download button (copies to ~/Downloads via save_audio).
 // Bar heights are set in px: percentage heights collapse to 0 in WKWebView.
 const BARS = 40;
 const BAR_MAX_PX = 26;
@@ -85,7 +85,7 @@ export function AudioPlayer({ src, ariaLabel, path }: { src: string; ariaLabel: 
     saveStatus === "saving" ? Loader2 : saveStatus === "saved" ? Check : saveStatus === "error" ? X : Download;
 
   return (
-    <div className="group flex w-[26rem] max-w-full items-center gap-2 rounded-full border border-border bg-card py-2 pr-4 pl-2">
+    <div className="flex w-[26rem] max-w-full items-center gap-2 rounded-full border border-border bg-card py-2 pr-4 pl-2">
       <audio
         ref={audioRef}
         preload="auto"
@@ -141,10 +141,9 @@ export function AudioPlayer({ src, ariaLabel, path }: { src: string; ariaLabel: 
           onClick={save}
           disabled={saveStatus === "saving"}
           className={cn(
-            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100",
-            saveStatus === "saving" && "opacity-100",
-            saveStatus === "saved" && "text-green-600 opacity-100 dark:text-green-500",
-            saveStatus === "error" && "text-destructive opacity-100",
+            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground",
+            saveStatus === "saved" && "text-green-600 dark:text-green-500",
+            saveStatus === "error" && "text-destructive",
           )}
         >
           <SaveIcon size={13} className={cn(saveStatus === "saving" && "animate-spin")} />

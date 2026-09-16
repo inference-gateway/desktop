@@ -347,7 +347,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   }, [status]);
   const Icon = status === "saving" ? Loader2 : status === "saved" ? Check : status === "error" ? X : Download;
   return (
-    <div className="group relative my-2 inline-block max-w-full">
+    <div className="relative my-2 inline-block max-w-full">
       <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
       {path && (
         <Button
@@ -358,7 +358,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
           disabled={status === "saving"}
           aria-label="Download image"
           className={cn(
-            "absolute right-2 top-2 opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-100",
+            "absolute right-2 top-2 shadow-sm backdrop-blur-sm",
             status === "saved" && "text-green-600 dark:text-green-500",
             status === "error" && "text-destructive",
           )}
