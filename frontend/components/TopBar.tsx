@@ -5,6 +5,8 @@ import {
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCw,
   Settings,
   Square,
@@ -32,7 +34,13 @@ export function TopBar() {
     setError,
     sidebarOpen,
     setSidebarOpen,
+    chatOpen,
+    setChatOpen,
+    currentView,
+    currentProject,
+    projectTypes,
   } = useDesktop();
+  const content = currentView === "chat" && currentProject !== null && projectTypes[currentProject] === "content";
   const [isUpdating, setIsUpdating] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -186,6 +194,19 @@ export function TopBar() {
       >
         <Settings size={16} />
       </Button>
+      {content && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title={chatOpen ? "Hide chat" : "Show chat"}
+          aria-label="Toggle chat"
+          aria-pressed={chatOpen}
+          onClick={() => setChatOpen(!chatOpen)}
+          className="text-muted-foreground"
+        >
+          {chatOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </Button>
+      )}
     </header>
   );
 }

@@ -5,8 +5,6 @@ import {
   Film,
   FolderOpen,
   Music,
-  PanelRightClose,
-  PanelRightOpen,
   Pause,
   Play,
   Plus,
@@ -113,7 +111,7 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError, chatOpen, setChatOpen } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -546,15 +544,6 @@ export function TimelineView() {
               </Button>
             </>
           )}
-          <button
-            aria-label="Toggle chat"
-            aria-pressed={chatOpen}
-            title={chatOpen ? "Hide chat" : "Show chat"}
-            onClick={() => setChatOpen(!chatOpen)}
-            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-foreground"
-          >
-            {chatOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-          </button>
         </div>
       </div>
 
