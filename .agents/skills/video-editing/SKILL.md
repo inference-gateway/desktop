@@ -116,7 +116,10 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
    `-vf "fps=1/5,scale=640:-1"` (one frame every 5 s) instead.
 
 3. **Describe.** Call `ImageDecode` on every frame with the prompt
-   "One sentence: what is the user doing on screen right now?" Keep the answers with their timestamps.
+   "One sentence: what is the user doing on screen right now?" If you can see images, the frame
+   itself comes back attached: describe it yourself in one sentence. Otherwise use the text
+   description the tool returns. Keep the answers with their timestamps. Never open frames in a
+   browser or guess their content.
    With `source_audio: transcribe`, also run the Source audio steps below; the transcript is the
    primary script and the frame descriptions only fill gaps.
 4. **Plan.** Group consecutive frames that describe the same activity into segments. Each segment
