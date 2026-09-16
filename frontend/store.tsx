@@ -45,7 +45,7 @@ const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 
 const CONTENT_GUIDANCE =
-  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline.';
+  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline.';
 
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;

@@ -343,6 +343,7 @@ export const api = {
   saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
     invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
+  listProjectMedia: (project: string) => invoke<ProjectFile[]>("list_project_media", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
   gitProjectStatus: () => invoke<GitProjectStatus>("git_project_status"),

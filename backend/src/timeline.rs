@@ -2,7 +2,7 @@
 // contract between the video-editing skill and the desktop timeline view.
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::download::ProgressEvent;
-use crate::projects::project_dir;
+use crate::projects::{ProjectFile, list_local_files, project_dir};
 use crate::stt::{download_binary, ensure_whisper_model, find_on_path, owned_bin};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -21,6 +21,37 @@ pub(crate) struct Timelines {
 
 fn dir_for(project: &str) -> Result<PathBuf, String> {
     project_dir(project).ok_or_else(|| "project directory not resolved".to_string())
+}
+
+/// The media pool: every recording, music file and generated clip of a
+/// project lives in `<project>/media` so the timeline's `src` paths and the
+/// pool stay one thing. Root-level media files are listed too for projects
+/// that predate the folder.
+const MEDIA_DIR: &str = "media";
+
+fn media_listing(dir: &Path) -> Vec<ProjectFile> {
+    let mut files: Vec<ProjectFile> = list_local_files(&dir.join(MEDIA_DIR))
+        .into_iter()
+        .map(|f| ProjectFile {
+            name: format!("{MEDIA_DIR}/{}", f.name),
+            size: f.size,
+        })
+        .collect();
+    files.extend(list_local_files(dir));
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+#[tauri::command]
+pub(crate) fn list_project_media(project: String) -> Result<Vec<ProjectFile>, String> {
+    Ok(media_listing(&dir_for(&project)?))
+}
+
+fn media_dest(dir: &Path, name: &str) -> Result<PathBuf, String> {
+    let media = dir.join(MEDIA_DIR);
+    let dest = bare_name(&media, name)?;
+    std::fs::create_dir_all(&media).map_err(|e| e.to_string())?;
+    Ok(dest)
 }
 
 /// Confine a file name to the project directory: bare names only.
@@ -167,10 +198,9 @@ pub(crate) async fn add_project_video(
     let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
         return Err(format!("invalid file name: {}", src.display()));
     };
-    let dest = bare_name(&dir, name)?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = media_dest(&dir, name)?;
     std::fs::copy(&src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
-    Ok(Some(name.to_string()))
+    Ok(Some(format!("{MEDIA_DIR}/{name}")))
 }
 
 /// Files dropped from Finder arrive as raw bytes (the webview keeps Tauri's
@@ -191,11 +221,9 @@ pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<St
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected raw file bytes".into());
     };
-    let dir = dir_for(&project)?;
-    let dest = bare_name(&dir, &name)?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = media_dest(&dir_for(&project)?, &name)?;
     std::fs::write(&dest, bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
-    Ok(name)
+    Ok(format!("{MEDIA_DIR}/{name}"))
 }
 
 fn hex_decode(hex: &str) -> Result<String, String> {
@@ -376,6 +404,19 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn media_listing_prefixes_the_media_folder_and_keeps_root_files() {
+        let dir = std::env::temp_dir().join(format!("infer-media-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("media")).unwrap();
+        std::fs::write(dir.join("media/a.mp4"), b"x").unwrap();
+        std::fs::write(dir.join("old.mov"), b"y").unwrap();
+        let names: Vec<String> = media_listing(&dir).into_iter().map(|f| f.name).collect();
+        assert_eq!(names, ["media/a.mp4", "old.mov"]);
+        assert!(media_dest(&dir, "../x.wav").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn hex_decode_round_trips_utf8_names() {

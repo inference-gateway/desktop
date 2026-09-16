@@ -120,7 +120,7 @@ export function TimelineView() {
         setDir(list.dir);
         setNames(list.names);
         api
-          .listProjectFiles(project)
+          .listProjectMedia(project)
           .then((files) => setMedia(files.filter((f) => MEDIA_EXT.test(f.name))))
           .catch(() => setMedia([]));
         const chosen =
@@ -431,7 +431,7 @@ export function TimelineView() {
           ) : (
             <p className="max-w-md p-6 text-center text-[0.8rem] text-muted-foreground">
               {media.length === 0
-                ? "No media yet. Add a recording to start."
+                ? "No media yet. Drop files on the media pool to start."
                 : 'Nothing on the timeline yet. Ask the agent to arrange the media pool, e.g. "put intro.mp4 first, then demo.mov, with music.mp3 underneath".'}
             </p>
           )}
@@ -573,7 +573,9 @@ export function TimelineView() {
           )}
         >
           <div className="flex items-center gap-2">
-            <h3 className="text-[0.8rem] font-semibold">Media pool</h3>
+            <h3 className="text-[0.8rem] font-semibold" title="The project's media folder">
+              Media pool
+            </h3>
             <span className="text-[0.72rem] text-muted-foreground">
               {media.length} file{media.length === 1 ? "" : "s"}
             </span>
@@ -584,7 +586,8 @@ export function TimelineView() {
           {importing && <p className="text-[0.78rem] text-muted-foreground">Importing...</p>}
           {media.length === 0 && !importing && (
             <p className="text-[0.78rem] text-muted-foreground">
-              No media yet. Drop video or audio files here, or add a recording.
+              No media yet. Drop video or audio files here, or add a recording. Files live in the project's media
+              folder.
             </p>
           )}
           {media.map((f) => {

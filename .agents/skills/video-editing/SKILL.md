@@ -42,8 +42,10 @@ If any of these is missing, stop and tell the user exactly which one: tools and 
 installed by switching the project to Content in Settings > Projects; the two agent tools are
 enabled in Settings > General; voice samples are recorded in Settings > Voice samples.
 
-Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) and the clip audio (`clips/`)
-live in the working directory next to the video and the timeline.
+Media lives in `media/` inside the working directory: the recordings and music the user added
+(the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
+`src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
+Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at the root.
 
 ## Timeline contract (`<stem>.timeline.json`)
 
@@ -57,7 +59,7 @@ live in the working directory next to the video and the timeline.
     {
       "id": "video",
       "kind": "video",
-      "clips": [{ "id": "v1", "src": "demo.mov", "start": 0, "end": 42.3 }]
+      "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 42.3 }]
     },
     {
       "id": "voice",
@@ -69,7 +71,7 @@ live in the working directory next to the video and the timeline.
           "start": 0.0,
           "end": 6.2,
           "text": "First we open the settings panel.",
-          "src": "clips/demo-s1.wav",
+          "src": "media/demo-s1.wav",
           "status": "done"
         },
         { "id": "s2", "start": 6.2, "end": 12.0, "text": "", "status": "draft" }
@@ -80,8 +82,8 @@ live in the working directory next to the video and the timeline.
 }
 ```
 
-- Times are seconds. `src` is relative to the working directory; clip audio lives in `clips/` so the
-  project folder is self-contained.
+- Times are seconds. `src` is relative to the working directory; media and clip audio live in
+  `media/` so the project folder is self-contained and the pool shows every clip.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
@@ -126,8 +128,8 @@ live in the working directory next to the video and the timeline.
    `TextToSpeech { text, voice_sample: "voice.wav", output_path: "<stem>-<id>.wav" }`.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
-   `mkdir -p clips && cp "<reported path>" "clips/<stem>-<id>.wav"`, set `src` to
-   `clips/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
+   `mkdir -p media && cp "<reported path>" "media/<stem>-<id>.wav"`, set `src` to
+   `media/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
    show progress.
 6. **Stop here.** Do not mux, render or export anything, and do not run ffmpeg on the output:
    the user reviews the clips on the timeline and presses Export, which renders the video
