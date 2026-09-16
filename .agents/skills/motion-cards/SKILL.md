@@ -17,22 +17,27 @@ folder rules and the ffmpeg probe. This skill only adds the overlay track and th
 
 ## Tools you may use
 
-`Bash` for `node`, `npx hyperframes`, `ffmpeg`, `mkdir`, `ls`, `cp` and `rm` (scratch only) inside
+`Bash` for `node --version`, `npx hyperframes render`, `ffmpeg`, `mkdir`, `ls`, `cp` and `rm` (scratch only) inside
 the working directory; `Read` and `Write` for the card HTML and the timeline JSON. Do not use
 `WebFetch`, `WebSearch`, `find`, `npm install`, `brew`, or any other binary, and do not look for
 tools or skills on disk.
 
 ## Prerequisites
 
-Check them in this order and stop at the first one missing, telling the user exactly what it is:
+Never install, download or set anything up yourself: no `npm install`, no `brew`, no
+`hyperframes browser ensure`, no `hyperframes init`. Check, and stop at the first one missing,
+telling the user exactly what it is:
 
-1. `node --version` prints v22 or newer. If not: "Node.js 22+ is needed to render cards; install it
+1. `~/.infer/skills/hyperframes/SKILL.md` exists (the `hyperframes` skill from the catalog; the user
+   installs it with `infer skills install hyperframes motion-graphics` or in Settings > Skills). Read
+   it once for the composition rules, but this file decides the format and the placement.
+2. `node --version` prints v22 or newer. If not: "Node.js 22+ is needed to render cards; install it
    from nodejs.org or `brew install node`, then ask again."
-2. `npx --yes hyperframes browser ensure` finds or downloads the Chromium HyperFrames renders with.
-   The first run downloads HyperFrames and Chromium, which can take a few minutes; that is expected.
-   If it fails, show the user its last lines.
 3. `ffmpeg -hide_banner -filters | grep -c ' overlay '` prints `1`. If `0`: "the installed ffmpeg has no
    `overlay` filter; install a full build (`brew install ffmpeg`)".
+
+If the render in step 3 below fails because HyperFrames or its browser is missing, stop and tell
+the user to run `npx hyperframes browser ensure` once in a terminal; do not run it for them.
 
 ## Overlay contract (`<stem>.timeline.json`)
 
