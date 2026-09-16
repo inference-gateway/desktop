@@ -68,7 +68,7 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError, composerRef } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -85,6 +85,7 @@ export function TimelineView() {
   const [importing, setImporting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [poolOver, setPoolOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRefs = useRef(new Map<string, HTMLAudioElement>());
   const { setStatus } = useDesktop();
@@ -298,8 +299,6 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  // Clicking a media item drops its file name into the composer so the user
-  // can say "put X first, then Y" without retyping names.
   const laneAccepts = (tr: Track, file: string | null) =>
     !!file && (VIDEO_EXT.test(file) ? tr.kind === "video" : tr.kind === "audio");
 
@@ -312,14 +311,6 @@ export function TimelineView() {
     const r = e.currentTarget.getBoundingClientRect();
     const at = duration > 0 ? ((e.clientX - r.left) / r.width) * duration : 0;
     update(addClip(shown, tr.id, file!, durations[file!] ?? FALLBACK_CLIP_S, at));
-  };
-
-  const mention = (file: string) => {
-    const el = composerRef.current;
-    if (!el) return;
-    const sep = el.value && !/\s$/.test(el.value) ? " " : "";
-    el.value = `${el.value}${sep}${file} `;
-    el.focus();
   };
 
   return (
@@ -594,53 +585,61 @@ export function TimelineView() {
             const video = VIDEO_EXT.test(f.name);
             const src = safeProjectMediaSrc(resolveSrc(dir, f.name));
             return (
-              <div key={f.name} className="flex items-center gap-2 text-[0.8rem]">
-                <button
-                  title="Drag onto a lane, or click to mention it in the chat"
-                  draggable
-                  onDragStart={(e) => {
-                    dragRef.current = f.name;
-                    e.dataTransfer.setData("text/plain", f.name);
-                    e.dataTransfer.effectAllowed = "copy";
-                  }}
-                  onDragEnd={() => {
-                    dragRef.current = null;
-                    setDropLane(null);
-                  }}
-                  onClick={() => mention(f.name)}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-primary/10"
-                >
-                  {video ? (
-                    <Film size={13} className="shrink-0 text-primary" />
-                  ) : (
-                    <Music size={13} className="shrink-0 text-emerald-500" />
-                  )}
-                  <span className="truncate">{f.name}</span>
-                  <span className="ml-auto shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
-                    {durations[f.name] !== undefined && `${fmtTime(durations[f.name])} · `}
-                    {fmtBytes(f.size)}
-                  </span>
-                </button>
-                {src && (
-                  <video
-                    src={src}
-                    preload="metadata"
-                    className="hidden"
-                    onLoadedMetadata={(e) => {
-                      const d = e.currentTarget.duration;
-                      setDurations((prev) => ({ ...prev, [f.name]: d }));
+              <div key={f.name} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-[0.8rem]">
+                  <button
+                    title="Drag onto a lane, or click to select"
+                    draggable
+                    onDragStart={(e) => {
+                      dragRef.current = f.name;
+                      e.dataTransfer.setData("text/plain", f.name);
+                      e.dataTransfer.effectAllowed = "copy";
                     }}
-                  />
-                )}
-                {video && (
-                  <Button
-                    size="sm"
-                    className="h-7 px-2 text-[0.72rem]"
-                    disabled={running > 0}
-                    onClick={() => addVoiceTo(f.name)}
+                    onDragEnd={() => {
+                      dragRef.current = null;
+                      setDropLane(null);
+                    }}
+                    onClick={() => setSelectedFile(f.name)}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-primary/10",
+                      selectedFile === f.name && "bg-primary/15",
+                    )}
                   >
-                    <Sparkles size={12} /> Add voice
-                  </Button>
+                    {video ? (
+                      <Film size={13} className="shrink-0 text-primary" />
+                    ) : (
+                      <Music size={13} className="shrink-0 text-emerald-500" />
+                    )}
+                    <span className="truncate">{f.name}</span>
+                    <span className="ml-auto shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                      {durations[f.name] !== undefined && `${fmtTime(durations[f.name])} · `}
+                      {fmtBytes(f.size)}
+                    </span>
+                  </button>
+                  {src && (
+                    <video
+                      src={src}
+                      preload="metadata"
+                      className="hidden"
+                      onLoadedMetadata={(e) => {
+                        const d = e.currentTarget.duration;
+                        setDurations((prev) => ({ ...prev, [f.name]: d }));
+                      }}
+                    />
+                  )}
+                  {video && (
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-[0.72rem]"
+                      disabled={running > 0}
+                      onClick={() => addVoiceTo(f.name)}
+                    >
+                      <Sparkles size={12} /> Add voice
+                    </Button>
+                  )}
+                </div>
+                {!video && src && selectedFile === f.name && (
+                  <AudioPlayer src={src} ariaLabel={f.name} path={resolveSrc(dir, f.name)} />
                 )}
               </div>
             );
