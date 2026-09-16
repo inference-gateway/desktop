@@ -11,7 +11,8 @@ import {
   draftCount,
   emptyTimeline,
   fmtTime,
-  voiceTrack,
+  isSpoken,
+  spokenCount,
   parseTimeline,
   removeClip,
   resolveSrc,
@@ -37,12 +38,8 @@ function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
-const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", voice: "Voice", audio: "Audio" };
-const TRACK_SWATCH: Record<Track["kind"], string> = {
-  video: "bg-primary",
-  voice: "bg-primary",
-  audio: "bg-emerald-500",
-};
+const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio" };
+const TRACK_SWATCH: Record<Track["kind"], string> = { video: "bg-primary", audio: "bg-emerald-500" };
 const RULER_TICKS = 8;
 // ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
@@ -235,7 +232,7 @@ export function TimelineView() {
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
-  const hasVoice = (timeline && voiceTrack(timeline)?.clips.length) ?? 0;
+  const hasVoice = timeline ? spokenCount(timeline) : 0;
 
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
@@ -528,8 +525,9 @@ export function TimelineView() {
                     className={cn(
                       "absolute top-1.5 bottom-1.5 truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none",
                       tr.kind === "video" && "border-primary/50 bg-primary/25",
-                      tr.kind === "audio" && "border-emerald-600/50 bg-emerald-500/30",
-                      tr.kind === "voice" &&
+                      tr.kind === "audio" && !isSpoken(c) && "border-emerald-600/50 bg-emerald-500/30",
+                      tr.kind === "audio" &&
+                        isSpoken(c) &&
                         (c.status === "draft"
                           ? "border-amber-600/60 bg-amber-500/40"
                           : "border-primary/70 bg-primary/50"),
@@ -676,6 +674,7 @@ function ClipEditor({
   onRedo?: () => void;
 }) {
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
+  const spoken = track.kind === "audio" && isSpoken(clip);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3">
       <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
@@ -684,7 +683,7 @@ function ClipEditor({
           {fmtTime(clip.start)} - {fmtTime(clip.end)}
         </span>
         {clip.status && <span className="rounded border border-border px-1">{clip.status}</span>}
-        {track.kind === "voice" && (
+        {spoken && (
           <Button
             variant="outline"
             size="sm"
@@ -701,13 +700,13 @@ function ClipEditor({
             aria-label={`Delete clip ${clip.id}`}
             title="Delete clip"
             onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
-            className={cn("text-muted-foreground hover:text-destructive", track.kind !== "voice" && "ml-auto")}
+            className={cn("text-muted-foreground hover:text-destructive", !spoken && "ml-auto")}
           >
             <Trash2 size={14} />
           </button>
         )}
       </div>
-      {track.kind === "voice" && (
+      {spoken && (
         <textarea
           id={`clip-text-${clip.id}`}
           aria-label={`Voice text for ${clip.id}`}

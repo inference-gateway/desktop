@@ -61,7 +61,7 @@ live in the working directory next to the video and the timeline.
     },
     {
       "id": "voice",
-      "kind": "voice",
+      "kind": "audio",
       "voice_sample": "voice.wav",
       "clips": [
         {
@@ -86,8 +86,11 @@ live in the working directory next to the video and the timeline.
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
   means "suggest something for this range".
-- `kind: "audio"` tracks (music, SFX) are mixed in by the desktop's export with their `gain`; never
-  invent them.
+- Tracks are `video` or `audio` (the older `voice` kind still loads as `audio`). On an audio track,
+  a clip with `text` is spoken: you synthesize it. A clip with only `src` (music, SFX, a file the
+  user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
+  export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
+  already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
 - `source_audio` says what to do with the recording's own audio track: `transcribe` (reuse the
   user's own speech as the script and as the voice sample, then replace it), `mute` (drop
   it), or `keep` (mix it under the voice). Missing means: `transcribe` when the recording has

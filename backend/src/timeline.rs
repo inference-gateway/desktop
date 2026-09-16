@@ -241,7 +241,7 @@ fn resolve_src(dir: &Path, src: &str) -> PathBuf {
 }
 
 /// Build the ffmpeg invocation that renders a timeline: the video's picture,
-/// every voice and audio clip delayed to its start time and mixed together,
+/// every audio clip (spoken or plain file) delayed to its start time and mixed together,
 /// plus the original sound when `source_audio` is `keep`. Returns the
 /// arguments and the output file name. Pure, so it is testable.
 fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
@@ -416,7 +416,7 @@ mod tests {
         std::fs::write(dir.join("music.mp3"), b"x").unwrap();
         let json = r#"{"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
-            {"kind":"voice","clips":[{"start":1.5,"src":"s1.wav"},{"start":9,"text":"draft"}]},
+            {"kind":"audio","clips":[{"start":1.5,"src":"s1.wav"},{"start":9,"text":"draft"}]},
             {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3"}]}]}"#;
         let (args, output) = export_args(&dir, "demo", json).unwrap();
         assert_eq!(output, "demo.with-voice.mp4");

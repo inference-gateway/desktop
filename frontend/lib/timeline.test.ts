@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  spokenCount,
+  spokenTrack,
   addMarker,
   addTrack,
   clipLayout,
@@ -19,7 +21,7 @@ const SAMPLE = JSON.stringify({
     { id: "video", kind: "video", clips: [{ id: "v1", src: "demo.mov", start: 0, end: 20 }] },
     {
       id: "voice",
-      kind: "voice",
+      kind: "audio",
       clips: [
         { id: "s2", start: "10", end: 20, text: "second", status: "done" },
         { id: "s1", start: 0, end: 10, text: "first", status: "done" },
@@ -61,9 +63,18 @@ describe("edits", () => {
     expect(clips[1]).toMatchObject({ start: 8, end: 10, status: "draft" });
   });
 
-  test("addMarker creates the voice track when missing", () => {
+  test("addMarker creates an audio track when missing", () => {
     const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "hello");
-    expect(t.tracks[0]).toMatchObject({ kind: "voice", clips: [{ start: 3, end: 8, text: "hello" }] });
+    expect(t.tracks[0]).toMatchObject({ kind: "audio", clips: [{ start: 3, end: 8, text: "hello" }] });
+  });
+
+  test("legacy voice tracks load as audio and spoken clips are the ones with text", () => {
+    const t = parseTimeline(
+      '{"duration":10,"tracks":[{"id":"v","kind":"voice","clips":[{"id":"a","start":0,"end":2,"text":"hi"},{"id":"b","start":2,"end":4,"src":"m.mp3"}]}]}',
+    );
+    expect(t.tracks[0].kind).toBe("audio");
+    expect(spokenCount(t)).toBe(1);
+    expect(spokenTrack(t)?.id).toBe("v");
   });
 
   test("removeClip drops the clip", () => {
