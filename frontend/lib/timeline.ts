@@ -2,8 +2,9 @@
 // a duration plus video and audio tracks of clips. An audio clip with
 // `text` is spoken by the agent (cloned voice); one with only `src` is a
 // plain file the user placed. "voice" is accepted as a legacy track kind.
-// An overlay clip is a rendered card (webm with alpha) composited over the
-// video; `x`/`y`/`width`/`height` are fractions of the frame.
+// An overlay clip is a rendered card (a .mov with alpha; the webview drops
+// VP9 alpha in webm) composited over the video; `x`/`y`/`width`/`height`
+// are fractions of the frame.
 export type ClipStatus = "draft" | "done";
 export type TrackKind = "video" | "audio" | "overlay";
 // What to do with the recording's own audio track: transcribe it and replace

@@ -1,6 +1,6 @@
 ---
 name: motion-cards
-description: Add animated cards to a content project's video - title cards, lower thirds, callouts, numbered steps and bar charts written as HTML/CSS, rendered to a transparent WebM with HyperFrames and placed on an overlay track of <stem>.timeline.json so the desktop composites them over the recording. Use when the user asks for a title, intro card, lower third, caption, callout, arrow, label, step counter, chart or any on-screen graphic on a video.
+description: Add animated cards to a content project's video - title cards, lower thirds, callouts, numbered steps and bar charts written as HTML/CSS, rendered to a transparent ProRes 4444 MOV with HyperFrames and placed on an overlay track of <stem>.timeline.json so the desktop composites them over the recording. Use when the user asks for a title, intro card, lower third, caption, callout, arrow, label, step counter, chart or any on-screen graphic on a video.
 license: Apache-2.0
 ---
 
@@ -8,7 +8,7 @@ license: Apache-2.0
 
 Use this skill when the user wants a graphic layered over a video in a content project: a title,
 a lower third, a callout pointing at something on screen, a numbered step or an animated chart.
-Cards are HTML files you write, rendered by HyperFrames into a `.webm` with an alpha channel, and
+Cards are HTML files you write, rendered by HyperFrames into a `.mov` (ProRes 4444, alpha channel), and
 placed as clips on an `overlay` track of `<stem>.timeline.json`. The desktop shows the card over
 the video in its preview and composites it into the export; you never mux.
 
@@ -43,14 +43,14 @@ Check them in this order and stop at the first one missing, telling the user exa
   "clips": [
     {
       "id": "o1",
-      "src": "media/o1-title.webm",
+      "src": "media/o1-title.mov",
       "html": "cards/o1-title.html",
       "start": 0,
       "end": 3
     },
     {
       "id": "o2",
-      "src": "media/o2-lower-third.webm",
+      "src": "media/o2-lower-third.mov",
       "html": "cards/o2-lower-third.html",
       "start": 4.5,
       "end": 9,
@@ -85,10 +85,13 @@ Check them in this order and stop at the first one missing, telling the user exa
    root (the cards animate with CSS, there is no GSAP timeline to wait for) and set
    `data-width`/`data-height` and the body size to the card's pixel size, `data-duration` and the
    clip's `data-duration` to `end - start`.
-3. **Render.** `npx --yes hyperframes render -c cards/<id>-<kind>.html --format webm -o media/<id>-<kind>.webm --quiet`.
-   It writes a VP9 WebM with alpha. Check with `ffmpeg -hide_banner -i media/<id>-<kind>.webm` that the
-   duration matches; render again after fixing the HTML if it does not. Never render to mp4: it has
-   no alpha and would cover the video.
+3. **Render.** `npx --yes hyperframes render -c cards/<id>-<kind>.html --format mov -o media/<id>-<kind>.mov --quiet`.
+   It writes a ProRes 4444 MOV with alpha, the one format both the desktop's preview and its
+   export play transparently (the preview drops the alpha of a WebM, so never use `--format webm`,
+   and never mp4: it has no alpha and would cover the video). Check with
+   `ffmpeg -hide_banner -i media/<id>-<kind>.mov` that the duration matches; render again after fixing
+   the HTML if it does not. ProRes files are large (roughly 10 MB per second of full HD), which is
+   fine for a handful of short cards; keep cards under 10 s.
 4. **Place it.** Read the timeline, add the clip to the overlay track (create the track if missing),
    write the file back. Repeat from step 2 for the next card.
 5. **Stop.** Do not run ffmpeg on the video, do not export: the user previews the cards on the
