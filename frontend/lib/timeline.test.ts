@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { addMarker, clipLayout, draftCount, parseTimeline, removeClip, setClipText, videoSource } from "./timeline";
+import {
+  addMarker,
+  addTrack,
+  clipLayout,
+  emptyTimeline,
+  draftCount,
+  parseTimeline,
+  removeClip,
+  setClipText,
+  videoSource,
+} from "./timeline";
 
 const SAMPLE = JSON.stringify({
   version: 1,
@@ -64,4 +74,9 @@ describe("edits", () => {
 test("clipLayout maps seconds to percentages", () => {
   expect(clipLayout({ id: "x", start: 5, end: 10 }, 20)).toEqual({ left: "25%", width: "25%" });
   expect(clipLayout({ id: "x", start: 0, end: 1 }, 0)).toEqual({ left: "0%", width: "0%" });
+});
+
+test("addTrack layers lanes with unique ids", () => {
+  const t = addTrack(addTrack(emptyTimeline(), "audio"), "video");
+  expect(t.tracks.map((tr) => tr.id)).toEqual(["video", "audio", "audio2", "video2"]);
 });

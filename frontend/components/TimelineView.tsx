@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FilePlus, FolderOpen, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { FilePlus, Film, FolderOpen, Music, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { api, type ProjectFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
   addMarker,
+  addTrack,
   clipLayout,
   draftCount,
+  emptyTimeline,
   fmtTime,
   voiceTrack,
   parseTimeline,
@@ -20,6 +22,7 @@ import {
   type SourceAudio,
   type Timeline,
   type Track,
+  type TrackKind,
 } from "@/lib/timeline";
 import { useDesktop } from "@/store";
 import { AudioPlayer } from "./AudioPlayer";
@@ -41,6 +44,11 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
 };
 const RULER_TICKS = 8;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
+const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
+// Name used when the user starts layering tracks before the agent wrote any timeline.
+const DEFAULT_TIMELINE = "main.timeline.json";
+const fmtBytes = (n: number) =>
+  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
 function sourceAudioInstruction(mode: SourceAudio): string {
   switch (mode) {
@@ -54,11 +62,13 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 }
 
 // Editable view of <stem>.timeline.json for the current content project:
-// video stage, one lane per track with clips positioned by time, and an
-// inspector for the selected voice clip. Edits mark clips draft and are
-// debounced to disk; the agent synthesizes drafts when asked via "Add voice".
+// video stage, one lane per track with clips positioned by time, a media
+// pool of the project's video and audio files, and an inspector for the
+// selected voice clip. With no timeline yet it shows empty video and audio
+// lanes; the user layers tracks or asks the agent to arrange the media.
+// Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError, composerRef } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -67,8 +77,8 @@ export function TimelineView() {
   const [selected, setSelected] = useState<{ track: string; clip: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [time, setTime] = useState(0);
-  const [videos, setVideos] = useState<ProjectFile[]>([]);
-  const [newSourceAudio, setNewSourceAudio] = useState<SourceAudio>("transcribe");
+  const [media, setMedia] = useState<ProjectFile[]>([]);
+  const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRefs = useRef(new Map<string, HTMLAudioElement>());
@@ -106,8 +116,8 @@ export function TimelineView() {
         setNames(list.names);
         api
           .listProjectFiles(project)
-          .then((files) => setVideos(files.filter((f) => VIDEO_EXT.test(f.name))))
-          .catch(() => setVideos([]));
+          .then((files) => setMedia(files.filter((f) => MEDIA_EXT.test(f.name))))
+          .catch(() => setMedia([]));
         const chosen =
           pick && list.names.includes(pick) ? pick : list.names.includes(name) ? name : (list.names[0] ?? "");
         setName(chosen);
@@ -151,6 +161,7 @@ export function TimelineView() {
 
   const update = (next: Timeline) => {
     dirtyRef.current = true;
+    if (!name) setName(DEFAULT_TIMELINE);
     setTimeline(next);
   };
 
@@ -177,6 +188,7 @@ export function TimelineView() {
 
   if (!project) return null;
 
+  const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
   const videoPath = source;
   const videoSrc = videoPath ? safeProjectMediaSrc(resolveSrc(dir, videoPath)) : null;
@@ -187,7 +199,7 @@ export function TimelineView() {
         .flatMap((c) => (c.src ? [{ id: c.id, src: clipSrc(dir, c.src) }] : []))
         .filter((c): c is { id: string; src: string } => !!c.src)
     : [];
-  const duration = timeline?.duration ?? 0;
+  const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
@@ -230,8 +242,18 @@ export function TimelineView() {
 
   const addVoiceTo = (video: string) => {
     const stem = video.replace(VIDEO_EXT, "");
-    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "${newSourceAudio}" and make the audio for every clip. ${sourceAudioInstruction(newSourceAudio)}`;
+    const prompt = `Add my cloned voice to ${video}: write ${stem}.timeline.json with "source_audio": "transcribe" and make the audio for every clip. ${sourceAudioInstruction("transcribe")}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
+  };
+
+  // Clicking a media item drops its file name into the composer so the user
+  // can say "put X first, then Y" without retyping names.
+  const mention = (file: string) => {
+    const el = composerRef.current;
+    if (!el) return;
+    const sep = el.value && !/\s$/.test(el.value) ? " " : "";
+    el.value = `${el.value}${sep}${file} `;
+    el.focus();
   };
 
   return (
@@ -320,46 +342,16 @@ export function TimelineView() {
               onError={() => setLoadError(`Cannot play ${videoPath}`)}
               className="max-h-[50vh] w-full object-contain"
             />
-          ) : timeline ? (
+          ) : timeline && videoPath ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
-              Preview unavailable for {videoPath ?? "this timeline"} (only files under the default projects root can be
-              previewed).
+              Preview unavailable for {videoPath} (only files under the default projects root can be previewed).
             </p>
           ) : (
-            <div className="flex w-full max-w-md flex-col gap-2 p-6 text-[0.85rem]">
-              <div className="flex items-center gap-2">
-                <h2 className="font-semibold text-white">Recordings in this project</h2>
-                <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
-                  <FilePlus size={14} /> Add recording
-                </Button>
-              </div>
-              {videos.length === 0 && (
-                <p className="text-[0.8rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
-              )}
-              <label className="flex items-center gap-2 text-[0.78rem] text-muted-foreground">
-                Original audio
-                <select
-                  aria-label="Original audio"
-                  value={newSourceAudio}
-                  onChange={(e) => setNewSourceAudio(e.target.value as SourceAudio)}
-                  className="h-7 rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-white"
-                >
-                  {SOURCE_AUDIO.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {videos.map((v) => (
-                <div key={v.name} className="flex items-center gap-2 text-white">
-                  <span className="truncate">{v.name}</span>
-                  <Button size="sm" className="ml-auto" disabled={running > 0} onClick={() => addVoiceTo(v.name)}>
-                    <Sparkles size={14} /> Add voice
-                  </Button>
-                </div>
-              ))}
-            </div>
+            <p className="max-w-md p-6 text-center text-[0.8rem] text-muted-foreground">
+              {media.length === 0
+                ? "No media yet. Add a recording to start."
+                : 'Nothing on the timeline yet. Ask the agent to arrange the media pool, e.g. "put intro.mp4 first, then demo.mov, with music.mp3 underneath".'}
+            </p>
           )}
         </div>
         {clipAudio.map((c) => (
@@ -374,81 +366,153 @@ export function TimelineView() {
           />
         ))}
 
-        {timeline && (
-          <div className="flex rounded-lg border border-border bg-secondary/30">
-            <div className="flex w-20 shrink-0 flex-col border-r border-border">
-              <div className="h-6" />
-              {timeline.tracks.map((tr) => (
-                <div key={tr.id} className="flex h-12 items-center gap-1.5 px-2 text-[0.72rem] font-medium">
-                  <span className={cn("size-2 rounded-sm", TRACK_SWATCH[tr.kind])} />
-                  {TRACK_LABEL[tr.kind]}
-                </div>
-              ))}
-            </div>
-            <div className="relative min-w-0 flex-1">
-              <div
-                role="slider"
-                aria-label="Playhead"
-                aria-valuemin={0}
-                aria-valuemax={duration}
-                aria-valuenow={time}
-                className="relative h-6 cursor-pointer border-b border-border font-mono text-[0.62rem] text-muted-foreground"
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  seek(((e.clientX - r.left) / r.width) * duration);
-                }}
-              >
-                {Array.from({ length: RULER_TICKS + 1 }, (_, i) => i / RULER_TICKS).map((f) => (
-                  <span
-                    key={f}
-                    className={cn(
-                      "absolute bottom-0 border-l border-border pl-1",
-                      i4(f) ? "h-4" : "h-2",
-                      f === 1 && "-translate-x-full border-l-0 pl-0 pr-1",
-                    )}
-                    style={{ left: `${f * 100}%` }}
-                  >
-                    {i4(f) && fmtTime(f * duration)}
-                  </span>
-                ))}
+        <div className="flex rounded-lg border border-border bg-secondary/30">
+          <div className="flex w-20 shrink-0 flex-col border-r border-border">
+            <div className="h-6" />
+            {shown.tracks.map((tr) => (
+              <div key={tr.id} className="flex h-12 items-center gap-1.5 px-2 text-[0.72rem] font-medium">
+                <span className={cn("size-2 rounded-sm", TRACK_SWATCH[tr.kind])} />
+                {TRACK_LABEL[tr.kind]}
               </div>
-              {timeline.tracks.map((tr) => (
-                <div key={tr.id} className="relative h-12 border-b border-border/50 last:border-b-0">
-                  {tr.clips.map((c) => (
-                    <button
-                      key={c.id}
-                      title={c.text || c.src || c.id}
-                      aria-pressed={selected?.track === tr.id && selected.clip === c.id}
-                      onClick={() => {
-                        setSelected({ track: tr.id, clip: c.id });
-                        seek(c.start);
-                      }}
-                      style={clipLayout(c, duration)}
-                      className={cn(
-                        "absolute top-1.5 bottom-1.5 truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none",
-                        tr.kind === "video" && "border-primary/50 bg-primary/25",
-                        tr.kind === "audio" && "border-emerald-600/50 bg-emerald-500/30",
-                        tr.kind === "voice" &&
-                          (c.status === "draft"
-                            ? "border-amber-600/60 bg-amber-500/40"
-                            : "border-primary/70 bg-primary/50"),
-                        selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
-                      )}
-                    >
-                      {c.text || c.id}
-                    </button>
-                  ))}
-                </div>
+            ))}
+            <div className="flex h-8 items-center gap-1 px-1.5">
+              {(["video", "audio"] as TrackKind[]).map((k) => (
+                <button
+                  key={k}
+                  aria-label={`Add ${k} track`}
+                  title={`Add ${k} track`}
+                  onClick={() => update(addTrack(shown, k))}
+                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-muted-foreground hover:bg-primary/10 hover:text-foreground"
+                >
+                  <Plus size={10} /> {k === "video" ? <Film size={11} /> : <Music size={11} />}
+                </button>
               ))}
-              {duration > 0 && (
-                <div
-                  className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-red-500"
-                  style={{ left: `${(time / duration) * 100}%` }}
-                />
-              )}
             </div>
           </div>
-        )}
+          <div className="relative min-w-0 flex-1">
+            <div
+              role="slider"
+              aria-label="Playhead"
+              aria-valuemin={0}
+              aria-valuemax={duration}
+              aria-valuenow={time}
+              className="relative h-6 cursor-pointer border-b border-border font-mono text-[0.62rem] text-muted-foreground"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                seek(((e.clientX - r.left) / r.width) * duration);
+              }}
+            >
+              {Array.from({ length: RULER_TICKS + 1 }, (_, i) => i / RULER_TICKS).map((f) => (
+                <span
+                  key={f}
+                  className={cn(
+                    "absolute bottom-0 border-l border-border pl-1",
+                    i4(f) ? "h-4" : "h-2",
+                    f === 1 && "-translate-x-full border-l-0 pl-0 pr-1",
+                  )}
+                  style={{ left: `${f * 100}%` }}
+                >
+                  {i4(f) && fmtTime(f * duration)}
+                </span>
+              ))}
+            </div>
+            {shown.tracks.map((tr) => (
+              <div key={tr.id} className="relative h-12 border-b border-border/50 last:border-b-0">
+                {tr.clips.map((c) => (
+                  <button
+                    key={c.id}
+                    title={c.text || c.src || c.id}
+                    aria-pressed={selected?.track === tr.id && selected.clip === c.id}
+                    onClick={() => {
+                      setSelected({ track: tr.id, clip: c.id });
+                      seek(c.start);
+                    }}
+                    style={clipLayout(c, duration)}
+                    className={cn(
+                      "absolute top-1.5 bottom-1.5 truncate rounded border px-1.5 text-left text-[0.7rem] leading-8 outline-none",
+                      tr.kind === "video" && "border-primary/50 bg-primary/25",
+                      tr.kind === "audio" && "border-emerald-600/50 bg-emerald-500/30",
+                      tr.kind === "voice" &&
+                        (c.status === "draft"
+                          ? "border-amber-600/60 bg-amber-500/40"
+                          : "border-primary/70 bg-primary/50"),
+                      selected?.track === tr.id && selected.clip === c.id && "ring-2 ring-ring",
+                    )}
+                  >
+                    {c.text || c.id}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {duration > 0 && (
+              <div
+                className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-red-500"
+                style={{ left: `${(time / duration) * 100}%` }}
+              />
+            )}
+            <div className="h-8" />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 rounded-lg border border-border bg-secondary/30 p-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[0.8rem] font-semibold">Media pool</h3>
+            <span className="text-[0.72rem] text-muted-foreground">
+              {media.length} file{media.length === 1 ? "" : "s"}
+            </span>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
+              <FilePlus size={14} /> Add recording
+            </Button>
+          </div>
+          {media.length === 0 && (
+            <p className="text-[0.78rem] text-muted-foreground">No recordings yet. Add a .mov or .mp4 file.</p>
+          )}
+          {media.map((f) => {
+            const video = VIDEO_EXT.test(f.name);
+            const src = safeProjectMediaSrc(resolveSrc(dir, f.name));
+            return (
+              <div key={f.name} className="flex items-center gap-2 text-[0.8rem]">
+                <button
+                  title="Mention this file in the chat"
+                  onClick={() => mention(f.name)}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-primary/10"
+                >
+                  {video ? (
+                    <Film size={13} className="shrink-0 text-primary" />
+                  ) : (
+                    <Music size={13} className="shrink-0 text-emerald-500" />
+                  )}
+                  <span className="truncate">{f.name}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                    {durations[f.name] !== undefined && `${fmtTime(durations[f.name])} · `}
+                    {fmtBytes(f.size)}
+                  </span>
+                </button>
+                {src && (
+                  <video
+                    src={src}
+                    preload="metadata"
+                    className="hidden"
+                    onLoadedMetadata={(e) => {
+                      const d = e.currentTarget.duration;
+                      setDurations((prev) => ({ ...prev, [f.name]: d }));
+                    }}
+                  />
+                )}
+                {video && (
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-[0.72rem]"
+                    disabled={running > 0}
+                    onClick={() => addVoiceTo(f.name)}
+                  >
+                    <Sparkles size={12} /> Add voice
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         {timeline && track && clip && (
           <ClipEditor

@@ -137,6 +137,26 @@ export function addMarker(t: Timeline, at: number, text = ""): Timeline {
   return { ...t, tracks };
 }
 
+// What a content project shows before the agent writes any timeline: one
+// video lane and one audio lane, both empty. More lanes come from addTrack.
+export function emptyTimeline(): Timeline {
+  return {
+    version: 1,
+    duration: 0,
+    tracks: [
+      { id: "video", kind: "video", clips: [] },
+      { id: "audio", kind: "audio", clips: [] },
+    ],
+  };
+}
+
+export function addTrack(t: Timeline, kind: TrackKind): Timeline {
+  const used = new Set(t.tracks.map((tr) => tr.id));
+  let n = 1;
+  while (used.has(n === 1 ? kind : `${kind}${n}`)) n++;
+  return { ...t, tracks: [...t.tracks, { id: n === 1 ? kind : `${kind}${n}`, kind, clips: [] }] };
+}
+
 export function draftCount(t: Timeline): number {
   return t.tracks.flatMap((tr) => tr.clips).filter((c) => c.status === "draft").length;
 }
