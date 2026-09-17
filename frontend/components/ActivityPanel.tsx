@@ -21,7 +21,7 @@ export function ActivityPanel() {
   const running = activities.filter((a) => a.status === "running").length;
   const failed = activities.filter((a) => a.status === "failed").length;
   return (
-    <div className="mx-5 mb-1 shrink-0 overflow-hidden rounded-md border border-border text-[0.85rem]">
+    <div className="mx-5 mt-2 shrink-0 overflow-hidden rounded-md border border-border text-[0.85rem]">
       <div className="flex items-center gap-2 px-3 py-[0.35rem]">
         <button
           onClick={() => setOpen(!open)}

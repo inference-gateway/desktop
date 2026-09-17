@@ -53,9 +53,9 @@ export function Main() {
         </div>
       ) : (
         <div id="content" className="flex min-w-0 flex-1 flex-col">
+          <ActivityPanel />
           <Transcript />
           <TodoPanel />
-          <ActivityPanel />
           <Composer />
         </div>
       )}
@@ -79,9 +79,9 @@ function ChatDock() {
         }}
         title="Drag to resize chat (double-click resets)"
       />
+      <ActivityPanel />
       <Transcript />
       <TodoPanel />
-      <ActivityPanel />
       <Composer />
     </div>
   );

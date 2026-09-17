@@ -199,7 +199,11 @@ function useDesktopStore() {
   const logActivity = useCallback(
     (project: string | null, action: string, status: ActivityStatus, message?: string) => {
       const id = ++activityId.current;
-      setActivities((prev) => [...prev.slice(-(MAX_ACTIVITIES - 1)), { id, project, action, status, message }]);
+      setActivities((prev) => {
+        const i = prev.findIndex((a) => a.project === project && a.action === action && a.status === "running");
+        if (i >= 0) return prev.map((a, j) => (j === i ? { ...a, status, message } : a));
+        return [...prev.slice(-(MAX_ACTIVITIES - 1)), { id, project, action, status, message }];
+      });
     },
     [],
   );
