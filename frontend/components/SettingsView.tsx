@@ -2911,7 +2911,7 @@ function VoiceSamplesTab() {
       <div className="mb-4 rounded-lg border border-border bg-card p-3 text-[0.8rem]">
         <p>
           A good reference, recorded or uploaded: a quiet room, a consistent distance from the mic, natural delivery,
-          and nothing but the sample text. Aim for 10-13 seconds per sample; {RECOMMENDED_SAMPLES} different ones clone
+          and nothing but the sample text. Aim for 10-13 seconds per sample. {RECOMMENDED_SAMPLES} different ones clone
           best.
         </p>
         <p className="mt-2 text-muted-foreground">
