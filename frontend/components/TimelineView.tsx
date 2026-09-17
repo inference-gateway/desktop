@@ -378,9 +378,12 @@ export function TimelineView() {
 
   // Clips on audio and overlay lanes move and trim by pointer; video clips
   // only select (the export always plays the recording whole). Edges snap to
-  // other clips and the playhead within SNAP_PX.
+  // other clips and the playhead within SNAP_PX. Both drag entry points
+  // cancel the pointerdown default, else the webview starts its native text
+  // selection once the drag wanders off the timeline over selectable chrome.
   const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: "move" | "start" | "end", tr: Track, c: Clip) => {
     if (e.button !== 0) return;
+    e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
     if (tr.kind === "video") return;
@@ -761,6 +764,7 @@ export function TimelineView() {
                 className="relative h-7 cursor-ew-resize touch-none border-b border-zinc-800 bg-[#1b1b1e] font-mono text-[0.6rem] text-zinc-400 select-none"
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
+                  e.preventDefault();
                   scrubRef.current = true;
                   e.currentTarget.setPointerCapture(e.pointerId);
                   seek(timeAt(e.clientX));
