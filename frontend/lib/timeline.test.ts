@@ -5,6 +5,8 @@ import {
   rulerStep,
   snapPoints,
   snapTime,
+  splitClip,
+  serializeTimeline,
   trimClip,
   spokenCount,
   spokenTrack,
@@ -186,6 +188,47 @@ test("trimClip moves the head with its offset, stops at neighbours and the sourc
   expect(trimClip(t, "audio", "a2", "end", 0).tracks[1].clips[1].end).toBe(6.25);
   const longer = trimClip(t, "audio", "a2", "end", 20);
   expect(longer.duration).toBe(20);
+});
+
+test("splitClip cuts a clip into two adjacent halves, advancing the second's offset", () => {
+  const t = parseTimeline(SAMPLE);
+  const s = splitClip(t, "video", "v1", 8)!;
+  expect(s.tracks[0].clips.map((c) => [c.id, c.start, c.end, c.offset])).toEqual([
+    ["v1", 0, 8, undefined],
+    ["v2", 8, 20, 8],
+  ]);
+  expect(s.duration).toBe(20);
+  expect(splitClip(t, "video", "v1", 8)!.tracks[0].clips[0].id).toBe("v1");
+  const trimmed = splitClip(s, "video", "v2", 12)!;
+  expect(trimmed.tracks[0].clips.map((c) => [c.id, c.start, c.end, c.offset])).toEqual([
+    ["v1", 0, 8, undefined],
+    ["v2", 8, 12, 8],
+    ["v3", 12, 20, 12],
+  ]);
+  expect(splitClip(trimmed, "video", "v3", 13)!.tracks[0].clips[3].offset).toBe(13);
+  expect(splitClip(t, "video", "v1", 0.1)).toBeNull();
+  expect(splitClip(t, "video", "v1", 19.9)).toBeNull();
+  expect(splitClip(t, "video", "zz", 5)).toBeNull();
+});
+
+test("splitClip keeps a split spoken clip editable and marks the second half draft", () => {
+  const t = parseTimeline(SAMPLE);
+  const s = splitClip(t, "voice", "s1", 5)!;
+  expect(s.tracks[1].clips.map((c) => [c.id, c.start, c.end, c.status])).toEqual([
+    ["s1", 0, 5, "done"],
+    ["s3", 5, 10, "draft"],
+    ["s2", 10, 20, "done"],
+  ]);
+  expect(s.tracks[1].clips[0].text).toBe("first");
+});
+
+test("splitClip and trimClip round-trip offset through parse/serialize", () => {
+  const t = parseTimeline(SAMPLE);
+  const s = splitClip(t, "video", "v1", 6)!;
+  const head = trimClip(s, "video", "v1", "start", 2);
+  const round = parseTimeline(serializeTimeline(head));
+  expect(round.tracks[0].clips[0]).toMatchObject({ id: "v1", start: 2, end: 6, offset: 2 });
+  expect(round.tracks[0].clips[1]).toMatchObject({ id: "v2", start: 6, end: 20, offset: 6 });
 });
 
 test("snapTime picks the nearest point within tolerance", () => {

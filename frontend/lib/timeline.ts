@@ -303,6 +303,30 @@ export function trimClip(
   };
 }
 
+// Cut a clip at `at` into two adjacent halves: the first keeps its id and
+// in-point, the second starts at `at` with `offset` advanced so the source
+// continues seamlessly. A spoken second half goes back to draft. Returns
+// null when `at` would leave either half below MIN_CLIP_S.
+export function splitClip(t: Timeline, trackId: string, clipId: string, at: number): Timeline | null {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  const clip = track?.clips.find((c) => c.id === clipId);
+  if (!track || !clip || at < clip.start + MIN_CLIP_S || at > clip.end - MIN_CLIP_S) return null;
+  const first: Clip = { ...clip, end: at };
+  const second: Clip = {
+    ...clip,
+    id: nextId(track, clip.id[0]),
+    start: at,
+    status: clip.text === undefined ? clip.status : "draft",
+  };
+  if (clip.src) second.offset = (clip.offset ?? 0) + (at - clip.start);
+  const clips = [...track.clips.filter((c) => c.id !== clipId), first, second].sort((a, b) => a.start - b.start);
+  return {
+    ...t,
+    duration: Math.max(t.duration, second.end),
+    tracks: t.tracks.map((tr) => (tr.id !== trackId ? tr : { ...tr, clips })),
+  };
+}
+
 // Edges a dragged clip snaps to: the origin, the playhead and every other
 // clip's start and end on any track.
 export function snapPoints(t: Timeline, excludeClipId: string, playhead: number): number[] {
