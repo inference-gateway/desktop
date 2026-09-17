@@ -1,6 +1,7 @@
 import { Sidebar } from "./Sidebar";
 import { Transcript } from "./Transcript";
 import { TodoPanel } from "./TodoPanel";
+import { ActivityPanel } from "./ActivityPanel";
 import { Composer } from "./Composer";
 import { ResizeHandle } from "./ResizeHandle";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -52,6 +53,7 @@ export function Main() {
         </div>
       ) : (
         <div id="content" className="flex min-w-0 flex-1 flex-col">
+          <ActivityPanel />
           <Transcript />
           <TodoPanel />
           <Composer />
@@ -77,6 +79,7 @@ function ChatDock() {
         }}
         title="Drag to resize chat (double-click resets)"
       />
+      <ActivityPanel />
       <Transcript />
       <TodoPanel />
       <Composer />

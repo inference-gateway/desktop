@@ -537,6 +537,9 @@ export function ChatList() {
     projectBranches,
     projectDefaultBranches,
     refreshGitProjects,
+    refreshProjects,
+    cleanupProject,
+    syncDefaultBranch,
     projectGroups,
     projectTypes,
     setError,
@@ -703,18 +706,8 @@ export function ChatList() {
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
                 onOpenInVsCode={() => api.openInVsCode(name).catch((e) => setError(String(e)))}
-                onSyncDefaultBranch={() =>
-                  api
-                    .syncDefaultBranch(name)
-                    .then(refreshGitProjects)
-                    .catch((e) => setError(String(e)))
-                }
-                onCleanup={() =>
-                  api
-                    .cleanupProject(name)
-                    .then(refreshGitProjects)
-                    .catch((e) => setError(String(e)))
-                }
+                onSyncDefaultBranch={() => syncDefaultBranch(name).then(refreshGitProjects)}
+                onCleanup={() => cleanupProject(name).then(refreshGitProjects)}
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);
@@ -818,7 +811,7 @@ export function ChatList() {
           <button
             aria-label="Refresh projects"
             title="Refresh git status for all projects"
-            onClick={refreshGitProjects}
+            onClick={refreshProjects}
             className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
           >
             <RefreshCw size={14} />
