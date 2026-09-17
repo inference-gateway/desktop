@@ -7,6 +7,8 @@ export { Channel, convertFileSrc };
 
 export type ToolCallInfo = { id: string; name: string; args: string };
 
+export type Shortcut = { name: string; description: string };
+
 export type UserQuestion = {
   header: string;
   question: string;
@@ -357,6 +359,7 @@ export const api = {
   uninstallSkill: (name: string) => invoke<void>("uninstall_skill", { name }),
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
   listTools: () => invoke<string[]>("list_tools"),
+  listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
   a2aStatus: () => invoke<A2aStatus>("a2a_status"),
   startServices: () => invoke<void>("start_services"),

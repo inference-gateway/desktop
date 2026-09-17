@@ -191,6 +191,7 @@ pub fn run() {
             skills::uninstall_skill,
             skills::list_installed_skills,
             tools::list_tools,
+            tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,
             tools::start_services,

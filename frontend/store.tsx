@@ -8,6 +8,7 @@ import {
   type DesktopConfig,
   type McpStatus,
   type ProgressEvent,
+  type Shortcut,
   type UpdateInfo,
   type UserQuestionAnswer,
 } from "@/lib/tauri";
@@ -138,6 +139,7 @@ function useDesktopStore() {
   const queuedRef = useRef<PromptQueue>({});
   const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tools, setTools] = useState<string[]>([]);
+  const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [a2aStatus, setA2aStatus] = useState<A2aStatus | null>(null);
   const refreshStatus = useCallback(() => {
@@ -499,6 +501,10 @@ function useDesktopStore() {
               api
                 .listTools()
                 .then(setTools)
+                .catch(() => {});
+              api
+                .listShortcuts()
+                .then(setShortcuts)
                 .catch(() => {});
               refreshStatus();
               startServices();
@@ -1694,6 +1700,7 @@ function useDesktopStore() {
     startServices,
     tokenUsage: active.usage,
     tools,
+    shortcuts,
     mcpStatus,
     a2aStatus,
     showStatusBar,

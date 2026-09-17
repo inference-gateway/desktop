@@ -51,6 +51,37 @@ pub(crate) fn enabled_tools_in(dump: &str) -> Vec<String> {
         .collect()
 }
 
+/// Slash commands the composer offers, in display order. Everything else the
+/// CLI registers only opens a chat-TUI panel and has nothing to do here.
+/// ponytail: add a name here to surface a new CLI shortcut in the composer.
+const COMPOSER_SHORTCUTS: &[&str] = &["init", "install-opentask"];
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Shortcut {
+    pub(crate) name: String,
+    pub(crate) description: String,
+}
+
+/// The allowlisted shortcuts present in an `infer shortcuts list --format json`
+/// dump, ordered as `COMPOSER_SHORTCUTS`. Anything unparseable yields nothing,
+/// so an older CLI without the command just leaves the dropdown to skills.
+pub(crate) fn composer_shortcuts_in(dump: &str) -> Vec<Shortcut> {
+    let listed: Vec<Shortcut> = serde_json::from_str::<Value>(dump)
+        .ok()
+        .and_then(|v| serde_json::from_value(v.get("shortcuts")?.clone()).ok())
+        .unwrap_or_default();
+    COMPOSER_SHORTCUTS
+        .iter()
+        .filter_map(|name| listed.iter().find(|s| s.name == *name).cloned())
+        .collect()
+}
+
+#[tauri::command]
+pub(crate) async fn list_shortcuts() -> Result<Vec<Shortcut>, String> {
+    let dump = run_infer_in(None, &["shortcuts", "list", "--format", "json"]).await?;
+    Ok(composer_shortcuts_in(&dump))
+}
+
 #[tauri::command]
 pub(crate) async fn list_tools() -> Result<Vec<String>, String> {
     let dump = run_infer_in(None, &["config", "get", "tools", "--format", "json"]).await?;
@@ -122,6 +153,21 @@ pub(crate) fn stop_services() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn composer_shortcuts_keep_allowlist_order_and_drop_the_rest() {
+        let dump = r#"{"shortcuts":[
+            {"name":"exit","description":"Exit","usage":"/exit"},
+            {"name":"install-opentask","description":"Set up opentask","usage":"/install-opentask"},
+            {"name":"init","description":"Create AGENTS.md","usage":"/init"}
+        ],"total":3}"#;
+        let found = composer_shortcuts_in(dump);
+        let names: Vec<&str> = found.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["init", "install-opentask"]);
+        assert_eq!(found[0].description, "Create AGENTS.md");
+        assert!(composer_shortcuts_in("not json").is_empty());
+        assert!(composer_shortcuts_in(r#"{"total":0}"#).is_empty());
+    }
 
     #[test]
     fn status_reports_keep_the_counts_and_drop_the_rows() {
