@@ -109,7 +109,7 @@ export function TodoPanel() {
       </div>
       {open && (
         <div className="border-t border-border">
-          <ul>
+          <ul className="max-h-[40vh] overflow-y-auto">
             {shown.map((t, i) => {
               const StatusIcon = STATUS_ICON[t.status];
               return (
