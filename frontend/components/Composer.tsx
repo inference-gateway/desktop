@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+const BUILTIN_COMMANDS: SkillMetadata[] = [{ name: "init", description: "Create or update AGENTS.md", version: "" }];
+
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
 const ALLOWED = ["image/png", "image/jpeg", "image/heic", "image/heif", "image/svg+xml", "application/pdf"];
 
@@ -166,7 +168,7 @@ export function Composer() {
     el.value = text.slice(0, i) + "/" + skill.name + " ";
     autoGrow(el);
     setShowSkills(false);
-    if (!installedSkills.has(skill.name)) {
+    if (!installedSkills.has(skill.name) && !BUILTIN_COMMANDS.some((c) => c.name === skill.name)) {
       setInstallError("");
       setPendingDownload(skill);
     }
@@ -185,7 +187,7 @@ export function Composer() {
     .sort()
     .map((name) => ({ name, description: "", version: "" }));
   const filteredSkills = showSkills
-    ? [...skills, ...localOnlySkills].filter(
+    ? [...BUILTIN_COMMANDS, ...skills, ...localOnlySkills].filter(
         (s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery),
       )
     : [];

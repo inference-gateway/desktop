@@ -28,7 +28,7 @@ Frontend source lives in `frontend/`; state is a single context store (`frontend
 
 - The model picker stays a native `<select id="model-select">` (not a custom dropdown).
 - The composer stays a single native, **uncontrolled** `<textarea id="prompt-input">`.
-- Keep exact button names: visible text `+ New chat`, `Approve`, `Deny`; `aria-label` on icon buttons (`Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
+- Keep exact button names: visible text `Approve`, `Deny`; `aria-label` on icon buttons (`New chat`, `Broadcast to projects`, `Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
 - Keep the DOM shallow: `App` renders `<header id="top-bar">` + `<div id="main">` directly into `#app` (no wrapper).
 
 ## Verifying the UI

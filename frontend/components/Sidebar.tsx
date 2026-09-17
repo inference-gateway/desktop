@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
@@ -26,19 +26,19 @@ export function Sidebar() {
       )}
     >
       <div className="flex gap-2">
-        <Button onClick={newChat} title="New chat (⌘N / Ctrl+N)" className="flex-1 text-[0.85rem]">
-          + New chat
+        <Button size="icon" variant="outline" aria-label="New chat" title="New chat (⌘N / Ctrl+N)" onClick={newChat}>
+          <MessageSquarePlus />
         </Button>
         <Button
           size="icon"
-          aria-label="Init all projects"
+          aria-label="Broadcast to projects"
           aria-pressed={initSelecting}
-          title={initSelecting ? "Cancel project selection" : "Init all projects"}
+          title={initSelecting ? "Cancel project selection" : "Broadcast to projects"}
           disabled={projectNames.length === 0 || initAllRunning}
           onClick={() => (initSelecting ? cancelInitSelection() : startInitSelection())}
           className={cn(initSelecting && "ring-2 ring-primary")}
         >
-          <Sparkles />
+          <Radio />
         </Button>
       </div>
       <ChatList />

@@ -10,7 +10,7 @@ steps:
   - click: { button: "New project" }
   - type: "e2e-bcast-b"
   - wait_for: { text: "e2e-bcast-b", timeout: 15 }
-  - click: { button: "Init all projects" }
+  - click: { button: "Broadcast to projects" }
   - wait_for: { button: "Deselect all projects", timeout: 10 }
   - click: { button: "Deselect all projects" }
   - wait_for: { button: "Select all projects", timeout: 10 }
