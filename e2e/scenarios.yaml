@@ -35,6 +35,15 @@ scenarios:
       - tool_calls:
           - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
 
+  # TodoWrite batched with a gated Write must not prompt (cli#1232).
+  - name: todo-batched-with-write
+    match: '(?i)plan and create a file named todo-batch\.txt'
+    turns:
+      - tool_calls:
+          - { name: TodoWrite, args: { todos: [{ content: "Write todo-batch.txt", status: "in_progress" }] } }
+          - { name: Write, args: { file_path: "todo-batch.txt", content: "batched with a todo" } }
+      - content: "Todo and file done."
+
   - name: title-card
     match: '(?i)add a title card'
     turns:
