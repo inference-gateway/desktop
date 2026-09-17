@@ -1,0 +1,10 @@
+name: approval flow - TodoWrite batched with Write prompts only for Write
+cleanup:
+  - todo-batch.txt
+steps:
+  - new_chat
+  - send: "plan and create a file named todo-batch.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "a"
+  - wait_for: { file: "todo-batch.txt", timeout: 15 }
+  - wait_for: { text: "Todo and file done.", timeout: 15 }
