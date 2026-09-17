@@ -1,92 +1,57 @@
 # AGENTS.md - Contributor Guide
 
-## Project Structure
+## Project
 
-The repository is a scaffold for agent-driven development on `inference-gateway/desktop`. It pairs a **React + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) with a **Tauri v2 / Rust** backend. Cargo commands run from `backend/` (or the workspace root with `-p inference-gateway-desktop`); the Taskfile wraps them at the repo root and builds the frontend first where needed.
+Tauri v2 desktop client for Inference Gateway: a **React 19 + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) over a **Rust** backend. The cargo workspace holds `backend` (crate `inference-gateway-desktop`) and `e2e`; run cargo from `backend/` or from the root with `-p inference-gateway-desktop`. The Taskfile wraps the common flows.
 
 ## Before You Start
-
-Activate the pre-commit hook before making any changes:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-The hook checks that every tracked text file ends with a final newline (`.editorconfig`), then runs `cargo fmt --check`, `cargo clippy`, `cargo check`, and `cargo test` on every commit. It is **inert until you run the above command** - the committed file is a script, not an active hook.
+Activate the pre-commit hook before making changes - it is inert until you do. The hook prettier-formats staged `.ts/.tsx`, enforces a final newline on tracked text files, runs the frontend build (`bun run build`), then `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo check`, `cargo test` in `backend/`. The toolchain (rust, `cargo-tauri`, `task`, `bun`, `infer`) comes from the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
 
-## Build / Test / Dev Commands
+## Commands
 
-The dev environment - Rust toolchain, `cargo`, `cargo-tauri`, `task`, `bun`, `infer` - is provided by the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
+| Command | What it does |
+| --- | --- |
+| `task dev` | Run the app (`cargo tauri dev`). No frontend hot-reload - re-run `task web` after frontend edits |
+| `task web` | Build the frontend into `dist/` (`tsc && vite build`) |
+| `task build` / `test` / `clippy` / `check` | The cargo step in `backend/`, building `dist/` first |
+| `task e2e -- tests/<name>.yaml` | Run the macOS e2e suite, optionally filtered to one test |
+| `bun test` | Frontend unit tests (`frontend/lib/*.test.ts`) |
+| `cargo tauri build` | Release bundle; needs `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING) |
 
-The Rust build embeds the frontend from `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate first builds `dist/`**. Frontend unit tests run with `bun test`.
-
-## Frontend (React + TypeScript)
-
-Frontend source lives in `frontend/`; state is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine are in `frontend/lib/`.
-
-**The e2e harness drives the real UI through the macOS accessibility tree, so the DOM contract is load-bearing** - preserve these when editing components:
-
-- The model picker stays a native `<select id="model-select">` (not a custom dropdown).
-- The composer stays a single native, **uncontrolled** `<textarea id="prompt-input">`.
-- Keep exact button names: visible text `Approve`, `Deny`; `aria-label` on icon buttons (`New chat`, `Broadcast to projects`, `Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
-- Keep the DOM shallow: `App` renders `<header id="top-bar">` + `<div id="main">` directly into `#app` (no wrapper).
+The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate builds `dist/` first**.
 
 ## Verifying the UI
 
-**`task e2e` runs YAML-defined tests** in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - launch, type, click, approve, assert on disk - with zero tokens. Use `DESKTOP_MOCK=true` for manual mock-mode sessions. See `e2e/` source and `e2e/scenarios.yaml` for test definitions and canned LLM turns.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Canned LLM turns live in `e2e/scenarios.yaml`; manual mock mode is `DESKTOP_MOCK=true task dev`. CI (ubuntu) runs `bun run build` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
 
-On CI (ubuntu), the app is built with `bun run build` and Rust checks run (fmt, clippy, test) - no macOS e2e tests. macOS-only e2e uses AX element actions (no WebDriver), so `tauri-driver` is not required.
+## DOM contract (load-bearing)
+
+The e2e harness drives the real UI through the accessibility tree. When editing `frontend/components/`, preserve:
+
+- Native `<select id="model-select">` (not a custom dropdown).
+- A single native, **uncontrolled** `<textarea id="prompt-input">`.
+- Exact button names: visible text `Approve`, `Deny`; `aria-label` on icon buttons (`New chat`, `Broadcast to projects`, `Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
+- Shallow DOM: `App` renders `<header id="top-bar">` + `<div id="main">` into `#app`, no wrapper.
+
+State is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine live in `frontend/lib/`.
 
 ## Coding Style
 
-- **Language**: Rust. Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and standard `rustfmt` style.
-- **Simplicity**: Prefer the standard library over external dependencies. Favor boring, explicit code over clever abstractions.
-- **Dependencies**: Look up the latest stable version (`cargo search` / `cargo info`) and use it - never pin an older version.
-- **`ponytail:` comments**: Mark deliberate shortcuts with a `ponytail:` comment naming the ceiling and upgrade path (e.g. `ponytail: O(n^2) - fine for <100 items`).
-- **No inline comments in function bodies**: Code should be self-documenting. Use inline `//` comments only at the module level or as `ponytail:` debt markers.
-- **User-facing text uses regular dashes**: Use `-` (regular dash) instead of em dashes in README, CONTRIBUTING, and other user-facing docs. Em dashes are reserved for internal/agent-facing files.
+- Rust: follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and rustfmt. Prefer std over new dependencies; when adding one, use the latest stable version.
+- Boring, explicit code over clever abstractions. No inline comments in function bodies - module-level or `ponytail:` debt markers only; the marker names the ceiling and upgrade path (e.g. `ponytail: O(n^2) - fine for <100 items`).
+- User-facing docs (README, CONTRIBUTING) use `-`, not em dashes.
 
-## Commit Conventions
+## Commits & PRs
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <description>
-```
-
-**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
-
-Examples:
-- `feat(api): add rate-limit header`
-- `fix(web): handle empty state in user list`
-- `docs: update README with setup instructions`
-- `chore(deps): bump lodash to 4.17.21`
-
-Keep commits atomic - one logical change per commit.
-
-## Pull Request Conventions
-
-- Open PRs as **drafts** early, even with partial work.
-- PR title follows the same Conventional Commit format.
-- PR body must include `## Summary` and `## Changes` sections.
-- A human reviews and merges - do not self-merge.
-- Keep the PR focused on a single concern.
+Conventional Commits: `<type>(<scope>): <description>`; types `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`. Keep commits atomic. Open PRs as **drafts** early, titled in the same format, body containing `## Summary` and `## Changes`. A human reviews and merges - never self-merge. One concern per PR.
 
 ## Agent Workflows
 
-This repository uses `inference-gateway/infer-action` for AI-assisted development. The CI workflow (`tasks.yml`) triggers on `workflow_dispatch`, `issues`, `issue_comment`, and `pull_request_review_comment`. Trigger phrase: `@opentask`.
+AI tasks run via `inference-gateway/infer-action` in `tasks.yml` (triggers: `workflow_dispatch`, `issues`, `issue_comment`, `pull_request_review_comment`; phrase: `@opentask`), defaulting to the **documentation-agent** A2A agent, with plugins `DietrichGebert/ponytail` and `ayghri/i-have-adhd`.
 
-### Project Board Management
-
-When working on a GitHub issue that belongs to a project board, keep its status in sync. Detect board membership from `gh issue view <number> --json projectItems` (not by scanning the board).
-
-1. **Start of work**: Move the issue from **Todo** to **In Progress**.
-2. **Completion**: Move to **QA** (never **Done** - that is a human step after QA).
-3. Use `gh project item-add` (idempotent) and `gh project item-edit` to update the Status field.
-
-### Available Agents
-- **documentation-agent**: Documentation generation and updates.
-
-### Plugins
-- **ponytail** (`DietrichGebert/ponytail`): Lazy senior dev mode - forces the simplest, most minimal solution.
-- **i-have-adhd** (`ayghri/i-have-adhd`): ADHD-friendly workflow support.
+When a GitHub issue belongs to a project board, keep its Status in sync - best-effort, never abort the task over a board error. Detect membership with `gh issue view <number> --json projectItems` (never by scanning the board), edit with `gh project item-add` (idempotent) and `gh project item-edit`. **Todo -> In Progress** when starting, **QA** after the PR opens, never **Done** - that happens at merge.
