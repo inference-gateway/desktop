@@ -115,6 +115,7 @@ function useDesktopStore() {
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const activityId = useRef(0);
+  const [seenActivityId, setSeenActivityId] = useState(0);
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
@@ -201,13 +202,14 @@ function useDesktopStore() {
       const id = ++activityId.current;
       setActivities((prev) => {
         const i = prev.findIndex((a) => a.project === project && a.action === action && a.status === "running");
-        if (i >= 0) return prev.map((a, j) => (j === i ? { ...a, status, message } : a));
+        if (i >= 0) return prev.map((a, j) => (j === i ? { ...a, id, status, message } : a));
         return [...prev.slice(-(MAX_ACTIVITIES - 1)), { id, project, action, status, message }];
       });
     },
     [],
   );
   const clearActivities = useCallback(() => setActivities([]), []);
+  const markActivitiesSeen = useCallback(() => setSeenActivityId(activityId.current), []);
   const runGitAction = useCallback(
     (name: string, action: string, run: () => Promise<string>) => {
       logActivity(name, action, "running");
@@ -1726,6 +1728,8 @@ function useDesktopStore() {
     refreshProjects,
     activities,
     clearActivities,
+    seenActivityId,
+    markActivitiesSeen,
     deleteProject,
     deleteProjects,
     renameProject,
