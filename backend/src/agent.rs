@@ -472,6 +472,12 @@ impl EventSink {
     }
 }
 
+/// A `!cmd` prompt runs straight through the CLI's direct-exec path and never
+/// touches agents, so it need not wait for shared services to start.
+fn is_bash_command(prompt: &str) -> bool {
+    prompt.starts_with('!') && !prompt.starts_with("!!")
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_message(
@@ -486,7 +492,9 @@ pub(crate) async fn send_message(
     auto_mode: bool,
     project: Option<String>,
 ) -> Result<Option<String>, String> {
-    crate::tools::await_services().await;
+    if !is_bash_command(&prompt) {
+        crate::tools::await_services().await;
+    }
     let bin_path = infer_bin_path();
 
     let mut cmd = Command::new(&bin_path);
@@ -1248,6 +1256,13 @@ pub(crate) async fn set_a2a_agent_model(name: String, model: String) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_single_bang_prompts_are_bash_commands() {
+        assert!(is_bash_command("!ls -la"));
+        assert!(!is_bash_command("!!Read(file_path=\"x\")"));
+        assert!(!is_bash_command("list files"));
+    }
 
     #[test]
     fn approval_mode_only_requires_approval_when_auto_mode_is_off() {

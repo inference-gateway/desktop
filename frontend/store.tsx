@@ -152,8 +152,13 @@ function useDesktopStore() {
       .then(setA2aStatus)
       .catch(() => {});
   }, []);
+  const [servicesStarting, setServicesStarting] = useState(false);
   const startServices = useCallback(() => {
-    api.startServices().finally(refreshStatus);
+    setServicesStarting(true);
+    api
+      .startServices()
+      .finally(() => setServicesStarting(false))
+      .finally(refreshStatus);
   }, [refreshStatus]);
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
@@ -1603,13 +1608,13 @@ function useDesktopStore() {
         if (tool?.kind === "tool") return { label: `Running ${tool.name}...`, error: false };
         const tasks = (chat?.backgroundJobs ?? []).filter((j) => j.status === "running").length;
         return {
-          label: tasks > 0 ? `Waiting on tasks (${tasks})...` : "Running...",
+          label: tasks > 0 ? `Waiting on tasks (${tasks})...` : servicesStarting ? "Starting agents..." : "Running...",
           error: false,
         };
       }
       return lastRun[id] ?? null;
     },
-    [transcripts, runningIds, lastRun],
+    [transcripts, runningIds, lastRun, servicesStarting],
   );
 
   useEffect(() => {
