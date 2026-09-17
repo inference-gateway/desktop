@@ -181,6 +181,7 @@ pub fn run() {
             projects::clone_github_repo,
             projects::git_project_status,
             projects::sync_default_branch,
+            projects::cleanup_project,
             projects::project_dir_exists,
             projects::open_in_vs_code,
             projects::refresh_project_context,

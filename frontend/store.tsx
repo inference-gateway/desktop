@@ -1424,6 +1424,25 @@ function useDesktopStore() {
     [runOnProjects, initProject],
   );
 
+  const cleanupProjects = useCallback(
+    async (names: string[]) => {
+      const failed: string[] = [];
+      await runOnProjects(
+        names.filter((n) => gitProjects.has(n)),
+        (name) =>
+          api.cleanupProject(name).then(
+            () => {},
+            (e) => {
+              failed.push(`${name} (${e})`);
+            },
+          ),
+      );
+      await refreshGitProjects();
+      if (failed.length) setError(`Cleanup failed: ${failed.join(", ")}`);
+    },
+    [runOnProjects, gitProjects, refreshGitProjects, setError],
+  );
+
   const setProjectPath = useCallback((name: string, path: string) => {
     setProjectPaths((prev) => {
       if (!path.trim()) {
@@ -1647,6 +1666,7 @@ function useDesktopStore() {
     toggleCollapseProject,
     initProject,
     initAllProjects,
+    cleanupProjects,
     broadcastPrompt,
     initAllRunning,
     initSelecting,
