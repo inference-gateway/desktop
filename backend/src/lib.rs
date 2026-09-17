@@ -64,6 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(timeline::ProjectWatcher(std::sync::Mutex::new(None)))
+        .manage(projects::GitWatcher(std::sync::Mutex::new(None)))
         .manage(AppState {
             processes: Arc::clone(&processes),
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),

@@ -1,7 +1,9 @@
 use crate::config::{DesktopConfig, read_config};
 use base64::Engine as _;
+use notify::{RecursiveMode, Watcher};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use tauri::Emitter;
 
 /// Subfolder of the platform Documents directory holding per-project dirs.
 const APP_PROJECTS_DIR: &str = "Inference Gateway Desktop";
@@ -521,16 +523,57 @@ fn has_uncommitted_changes(dir: &Path) -> bool {
     dirty
 }
 
+/// One live watcher over every git project's git dir, rebuilt on each status
+/// sweep so it always tracks the current project set.
+pub(crate) struct GitWatcher(pub(crate) std::sync::Mutex<Option<notify::RecommendedWatcher>>);
+
+/// Whether a filesystem event is about a `HEAD` file. Only `HEAD` is watched
+/// because `git status` (run by the sweep) may rewrite `index`, and reacting
+/// to that would loop sweep -> index write -> event -> sweep.
+fn touches_head(event: &notify::Event) -> bool {
+    event
+        .paths
+        .iter()
+        .any(|p| p.file_name().is_some_and(|f| f == "HEAD"))
+}
+
+/// Watch each git dir non-recursively and call `on_head_change` whenever a
+/// `HEAD` file in one of them changes. Dirs that cannot be watched are skipped.
+/// ponytail: the worktree itself is not watched, so the dirty indicator only
+/// refreshes on HEAD changes (checkout, commit, reset) - a recursive watch of
+/// every project tree is the upgrade path if live dirty state is ever wanted.
+fn watch_git_dirs(
+    dirs: &[PathBuf],
+    on_head_change: impl Fn() + Send + 'static,
+) -> notify::Result<notify::RecommendedWatcher> {
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if event.as_ref().is_ok_and(touches_head) {
+            on_head_change();
+        }
+    })?;
+    for dir in dirs {
+        let _ = watcher.watch(dir, RecursiveMode::NonRecursive);
+    }
+    Ok(watcher)
+}
+
+/// ponytail: every HEAD change re-sweeps all projects; emit the project name
+/// and add a single-project command if this is ever slow with many repos.
 #[tauri::command]
-pub(crate) async fn git_project_status() -> Result<GitProjectStatus, String> {
-    tokio::task::spawn_blocking(move || {
+pub(crate) async fn git_project_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GitWatcher>,
+) -> Result<GitProjectStatus, String> {
+    let (status, git_dirs) = tokio::task::spawn_blocking(move || {
         let names = project_names();
         let root = PathBuf::from(read_config().projects_root);
         let mut status = GitProjectStatus::default();
+        let mut git_dirs = Vec::new();
         for (name, dir) in resolved_dirs(&root, &names, &project_groups(), &project_paths()) {
-            if !dir.join(".git").exists() {
+            let Some(git_dir) = git_dir(&dir) else {
                 continue;
-            }
+            };
+            git_dirs.push(git_dir);
             status.git.push(name.clone());
             if has_uncommitted_changes(&dir) {
                 status.dirty.push(name.clone());
@@ -542,10 +585,16 @@ pub(crate) async fn git_project_status() -> Result<GitProjectStatus, String> {
                     .insert(name, read_default_branch(&dir));
             }
         }
-        status
+        (status, git_dirs)
     })
     .await
-    .map_err(|e| format!("git status task failed: {e}"))
+    .map_err(|e| format!("git status task failed: {e}"))?;
+    let watcher = watch_git_dirs(&git_dirs, move || {
+        let _ = app.emit("git-changed", ());
+    })
+    .map_err(|e| format!("watching git dirs: {e}"))?;
+    *state.0.lock().map_err(|e| e.to_string())? = Some(watcher);
+    Ok(status)
 }
 
 /// Run `git -C <dir> <args>`, returning stdout on success and stderr (or the
@@ -1023,6 +1072,46 @@ mod tests {
         assert_eq!(sanitize_name(""), "project");
         assert_eq!(sanitize_name("///"), "project");
         assert_eq!(sanitize_name("École"), "École");
+    }
+
+    #[test]
+    fn touches_head_only_for_head_files() {
+        let ev = |p: &str| notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(p));
+        assert!(touches_head(&ev("/r/.git/HEAD")));
+        assert!(!touches_head(&ev("/r/.git/index")));
+        assert!(!touches_head(&ev("/r/.git/HEAD.lock")));
+        assert!(!touches_head(&notify::Event::new(notify::EventKind::Any)));
+    }
+
+    #[test]
+    fn watcher_fires_on_checkout() {
+        let repo = std::env::temp_dir().join(format!("igd-watch-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
+                    .args(args)
+                    .status()
+                    .expect("git is available in the test environment")
+                    .success()
+            );
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _watcher = watch_git_dirs(&[repo.join(".git")], move || {
+            let _ = tx.send(());
+        })
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        git(&["checkout", "-q", "-b", "feat"]);
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+        assert_eq!(read_head_branch(&repo).as_deref(), Some("feat"));
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
