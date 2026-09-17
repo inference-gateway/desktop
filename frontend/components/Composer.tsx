@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-const BUILTIN_COMMANDS: SkillMetadata[] = [{ name: "init", description: "Create or update AGENTS.md", version: "" }];
+type SlashItem = { name: string; description: string; kind: "command" | "skill" };
 
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
 const ALLOWED = ["image/png", "image/jpeg", "image/heic", "image/heif", "image/svg+xml", "application/pdf"];
@@ -48,6 +48,7 @@ export function Composer() {
     initSelection,
     cancelInitSelection,
     tools,
+    shortcuts,
   } = useDesktop();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
@@ -63,7 +64,7 @@ export function Composer() {
   const [showSkills, setShowSkills] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [activeSkillIdx, setActiveSkillIdx] = useState(0);
-  const [pendingDownload, setPendingDownload] = useState<SkillMetadata | null>(null);
+  const [pendingDownload, setPendingDownload] = useState<SlashItem | null>(null);
   const skillsRef = useRef<HTMLDivElement>(null);
   const [toolQuery, setToolQuery] = useState("");
   const [showTools, setShowTools] = useState(false);
@@ -158,19 +159,19 @@ export function Composer() {
     }
   };
 
-  const selectSkill = (skill: SkillMetadata) => {
+  const selectSkill = (item: SlashItem) => {
     const el = composerRef.current;
     if (!el) return;
     const pos = el.selectionStart;
     const text = el.value;
     let i = pos - 1;
     while (i >= 0 && text[i] !== "/") i--;
-    el.value = text.slice(0, i) + "/" + skill.name + " ";
+    el.value = text.slice(0, i) + "/" + item.name + " ";
     autoGrow(el);
     setShowSkills(false);
-    if (!installedSkills.has(skill.name) && !BUILTIN_COMMANDS.some((c) => c.name === skill.name)) {
+    if (item.kind === "skill" && !installedSkills.has(item.name)) {
       setInstallError("");
-      setPendingDownload(skill);
+      setPendingDownload(item);
     }
   };
 
@@ -182,12 +183,20 @@ export function Composer() {
     setShowTools(false);
   };
 
-  const localOnlySkills: SkillMetadata[] = Array.from(installedSkills)
+  const localOnlySkills = Array.from(installedSkills)
     .filter((name) => !skills.some((s) => s.name === name))
     .sort()
-    .map((name) => ({ name, description: "", version: "" }));
+    .map((name) => ({ name, description: "" }));
+  const slashItems: SlashItem[] = [
+    ...shortcuts.map((c) => ({ ...c, kind: "command" as const })),
+    ...[...skills, ...localOnlySkills].map((s) => ({
+      name: s.name,
+      description: s.description,
+      kind: "skill" as const,
+    })),
+  ];
   const filteredSkills = showSkills
-    ? [...BUILTIN_COMMANDS, ...skills, ...localOnlySkills].filter(
+    ? slashItems.filter(
         (s) => s.name.toLowerCase().includes(skillQuery) || s.description.toLowerCase().includes(skillQuery),
       )
     : [];
@@ -407,7 +416,8 @@ export function Composer() {
             className="mx-2 mb-2 max-h-[40vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
           >
             {filteredSkills.map((s, i) => {
-              const isConfigured = installedSkills.has(s.name);
+              const isConfigured = s.kind === "command" || installedSkills.has(s.name);
+              const label = s.kind === "command" ? "command" : isConfigured ? "skill" : "remote skill";
               return (
                 <button
                   key={s.name}
@@ -424,12 +434,11 @@ export function Composer() {
                         : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
-                  {!isConfigured && (
-                    <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
-                      remote
-                    </span>
-                  )}
+                  <span className="shrink-0 font-medium">{s.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.description}</span>
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+                    {label}
+                  </span>
                 </button>
               );
             })}

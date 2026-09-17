@@ -1793,7 +1793,7 @@ mod tests {
             r#"{{"conversations":[{{"id":"a","project":"{}"}},{{"id":"b","project":"/nowhere/else"}},{{"id":"c"}},{{"id":"d","project":""}}],"total":4}}"#,
             tmp.display()
         );
-        let out = owned_conversations(&json, &[tmp.clone()]);
+        let out = owned_conversations(&json, std::slice::from_ref(&tmp));
         let ids: Vec<String> =
             serde_json::from_str::<serde_json::Value>(&out).unwrap()["conversations"]
                 .as_array()
