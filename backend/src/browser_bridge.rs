@@ -37,6 +37,7 @@ const POLL: Duration = Duration::from_millis(50);
 const PING_EVERY: Duration = Duration::from_secs(20);
 const RELAY_DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 const CONVERSATION_LIMIT: usize = 50;
+const TOOL_APPROVAL_TIMEOUT: Duration = Duration::from_secs(300);
 const ALLOWED_ORIGINS: [&str; 3] = [
     "chrome-extension://",
     "moz-extension://",
@@ -222,6 +223,45 @@ fn new_session_id() -> String {
     )
 }
 
+/// Arguments for `infer tools execute` answering an extension `tool_request`.
+fn tool_exec_args(name: &str, args: &str, session: Option<&str>, approved: bool) -> Vec<String> {
+    let mut out: Vec<String> = ["tools", "execute", name, args, "--format", "json"]
+        .map(String::from)
+        .into();
+    if let Some(id) = session {
+        out.extend(["--session-id".into(), id.into()]);
+    }
+    if approved {
+        out.push("--approved".into());
+    }
+    out
+}
+
+/// What `infer tools execute --format json` reported.
+#[derive(Debug, PartialEq)]
+enum ToolOutcome {
+    NeedsApproval,
+    Done {
+        success: bool,
+        output: String,
+        error: String,
+    },
+}
+
+fn parse_tool_outcome(stdout: &str) -> Result<ToolOutcome, String> {
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("unexpected infer tools output: {e}"))?;
+    if v["approval_required"].as_bool() == Some(true) {
+        return Ok(ToolOutcome::NeedsApproval);
+    }
+    let text = |key: &str| v[key].as_str().unwrap_or("").to_owned();
+    Ok(ToolOutcome::Done {
+        success: v["success"].as_bool() == Some(true),
+        output: text("output"),
+        error: text("error"),
+    })
+}
+
 struct PeerHandle {
     tx: mpsc::Sender<String>,
     sock: TcpStream,
@@ -255,6 +295,7 @@ struct Host {
     settings: Settings,
     links: Mutex<Links>,
     panel: Mutex<Panel>,
+    pending_tools: Mutex<HashMap<String, mpsc::Sender<bool>>>,
     stop: AtomicBool,
     app: Option<tauri::AppHandle>,
     processes: Option<Arc<crate::process_manager::ProcessManager>>,
@@ -500,6 +541,72 @@ impl Host {
         );
     }
 
+    /// Answer an extension-initiated tool call the way the CLI bridge does:
+    /// the approval policy first (the panel is the prompt, auto mode skips
+    /// it), then the run as user-approved, recorded in the panel's session.
+    // ponytail: the recorded call reaches the desktop transcript on its next
+    // reload, not live.
+    fn run_tool_request(&self, id: &str, name: &str, args: &str) {
+        let (session, cwd, auto) = {
+            let panel = lock(&self.panel);
+            let session = panel.current.clone();
+            let cwd = session
+                .as_ref()
+                .and_then(|s| panel.projects.get(s).cloned());
+            (session, cwd, panel.auto)
+        };
+        let run = |approved: bool| {
+            let argv = tool_exec_args(name, args, session.as_deref(), approved);
+            crate::agent::run_infer_blocking(cwd.clone(), &argv)
+                .and_then(|out| parse_tool_outcome(&out))
+        };
+        let outcome = match run(auto) {
+            Ok(ToolOutcome::NeedsApproval) if self.await_tool_approval(name, args) => run(true),
+            Ok(ToolOutcome::NeedsApproval) => Err("tool call denied".into()),
+            other => other,
+        };
+        let (success, output, error) = match outcome {
+            Ok(ToolOutcome::Done {
+                success,
+                output,
+                error,
+            }) => (success, output, error),
+            Ok(ToolOutcome::NeedsApproval) => (false, String::new(), "tool call denied".into()),
+            Err(e) => (false, String::new(), e),
+        };
+        self.send_json(serde_json::json!({
+            "type": "tool_result", "id": id, "success": success, "output": output, "error": error,
+        }));
+    }
+
+    /// Ask the panel to approve a tool call and wait for its answer. Anything
+    /// but an explicit approve within the timeout is a denial.
+    fn await_tool_approval(&self, name: &str, args: &str) -> bool {
+        let request_id = new_session_id();
+        let (tx, rx) = mpsc::channel();
+        lock(&self.pending_tools).insert(request_id.clone(), tx);
+        self.send_json(serde_json::json!({
+            "type": "approval_request", "request_id": request_id,
+            "tool_name": name, "tool_args": args,
+        }));
+        let approved = rx.recv_timeout(TOOL_APPROVAL_TIMEOUT).unwrap_or(false);
+        lock(&self.pending_tools).remove(&request_id);
+        approved
+    }
+
+    /// Resolve an approval_response that belongs to a pending tool_request.
+    /// Returns false when the id is not ours.
+    fn answer_tool_approval(&self, request_id: &str, approved: bool) -> bool {
+        let Some(tx) = lock(&self.pending_tools).remove(request_id) else {
+            return false;
+        };
+        let _ = tx.send(approved);
+        self.send_json(
+            serde_json::json!({ "type": "approval_resolved", "request_id": request_id }),
+        );
+        true
+    }
+
     /// Answer a side-panel frame. Anything that shells out runs on its own
     /// thread so the extension pump keeps relaying browser frames meanwhile.
     fn handle_panel_frame(self: &Arc<Self>, frame: &str) {
@@ -586,13 +693,14 @@ impl Host {
                 self.send_mode();
             }
             "approval_response" => {
-                self.send_approval(&text("request_id"), text("action") == "approve");
+                let (id, approved) = (text("request_id"), text("action") == "approve");
+                if !self.answer_tool_approval(&id, approved) {
+                    self.send_approval(&id, approved);
+                }
             }
             "tool_request" => {
-                self.send_json(serde_json::json!({
-                    "type": "tool_result", "id": text("id"), "success": false, "output": "",
-                    "error": "tool_request is not supported by the desktop bridge",
-                }));
+                let (id, name, args) = (text("id"), text("tool_name"), text("tool_args"));
+                std::thread::spawn(move || host.run_tool_request(&id, &name, &args));
             }
             _ => {}
         }
@@ -722,6 +830,7 @@ impl Bridge {
             settings,
             links: Mutex::default(),
             panel: Mutex::default(),
+            pending_tools: Mutex::default(),
             stop: AtomicBool::new(false),
             app,
             processes,
@@ -885,6 +994,43 @@ pub(crate) fn set_browser_use_enabled(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_exec_args_pass_session_and_approval() {
+        assert_eq!(
+            tool_exec_args("Bash", "{}", None, false),
+            ["tools", "execute", "Bash", "{}", "--format", "json"]
+        );
+        assert_eq!(
+            tool_exec_args("Bash", "{}", Some("s1"), true)[6..],
+            ["--session-id", "s1", "--approved"]
+        );
+    }
+
+    #[test]
+    fn parse_tool_outcome_reads_every_result_shape() {
+        assert_eq!(
+            parse_tool_outcome("{\"approval_required\":true,\"success\":false,\"output\":\"\"}\n"),
+            Ok(ToolOutcome::NeedsApproval)
+        );
+        assert_eq!(
+            parse_tool_outcome(r#"{"success":true,"output":"HTTP/2.0 200 OK"}"#),
+            Ok(ToolOutcome::Done {
+                success: true,
+                output: "HTTP/2.0 200 OK".into(),
+                error: String::new()
+            })
+        );
+        assert_eq!(
+            parse_tool_outcome(r#"{"success":false,"output":"x","error":"exit status 1: x"}"#),
+            Ok(ToolOutcome::Done {
+                success: false,
+                output: "x".into(),
+                error: "exit status 1: x".into()
+            })
+        );
+        assert!(parse_tool_outcome("not json").is_err());
+    }
 
     #[test]
     fn save_panel_attachment_skips_unsupported_or_malformed_entries() {
