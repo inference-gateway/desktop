@@ -744,6 +744,17 @@ function useDesktopStore() {
   ]);
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unlisten = listen("git-changed", () => {
+      clearTimeout(timer);
+      timer = setTimeout(refreshGitProjects, 300);
+    });
+    return () => {
+      clearTimeout(timer);
+      unlisten.then((f) => f());
+    };
+  }, [refreshGitProjects]);
   const refreshProjects = useCallback(() => {
     logActivity(null, "Refresh projects", "running");
     return fetchGitProjects().then(
