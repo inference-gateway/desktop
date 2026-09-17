@@ -2,7 +2,7 @@
 // project - branch cleanup, checkout + pull, /init, refresh - with the
 // backend's summary or the error. In-memory, capped, collapsed by default so
 // it stays out of the way until something runs or fails.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop, type ActivityStatus } from "@/store";
@@ -15,11 +15,15 @@ const DOT: Record<ActivityStatus, string> = {
 };
 
 export function ActivityPanel() {
-  const { activities, clearActivities } = useDesktop();
+  const { activities, clearActivities, seenActivityId, markActivitiesSeen } = useDesktop();
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open) markActivitiesSeen();
+  }, [open, activities, markActivitiesSeen]);
   if (activities.length === 0) return null;
   const running = activities.filter((a) => a.status === "running").length;
   const failed = activities.filter((a) => a.status === "failed").length;
+  const unread = open ? 0 : activities.filter((a) => a.id > seenActivityId).length;
   return (
     <div className="mx-5 mt-2 shrink-0 overflow-hidden rounded-md border border-border text-[0.85rem]">
       <div className="flex items-center gap-2 px-3 py-[0.35rem]">
@@ -32,6 +36,15 @@ export function ActivityPanel() {
           <ChevronDown size={14} className={cn("transition-transform", !open && "-rotate-90")} />
           Activity
         </button>
+        {unread > 0 && (
+          <span
+            title={`${unread} new`}
+            aria-label={`${unread} new activities`}
+            className="min-w-[1.1rem] rounded-full bg-primary px-1 text-center text-[0.65rem] font-semibold text-primary-foreground"
+          >
+            {unread}
+          </span>
+        )}
         {running > 0 && (
           <span
             title={`${running} running`}
@@ -47,7 +60,7 @@ export function ActivityPanel() {
             aria-label={`${failed} actions failed`}
             className="min-w-[1.1rem] rounded-full bg-destructive/15 px-1 text-center text-[0.65rem] font-semibold text-destructive"
           >
-            !
+            {failed}
           </span>
         )}
         {open && (
