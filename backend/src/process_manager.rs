@@ -190,10 +190,9 @@ impl ProcessManager {
             force_stop_child("agent", &mut child)?;
             return Err("application is shutting down".into());
         }
-        if state.agents.contains_key(&session_id) {
-            drop(state);
-            force_stop_child("duplicate agent", &mut child)?;
-            return Err(format!("agent session {session_id} is already running"));
+        if let Some(mut orphan) = state.agents.remove(&session_id) {
+            state.agent_stdins.remove(&session_id);
+            force_stop_child("orphaned agent", &mut orphan)?;
         }
 
         state
@@ -217,14 +216,26 @@ impl ProcessManager {
         stdin.flush().map_err(|e| e.to_string())
     }
 
-    pub(crate) fn remove_agent(&self, session_id: &str) -> Result<Option<Child>, String> {
+    pub(crate) fn remove_agent(&self, session_id: &str, pid: u32) -> Result<Option<Child>, String> {
         let mut state = self.lock_state()?;
+        if state
+            .agents
+            .get(session_id)
+            .is_none_or(|child| child.id() != pid)
+        {
+            return Ok(None);
+        }
         state.agent_stdins.remove(session_id);
         Ok(state.agents.remove(session_id))
     }
 
     pub(crate) fn cancel_agent(&self, session_id: &str) -> Result<(), String> {
-        if let Some(mut child) = self.remove_agent(session_id)? {
+        let child = {
+            let mut state = self.lock_state()?;
+            state.agent_stdins.remove(session_id);
+            state.agents.remove(session_id)
+        };
+        if let Some(mut child) = child {
             force_stop_child("agent", &mut child)?;
         }
         Ok(())
@@ -1046,6 +1057,49 @@ mod tests {
                 .expect("process lookup should succeed")
                 .is_none()
         );
+    }
+
+    #[cfg(unix)]
+    fn spawn_agent_child() -> (Child, ChildStdin) {
+        let mut child = Command::new("sh")
+            .args(["-c", "while :; do sleep 0.01; done"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("test child should spawn");
+        let stdin = child
+            .stdin
+            .take()
+            .expect("test child stdin should be piped");
+        (child, stdin)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inserting_a_running_session_replaces_the_orphan() {
+        let manager = test_manager("replace-orphan");
+        let (first, first_stdin) = spawn_agent_child();
+        let (second, second_stdin) = spawn_agent_child();
+        let (first_pid, second_pid) = (first.id(), second.id());
+
+        manager
+            .insert_agent("session".into(), first, first_stdin)
+            .expect("first insert should succeed");
+        manager
+            .insert_agent("session".into(), second, second_stdin)
+            .expect("second insert should replace the orphan");
+
+        assert!(!process_exists(first_pid).expect("process lookup should succeed"));
+        assert!(
+            manager
+                .remove_agent("session", first_pid)
+                .expect("stale removal should succeed")
+                .is_none()
+        );
+        let mut replacement = manager
+            .remove_agent("session", second_pid)
+            .expect("current removal should succeed")
+            .expect("replacement should still be tracked");
+        force_stop_child("replacement", &mut replacement).expect("replacement should stop");
     }
 
     #[cfg(unix)]
