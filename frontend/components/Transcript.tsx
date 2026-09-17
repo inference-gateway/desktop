@@ -8,7 +8,7 @@ import { useDesktop } from "@/store";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
-import { prettyJson } from "@/lib/tools";
+import { isBashCommand, prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
 import { COMPUTER_USE_TOOLS, backgroundNoteHeader, type TranscriptItem } from "@/lib/transcript";
 
@@ -381,7 +381,7 @@ function Item({
 }) {
   switch (item.kind) {
     case "user":
-      return <UserBubble text={item.text} />;
+      return isBashCommand(item.text) ? null : <UserBubble text={item.text} />;
     case "assistant":
       return <AssistantBubble chunks={item.chunks} />;
     case "reasoning":
