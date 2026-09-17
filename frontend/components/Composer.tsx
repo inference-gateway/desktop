@@ -1,4 +1,4 @@
-import { ArrowUp, Folder, Mic, Plus, Square, Terminal, X } from "lucide-react";
+import { ArrowUp, Folder, Mic, Plus, Square, Terminal, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -70,6 +70,7 @@ export function Composer() {
   const [showTools, setShowTools] = useState(false);
   const [activeToolIdx, setActiveToolIdx] = useState(0);
   const [bashMode, setBashMode] = useState(false);
+  const [toolMode, setToolMode] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -126,7 +127,12 @@ export function Composer() {
 
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
+    if ((e.nativeEvent as InputEvent).inputType === "insertText") {
+      if (el.value === "!") el.value = "! ";
+      else if (el.value === "! !") el.value = "!! ";
+    }
     autoGrow(el);
+    setToolMode(el.value.startsWith("!!"));
     if (isBashCommand(el.value)) {
       setShowSkills(false);
       setShowTools(false);
@@ -137,7 +143,7 @@ export function Composer() {
     if (el.value.startsWith("!!")) {
       setShowSkills(false);
       if (!el.value.slice(2).includes("(")) {
-        setToolQuery(el.value.slice(2).toLowerCase());
+        setToolQuery(el.value.slice(2).trimStart().toLowerCase());
         setShowTools(true);
         setActiveToolIdx(0);
       } else {
@@ -178,7 +184,7 @@ export function Composer() {
   const selectTool = (tool: string) => {
     const el = composerRef.current;
     if (!el) return;
-    el.value = "!!" + tool + "(";
+    el.value = "!! " + tool + "(";
     autoGrow(el);
     setShowTools(false);
   };
@@ -208,6 +214,7 @@ export function Composer() {
     if (composer && composer.value.trimStart().startsWith("!!")) {
       composer.value = composer.value.replace(/[\u201c\u201d]/g, '"');
     }
+    if (composer) composer.value = composer.value.replace(/^(!!?) +/, "$1");
     if (pending.length > 0) {
       const el = composerRef.current;
       if (!el) return;
@@ -232,6 +239,7 @@ export function Composer() {
     }
     send();
     setBashMode(false);
+    setToolMode(false);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -348,7 +356,11 @@ export function Composer() {
       )}
       <div
         id="composer"
-        className="mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20"
+        className={cn(
+          "mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20",
+          bashMode && "border-tool focus-within:border-tool focus-within:ring-tool/20",
+          toolMode && "border-warn focus-within:border-warn focus-within:ring-warn/20",
+        )}
       >
         {queuedPrompt && (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
@@ -364,9 +376,20 @@ export function Composer() {
           </div>
         )}
         {bashMode && (
-          <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
-            <Terminal size={13} className="shrink-0" />
-            <span>bash mode - Enter runs the command in the workspace, output lands in the conversation</span>
+          <div className="flex items-center gap-2 border-b border-tool/30 px-4 py-1.5 text-[0.8rem] text-muted-foreground">
+            <Terminal size={13} className="shrink-0 text-tool" />
+            <span>
+              <span className="font-medium text-tool">bash mode</span> - Enter runs the command in the workspace, output
+              lands in the conversation
+            </span>
+          </div>
+        )}
+        {toolMode && (
+          <div className="flex items-center gap-2 border-b border-warn/30 px-4 py-1.5 text-[0.8rem] text-muted-foreground">
+            <Wrench size={13} className="shrink-0 text-warn" />
+            <span>
+              <span className="font-medium text-warn">tool mode</span> - Enter runs the tool call directly
+            </span>
           </div>
         )}
         {pending.length > 0 && (
