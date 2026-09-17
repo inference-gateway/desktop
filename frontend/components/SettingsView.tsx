@@ -2757,6 +2757,33 @@ function SkillsTab() {
 // save_voice_sample; preview streams through the asset protocol.
 const MAX_SAMPLE_REC_MS = 30000;
 
+// Suggested readings for the record flow, sized to ~10-13s at a natural pace.
+// One sample per style; the style name doubles as the sample file name so four
+// takes don't overwrite each other. Uploaded WAVs count toward the same target.
+const SAMPLE_READINGS = [
+  {
+    style: "Conversational",
+    tip: "Warm and relaxed, as if explaining to a friend.",
+    text: "Let me show you how this works. We start with a simple idea, try it out, and make a few adjustments along the way.",
+  },
+  {
+    style: "Enthusiastic",
+    tip: "Smile slightly, with brighter energy and emphasis.",
+    text: "Here's the exciting part! With just one small change, everything starts working together. Suddenly, something that seemed complicated becomes surprisingly simple. Let's see it in action!",
+  },
+  {
+    style: "Thoughtful and curious",
+    tip: "Slow slightly at the question, then pause before continuing.",
+    text: "But why does this happen? At first, the answer seems obvious. Look a little closer, though, and you'll notice something we haven't considered yet.",
+  },
+  {
+    style: "Confident and clear",
+    tip: "Steady and assured, emphasizing the main takeaway.",
+    text: "The key is to start small. Focus on one problem, check your results, and build from there. Each step gives you a stronger foundation.",
+  },
+];
+const RECOMMENDED_SAMPLES = SAMPLE_READINGS.length;
+
 function VoiceSamplesTab() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [error, setError] = useState("");
@@ -2881,6 +2908,34 @@ function VoiceSamplesTab() {
         Reference WAV recordings for voice cloning, stored in ~/.infer/models/tts/samples. Ask the agent to speak in a
         sample's voice by its full file name, e.g. "read this in the voice of my-voice.wav".
       </p>
+      <div className="mb-4 rounded-lg border border-border bg-card p-3 text-[0.8rem]">
+        <p>
+          A good reference, recorded or uploaded: a quiet room, a consistent distance from the mic, natural delivery,
+          and nothing but the sample text. Aim for 10-13 seconds per sample. {RECOMMENDED_SAMPLES} different ones clone
+          best.
+        </p>
+        <p className="mt-2 text-muted-foreground">
+          Read one of these while recording, or before uploading; click a style to use it as the sample name:
+        </p>
+        <ul className="mt-2 flex flex-col gap-3">
+          {SAMPLE_READINGS.map((r) => (
+            <li key={r.style}>
+              <button
+                type="button"
+                title={`Use "${r.style.toLowerCase().replaceAll(" ", "-")}" as the sample name`}
+                className="font-medium underline decoration-dotted underline-offset-2 hover:text-foreground"
+                onClick={() => {
+                  if (nameRef.current) nameRef.current.value = r.style.toLowerCase().replaceAll(" ", "-");
+                }}
+              >
+                {r.style}
+              </button>
+              <span className="ml-2 text-muted-foreground italic">{r.tip}</span>
+              <p className="mt-0.5">"{r.text}"</p>
+            </li>
+          ))}
+        </ul>
+      </div>
       <div className="mb-4 flex items-center gap-2">
         <Button size="sm" disabled={adding || recording} onClick={add}>
           {adding ? "Adding..." : "Add sample"}
@@ -2909,6 +2964,15 @@ function VoiceSamplesTab() {
           </span>
         )}
       </div>
+      <p className="mb-2 text-[0.8rem] text-muted-foreground">
+        {samples.length} of {RECOMMENDED_SAMPLES} recommended samples
+        {samples.length >= RECOMMENDED_SAMPLES && (
+          <span role="status" className="ml-2 inline-flex items-center gap-1 text-emerald-500">
+            <CheckCircle2 size={14} aria-hidden="true" />
+            Sample library complete
+          </span>
+        )}
+      </p>
       {samples.length === 0 ? (
         <p className="text-[0.8rem] text-muted-foreground">No voice samples yet.</p>
       ) : (
