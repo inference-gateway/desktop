@@ -529,6 +529,7 @@ pub(crate) async fn send_message(
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let child_stdin = child.stdin.take().unwrap();
+    let pid = child.id();
 
     state
         .processes
@@ -599,7 +600,7 @@ pub(crate) async fn send_message(
         .await
         .map_err(|e| format!("Join error: {}", e))?;
 
-    let child = state.processes.remove_agent(&session_id)?;
+    let child = state.processes.remove_agent(&session_id, pid)?;
     let status = match child {
         Some(mut child) => Some(
             child
