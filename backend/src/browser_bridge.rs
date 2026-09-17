@@ -553,6 +553,12 @@ impl Host {
                 .and_then(|s| panel.projects.get(s).cloned());
             (session, cwd, panel.auto)
         };
+        let cwd = cwd.or_else(|| {
+            session
+                .as_deref()
+                .and_then(crate::projects::assigned_dir)
+                .map(|dir| dir.to_string_lossy().into_owned())
+        });
         let run = |approved: bool| {
             let argv = tool_exec_args(name, args, session.as_deref(), approved);
             crate::agent::run_infer_blocking(cwd.clone(), &argv)
@@ -658,12 +664,12 @@ impl Host {
                 } else {
                     format!("{}\n{}", text("content"), refs.join("\n"))
                 };
-                let mut panel = lock(&self.panel);
-                let id = panel.current.get_or_insert_with(new_session_id).clone();
-                let project = panel.projects.get(&id).cloned();
-                drop(panel);
+                let id = lock(&self.panel)
+                    .current
+                    .get_or_insert_with(new_session_id)
+                    .clone();
                 self.to_panel_ui(serde_json::json!({
-                    "kind": "send", "sessionId": id, "text": content, "project": project,
+                    "kind": "send", "sessionId": id, "text": content,
                 }));
             }
             "interrupt" => {

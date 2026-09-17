@@ -1010,7 +1010,7 @@ function useDesktopStore() {
     const activate = (id: string) => {
       setActiveId(id);
       activeIdRef.current = id;
-      setActiveProject(projects[id] ?? null);
+      if (projects[id]) setActiveProject(projects[id]);
     };
     const unlisten = listen<BrowserPanelCommand>("browser-panel", async (e) => {
       const p = e.payload;
@@ -1021,13 +1021,20 @@ function useDesktopStore() {
         case "new":
           activate(p.id);
           break;
-        case "send":
+        case "send": {
+          const known = conversations.some((c) => c.id === p.sessionId);
           if (activeIdRef.current !== p.sessionId) {
-            if (conversations.some((c) => c.id === p.sessionId)) await openConversation(p.sessionId);
+            if (known) await openConversation(p.sessionId);
             else activate(p.sessionId);
           }
-          await sendPrompt(p.sessionId, p.text, p.project ?? projects[p.sessionId]);
+          let project = projects[p.sessionId];
+          if (!project && !known && activeProject) {
+            assignProject(p.sessionId, activeProject);
+            project = activeProject;
+          }
+          await sendPrompt(p.sessionId, p.text, project);
           break;
+        }
         case "select_model":
           setModelState(p.model);
           localStorage.setItem(STORAGE_KEY, p.model);
@@ -1040,7 +1047,7 @@ function useDesktopStore() {
     return () => {
       unlisten.then((f) => f());
     };
-  }, [sendPrompt, openConversation, setAutoMode, projects, conversations]);
+  }, [sendPrompt, openConversation, setAutoMode, projects, conversations, activeProject, assignProject]);
 
   // `!!ToolName(arg="value")` from the composer: parse, execute through the
   // CLI's own tool registry (`infer tools execute`) and render the result
@@ -1782,7 +1789,7 @@ const DesktopContext = createContext<DesktopStore | null>(null);
 type BrowserPanelCommand =
   | { kind: "open"; id: string }
   | { kind: "new"; id: string }
-  | { kind: "send"; sessionId: string; text: string; project?: string | null }
+  | { kind: "send"; sessionId: string; text: string }
   | { kind: "select_model"; model: string }
   | { kind: "set_mode"; auto: boolean };
 
