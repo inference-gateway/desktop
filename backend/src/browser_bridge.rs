@@ -544,8 +544,6 @@ impl Host {
     /// Answer an extension-initiated tool call the way the CLI bridge does:
     /// the approval policy first (the panel is the prompt, auto mode skips
     /// it), then the run as user-approved, recorded in the panel's session.
-    // ponytail: the recorded call reaches the desktop transcript on its next
-    // reload, not live.
     fn run_tool_request(&self, id: &str, name: &str, args: &str) {
         let (session, cwd, auto) = {
             let panel = lock(&self.panel);
