@@ -1,6 +1,7 @@
 import { Sidebar } from "./Sidebar";
 import { Transcript } from "./Transcript";
 import { TodoPanel } from "./TodoPanel";
+import { ActivityPanel } from "./ActivityPanel";
 import { Composer } from "./Composer";
 import { ResizeHandle } from "./ResizeHandle";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -54,6 +55,7 @@ export function Main() {
         <div id="content" className="flex min-w-0 flex-1 flex-col">
           <Transcript />
           <TodoPanel />
+          <ActivityPanel />
           <Composer />
         </div>
       )}
@@ -79,6 +81,7 @@ function ChatDock() {
       />
       <Transcript />
       <TodoPanel />
+      <ActivityPanel />
       <Composer />
     </div>
   );

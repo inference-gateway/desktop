@@ -44,6 +44,16 @@ const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 
+export type ActivityStatus = "running" | "done" | "failed" | "skipped";
+
+export interface ActivityEntry {
+  id: number;
+  project: string | null;
+  action: string;
+  status: ActivityStatus;
+  message?: string;
+}
+
 const CONTENT_GUIDANCE =
   'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") or to add title cards, lower thirds, callouts, step counters or charts over it, read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline.';
 
@@ -53,6 +63,7 @@ const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
 const LAST_RUN_TTL_MS = 10_000;
+const MAX_ACTIVITIES = 200;
 
 async function setMonitorVisible(visible: boolean) {
   const win = await WebviewWindow.getByLabel("monitor");
@@ -102,6 +113,8 @@ function useDesktopStore() {
   const [statusError, setStatusErr] = useState(false);
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [activities, setActivities] = useState<ActivityEntry[]>([]);
+  const activityId = useRef(0);
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
@@ -182,6 +195,28 @@ function useDesktopStore() {
     setStatusErr(false);
     setStatusText((t) => (t.startsWith("Failed") || t.startsWith("Error") ? "Ready" : t));
   }, []);
+
+  const logActivity = useCallback(
+    (project: string | null, action: string, status: ActivityStatus, message?: string) => {
+      const id = ++activityId.current;
+      setActivities((prev) => [...prev.slice(-(MAX_ACTIVITIES - 1)), { id, project, action, status, message }]);
+    },
+    [],
+  );
+  const clearActivities = useCallback(() => setActivities([]), []);
+  const runGitAction = useCallback(
+    (name: string, action: string, run: () => Promise<string>) => {
+      logActivity(name, action, "running");
+      return run().then(
+        (message) => logActivity(name, action, "done", message),
+        (e) => {
+          logActivity(name, action, "failed", String(e));
+          setError(String(e));
+        },
+      );
+    },
+    [logActivity, setError],
+  );
 
   // Todo panel drafts are keyed by session so switching sessions never
   // leaks a user-edited list into another chat (#196); null clears it.
@@ -703,6 +738,13 @@ function useDesktopStore() {
   ]);
 
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
+  const refreshProjects = useCallback(() => {
+    logActivity(null, "Refresh projects", "running");
+    return fetchGitProjects().then(
+      () => logActivity(null, "Refresh projects", "done", "git status updated"),
+      (e) => logActivity(null, "Refresh projects", "failed", String(e)),
+    );
+  }, [fetchGitProjects, logActivity]);
 
   const moveConversationStore = useCallback(
     (sessionId: string, projectName?: string) => {
@@ -745,10 +787,12 @@ function useDesktopStore() {
         setError("Please select a model first");
         return;
       }
+      const isInit = /^\/init(\s|$)/.test(text);
       setStatusErr(false);
       dispatchTo(runId, { type: "userSend", text });
       clearTerminal(runId);
       setRunningIds((prev) => new Set(prev).add(runId));
+      if (isInit && projectName) logActivity(projectName, "Init", "running");
       try {
         const ch = new Channel<AgentEvent>();
         ch.onmessage = (event) => {
@@ -782,6 +826,13 @@ function useDesktopStore() {
                 },
                 true,
               );
+              if (isInit && projectName)
+                logActivity(
+                  projectName,
+                  "Init",
+                  event.exit_code === 0 ? "done" : "failed",
+                  event.exit_code === 0 ? "AGENTS.md ready" : `Exited with code ${event.exit_code}`,
+                );
               break;
             case "Cancelled":
               setRunningIds((prev) => {
@@ -793,6 +844,7 @@ function useDesktopStore() {
                 if (sessionId === runId) computerApprovalsRef.current.delete(callId);
               }
               recordTerminal(runId, { label: "Stopped", error: false });
+              if (isInit && projectName) logActivity(projectName, "Init", "skipped", "stopped");
               api
                 .getConversation(runId, undefined, projectName)
                 .then((ndjson) => dispatchTo(runId, { type: "setUsage", usage: historyUsage(ndjson) }))
@@ -800,7 +852,6 @@ function useDesktopStore() {
               break;
           }
         };
-        const isInit = /^\/init(\s|$)/.test(text);
         if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
         const cfg = await api.getConfig();
         const projectContext = projectName ? projectContexts[projectName] : undefined;
@@ -826,6 +877,7 @@ function useDesktopStore() {
         loadProjects();
       } catch (err) {
         dispatchTo(runId, { type: "error", text: `Error: ${err}` });
+        if (isInit && projectName) logActivity(projectName, "Init", "failed", String(err));
         dispatchTo(runId, { type: "event", event: { kind: "Done", exit_code: -1, stderr: "" } });
         setRunningIds((prev) => {
           const next = new Set(prev);
@@ -844,6 +896,7 @@ function useDesktopStore() {
       projectGroups,
       projectTypes,
       setError,
+      logActivity,
       refreshConversations,
       loadProjects,
       dispatchTo,
@@ -866,7 +919,7 @@ function useDesktopStore() {
   }, [runningIds, sendPrompt, projects, clearQueued]);
 
   const runOnProjects = useCallback(
-    async (names: string[], runOne: (name: string) => Promise<void>) => {
+    async (names: string[], runOne: (name: string) => Promise<void>, action?: string) => {
       setInitAllRunning(true);
       try {
         const skipped: string[] = [];
@@ -875,7 +928,9 @@ function useDesktopStore() {
           const dirOk = await api.projectDirExists(name).catch(() => false);
           const busy = Object.entries(projects).some(([id, p]) => p === name && runningIdsRef.current.has(id));
           if (!dirOk || busy) {
-            skipped.push(busy ? `${name} (busy)` : `${name} (missing folder)`);
+            const reason = busy ? "busy" : "missing folder";
+            skipped.push(`${name} (${reason})`);
+            if (action) logActivity(name, action, "skipped", reason);
             continue;
           }
           while (inFlight.size >= maxSessions) await Promise.race(inFlight);
@@ -889,7 +944,7 @@ function useDesktopStore() {
         setInitAllRunning(false);
       }
     },
-    [projects, maxSessions, setStatus],
+    [projects, maxSessions, setStatus, logActivity],
   );
 
   const broadcastPrompt = useCallback(
@@ -1363,6 +1418,7 @@ function useDesktopStore() {
   const initProject = useCallback(
     async (name: string) => {
       if (runningIdsRef.current.size >= maxSessions) {
+        logActivity(name, "Init", "skipped", `max ${maxSessions} concurrent sessions`);
         setError(`Max ${maxSessions} concurrent sessions reached - stop one to start another`);
         return;
       }
@@ -1377,7 +1433,7 @@ function useDesktopStore() {
       const ctx = await api.refreshProjectContext(name).catch(() => null);
       if (ctx) setProjectContext(name, ctx);
     },
-    [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError],
+    [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError, logActivity],
   );
 
   const startInitSelection = useCallback(() => {
@@ -1420,27 +1476,30 @@ function useDesktopStore() {
   );
 
   const initAllProjects = useCallback(
-    (names: string[]) => runOnProjects(names, initProject),
+    (names: string[]) => runOnProjects(names, initProject, "Init"),
     [runOnProjects, initProject],
   );
 
+  const cleanupProject = useCallback(
+    (name: string) => runGitAction(name, "Clean up branches", () => api.cleanupProject(name)),
+    [runGitAction],
+  );
+  const syncDefaultBranch = useCallback(
+    (name: string) => runGitAction(name, "Checkout default branch + pull", () => api.syncDefaultBranch(name)),
+    [runGitAction],
+  );
   const cleanupProjects = useCallback(
     async (names: string[]) => {
-      const failed: string[] = [];
+      for (const name of names.filter((n) => !gitProjects.has(n)))
+        logActivity(name, "Clean up branches", "skipped", "not a git repo");
       await runOnProjects(
         names.filter((n) => gitProjects.has(n)),
-        (name) =>
-          api.cleanupProject(name).then(
-            () => {},
-            (e) => {
-              failed.push(`${name} (${e})`);
-            },
-          ),
+        cleanupProject,
+        "Clean up branches",
       );
       await refreshGitProjects();
-      if (failed.length) setError(`Cleanup failed: ${failed.join(", ")}`);
     },
-    [runOnProjects, gitProjects, refreshGitProjects, setError],
+    [runOnProjects, gitProjects, refreshGitProjects, cleanupProject, logActivity],
   );
 
   const setProjectPath = useCallback((name: string, path: string) => {
@@ -1660,12 +1719,17 @@ function useDesktopStore() {
     projectBranches,
     projectDefaultBranches,
     refreshGitProjects,
+    refreshProjects,
+    activities,
+    clearActivities,
     deleteProject,
     deleteProjects,
     renameProject,
     toggleCollapseProject,
     initProject,
     initAllProjects,
+    cleanupProject,
+    syncDefaultBranch,
     cleanupProjects,
     broadcastPrompt,
     initAllRunning,
