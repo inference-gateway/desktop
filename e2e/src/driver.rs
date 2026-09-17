@@ -205,11 +205,11 @@ impl AppDriver {
         }
     }
 
-    /// AX-click "+ New chat". Also serves as the mandatory webview warm-up:
+    /// AX-click "New chat". Also serves as the mandatory webview warm-up:
     /// AXValue sets silently no-op until one AX click has landed inside the
     /// page (see AGENTS.md).
     pub fn new_chat(&self) -> Result<()> {
-        self.click("+ New chat")
+        self.click("New chat")
     }
 
     /// Set the textarea value, verify it stuck (read-back), then click Send.
