@@ -349,6 +349,7 @@ export const api = {
   cloneGithubRepo: (repo: string) => invoke<GitRepo>("clone_github_repo", { repo }),
   gitProjectStatus: () => invoke<GitProjectStatus>("git_project_status"),
   syncDefaultBranch: (name: string) => invoke<string>("sync_default_branch", { name }),
+  cleanupProject: (name: string) => invoke<string>("cleanup_project", { name }),
   projectDirExists: (name: string) => invoke<boolean>("project_dir_exists", { name }),
   openInVsCode: (name: string) => invoke<void>("open_in_vs_code", { name }),
   refreshProjectContext: (name: string) => invoke<string | null>("refresh_project_context", { name }),

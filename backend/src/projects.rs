@@ -564,6 +564,17 @@ fn git_output(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// The branch `origin/HEAD` points at, falling back to `main`.
+fn origin_default_branch(dir: &Path) -> String {
+    git_output(
+        dir,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .ok()
+    .and_then(|r| r.strip_prefix("origin/").map(str::to_string))
+    .unwrap_or_else(|| "main".to_string())
+}
+
 /// Check out the repository's default branch and fast-forward pull. Refuses
 /// over uncommitted changes; `--ff-only` guarantees the tree is never left
 /// worse than before. Returns the branch now checked out.
@@ -576,13 +587,7 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
         if has_uncommitted_changes(&dir) {
             return Err("uncommitted changes - commit or stash first".to_string());
         }
-        let default = git_output(
-            &dir,
-            &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-        )
-        .ok()
-        .and_then(|r| r.strip_prefix("origin/").map(str::to_string))
-        .unwrap_or_else(|| "main".to_string());
+        let default = origin_default_branch(&dir);
         if read_head_branch(&dir).as_deref() != Some(default.as_str()) {
             git_output(&dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
         }
@@ -591,6 +596,44 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
     })
     .await
     .map_err(|e| format!("sync task failed: {e}"))?
+}
+
+/// Check out the default branch, fast-forward pull, delete every other local
+/// branch and prune stale remote-tracking refs. Refuses over uncommitted
+/// changes. Returns a short summary.
+#[tauri::command]
+pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = project_dir(&name)
+            .filter(|d| d.is_dir())
+            .ok_or_else(|| format!("no directory for project {name}"))?;
+        if has_uncommitted_changes(&dir) {
+            return Err("uncommitted changes - commit or stash first".to_string());
+        }
+        cleanup_repo(&dir)
+    })
+    .await
+    .map_err(|e| format!("cleanup task failed: {e}"))?
+}
+
+fn cleanup_repo(dir: &Path) -> Result<String, String> {
+    let default = origin_default_branch(dir);
+    if read_head_branch(dir).as_deref() != Some(default.as_str()) {
+        git_output(dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
+    }
+    git_output(dir, &["pull", "--ff-only"]).map_err(|e| format!("pull: {e}"))?;
+    let branches = git_output(
+        dir,
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    )
+    .map_err(|e| format!("list branches: {e}"))?;
+    let stale: Vec<&str> = branches.lines().filter(|b| *b != default).collect();
+    if !stale.is_empty() {
+        git_output(dir, &[&["branch", "-D"][..], &stale].concat())
+            .map_err(|e| format!("delete branches: {e}"))?;
+    }
+    git_output(dir, &["fetch", "--prune"]).map_err(|e| format!("fetch: {e}"))?;
+    Ok(format!("{default} - deleted {} branches", stale.len()))
 }
 
 /// Whether the project's resolved directory exists on disk; gates the Init
@@ -1392,6 +1435,48 @@ mod tests {
         assert!(
             !has_uncommitted_changes(&root.join("missing-dir")),
             "a missing directory is not dirty"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cleanup_keeps_only_the_default_branch() {
+        let root = std::env::temp_dir().join(format!("igd-cleanup-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(dir)
+                    .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
+                    .args(args)
+                    .status()
+                    .expect("git is available in the test environment")
+                    .success(),
+                "git {args:?} failed"
+            );
+        };
+        let origin = root.join("origin.git");
+        let repo = root.join("repo");
+        git(&root, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+        git(&root, &["clone", "-q", origin.to_str().unwrap(), "repo"]);
+        git(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&repo, &["push", "-q", "origin", "main"]);
+        git(&repo, &["remote", "set-head", "origin", "main"]);
+        git(&repo, &["branch", "feat-a"]);
+        git(&repo, &["switch", "-q", "-c", "feat-b"]);
+        git(&repo, &["commit", "-q", "--allow-empty", "-m", "unmerged"]);
+
+        assert_eq!(cleanup_repo(&repo).unwrap(), "main - deleted 2 branches");
+        assert_eq!(read_head_branch(&repo).as_deref(), Some("main"));
+        assert_eq!(
+            git_output(
+                &repo,
+                &["for-each-ref", "--format=%(refname:short)", "refs/heads"]
+            )
+            .unwrap(),
+            "main"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

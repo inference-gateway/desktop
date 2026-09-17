@@ -123,6 +123,7 @@ function InitBar({
   count,
   total,
   onInit,
+  onCleanup,
   onCancel,
   onSelectAll,
   onClear,
@@ -130,11 +131,13 @@ function InitBar({
   count: number;
   total: number;
   onInit: () => void;
+  onCleanup: () => void;
   onCancel: () => void;
   onSelectAll: () => void;
   onClear: () => void;
 }) {
   const [armed, setArmed] = useState(false);
+  const [cleanupArmed, setCleanupArmed] = useState(false);
   const allSelected = total > 0 && count >= total;
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border py-2">
@@ -166,6 +169,22 @@ function InitBar({
             : armed
               ? `Click again to init ${count}`
               : `Init ${count} project${count === 1 ? "" : "s"}`}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={count === 0}
+          title="Checkout the default branch, pull, delete all other local branches and prune remote-tracking refs"
+          onClick={() => {
+            if (!cleanupArmed) {
+              setCleanupArmed(true);
+              return;
+            }
+            onCleanup();
+          }}
+          onMouseLeave={() => setCleanupArmed(false)}
+          className="text-[0.83rem]"
+        >
+          {cleanupArmed ? "Click again" : "Clean up"}
         </Button>
         <Button variant="outline" onClick={onCancel} className="text-[0.83rem]">
           Cancel
@@ -225,6 +244,7 @@ function ProjectGroup({
   onInit,
   onOpenInVsCode,
   onSyncDefaultBranch,
+  onCleanup,
   onSettings,
   onRename,
   onDelete,
@@ -250,6 +270,7 @@ function ProjectGroup({
   onInit: () => void;
   onOpenInVsCode: () => void;
   onSyncDefaultBranch: () => void;
+  onCleanup: () => void;
   onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
@@ -459,6 +480,20 @@ function ProjectGroup({
                 Checkout default branch + pull
               </button>
             )}
+            {isGit && (
+              <button
+                aria-label={`Clean up branches in project ${name}`}
+                title="Checkout the default branch, pull, delete all other local branches and prune remote-tracking refs"
+                disabled={busy || !dirOk}
+                onClick={() => {
+                  setMenu(null);
+                  onCleanup();
+                }}
+                className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+              >
+                Clean up branches
+              </button>
+            )}
           </div>
         </>
       )}
@@ -483,6 +518,7 @@ export function ChatList() {
     moveProject,
     initProject,
     initAllProjects,
+    cleanupProjects,
     initSelecting,
     initSelection,
     toggleInitSelection,
@@ -673,6 +709,12 @@ export function ChatList() {
                     .then(refreshGitProjects)
                     .catch((e) => setError(String(e)))
                 }
+                onCleanup={() =>
+                  api
+                    .cleanupProject(name)
+                    .then(refreshGitProjects)
+                    .catch((e) => setError(String(e)))
+                }
                 onSettings={() => {
                   setInitialSettingsTab("projects");
                   setInitialProjectFilter(name);
@@ -790,6 +832,10 @@ export function ChatList() {
           total={projectNames.length}
           onInit={() => {
             initAllProjects(Array.from(initSelection));
+            cancelInitSelection();
+          }}
+          onCleanup={() => {
+            cleanupProjects(Array.from(initSelection));
             cancelInitSelection();
           }}
           onCancel={cancelInitSelection}
