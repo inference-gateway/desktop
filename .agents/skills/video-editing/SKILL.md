@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, or add a card, title or overlay to a video.
+description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, or add a card, title or overlay to a video.
 license: Apache-2.0
 ---
 
@@ -107,11 +107,15 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 ```
 
 - Times are seconds. `src` is relative to the working directory; media and clip audio live in
-  `media/` so the project folder is self-contained and the pool shows every clip.
+  `media/` so the project folder is self-contained and the pool shows every clip. A file clip shows
+  its `src` from `offset` (0 when absent) for `end - start` seconds at its `start`; the video track
+  may hold several clips (a cut-up recording or different files) and the export plays them in
+  `start` order.
 - `resolution` (`"WxH"`, default `1920x1080`) is the export frame the user picks on the timeline:
   the recording is scaled to fit and padded into it. Keep it as is. Export writes `export/<output>`.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
-  the user trims a clip's head on the timeline. Keep it as is and never add it yourself.
+  the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
+  yourself (see Cuts and trims): then you set it.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
@@ -190,6 +194,29 @@ When asked to redo or regenerate: read the JSON, run step 5 for `draft` clips on
 step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
 has already marked that clip `draft` with the user's edited text: synthesize exactly that clip with
 that text, keep its `id`, `start` and `end`, and leave everything else alone.
+
+## Cuts and trims
+
+When the user asks to cut out a section ("cut the part from 10 s to 20 s") or trim a clip's head or
+  tail ("trim the first 5 seconds"), edit the JSON: no ffmpeg on the sources, nothing is
+  re-encoded. Edits are non-destructive and never ripple: a clip keeps `start` (timeline position),
+  `end` (timeline out-point) and `offset` (source in-point); every other clip and track keeps its
+  times, a gap stays, and the export freeze-frames video gaps (audio and overlays at those times
+  still play).
+
+- Trim the head of a file clip: raise `start` and `offset` by the same amount, so the content stays
+  where it is on the timeline. Trim the tail: lower `end`, never past the source's duration (probe
+  it with `ffmpeg -hide_banner -i <src> 2>&1 | grep Duration`).
+- Split a clip at time `t` (`start < t < end`): the first piece keeps the `id` and gets
+  `end: t`; the second gets a new unique `id`, `start: t`, the old `end`, and `offset` raised by
+  `t - start`, so its source continues seamlessly at the cut.
+- Remove a section `[a, b]` from a track: for every clip overlapping it, keep the head part (its
+  `end` becomes `a`) and split the part after `b` off as above (its `start` becomes `b`, `offset`
+  advanced by `b - a`); delete clips the section covers completely. Never move other clips to
+  close the gap.
+- Mark spoken clips you split, shortened or created `status: "draft"` (keep the `text` on the piece
+  that still says it, empty on the rest) and synthesize the drafts as in step 5, then stop as in
+  step 6.
 
 ## Overlay cards
 

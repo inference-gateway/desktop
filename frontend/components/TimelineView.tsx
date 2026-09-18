@@ -10,6 +10,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Scissors,
   Sparkles,
   Trash2,
   ZoomIn,
@@ -36,6 +37,7 @@ import {
   rulerStep,
   snapPoints,
   snapTime,
+  splitClip,
   trimClip,
   spokenCount,
   parseTimeline,
@@ -153,33 +155,71 @@ export function TimelineView() {
   const [playing, setPlaying] = useState(false);
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // The playhead clock: wall time while playing (it advances across clip
+  // boundaries and gaps in the video track); every media element follows it.
+  const timeRef = useRef(0);
+  const setTimeAt = (t: number) => {
+    timeRef.current = t;
+    setTime(t);
+  };
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
   const { setStatus } = useDesktop();
 
-  // The preview plays whatever the timeline holds: every audio clip and
-  // overlay card is kept in step with the video's clock; the original sound
-  // stays only with "keep". Overlays are shown only inside their range.
+  // The preview plays the timeline: every clip (video, audio, overlay) is
+  // kept in step with the playhead clock; clips outside their range are
+  // hidden and paused, videos show only while active and the recording's
+  // own sound stays only with "keep".
   const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
     for (const tr of timeline.tracks) {
-      if (tr.kind === "video") continue;
       for (const c of tr.clips) {
         const el = mediaRefs.current.get(c.id);
         if (!el) continue;
         const offset = (c.offset ?? 0) + (t - c.start);
         const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
-        if (tr.kind === "overlay") el.hidden = !inside;
-        else el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
-        if (playing && inside) {
+        if (tr.kind === "audio") el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
+        else el.hidden = !inside;
+        if (inside) {
           if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
-          if (el.paused) el.play().catch(() => {});
+          if (playing && el.paused) el.play().catch(() => {});
         } else if (!el.paused) {
           el.pause();
         }
       }
     }
   };
+
+  const latest = useRef({ sync: syncMedia, duration: 0 });
+  useEffect(() => {
+    latest.current = { sync: syncMedia, duration: timeline?.duration ?? 0 };
+  });
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const t = timeRef.current + (now - last) / 1000;
+      last = now;
+      const { sync, duration } = latest.current;
+      if (duration > 0 && t >= duration) {
+        setTimeAt(duration);
+        setPlaying(false);
+        return;
+      }
+      setTimeAt(t);
+      sync(t, true);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      latest.current.sync(timeRef.current, false);
+    };
+  }, [playing]);
+  useEffect(() => {
+    syncMedia(timeRef.current, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeline]);
 
   const load = useCallback(
     async (pick?: string) => {
@@ -261,10 +301,8 @@ export function TimelineView() {
   };
 
   const seek = (t: number) => {
-    const el = videoRef.current;
-    if (el) el.currentTime = t;
-    setTime(t);
-    syncMedia(t, !!el && !el.paused);
+    setTimeAt(t);
+    syncMedia(t, playing);
   };
 
   const exportVideo = () => {
@@ -281,12 +319,7 @@ export function TimelineView() {
       .finally(() => setExporting(false));
   };
 
-  const togglePlay = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) el.play().catch(() => {});
-    else el.pause();
-  }, []);
+  const togglePlay = useCallback(() => setPlaying((p) => !p), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -301,16 +334,40 @@ export function TimelineView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline || !selected) return;
-      const tr = timeline.tracks.find((t) => t.id === selected.track);
-      if (!tr || tr.kind === "video") return;
       e.preventDefault();
-      update(removeClip(timeline, tr.id, selected.clip));
+      update(removeClip(timeline, selected.track, selected.clip));
       setSelected(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline, selected]);
+
+  // Blade at the playhead, Resolve-style: every clip it crosses (any track)
+  // is cut in two; the right half keeps playing the same source from the cut.
+  const splitAtPlayhead = () => {
+    if (!timeline) return;
+    let next = timeline;
+    for (const tr of timeline.tracks) {
+      for (const c of tr.clips) next = splitClip(next, tr.id, c.id, time) ?? next;
+    }
+    if (next === timeline) return;
+    update(next);
+    const halved = next.tracks.find((tr) => tr.id === selected?.track)?.clips.find((c) => c.start === time);
+    if (halved) setSelected({ track: selected!.track, clip: halved.id });
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const blade = (e.key === "b" || e.key === "B") && (e.ctrlKey || e.metaKey);
+      if ((!blade && e.key !== "s" && e.key !== "S") || isEditable(e.target) || e.defaultPrevented) return;
+      e.preventDefault();
+      splitAtPlayhead();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -325,8 +382,6 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
-  const videoPath = source;
-  const videoSrc = videoPath ? safeProjectMediaSrc(resolveSrc(dir, videoPath)) : null;
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
       .filter((tr) => tr.kind === kind)
@@ -334,13 +389,18 @@ export function TimelineView() {
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
   const clipAudio = clipsOf("audio", (src) => clipSrc(dir, src));
+  const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
+  const playable = clipVideo.length > 0 || clipAudio.length > 0;
   const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
   const drafts = timeline ? draftCount(timeline) : 0;
   const hasVoice = timeline ? spokenCount(timeline) : 0;
   const overlays = timeline ? overlayCount(timeline) : 0;
+  const videoCount = timeline
+    ? timeline.tracks.filter((tr) => tr.kind === "video").flatMap((tr) => tr.clips.filter((c) => c.src)).length
+    : 0;
 
   const fitPps = duration > 0 ? Math.max(MIN_PPS, (laneWidth - 24) / duration) : 40;
   const pps = zoom ?? fitPps;
@@ -376,17 +436,15 @@ export function TimelineView() {
     return () => el.removeEventListener("wheel", onWheel);
   });
 
-  // Clips on audio and overlay lanes move and trim by pointer; video clips
-  // only select (the export always plays the recording whole). Edges snap to
-  // other clips and the playhead within SNAP_PX. Both drag entry points
-  // cancel the pointerdown default, else the webview starts its native text
-  // selection once the drag wanders off the timeline over selectable chrome.
+  // All clips move and trim by pointer; edges snap to other clips and the
+  // playhead within SNAP_PX. Drag entry points cancel the pointerdown
+  // default, else the webview starts its native text selection once the drag
+  // wanders off the timeline over selectable chrome.
   const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: "move" | "start" | "end", tr: Track, c: Clip) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
-    if (tr.kind === "video") return;
     dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -521,7 +579,7 @@ export function TimelineView() {
             <button
               aria-label={playing ? "Pause" : "Play"}
               title="Play / pause (Space)"
-              disabled={!videoSrc}
+              disabled={!playable}
               onClick={togglePlay}
               className="inline-flex size-7 items-center justify-center rounded-md border border-input text-foreground hover:bg-primary/10 disabled:opacity-40"
             >
@@ -575,6 +633,14 @@ export function TimelineView() {
                   ))}
                 </select>
               </label>
+              <Button
+                variant="outline"
+                size="sm"
+                title="Split the clips under the playhead in two (S or Ctrl+B)"
+                onClick={splitAtPlayhead}
+              >
+                <Scissors size={14} /> Split
+              </Button>
               <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
                 <Plus size={14} /> Add marker
               </Button>
@@ -586,7 +652,7 @@ export function TimelineView() {
                 size="sm"
                 title="Render the timeline to an MP4 with ffmpeg"
                 onClick={exportVideo}
-                disabled={exporting || running > 0 || (hasVoice === 0 && overlays === 0)}
+                disabled={exporting || running > 0 || (hasVoice === 0 && overlays === 0 && videoCount === 0)}
               >
                 <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
               </Button>
@@ -599,35 +665,27 @@ export function TimelineView() {
         {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
 
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
-          {timeline && videoSrc ? (
+          {timeline && clipVideo.length > 0 ? (
             <div
               className="relative"
               style={{ aspectRatio: frameAspect(timeline), width: `min(100%, calc(50vh * ${frameAspect(timeline)}))` }}
             >
-              <video
-                ref={videoRef}
-                key={videoSrc}
-                src={videoSrc}
-                controls
-                muted={timeline.source_audio !== "keep"}
-                onTimeUpdate={(e) => {
-                  setTime(e.currentTarget.currentTime);
-                  syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused);
-                }}
-                onPlay={(e) => {
-                  setPlaying(true);
-                  syncMedia(e.currentTarget.currentTime, true);
-                }}
-                onPause={(e) => {
-                  setPlaying(false);
-                  syncMedia(e.currentTarget.currentTime, false);
-                }}
-                onEnded={() => setPlaying(false)}
-                onLoadedMetadata={(e) => syncMedia(e.currentTarget.currentTime, false)}
-                onSeeked={(e) => syncMedia(e.currentTarget.currentTime, !e.currentTarget.paused)}
-                onError={() => setLoadError(`Cannot play ${videoPath}`)}
-                className="absolute inset-0 size-full object-contain"
-              />
+              {clipVideo.map(({ clip: c, src }) => (
+                <video
+                  key={c.id}
+                  src={src}
+                  muted={timeline.source_audio !== "keep"}
+                  playsInline
+                  preload="auto"
+                  hidden
+                  ref={(el) => {
+                    if (el) mediaRefs.current.set(c.id, el);
+                    else mediaRefs.current.delete(c.id);
+                  }}
+                  onLoadedMetadata={() => syncMedia(timeRef.current, playing)}
+                  className="pointer-events-none absolute inset-0 size-full object-contain"
+                />
+              ))}
               {clipOverlays.map(({ clip: c, src }) => (
                 <video
                   key={c.id}
@@ -650,9 +708,9 @@ export function TimelineView() {
                 />
               ))}
             </div>
-          ) : timeline && videoPath ? (
+          ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
-              Preview unavailable for {videoPath} (only files under the default projects root can be previewed).
+              Preview unavailable for {source} (only files under the default projects root can be previewed).
             </p>
           ) : (
             <p className="max-w-md p-6 text-center text-[0.8rem] text-muted-foreground">
@@ -815,7 +873,6 @@ export function TimelineView() {
                 >
                   {tr.clips.map((c) => {
                     const isSel = selected?.track === tr.id && selected.clip === c.id;
-                    const editable = tr.kind !== "video";
                     const layout = clipLayout(c, pps);
                     const mediaSrc = c.src
                       ? tr.kind === "audio"
@@ -832,8 +889,7 @@ export function TimelineView() {
                           onPointerUp={endDrag}
                           onPointerCancel={endDrag}
                           className={cn(
-                            "absolute inset-0 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none",
-                            editable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+                            "absolute inset-0 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none cursor-grab active:cursor-grabbing",
                             clipClass(tr, c),
                             isSel && "ring-2 ring-white",
                           )}
@@ -859,20 +915,16 @@ export function TimelineView() {
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
                             {c.text || c.src?.replace(/^media\//, "") || c.id}
                           </span>
-                          {editable && (
-                            <>
-                              <span
-                                aria-hidden="true"
-                                className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
-                                onPointerDown={(e) => beginDrag(e, "start", tr, c)}
-                              />
-                              <span
-                                aria-hidden="true"
-                                className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/40"
-                                onPointerDown={(e) => beginDrag(e, "end", tr, c)}
-                              />
-                            </>
-                          )}
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                            onPointerDown={(e) => beginDrag(e, "start", tr, c)}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize hover:bg-white/40"
+                            onPointerDown={(e) => beginDrag(e, "end", tr, c)}
+                          />
                         </button>
                         {tr.kind === "video" && c.src && (
                           <button
@@ -1047,16 +1099,14 @@ function ClipEditor({
             <RefreshCw size={12} /> Redo voice
           </Button>
         )}
-        {track.kind !== "video" && (
-          <button
-            aria-label={`Delete clip ${clip.id}`}
-            title="Delete clip"
-            onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
-            className={cn("text-muted-foreground hover:text-destructive", !spoken && "ml-auto")}
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
+        <button
+          aria-label={`Delete clip ${clip.id}`}
+          title="Delete clip"
+          onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
+          className={cn("text-muted-foreground hover:text-destructive", !spoken && "ml-auto")}
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
       {spoken && (
         <textarea

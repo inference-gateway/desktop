@@ -375,22 +375,32 @@ fn overlay_filter(
     )
 }
 
-/// Build the ffmpeg invocation that renders a timeline: the video's picture,
-/// every audio clip (spoken or plain file) delayed to its start time and mixed together,
-/// plus the original sound when `source_audio` is `keep`, and every overlay
-/// card composited over the picture. The picture is scaled to fit and padded
-/// to the timeline's `resolution` so the export is always a standard delivery
-/// size. Returns the arguments and the output file name. Pure, so it is testable.
+/// Build the ffmpeg invocation that renders a timeline: the video track as a
+/// sequence (every clip trimmed by its `offset` and range, freeze-framed across
+/// gaps and concatenated in timeline order, so all other tracks keep their
+/// absolute times), every audio clip delayed to its start time and mixed
+/// together, plus the original sound when `source_audio` is `keep`, and every
+/// overlay card composited over the picture. The picture is scaled to fit and
+/// padded to the timeline's `resolution` so the export is always a standard
+/// delivery size. Returns the arguments and the output file name. Pure, so it
+/// is testable.
 fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
     let t: TimelineFile =
         serde_json::from_str(json).map_err(|e| format!("invalid timeline: {e}"))?;
-    let video = t
+    let mut clips: Vec<&ClipFile> = t
         .tracks
         .iter()
-        .find(|tr| tr.kind == "video")
-        .and_then(|tr| tr.clips.first())
-        .and_then(|c| c.src.as_deref())
-        .ok_or("timeline has no video clip")?;
+        .filter(|tr| tr.kind == "video")
+        .flat_map(|tr| tr.clips.iter().filter(|c| c.has_src()))
+        .collect();
+    clips.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if clips.is_empty() {
+        return Err("timeline has no video clip".into());
+    }
     let output = t
         .output
         .clone()
@@ -399,16 +409,68 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
         return Err(format!("output must be a bare file name: {output}"));
     }
     let (fw, fh) = parse_resolution(t.resolution.as_deref())?;
-    let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-i".into()];
-    args.push(resolve_src(dir, video).to_string_lossy().into_owned());
-    let mut filters = vec![format!(
-        "[0:v]scale=w={fw}:h={fh}:force_original_aspect_ratio=decrease,pad=w={fw}:h={fh}:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1[v0]"
-    )];
+    let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into()];
+    let simple =
+        clips.len() == 1 && clips[0].offset.unwrap_or(0.0) == 0.0 && clips[0].end.is_none();
+    let keep = t.source_audio.as_deref() == Some("keep");
     let mut mix: Vec<String> = Vec::new();
-    if t.source_audio.as_deref() == Some("keep") {
-        mix.push("[0:a]".into());
+    let mut filters: Vec<String>;
+    let mut picture;
+    if simple {
+        args.push("-i".into());
+        args.push(
+            resolve_src(dir, clips[0].src.as_deref().unwrap_or_default())
+                .to_string_lossy()
+                .into_owned(),
+        );
+        filters = vec![format!(
+            "[0:v]scale=w={fw}:h={fh}:force_original_aspect_ratio=decrease,pad=w={fw}:h={fh}:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1[v0]"
+        )];
+        picture = "[v0]".to_string();
+        if keep {
+            mix.push("[0:a]".into());
+        }
+    } else {
+        filters = Vec::new();
+        let mut concat_in = String::new();
+        let mut prev_end = 0.0;
+        for (k, c) in clips.iter().enumerate() {
+            args.push("-i".into());
+            args.push(
+                resolve_src(dir, c.src.as_deref().unwrap_or_default())
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            let start = c.start.max(0.0);
+            let off = c.offset.unwrap_or(0.0).max(0.0);
+            let len = match c.end {
+                Some(end) if end > start => end - start,
+                Some(_) => return Err("video clip needs an end after its start".into()),
+                None => clips
+                    .get(k + 1)
+                    .map_or(f64::INFINITY, |n| (n.start.max(0.0) - start).max(0.0)),
+            };
+            let gap_before = (start - prev_end).max(0.0);
+            prev_end = start + len;
+            let trim = if len.is_finite() {
+                format!("trim=start={off}:end={}", off + len)
+            } else {
+                format!("trim=start={off}")
+            };
+            filters.push(format!(
+                "[{k}:v]{trim},setpts=PTS-STARTPTS,scale=w={fw}:h={fh}:force_original_aspect_ratio=decrease,pad=w={fw}:h={fh}:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1,format=yuv420p,tpad=start_duration={gap_before}[vs{k}]"
+            ));
+            concat_in.push_str(&format!("[vs{k}]"));
+            if keep {
+                let ms = (start * 1000.0).round() as u64;
+                filters.push(format!("[{k}:a]{}adelay={ms}|{ms}[av{k}]", trim_filter(c)));
+                mix.push(format!("[av{k}]"));
+            }
+        }
+        filters.push(format!("{concat_in}concat=n={}:v=1:a=0[vcat]", clips.len()));
+        picture = "[vcat]".to_string();
     }
-    let mut input = 1;
+    let mut input = if simple { 1 } else { clips.len() };
     for tr in t
         .tracks
         .iter()
@@ -435,7 +497,6 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
             input += 1;
         }
     }
-    let mut picture = "[v0]".to_string();
     for tr in t.tracks.iter().filter(|tr| tr.kind == "overlay") {
         for c in tr.clips.iter().filter(|c| c.has_src()) {
             let src = resolve_src(dir, c.src.as_deref().unwrap_or_default());
@@ -466,33 +527,24 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
         return Err("nothing to export: the timeline has no audio or overlay clips".into());
     }
     let audio_map = if mix.is_empty() {
-        "0:a?"
+        None
     } else {
         filters.push(format!(
             "{}amix=inputs={}:normalize=0[mix];[mix]apad[a]",
             mix.concat(),
             mix.len()
         ));
-        "[a]"
+        Some("[a]")
     };
     args.push("-filter_complex".into());
     args.push(filters.join(";"));
-    args.extend(
-        [
-            "-map",
-            &picture,
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-map",
-            audio_map,
-            "-c:a",
-            "aac",
-            "-shortest",
-        ]
-        .map(String::from),
-    );
+    args.extend(["-map", &picture, "-c:v", "libx264", "-pix_fmt", "yuv420p"].map(String::from));
+    match audio_map {
+        Some(map) => args.extend(["-map", map, "-c:a", "aac"].map(String::from)),
+        None if simple => args.extend(["-map", "0:a?", "-c:a", "aac"].map(String::from)),
+        None => args.push("-an".into()),
+    }
+    args.push("-shortest".into());
     let output = format!("{EXPORT_DIR}/{output}");
     args.push(dir.join(&output).to_string_lossy().into_owned());
     Ok((args, output))
@@ -683,6 +735,59 @@ mod tests {
         assert!(export_args(&dir, "demo", &json.replace("1080x1920", "1080")).is_err());
         assert_eq!(parse_resolution(None).unwrap(), (1920, 1080));
         assert!(parse_resolution(Some("1921x1080")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_args_renders_the_video_track_as_a_trimmed_sequence() {
+        let dir = std::env::temp_dir().join(format!("infer-seq-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.mp4"), b"x").unwrap();
+        std::fs::write(dir.join("b.mp4"), b"x").unwrap();
+        let json = r#"{"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[
+                {"start":2,"end":7,"offset":3,"src":"a.mp4"},
+                {"start":7,"src":"b.mp4"}]}]}"#;
+        let (args, _) = export_args(&dir, "demo", json).unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("a.mp4 -i "), "{joined}");
+        assert!(joined.contains("b.mp4 -filter_complex "), "{joined}");
+        assert!(joined.contains(
+            "[0:v]trim=start=3:end=8,setpts=PTS-STARTPTS,scale=w=1920:h=1080:force_original_aspect_ratio=decrease,pad=w=1920:h=1080:x=(ow-iw)/2:y=(oh-ih)/2,setsar=1,format=yuv420p,tpad=start_duration=2[vs0]"
+        ), "{joined}");
+        assert!(
+            joined.contains("trim=start=0,setpts=PTS-STARTPTS"),
+            "{joined}"
+        );
+        assert!(joined.contains("tpad=start_duration=0[vs1]"), "{joined}");
+        assert!(
+            joined.contains("[vs0][vs1]concat=n=2:v=1:a=0[vcat]"),
+            "{joined}"
+        );
+        assert!(
+            joined.contains("[0:a]atrim=start=3:end=8,asetpts=PTS-STARTPTS,adelay=2000|2000[av0]"),
+            "{joined}"
+        );
+        assert!(joined.contains("[1:a]adelay=7000|7000[av1]"), "{joined}");
+        assert!(
+            joined.contains("[av0][av1]amix=inputs=2:normalize=0[mix];[mix]apad[a]"),
+            "{joined}"
+        );
+        assert!(
+            joined
+                .contains("-map [vcat] -c:v libx264 -pix_fmt yuv420p -map [a] -c:a aac -shortest"),
+            "{joined}"
+        );
+
+        let muted = json.replace("\"keep\"", "\"mute\"");
+        let (args, _) = export_args(&dir, "demo", &muted).unwrap();
+        assert!(
+            args.join(" ")
+                .contains("-map [vcat] -c:v libx264 -pix_fmt yuv420p -an -shortest")
+        );
+
+        assert!(export_args(&dir, "demo", &json.replace("\"start\":2,", "\"start\":8,")).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
