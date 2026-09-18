@@ -155,7 +155,7 @@ export function spokenCount(t: Timeline): number {
 }
 
 // Width / height of the export frame.
-export function frameAspect(t: Timeline): number {
+export function frameAspect(t: { resolution?: string }): number {
   const [w, h] = (t.resolution ?? DEFAULT_RESOLUTION).split("x").map(Number);
   return w > 0 && h > 0 ? w / h : 16 / 9;
 }
