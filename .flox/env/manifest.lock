@@ -18,7 +18,7 @@
       "claude-code": {
         "pkg-path": "claude-code",
         "pkg-group": "claude-code",
-        "version": "2.1.266"
+        "version": "2.1.272"
       },
       "clippy": {
         "pkg-path": "clippy",
@@ -34,7 +34,7 @@
         "version": "3.53.1"
       },
       "infer": {
-        "flake": "github:inference-gateway/cli/v0.202.1"
+        "flake": "github:inference-gateway/cli/v0.203.0"
       },
       "rustc": {
         "pkg-path": "rustc",
@@ -48,93 +48,6 @@
     "options": {}
   },
   "packages": [
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/hizzak4h0q3kv03w07bzzaqg902mah0g-claude-code-2.1.266.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "name": "claude-code-2.1.266",
-      "pname": "claude-code",
-      "rev": "eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "rev_count": 1072397,
-      "rev_date": "2026-09-11T18:00:29Z",
-      "scrape_date": "2026-09-13T05:02:13.211299Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.266",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/b6fb4p504hgc1581wdnrl3h0jwd8c2n4-claude-code-2.1.266"
-      },
-      "system": "aarch64-darwin",
-      "group": "claude-code",
-      "priority": 5
-    },
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/89mv0d08xyn6ixsphf5hf4vzzq37lnhr-claude-code-2.1.266.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "name": "claude-code-2.1.266",
-      "pname": "claude-code",
-      "rev": "eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "rev_count": 1072397,
-      "rev_date": "2026-09-11T18:00:29Z",
-      "scrape_date": "2026-09-13T05:37:23.245942Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.266",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/0cr9s8lp1v0wsf6ym6lmsy259cpk60bk-claude-code-2.1.266"
-      },
-      "system": "aarch64-linux",
-      "group": "claude-code",
-      "priority": 5
-    },
-    {
-      "attr_path": "claude-code",
-      "broken": false,
-      "derivation": "/nix/store/b70c29jwnpjvzb2c1rp2qjw4gj91m5hf-claude-code-2.1.266.drv",
-      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
-      "install_id": "claude-code",
-      "license": "Unfree",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "name": "claude-code-2.1.266",
-      "pname": "claude-code",
-      "rev": "eaad089433ca2bb662274377d33df3d0e51ef28b",
-      "rev_count": 1072397,
-      "rev_date": "2026-09-11T18:00:29Z",
-      "scrape_date": "2026-09-13T06:16:42.665996Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": true,
-      "version": "2.1.266",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/kbfdk9xsxli80204fly4krqyk9i9rfkw-claude-code-2.1.266"
-      },
-      "system": "x86_64-linux",
-      "group": "claude-code",
-      "priority": 5
-    },
     {
       "attr_path": "codex",
       "broken": false,
@@ -864,13 +777,100 @@
       "priority": 5
     },
     {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/dcw26b2g9dvyv905yisn4v5hdcyxmx2a-claude-code-2.1.272.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "name": "claude-code-2.1.272",
+      "pname": "claude-code",
+      "rev": "b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "rev_count": 1074753,
+      "rev_date": "2026-09-16T08:07:56Z",
+      "scrape_date": "2026-09-17T05:03:19.811377Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.272",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/c1nk47hgsvmg4l6dz4lyxb0v3r2vywj8-claude-code-2.1.272"
+      },
+      "system": "aarch64-darwin",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/s9am0l3kslb6fsndd7g8k0kaalw2qvlm-claude-code-2.1.272.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "name": "claude-code-2.1.272",
+      "pname": "claude-code",
+      "rev": "b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "rev_count": 1074753,
+      "rev_date": "2026-09-16T08:07:56Z",
+      "scrape_date": "2026-09-17T05:40:23.320482Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.272",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/1laqjqw77ibq58ph1s7g8nzskmzfz150-claude-code-2.1.272"
+      },
+      "system": "aarch64-linux",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
+      "attr_path": "claude-code",
+      "broken": false,
+      "derivation": "/nix/store/7pj9vj42lgzcx38941f7snj9l59iczxc-claude-code-2.1.272.drv",
+      "description": "Agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster",
+      "install_id": "claude-code",
+      "license": "Unfree",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "name": "claude-code-2.1.272",
+      "pname": "claude-code",
+      "rev": "b1b875982b17dabde9b4a37f3e229e74913e6db3",
+      "rev_count": 1074753,
+      "rev_date": "2026-09-16T08:07:56Z",
+      "scrape_date": "2026-09-17T06:22:01.629347Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": true,
+      "version": "2.1.272",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/zzf9fyppsvwp5v38snn20imibb3mj64s-claude-code-2.1.272"
+      },
+      "system": "x86_64-linux",
+      "group": "claude-code",
+      "priority": 5
+    },
+    {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/5e2bffe8032e8fb4fcf84c974f392bfd8e033bc1?narHash=sha256-KZz/z%2BTdM/Afmok75VVGB8GVKwy4%2BTkHrgZWYLI5yEM%3D",
+      "locked-url": "github:inference-gateway/cli/5ddbcdeeab2dbd15a20567fab4beebf6ad0b2fcc?narHash=sha256-3NUehACoc0oBrg4g%2BTM0A73NlP5PEeGJPYyU/3Rj4Qo%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-darwin.default",
-      "derivation": "/nix/store/mdjg1bkzva71hhfs1bcddsv3dx346nxb-infer-0.202.1.drv",
+      "derivation": "/nix/store/x42v5rzimnpg8d01mzph8kvl6s938xrb-infer-0.203.0.drv",
       "outputs": {
-        "out": "/nix/store/7wag3d1bvrr5mh6cis9f4h7bxgx9g2z2-infer-0.202.1"
+        "out": "/nix/store/g9dgsh0d9f5infi6dh19v4275xrjcfdf-infer-0.203.0"
       },
       "output-names": [
         "out"
@@ -881,9 +881,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-darwin",
       "system": "aarch64-darwin",
-      "name": "infer-0.202.1",
+      "name": "infer-0.203.0",
       "pname": "infer",
-      "version": "0.202.1",
+      "version": "0.203.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -894,12 +894,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/5e2bffe8032e8fb4fcf84c974f392bfd8e033bc1?narHash=sha256-KZz/z%2BTdM/Afmok75VVGB8GVKwy4%2BTkHrgZWYLI5yEM%3D",
+      "locked-url": "github:inference-gateway/cli/5ddbcdeeab2dbd15a20567fab4beebf6ad0b2fcc?narHash=sha256-3NUehACoc0oBrg4g%2BTM0A73NlP5PEeGJPYyU/3Rj4Qo%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-linux.default",
-      "derivation": "/nix/store/6kx5p3y5sjir1kspzas7x9yksbyjh9py-infer-0.202.1.drv",
+      "derivation": "/nix/store/274pfbnxg5mcl4mjc6b9cffg8rzzdfyv-infer-0.203.0.drv",
       "outputs": {
-        "out": "/nix/store/ificv4n3pqm1ddvb90ykyclqvk1xpa7q-infer-0.202.1"
+        "out": "/nix/store/vpkzyifl6gmq7md54lf4j1vvsd15lc4q-infer-0.203.0"
       },
       "output-names": [
         "out"
@@ -910,9 +910,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-linux",
       "system": "aarch64-linux",
-      "name": "infer-0.202.1",
+      "name": "infer-0.203.0",
       "pname": "infer",
-      "version": "0.202.1",
+      "version": "0.203.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -923,12 +923,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/5e2bffe8032e8fb4fcf84c974f392bfd8e033bc1?narHash=sha256-KZz/z%2BTdM/Afmok75VVGB8GVKwy4%2BTkHrgZWYLI5yEM%3D",
+      "locked-url": "github:inference-gateway/cli/5ddbcdeeab2dbd15a20567fab4beebf6ad0b2fcc?narHash=sha256-3NUehACoc0oBrg4g%2BTM0A73NlP5PEeGJPYyU/3Rj4Qo%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.x86_64-linux.default",
-      "derivation": "/nix/store/454zkhpdzc05g8vgh2hdas2g9n5qf2jy-infer-0.202.1.drv",
+      "derivation": "/nix/store/ymkm671qd24lwg6jqyr1by066dbjb87x-infer-0.203.0.drv",
       "outputs": {
-        "out": "/nix/store/63gh2ii5msjilpyrkw3ab9m7k4i8n0a3-infer-0.202.1"
+        "out": "/nix/store/lslmhlqg5xrshim0asvml456805cj6a1-infer-0.203.0"
       },
       "output-names": [
         "out"
@@ -939,9 +939,9 @@
       "requested-outputs-to-install": [],
       "package-system": "x86_64-linux",
       "system": "x86_64-linux",
-      "name": "infer-0.202.1",
+      "name": "infer-0.203.0",
       "pname": "infer",
-      "version": "0.202.1",
+      "version": "0.203.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
