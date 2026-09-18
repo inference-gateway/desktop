@@ -114,7 +114,7 @@ describe("edits", () => {
   });
 
   test("addMarker creates an audio track when missing", () => {
-    const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "hello");
+    const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "audio", "hello");
     expect(t.tracks[0]).toMatchObject({ kind: "audio", clips: [{ start: 3, end: 8, text: "hello" }] });
   });
 
@@ -172,16 +172,36 @@ test("captions track parses, round-trips and falls back to the default preset", 
   expect(captionStyle(tr.style)).toBe("karaoke");
   expect(captionStyle("nope")).toBe(CAPTION_STYLES[0].value);
   expect(captionStyle(undefined)).toBe(CAPTION_STYLES[0].value);
-  // The lane sits with the overlays, above the video.
   expect(laneOrder(t.tracks).map((tr) => tr.id)).toEqual(["subs", "video"]);
-  // Clip identity and words survive a write/read cycle.
   const round = parseTimeline(serializeTimeline(t));
   expect(round.tracks[1].clips[0]).toMatchObject({ id: "c1", start: 0, end: 3, words: tr.clips[0].words });
-  // Edits keep the words and do not mark captions draft.
   const moved = moveClip(t, "subs", "c1", 1);
   expect(moved.tracks[1].clips[0]).toMatchObject({ start: 1, end: 4, words: tr.clips[0].words });
   expect(setClipText(t, "subs", "c1", "fixed").tracks[1].clips[0].status).toBeUndefined();
   expect(draftCount(t)).toBe(0);
+  expect(spokenCount(t)).toBe(0);
+});
+
+test("addMarker inserts a caption clip and creates the captions track when missing", () => {
+  const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "captions");
+  const tr = captionTrack(t)!;
+  expect(tr).toMatchObject({ id: "captions", kind: "captions" });
+  expect(tr.clips[0]).toEqual({ id: "c1", start: 3, end: 8, text: "" });
+  expect(spokenCount(t)).toBe(0);
+  expect(draftCount(t)).toBe(0);
+
+  const two = addMarker(t, 1, "captions");
+  expect(captionTrack(two)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
+    ["c2", 1, 3],
+    ["c1", 3, 8],
+  ]);
+
+  const three = addMarker(two, 4, "captions");
+  expect(captionTrack(three)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
+    ["c2", 1, 3],
+    ["c1", 3, 8],
+    ["c3", 8, 13],
+  ]);
 });
 
 test("speakClip drafts a spoken clip from a caption, or updates the one at the same range", () => {
@@ -189,16 +209,13 @@ test("speakClip drafts a spoken clip from a caption, or updates the one at the s
   const spoken = speakClip(t, "subs", "c1");
   const audio = spoken.tracks.find((tr) => tr.kind === "audio");
   expect(audio?.clips[0]).toMatchObject({ start: 0, end: 3, text: "hello there world", status: "draft" });
-  // Same range again updates in place instead of stacking duplicates.
   const again = speakClip(spoken, "subs", "c1");
   expect(again.tracks.find((tr) => tr.kind === "audio")?.clips).toHaveLength(1);
-  // Editing the caption text after speaking updates the draft too.
   expect(
     speakClip(setClipText(again, "subs", "c1", "fixed"), "subs", "c1").tracks.find((tr) => tr.kind === "audio")
       ?.clips[0].text,
   ).toBe("fixed");
   expect(draftCount(again)).toBe(1);
-  // A caption without text says nothing.
   const empty = parseTimeline('{"tracks":[{"kind":"captions","clips":[{"id":"c","start":0,"end":1}]}]}');
   expect(speakClip(empty, "subs", "c")).toBe(empty);
 });

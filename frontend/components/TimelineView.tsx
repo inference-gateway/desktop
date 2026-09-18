@@ -94,11 +94,14 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
 };
 const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers, captions: Type };
 const AUDIO_ICON: Record<SourceAudio, typeof Mic> = { transcribe: Mic, mute: VolumeX, keep: Volume2 };
+// The timeline's frame size, falling back when the file holds a size the toolbar does not offer.
 const frameSize = (t: Timeline) =>
   RESOLUTIONS.some((r) => r.value === t.resolution) ? t.resolution : DEFAULT_RESOLUTION;
+// px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 const SNAP_PX = 8;
+// Lane height minus the clip inset, the height clip media draws at.
 const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
 const ZOOM_BTN =
@@ -122,10 +125,12 @@ const clipClass = (tr: Track, c: Clip) =>
             ? "border-amber-300/70 bg-amber-600/85"
             : "border-violet-400/60 bg-violet-700/85";
 
+// ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
 
+// Name used when the user starts layering tracks before the agent wrote any timeline.
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -135,6 +140,8 @@ function TrackIcon({ kind }: { kind: TrackKind }) {
   return <Icon size={11} className="shrink-0 text-zinc-500" />;
 }
 
+// Caption preset colours and sizes, mirrored by CAPTION_PRESETS in
+// backend/src/timeline.rs: the preview must look like the burned-in export.
 const CAPTION_ACCENT = "#ffd400";
 const CAPTION_DIM = "#999999";
 
@@ -340,6 +347,8 @@ export function TimelineView() {
 
   const running = runningIds.size;
 
+  // ponytail: a half-written JSON can briefly fail to parse; the trailing
+  // debounce makes it rare. Retry once on parse error if it shows up.
   useEffect(() => {
     if (!project) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -551,6 +560,21 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
+  const addCaption = () => {
+    const before = new Set(captionTrack(shown)?.clips.map((c) => c.id) ?? []);
+    const next = addMarker(shown, time, "captions");
+    update(next);
+    const tr = captionTrack(next);
+    const fresh = tr?.clips.find((c) => !before.has(c.id));
+    if (tr && fresh) setSelected({ track: tr.id, clip: fresh.id });
+  };
+
+  const captionize = () => {
+    const style = captionStyle(captionTrack(shown)?.style);
+    const prompt = `Add captions to ${name || DEFAULT_TIMELINE} in the "${style}" style: write a captions track following the captions rules in the skill, and leave every other track alone.`;
+    promptProject(project, prompt).catch((e) => setError(String(e)));
+  };
+
   const redoClip = (trackId: string, c: Clip) => {
     if (!timeline || !name) return;
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
@@ -610,7 +634,7 @@ export function TimelineView() {
   };
 
   const laneAccepts = (tr: Track, file: string | null) =>
-    !!file && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
+    !!file && tr.kind !== "captions" && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
 
   const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
     const file = dragRef.current;
@@ -736,6 +760,16 @@ export function TimelineView() {
                 onClick={() => update(addMarker(timeline, time))}
               >
                 <BookmarkPlus size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Add captions"
+                title="Ask for captions from the voice clips or the recording's transcript"
+                onClick={captionize}
+                disabled={running > 0}
+              >
+                <Type size={14} />
               </Button>
               <Button
                 size="icon-sm"
@@ -901,7 +935,7 @@ export function TimelineView() {
                   {tr.kind === "captions" && (
                     <select
                       aria-label={`Caption style for ${tr.id}`}
-                      title="The caption look: the preview and the burned-in export share these presets"
+                      title="The caption look: the preview and the burned-in export share these presets. Highlight and Karaoke need per-word timing from the agent"
                       value={captionStyle(tr.style)}
                       onChange={(e) =>
                         update({
@@ -919,6 +953,16 @@ export function TimelineView() {
                     </select>
                   )}
                 </div>
+                {tr.kind === "captions" && (
+                  <button
+                    aria-label="Add caption"
+                    title="Add a caption at the playhead"
+                    onClick={addCaption}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <Plus size={14} />
+                  </button>
+                )}
                 <TrackIcon kind={tr.kind} />
               </div>
             ))}

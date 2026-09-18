@@ -61,6 +61,24 @@ scenarios:
                 }
       - content: "Title card added."
 
+  - name: captions
+    match: '(?i)add captions'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "captions.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 20,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 20 }] },
+                    { "id": "captions", "kind": "captions", "style": "classic", "clips": [{ "id": "c1", "start": 0, "end": 4.5, "text": "First we open the settings panel." }] }
+                  ]
+                }
+      - content: "Captions added."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:

@@ -151,7 +151,10 @@ export function videoSource(t: Timeline): string | undefined {
 export const isSpoken = (c: Clip): boolean => c.text !== undefined;
 
 export function spokenCount(t: Timeline): number {
-  return t.tracks.flatMap((tr) => tr.clips).filter(isSpoken).length;
+  return t.tracks
+    .filter((tr) => tr.kind === "audio")
+    .flatMap((tr) => tr.clips)
+    .filter(isSpoken).length;
 }
 
 // Width / height of the export frame.
@@ -260,15 +263,26 @@ export function removeClip(t: Timeline, trackId: string, clipId: string): Timeli
   };
 }
 
-// Insert a draft spoken clip at `at`, ending at the next clip or after
-// MARKER_SECONDS, whichever comes first. Creates an audio track if missing.
-export function addMarker(t: Timeline, at: number, text = ""): Timeline {
-  const start = Math.max(0, Math.min(at, t.duration));
-  const existing = spokenTrack(t);
-  const track = existing ?? { id: "audio", kind: "audio" as const, clips: [] };
+// Insert an empty clip at `at`, ending at the next clip or after
+// MARKER_SECONDS, whichever comes first: a draft spoken clip on the audio
+// track, or a caption on the captions track; a caption starts after any clip
+// the playhead sits in, because two captions at once burn in on top of each
+// other. Creates the track if missing.
+export function addMarker(t: Timeline, at: number, kind: "audio" | "captions" = "audio", text = ""): Timeline {
+  const captions = kind === "captions";
+  const existing = captions ? captionTrack(t) : spokenTrack(t);
+  const track = existing ?? { id: kind, kind, clips: [] };
+  let start = Math.max(0, Math.min(at, t.duration));
+  if (captions) {
+    for (const c of [...track.clips].sort((a, b) => a.start - b.start)) {
+      if (start >= c.start && start < c.end) start = c.end;
+    }
+  }
   const next = track.clips.find((c) => c.start > start);
   const end = Math.min(t.duration || start + MARKER_SECONDS, next?.start ?? Infinity, start + MARKER_SECONDS);
-  const clip: Clip = { id: nextId(track, "m"), start, end: Math.max(end, start + 0.5), text, status: "draft" };
+  const clip: Clip = captions
+    ? { id: nextId(track, "c"), start, end: Math.max(end, start + 0.5), text }
+    : { id: nextId(track, "m"), start, end: Math.max(end, start + 0.5), text, status: "draft" };
   const clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
   const tracks = existing
     ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))

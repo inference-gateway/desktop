@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, or add a card, title or overlay to a video.
+description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, add captions or subtitles to a video, or add a card, title or overlay to a video.
 license: Apache-2.0
 ---
 
@@ -31,8 +31,11 @@ under `~/.infer`; the only place you write is the working directory.
 - `ffmpeg` on `PATH` (the desktop's own copy lives in `~/.infer/bin/tools/ffmpeg`). There is no `ffprobe`;
   probe with `ffmpeg -hide_banner -i <file> 2>&1 | grep -E 'Duration|Stream'` (bare `ffmpeg -i` always
   exits 1 for lack of an output file; the `grep` exits 0 when the file was read).
-- `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (only for
-  `source_audio: transcribe`). Use a larger model only if one already exists in that directory.
+- `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (for
+  `source_audio: transcribe` and for caption word timing). Use a larger model only if one already
+  exists in that directory.
+- Captions are burned in with libass: `ffmpeg -hide_banner -filters | grep -c ' subtitles '` prints
+  `1`. Without it the desktop's Export fails, and the user needs a full ffmpeg (`brew install ffmpeg`).
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
@@ -86,6 +89,27 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
     },
     { "id": "music", "kind": "audio", "gain": 0.2, "clips": [] },
     {
+      "id": "captions",
+      "kind": "captions",
+      "style": "classic",
+      "position": "bottom",
+      "clips": [
+        { "id": "c1", "start": 0.0, "end": 4.6, "text": "First we open the settings panel." },
+        {
+          "id": "c2",
+          "start": 4.6,
+          "end": 9.2,
+          "text": "Then pick a voice",
+          "words": [
+            { "text": "Then", "start": 4.6, "end": 5.1 },
+            { "text": "pick", "start": 5.1, "end": 5.5 },
+            { "text": "a", "start": 5.5, "end": 5.6 },
+            { "text": "voice", "start": 5.9, "end": 6.4 }
+          ]
+        }
+      ]
+    },
+    {
       "id": "cards",
       "kind": "overlay",
       "clips": [
@@ -120,11 +144,15 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
   means "suggest something for this range".
-- Tracks are `video`, `audio` or `overlay` (the older `voice` kind still loads as `audio`). On an audio track,
+- Tracks are `video`, `audio`, `overlay` or `captions` (the older `voice` kind still loads as
+  `audio`). On an audio track,
   a clip with `text` is spoken: you synthesize it. A clip with only `src` (music, SFX, a file the
   user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
   export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
   already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
+- A captions track is on-screen text burned into the export: `kind: "captions"`, a `style` preset
+  and an optional `position`, with clips of `id`, `start`, `end`, `text` and optional `words`. One
+  captions track per timeline; caption clips never carry `src` or `status`. See Captions.
 - `source_audio` says what to do with the recording's own audio track: `transcribe` (reuse the
   user's own speech as the script and as the voice sample, then replace it), `mute` (drop
   it), or `keep` (mix it under the voice). Missing means: `transcribe` when the recording has
@@ -187,6 +215,37 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
 4. Voice sample: unless a library sample was chosen, cut the cleanest 15-25 s stretch of
    continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
 5. Continue with Synthesize, then stop; the export replaces the original track.
+
+## Captions
+
+Add a captions track when the user asks for captions or subtitles, or asks for a clip "to post"
+(short-form video is watched muted). Captions are independent of the voice: the export burns them
+in and also writes a sidecar `.srt`.
+
+1. **Text.** If the timeline already has spoken clips, their `text` is the script: reuse it, no
+   transcription. Otherwise, with `source_audio: transcribe`, use `transcript.json` from the Source
+   audio step. With neither, there is nothing to caption: say so instead of inventing lines.
+2. **Chunk.** One caption per breath: about 5 s, at most ~12 words and two lines. Break at sentence
+   ends and pauses, never mid-word and never mid-number. `start`/`end` come from the spoken clip or
+   the transcript offsets; a long spoken clip splits into several captions inside its own range.
+   Drop filler and trailing punctuation clutter, keep the words the user says.
+3. **Style.** `classic` (white on a dark band), `bold` (large uppercase with an outline),
+   `highlight` (words pop as spoken) or `karaoke` (words fill as spoken). Use `classic` unless the
+   user asks for a word-by-word look. `position` is `bottom` (default), `center` or `top`.
+4. **Words.** `highlight` and `karaoke` need per-word timing; the other two ignore it. Only for
+   those two, run a second pass for word-level splits over the wav the text came from - `audio.wav`
+   for a transcript, `media/<stem>-<id>.wav` for a synthesized clip:
+   `~/.infer/bin/tools/whisper-cli -m <model> -f <wav> -ml 1 -oj -of words`. Write `words` as
+   absolute seconds on the timeline (`{ "text", "start", "end" }`, offset by the clip's `start` when
+   the wav is a single clip), inside each caption's own range. Without `words` both presets fall
+   back to the whole line, so skipping the pass is safe but loses the effect.
+5. **Stop.** Write the JSON and stop, as in step 6 of Steps. The user reviews the captions on the
+   timeline and presses Export.
+
+Editing a captions track: read the file first, keep clip `id`s stable and change only what the user
+asked about. A misheard word is one clip's `text`, not a reason to rebuild the track. The user also
+adds caption clips on the timeline: a caption with empty `text` is a range they want filled, one
+with text is theirs and stays verbatim.
 
 ## Redo drafts
 
