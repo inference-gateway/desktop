@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  BookmarkPlus,
+  Download,
   FilePlus,
   Film,
-  FolderOpen,
   Layers,
+  Loader2,
+  Mic,
   Music,
   Pause,
   Play,
   Plus,
+  RectangleHorizontal,
+  RectangleVertical,
   RefreshCw,
   Scissors,
   Sparkles,
+  Square,
   Trash2,
+  Volume2,
+  VolumeX,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -74,6 +82,10 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
   overlay: "bg-fuchsia-500",
 };
 const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers };
+const AUDIO_ICON: Record<SourceAudio, typeof Mic> = { transcribe: Mic, mute: VolumeX, keep: Volume2 };
+// The timeline's frame size, falling back when the file holds a size the toolbar does not offer.
+const frameSize = (t: Timeline) =>
+  RESOLUTIONS.some((r) => r.value === t.resolution) ? t.resolution : DEFAULT_RESOLUTION;
 // px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
@@ -595,66 +607,94 @@ export function TimelineView() {
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {timeline && (
             <>
-              <label
-                className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
+              <div
+                role="group"
+                aria-label="Frame size"
                 title="The exported frame size: the recording is scaled to fit and padded, cards are placed in this frame"
+                className="flex items-center gap-0.5 rounded-lg border border-input p-0.5"
               >
-                Frame
-                <select
-                  aria-label="Frame size"
-                  value={
-                    RESOLUTIONS.some((r) => r.value === timeline.resolution) ? timeline.resolution : DEFAULT_RESOLUTION
-                  }
-                  onChange={(e) => update({ ...timeline, resolution: e.target.value })}
-                  className="h-8 max-w-[200px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
-                >
-                  {RESOLUTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label
-                className="flex items-center gap-1 text-[0.72rem] text-muted-foreground"
+                {RESOLUTIONS.map((o) => {
+                  const ratio = frameAspect({ resolution: o.value });
+                  const Icon = ratio > 1 ? RectangleHorizontal : ratio < 1 ? RectangleVertical : Square;
+                  const on = frameSize(timeline) === o.value;
+                  return (
+                    <Button
+                      key={o.value}
+                      size="icon-sm"
+                      variant={on ? "secondary" : "ghost"}
+                      aria-pressed={on}
+                      aria-label={o.label}
+                      title={`Frame ${o.label}`}
+                      className={on ? undefined : "text-muted-foreground"}
+                      onClick={() => update({ ...timeline, resolution: o.value })}
+                    >
+                      <Icon size={14} />
+                    </Button>
+                  );
+                })}
+              </div>
+              <div
+                role="group"
+                aria-label="Recording audio"
                 title="What happens to the recording's own soundtrack: the agent transcribes it and re-voices it with your clone, it is dropped, or it plays under the voice clips"
+                className="flex items-center gap-0.5 rounded-lg border border-input p-0.5"
               >
-                Recording audio
-                <select
-                  aria-label="Recording audio"
-                  value={timeline.source_audio ?? "mute"}
-                  onChange={(e) => update({ ...timeline, source_audio: e.target.value as SourceAudio })}
-                  className="h-8 max-w-[200px] rounded-md border border-input bg-transparent px-1 text-[0.78rem] text-foreground"
-                >
-                  {SOURCE_AUDIO.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                {SOURCE_AUDIO.map((o) => {
+                  const Icon = AUDIO_ICON[o.value];
+                  const on = (timeline.source_audio ?? "mute") === o.value;
+                  return (
+                    <Button
+                      key={o.value}
+                      size="icon-sm"
+                      variant={on ? "secondary" : "ghost"}
+                      aria-pressed={on}
+                      aria-label={o.label}
+                      title={`Recording audio: ${o.label}`}
+                      className={on ? undefined : "text-muted-foreground"}
+                      onClick={() => update({ ...timeline, source_audio: o.value })}
+                    >
+                      <Icon size={14} />
+                    </Button>
+                  );
+                })}
+              </div>
+              <span className="mx-0.5 h-5 w-px bg-border" />
               <Button
                 variant="outline"
-                size="sm"
+                size="icon-sm"
+                aria-label="Split"
                 title="Split the clips under the playhead in two (S or Ctrl+B)"
                 onClick={splitAtPlayhead}
               >
-                <Scissors size={14} /> Split
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => update(addMarker(timeline, time))}>
-                <Plus size={14} /> Add marker
-              </Button>
-              <Button size="sm" onClick={generate} disabled={running > 0}>
-                <Sparkles size={14} /> {hasVoice ? "Redo drafts" : "Add voice"}
+                <Scissors size={14} />
               </Button>
               <Button
                 variant="outline"
-                size="sm"
-                title="Render the timeline to an MP4 with ffmpeg"
+                size="icon-sm"
+                aria-label="Add marker"
+                title="Add a marker at the playhead"
+                onClick={() => update(addMarker(timeline, time))}
+              >
+                <BookmarkPlus size={14} />
+              </Button>
+              <Button
+                size="icon-sm"
+                aria-label={hasVoice ? "Redo drafts" : "Add voice"}
+                title={hasVoice ? "Redo drafts" : "Add voice"}
+                onClick={generate}
+                disabled={running > 0}
+              >
+                <Sparkles size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Export"
+                title={exporting ? "Exporting..." : "Render the timeline to an MP4 with ffmpeg"}
                 onClick={exportVideo}
                 disabled={exporting || running > 0 || (hasVoice === 0 && overlays === 0 && videoCount === 0)}
               >
-                <FolderOpen size={14} /> {exporting ? "Exporting..." : "Export"}
+                {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               </Button>
             </>
           )}
