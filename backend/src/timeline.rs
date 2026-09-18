@@ -151,18 +151,19 @@ pub(crate) fn write_timeline(project: String, name: String, data: String) -> Res
     std::fs::write(&path, data).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
-fn has_video_filters(ffmpeg: &Path) -> bool {
+/// Whether the ffmpeg's filter list contains every wanted filter.
+fn has_filters(ffmpeg: &Path, wanted: &[&str]) -> bool {
     std::process::Command::new(ffmpeg)
         .args(["-hide_banner", "-filters"])
         .output()
         .map(|out| {
             let filters = String::from_utf8_lossy(&out.stdout);
-            [" adelay ", " amix ", " apad ", " scale ", " overlay "]
-                .iter()
-                .all(|f| filters.contains(f))
+            wanted.iter().all(|f| filters.contains(f))
         })
         .unwrap_or(false)
 }
+
+const VIDEO_FILTERS: [&str; 5] = [" adelay ", " amix ", " apad ", " scale ", " overlay "];
 
 /// The ffmpeg used for keyframes and the export: the desktop-owned copy when
 /// it has the video filters, else a full build on PATH.
@@ -172,7 +173,7 @@ fn video_ffmpeg() -> Result<PathBuf, String> {
     [owned_bin("ffmpeg"), find_on_path("ffmpeg")]
         .into_iter()
         .flatten()
-        .find(|p| has_video_filters(p))
+        .find(|p| has_filters(p, &VIDEO_FILTERS))
         .ok_or_else(|| {
             "no ffmpeg with video filters found: the bundled build is audio-only; install a full ffmpeg (brew install ffmpeg) until a newer inference-gateway/binaries release ships".to_string()
         })
@@ -282,6 +283,8 @@ struct TimelineFile {
 struct TrackFile {
     kind: String,
     gain: Option<f64>,
+    style: Option<String>,
+    position: Option<String>,
     #[serde(default)]
     clips: Vec<ClipFile>,
 }
@@ -296,6 +299,18 @@ struct ClipFile {
     y: Option<f64>,
     width: Option<f64>,
     height: Option<f64>,
+    text: Option<String>,
+    #[serde(default)]
+    words: Vec<WordFile>,
+}
+
+/// When one word of a caption clip is spoken (absolute seconds), from the
+/// transcript; `text` falls back to the i-th word of the clip's text.
+#[derive(serde::Deserialize)]
+struct WordFile {
+    text: Option<String>,
+    start: f64,
+    end: f64,
 }
 
 impl ClipFile {
@@ -375,6 +390,236 @@ fn overlay_filter(
     )
 }
 
+/// Caption style presets, mirrored from CAPTION_STYLES in
+/// frontend/lib/timeline.ts and CaptionOverlay in TimelineView.tsx: the
+/// preview and the burned-in export must match. Sizes are fractions of the
+/// frame height (ASS PlayResY), colours are ASS &HAABBGGRR, and the word
+/// presets time their karaoke tags from the clip's `words`.
+/// ponytail: ASS cannot express per-axis band padding or a semi-bold weight;
+/// the closest standing-in values stand in for the preview's.
+struct CaptionPreset {
+    name: &'static str,
+    fontsize: f64,
+    uppercase: bool,
+    band: bool,
+    primary: &'static str,
+    secondary: &'static str,
+    karaoke: Option<&'static str>,
+}
+
+const CAPTION_PRESETS: [CaptionPreset; 4] = [
+    // White text on a dark band.
+    CaptionPreset {
+        name: "Classic",
+        fontsize: 0.052,
+        uppercase: false,
+        band: true,
+        primary: "&H00FFFFFF",
+        secondary: "&H00FFFFFF",
+        karaoke: None,
+    },
+    // Large centered uppercase with a thick outline.
+    CaptionPreset {
+        name: "Bold",
+        fontsize: 0.075,
+        uppercase: true,
+        band: false,
+        primary: "&H00FFFFFF",
+        secondary: "&H00FFFFFF",
+        karaoke: None,
+    },
+    // Word-by-word colour pop: words turn accent as spoken and stay.
+    CaptionPreset {
+        name: "Highlight",
+        fontsize: 0.06,
+        uppercase: false,
+        band: false,
+        primary: "&H0000D4FF",
+        secondary: "&H00FFFFFF",
+        karaoke: Some("k"),
+    },
+    // Filled as spoken: dim ahead of the playhead, white behind it.
+    CaptionPreset {
+        name: "Karaoke",
+        fontsize: 0.06,
+        uppercase: false,
+        band: false,
+        primary: "&H00FFFFFF",
+        secondary: "&H00999999",
+        karaoke: Some("kf"),
+    },
+];
+
+/// The captions track's preset; unknown names fall back to the default
+/// (Classic), like the preview's captionStyle.
+fn caption_preset(style: Option<&str>) -> &'static CaptionPreset {
+    CAPTION_PRESETS
+        .iter()
+        .find(|p| style.is_some_and(|s| p.name.eq_ignore_ascii_case(s)))
+        .unwrap_or(&CAPTION_PRESETS[0])
+}
+
+/// ASS timestamp: H:MM:SS.CC.
+fn ass_time(s: f64) -> String {
+    let cs = (s.max(0.0) * 100.0).round() as i64;
+    format!(
+        "{}:{:02}:{:02}.{:02}",
+        cs / 360000,
+        cs / 6000 % 60,
+        cs / 100 % 60,
+        cs % 100
+    )
+}
+
+/// SRT timestamp: HH:MM:SS,mmm.
+fn srt_time(s: f64) -> String {
+    let ms = (s.max(0.0) * 1000.0).round() as i64;
+    format!(
+        "{:02}:{:02}:{:02},{:03}",
+        ms / 3600000,
+        ms / 60000 % 60,
+        ms / 1000 % 60,
+        ms % 1000
+    )
+}
+
+/// A bare file name as a filtergraph option value: two unescape rounds run
+/// (the filtergraph parser, then the subtitles filter's own option split on
+/// `:`), so `:` and `\` carry doubled backslashes.
+fn filter_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        match c {
+            ':' => out.push_str("\\\\:"),
+            '\\' => out.push_str("\\\\\\\\"),
+            ',' | '[' | ']' | ';' => out.push_str(&format!("\\{c}")),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// A caption clip's ASS text: per-word `\k`/`\kf` centisecond tags for the
+/// word presets (timing from `words`, the word itself falling back to the
+/// i-th token of the text), else the raw text, uppercased for Bold.
+fn caption_text(preset: &CaptionPreset, c: &ClipFile) -> String {
+    let raw = c.text.as_deref().unwrap_or_default();
+    if let Some(tag) = preset.karaoke
+        && !c.words.is_empty()
+    {
+        let tokens: Vec<&str> = raw.split_whitespace().collect();
+        let mut out = String::new();
+        for (i, w) in c.words.iter().enumerate() {
+            let cs = ((w.end - w.start).max(0.0) * 100.0).round() as i64;
+            out.push_str(&format!("{{\\{tag}{cs}}}"));
+            out.push_str(
+                w.text
+                    .as_deref()
+                    .unwrap_or(tokens.get(i).copied().unwrap_or("")),
+            );
+            out.push(' ');
+        }
+        return out.trim_end().to_string();
+    }
+    if preset.uppercase {
+        raw.to_uppercase()
+    } else {
+        raw.to_string()
+    }
+}
+
+/// The captions sidecars to write before running ffmpeg, as (path, body):
+/// the ASS burn-in source next to the timeline and an SRT upload file next
+/// to the output. Empty when the timeline has no captions. One ASS style per
+/// preset; alignment carries the track's `position`.
+/// ponytail: a timeline stem with a `'` cannot be embedded in the subtitles
+/// argument (ffmpeg then fails loudly, which beats a silent skip); port
+/// av_escape if that ever matters.
+fn caption_sidecars(
+    dir: &Path,
+    stem: &str,
+    t: &TimelineFile,
+    output: &str,
+    (fw, fh): (u32, u32),
+) -> Result<Vec<Sidecar>, String> {
+    let Some(track) = t.tracks.iter().find(|tr| tr.kind == "captions") else {
+        return Ok(Vec::new());
+    };
+    let mut clips: Vec<&ClipFile> = track
+        .clips
+        .iter()
+        .filter(|c| c.text.as_deref().is_some_and(|t| !t.trim().is_empty()))
+        .collect();
+    clips.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if clips.is_empty() {
+        return Ok(Vec::new());
+    }
+    let preset = caption_preset(track.style.as_deref());
+    let an = match track.position.as_deref() {
+        Some("center") => 5,
+        Some("top") => 8,
+        _ => 2,
+    };
+    let fontsize = (preset.fontsize * f64::from(fh)).round() as i32;
+    let margin = (0.06 * f64::from(fh)).round() as i32;
+    let (border, outline, outline_colour) = if preset.band {
+        (3, 12, "&H99000000")
+    } else {
+        (1, 4, "&H00000000")
+    };
+    let mut dialogue = String::new();
+    for c in &clips {
+        let end = c
+            .end
+            .filter(|e| *e > c.start)
+            .ok_or_else(|| format!("caption clip at {} needs an end after its start", c.start))?;
+        dialogue.push_str(&format!(
+            "Dialogue: 0,{},{},{},,0,0,0,,{{\\an{an}}}{}\n",
+            ass_time(c.start),
+            ass_time(end),
+            preset.name,
+            caption_text(preset, c)
+        ));
+    }
+    let style_line = format!(
+        "Style: {},Arial,{fontsize},{},{},{outline_colour},&H00000000,-1,0,0,0,100,100,0,0,{border},{outline},0,{an},60,60,{margin},1",
+        preset.name, preset.primary, preset.secondary
+    );
+    let ass = format!(
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: {fw}\nPlayResY: {fh}\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n{style_line}\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n{dialogue}"
+    );
+    let srt_name = Path::new(output)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("invalid output name: {output}"))?
+        .to_string();
+    let srt = clips
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            format!(
+                "{}\n{} --> {}\n{}\n",
+                i + 1,
+                srt_time(c.start),
+                srt_time(c.end.unwrap_or(c.start)),
+                c.text.as_deref().unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(vec![
+        (dir.join(format!("{stem}.ass")), ass),
+        (dir.join(EXPORT_DIR).join(format!("{srt_name}.srt")), srt),
+    ])
+}
+
+/// One file the export stages before running ffmpeg: (path, body).
+type Sidecar = (PathBuf, String);
+
 /// Build the ffmpeg invocation that renders a timeline: the video track as a
 /// sequence (every clip trimmed by its `offset` and range, freeze-framed across
 /// gaps and concatenated in timeline order, so all other tracks keep their
@@ -382,9 +627,16 @@ fn overlay_filter(
 /// together, plus the original sound when `source_audio` is `keep`, and every
 /// overlay card composited over the picture. The picture is scaled to fit and
 /// padded to the timeline's `resolution` so the export is always a standard
-/// delivery size. Returns the arguments and the output file name. Pure, so it
-/// is testable.
-fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, String), String> {
+/// delivery size. Captions burn in: a captions track is written to an ASS file
+/// next to the timeline (chained with `subtitles=` onto the final picture) and
+/// an SRT is staged next to the output, both returned as sidecars for the
+/// caller to write before running ffmpeg. Returns the arguments, the output
+/// file name and the sidecars. Pure, so it is testable.
+fn export_args(
+    dir: &Path,
+    stem: &str,
+    json: &str,
+) -> Result<(Vec<String>, String, Vec<Sidecar>), String> {
     let t: TimelineFile =
         serde_json::from_str(json).map_err(|e| format!("invalid timeline: {e}"))?;
     let mut clips: Vec<&ClipFile> = t
@@ -523,6 +775,12 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
             input += 1;
         }
     }
+    let sidecars = caption_sidecars(dir, stem, &t, &output, (fw, fh))?;
+    if let Some((ass, _)) = sidecars.first() {
+        let name = ass.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        filters.push(format!("{picture}subtitles={}[vsub]", filter_name(name)));
+        picture = "[vsub]".to_string();
+    }
     if mix.is_empty() && picture == "[v0]" {
         return Err("nothing to export: the timeline has no audio or overlay clips".into());
     }
@@ -547,11 +805,15 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
     args.push("-shortest".into());
     let output = format!("{EXPORT_DIR}/{output}");
     args.push(dir.join(&output).to_string_lossy().into_owned());
-    Ok((args, output))
+    Ok((args, output, sidecars))
 }
 
 /// Render `<stem>.timeline.json` with ffmpeg into the project's `export/` directory and
-/// return the output file name. Deterministic: same JSON, same command.
+/// return the output file name. Deterministic: same JSON, same command. When the
+/// timeline has captions the sidecars are written first (the burn-in ASS next to
+/// the timeline, the SRT next to the output) and the ffmpeg must have libass.
+/// ffmpeg runs with the project directory as cwd because the subtitles filter
+/// names the ASS file bare.
 #[tauri::command]
 pub(crate) async fn export_timeline(project: String, name: String) -> Result<String, String> {
     let dir = dir_for(&project)?;
@@ -559,14 +821,21 @@ pub(crate) async fn export_timeline(project: String, name: String) -> Result<Str
     let stem = name.trim_end_matches(SUFFIX).to_string();
     let json =
         std::fs::read_to_string(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
-    let (args, output) = export_args(&dir, &stem, &json)?;
+    let (args, output, sidecars) = export_args(&dir, &stem, &json)?;
     let export_dir = dir.join(EXPORT_DIR);
     std::fs::create_dir_all(&export_dir)
         .map_err(|e| format!("creating {}: {e}", export_dir.display()))?;
+    for (path, body) in &sidecars {
+        std::fs::write(path, body).map_err(|e| format!("writing {}: {e}", path.display()))?;
+    }
     let ffmpeg = video_ffmpeg()?;
+    if !sidecars.is_empty() && !has_filters(&ffmpeg, &[" subtitles "]) {
+        return Err("no ffmpeg with libass found: captions cannot be burned in; install a full ffmpeg (brew install ffmpeg)".into());
+    }
     tokio::task::spawn_blocking(move || {
         let out = std::process::Command::new(ffmpeg)
             .args(&args)
+            .current_dir(&dir)
             .output()
             .map_err(|e| format!("running ffmpeg: {e}"))?;
         if !out.status.success() {
@@ -671,7 +940,7 @@ mod tests {
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
             {"kind":"audio","clips":[{"start":1.5,"end":4.5,"offset":2,"src":"s1.wav"},{"start":9,"text":"draft"}]},
             {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3"}]}]}"#;
-        let (args, output) = export_args(&dir, "demo", json).unwrap();
+        let (args, output, _) = export_args(&dir, "demo", json).unwrap();
         assert_eq!(output, "export/demo.with-voice.mp4");
         let joined = args.join(" ");
         assert!(joined.contains("[1]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500[a1];[2]adelay=0|0,volume=0.2[a2];[0:a][a1][a2]amix=inputs=3:normalize=0[mix];[mix]apad[a]"), "{joined}");
@@ -690,7 +959,7 @@ mod tests {
         );
 
         let muted = json.replace("\"keep\"", "\"mute\"");
-        let (args, _) = export_args(&dir, "demo", &muted).unwrap();
+        let (args, _, _) = export_args(&dir, "demo", &muted).unwrap();
         assert!(args.join(" ").contains("[a1][a2]amix=inputs=2"));
 
         assert!(
@@ -716,7 +985,7 @@ mod tests {
             {"kind":"overlay","clips":[
                 {"start":1,"end":4,"src":"title.webm"},
                 {"start":6,"end":9,"src":"logo.mov","x":0.1,"y":0.8,"width":0.5}]}]}"#;
-        let (args, _) = export_args(&dir, "demo", json).unwrap();
+        let (args, _, _) = export_args(&dir, "demo", json).unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("-c:v libvpx-vp9 -i "), "{joined}");
         assert!(joined.contains("logo.mov -filter_complex "), "{joined}");
@@ -739,6 +1008,67 @@ mod tests {
     }
 
     #[test]
+    fn export_args_burns_captions_to_ass_and_srt() {
+        let dir = std::env::temp_dir().join(format!("infer-captions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("s1.wav"), b"x").unwrap();
+        let json = r#"{"resolution":"1080x1920","tracks":[
+            {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
+            {"kind":"captions","style":"highlight","position":"top","clips":[
+                {"start":1,"end":4,"text":"hello world","words":[{"start":1,"end":2.5},{"start":2.5,"end":4}]},
+                {"start":5,"end":7,"text":"second line"}]}]}"#;
+        let (args, output, sidecars) = export_args(&dir, "demo", json).unwrap();
+        assert_eq!(output, "export/demo.with-voice.mp4");
+        assert_eq!(sidecars[0].0, dir.join("demo.ass"));
+        assert_eq!(sidecars[1].0, dir.join("export/demo.with-voice.srt"));
+        let joined = args.join(" ");
+        assert!(joined.contains("[v0]subtitles=demo.ass[vsub]"), "{joined}");
+        let ass = &sidecars[0].1;
+        assert!(ass.contains("PlayResX: 1080\nPlayResY: 1920"), "{ass}");
+        assert!(ass.contains(
+            "Style: Highlight,Arial,115,&H0000D4FF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,8,60,60,115,1"
+        ), "{ass}");
+        assert!(ass.contains(
+            "Dialogue: 0,0:00:01.00,0:00:04.00,Highlight,,0,0,0,,{\\an8}{\\k150}hello {\\k150}world"
+        ), "{ass}");
+        assert!(
+            ass.contains("Dialogue: 0,0:00:05.00,0:00:07.00,Highlight,,0,0,0,,{\\an8}second line"),
+            "{ass}"
+        );
+        let srt = &sidecars[1].1;
+        assert!(srt.contains(
+            "1\n00:00:01,000 --> 00:00:04,000\nhello world\n\n2\n00:00:05,000 --> 00:00:07,000\nsecond line\n"
+        ), "{srt}");
+
+        let (_, _, sidecars) =
+            export_args(&dir, "demo", &json.replace("\"highlight\"", "\"weird\"")).unwrap();
+        let ass = &sidecars[0].1;
+        assert!(ass.contains("Style: Classic,"), "{ass}");
+        assert!(
+            ass.contains("Dialogue: 0,0:00:01.00,0:00:04.00,Classic,,0,0,0,,{\\an8}hello world"),
+            "{ass}"
+        );
+        let (_, _, sidecars) =
+            export_args(&dir, "demo", &json.replace("\"highlight\"", "\"bold\"")).unwrap();
+        assert!(
+            sidecars[0]
+                .1
+                .contains("Dialogue: 0,0:00:01.00,0:00:04.00,Bold,,0,0,0,,{\\an8}HELLO WORLD"),
+            "{}",
+            sidecars[0].1
+        );
+        let nocap = r#"{"tracks":[
+            {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
+            {"kind":"audio","clips":[{"start":1,"end":4,"src":"s1.wav"}]}]}"#;
+        let (args, _, sidecars) = export_args(&dir, "demo", nocap).unwrap();
+        assert!(sidecars.is_empty());
+        assert!(!args.join(" ").contains("subtitles"), "{}", args.join(" "));
+        assert!(export_args(&dir, "demo", &json.replace(r#""end":4,"#, "")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn export_args_renders_the_video_track_as_a_trimmed_sequence() {
         let dir = std::env::temp_dir().join(format!("infer-seq-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -749,7 +1079,7 @@ mod tests {
             {"kind":"video","clips":[
                 {"start":2,"end":7,"offset":3,"src":"a.mp4"},
                 {"start":7,"src":"b.mp4"}]}]}"#;
-        let (args, _) = export_args(&dir, "demo", json).unwrap();
+        let (args, _, _) = export_args(&dir, "demo", json).unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("a.mp4 -i "), "{joined}");
         assert!(joined.contains("b.mp4 -filter_complex "), "{joined}");
@@ -781,7 +1111,7 @@ mod tests {
         );
 
         let muted = json.replace("\"keep\"", "\"mute\"");
-        let (args, _) = export_args(&dir, "demo", &muted).unwrap();
+        let (args, _, _) = export_args(&dir, "demo", &muted).unwrap();
         assert!(
             args.join(" ")
                 .contains("-map [vcat] -c:v libx264 -pix_fmt yuv420p -an -shortest")

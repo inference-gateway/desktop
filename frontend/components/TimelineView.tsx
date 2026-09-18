@@ -132,9 +132,10 @@ const CAPTION_ACCENT = "#ffd400";
 const CAPTION_DIM = "#999999";
 
 // The active caption drawn over the video: the whole line for the plain
-// presets, the spoken word popped for highlight, words filled as spoken for
-// karaoke. Sizes in cqh of the stage, like the ASS style's fraction of
-// PlayResY; the stage is a size container.
+// presets, words popped as spoken for highlight (they stay, like the \k
+// tags the export burns), words filled as spoken for karaoke. Sizes in cqh
+// of the stage, like the ASS style's fraction of PlayResY; the stage is a
+// size container.
 function CaptionOverlay({ track, clip, now }: { track: Track; clip: Clip; now: number }) {
   const style = captionStyle(track.style);
   const words = clip.words?.length ? clip.words : undefined;
@@ -173,9 +174,14 @@ function CaptionOverlay({ track, clip, now }: { track: Track; clip: Clip; now: n
     >
       {words && (style === "highlight" || style === "karaoke")
         ? words.map((w, i) => {
-            const active = now >= w.start && now < w.end;
             const color =
-              style === "highlight" ? (active ? CAPTION_ACCENT : undefined) : now < w.start ? CAPTION_DIM : undefined;
+              style === "highlight"
+                ? now >= w.start
+                  ? CAPTION_ACCENT
+                  : undefined
+                : now < w.start
+                  ? CAPTION_DIM
+                  : undefined;
             return (
               <span key={i} style={color ? { color } : undefined}>
                 {text(i)}{" "}
