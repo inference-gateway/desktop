@@ -189,14 +189,10 @@ export function TimelineView() {
     }
   };
 
-  // Fresh syncMedia and duration for the rAF loop, which never re-subscribes.
   const latest = useRef({ sync: syncMedia, duration: 0 });
   useEffect(() => {
     latest.current = { sync: syncMedia, duration: timeline?.duration ?? 0 };
   });
-  // The playhead clock: wall time while playing, so it keeps running across
-  // clip boundaries and gaps in the video track. ponytail: the wall clock
-  // can drift from decode; syncMedia re-seeks past SYNC_TOLERANCE_S.
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
