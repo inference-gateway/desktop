@@ -56,7 +56,7 @@ export interface ActivityEntry {
 }
 
 const CONTENT_GUIDANCE =
-  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") or to add title cards, lower thirds, callouts, step counters or charts over it, read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline.';
+  'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") to add captions or subtitles over it ("add captions", "caption this"), or to add title cards, lower thirds, callouts, step counters or charts over it, read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline.';
 
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
@@ -383,11 +383,12 @@ function useDesktopStore() {
         await api.startGateway(force, restart);
       } catch (e) {
         console.error("start_gateway failed:", e);
+        setError(String(e));
       }
       setStatus("Ready");
       fetchModelsWithRetry();
     },
-    [setStatus, fetchModelsWithRetry],
+    [setStatus, setError, fetchModelsWithRetry],
   );
 
   const refreshConversations = useCallback(async () => {

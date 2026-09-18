@@ -61,6 +61,39 @@ scenarios:
                 }
       - content: "Title card added."
 
+  - name: captions
+    match: '(?i)add captions'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "captions.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 20,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 20 }] },
+                    { "id": "captions", "kind": "captions", "style": "classic", "clips": [{ "id": "c1", "start": 0, "end": 4.5, "text": "First we open the settings panel." }] }
+                  ]
+                }
+      - content: "Captions added."
+
+  - name: voice-sample-choice
+    match: '(?i)ask me which voice sample'
+    turns:
+      - tool_calls:
+          - name: AskUserQuestion
+            args:
+              questions:
+                - header: Voice
+                  question: "Which voice sample should I clone?"
+                  options:
+                    - { label: "eden.wav", description: "Your most recent sample" }
+                    - { label: Random, description: "Pick one for me" }
+                  multiSelect: false
+      - content: "Redone with eden.wav."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:

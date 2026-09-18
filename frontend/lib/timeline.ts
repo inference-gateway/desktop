@@ -1,12 +1,16 @@
 // The <stem>.timeline.json contract shared with the video-editing skill:
-// a duration plus video and audio tracks of clips. An audio clip with
-// `text` is spoken by the agent (cloned voice); one with only `src` is a
-// plain file the user placed. "voice" is accepted as a legacy track kind.
-// An overlay clip is a rendered card (a .mov with alpha; the webview drops
-// VP9 alpha in webm) composited over the video; `x`/`y`/`width`/`height`
-// are fractions of the frame.
+// a duration plus video, audio, overlay and captions tracks of clips. An
+// audio clip with `text` is spoken by the agent (cloned voice); one with
+// only `src` is a plain file the user placed. "voice" is accepted as a
+// legacy track kind. An overlay clip is a rendered card (a .mov with alpha;
+// the webview drops VP9 alpha in webm) composited over the video;
+// `x`/`y`/`width`/`height` are fractions of the frame. A captions clip is
+// text over the video, styled by the track's preset and burned in on export.
 export type ClipStatus = "draft" | "done";
-export type TrackKind = "video" | "audio" | "overlay";
+export type TrackKind = "video" | "audio" | "overlay" | "captions";
+// Per-word timing of a caption clip (absolute seconds), for the word-by-word
+// presets. Missing `text` falls back to the i-th word of the clip's text.
+export type CaptionWord = { text?: string; start: number; end: number };
 // What to do with the recording's own audio track: transcribe it and replace
 // it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
@@ -39,6 +43,11 @@ export type Clip = {
   height?: number;
   // The HTML composition an overlay's `src` was rendered from.
   html?: string;
+  // Spoken clips only: the voice sample this clip's wav was cloned from,
+  // written by the agent when it synthesizes. Absent means the track's pick.
+  voice_sample?: string;
+  // Caption clips only: when each word is spoken, for the word presets.
+  words?: CaptionWord[];
 };
 
 export type Track = {
@@ -47,6 +56,14 @@ export type Track = {
   clips: Clip[];
   voice_sample?: string;
   gain?: number;
+  // Captions tracks only: a preset name (unknown ones fall back to the
+  // default) and where the captions sit on the frame - `position` is the
+  // standard placement, `x`/`y` the centre of the caption box as fractions of
+  // the frame once the user has dragged it, and they win over `position`.
+  style?: string;
+  position?: "bottom" | "center" | "top";
+  x?: number;
+  y?: number;
 };
 
 export type Timeline = {
@@ -58,8 +75,59 @@ export type Timeline = {
   tracks: Track[];
 };
 
-const KINDS: TrackKind[] = ["video", "audio", "overlay"];
-const MARKER_SECONDS = 5;
+// Caption style presets, in the looks the short-form platforms ship: a
+// broadcast subtitle on a band, a big uppercase punch line, a per-word colour
+// pop and a fill-as-spoken karaoke. `size` and `outline` are fractions of the
+// frame height and of the font size, `colour` is what a word looks like once
+// it has been spoken and `ahead` what it looks like before. The catalogue is
+// mirrored by CAPTION_PRESETS in backend/src/timeline.rs (the ASS export), so
+// the preview and the burned-in export match.
+export type CaptionStyle = {
+  value: string;
+  label: string;
+  words?: boolean;
+  size: number;
+  weight: number;
+  upper?: boolean;
+  band?: boolean;
+  outline: number;
+  colour: string;
+  ahead?: string;
+};
+
+export const CAPTION_STYLES: CaptionStyle[] = [
+  { value: "classic", label: "Classic", size: 0.048, weight: 600, band: true, outline: 0, colour: "#ffffff" },
+  { value: "bold", label: "Bold", size: 0.09, weight: 900, upper: true, outline: 0.09, colour: "#ffe14d" },
+  {
+    value: "highlight",
+    label: "Highlight",
+    words: true,
+    size: 0.07,
+    weight: 800,
+    outline: 0.07,
+    colour: "#2bff88",
+    ahead: "#ffffff",
+  },
+  {
+    value: "karaoke",
+    label: "Karaoke",
+    words: true,
+    size: 0.06,
+    weight: 700,
+    outline: 0.05,
+    colour: "#ffffff",
+    ahead: "#8a8a8a",
+  },
+];
+export const DEFAULT_CAPTION_STYLE = "classic";
+// Unknown preset names fall back to the default preset.
+export const captionStyle = (style?: string): string =>
+  CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
+export const captionPreset = (style?: string): CaptionStyle =>
+  CAPTION_STYLES.find((s) => s.value === style) ?? CAPTION_STYLES[0];
+
+const KINDS: TrackKind[] = ["video", "audio", "overlay", "captions"];
+const NEW_CLIP_SECONDS = 5;
 
 function num(v: unknown, fallback = 0): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
@@ -67,6 +135,8 @@ function num(v: unknown, fallback = 0): number {
 }
 
 const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
+// A fraction of the frame, clamped so a dragged caption cannot leave it.
+const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
 
 export function parseTimeline(json: string): Timeline {
   const raw = JSON.parse(json) as Partial<Timeline> | null;
@@ -76,6 +146,14 @@ export function parseTimeline(json: string): Timeline {
     kind: KINDS.includes(t?.kind as TrackKind) ? (t.kind as TrackKind) : "audio",
     voice_sample: typeof t?.voice_sample === "string" ? t.voice_sample : undefined,
     gain: t?.gain === undefined ? undefined : num(t.gain, 1),
+    style: typeof t?.style === "string" ? t.style : undefined,
+    position: (t?.position === "center" || t?.position === "top"
+      ? t.position
+      : t?.position === "bottom"
+        ? "bottom"
+        : undefined) as Track["position"],
+    x: frac(t?.x),
+    y: frac(t?.y),
     clips: (Array.isArray(t?.clips) ? t.clips : [])
       .map((c, j) => ({
         id: typeof c?.id === "string" && c.id ? c.id : `${t?.id ?? "clip"}-${j + 1}`,
@@ -90,6 +168,14 @@ export function parseTimeline(json: string): Timeline {
         width: optNum(c?.width),
         height: optNum(c?.height),
         html: typeof c?.html === "string" ? c.html : undefined,
+        voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
+        words: (Array.isArray(c?.words) && c.words.length
+          ? c.words.map((w) => ({
+              text: typeof w?.text === "string" ? w.text : undefined,
+              start: num(w?.start),
+              end: num(w?.end),
+            }))
+          : undefined) as Clip["words"],
       }))
       .sort((a, b) => a.start - b.start),
   }));
@@ -114,8 +200,24 @@ export function videoSource(t: Timeline): string | undefined {
 
 export const isSpoken = (c: Clip): boolean => c.text !== undefined;
 
+// The voice a spoken clip was cloned from: its own sample, else the track's
+// pick. `sampleColour` gives every sample a stable colour so a lane shows at a
+// glance which clips share a voice; the clip editor spells the name out.
+export function clipSample(track: Track, clip: Clip): string | undefined {
+  return track.kind === "audio" && isSpoken(clip) ? (clip.voice_sample ?? track.voice_sample) : undefined;
+}
+
+export function sampleColour(name: string): string {
+  let hue = 0;
+  for (const ch of name) hue = (hue * 31 + ch.codePointAt(0)!) % 360;
+  return `hsl(${hue} 80% 62%)`;
+}
+
 export function spokenCount(t: Timeline): number {
-  return t.tracks.flatMap((tr) => tr.clips).filter(isSpoken).length;
+  return t.tracks
+    .filter((tr) => tr.kind === "audio")
+    .flatMap((tr) => tr.clips)
+    .filter(isSpoken).length;
 }
 
 // Width / height of the export frame.
@@ -128,10 +230,11 @@ export function overlayCount(t: Timeline): number {
   return t.tracks.filter((tr) => tr.kind === "overlay").flatMap((tr) => tr.clips).length;
 }
 
-// Lanes as the editor stacks them: overlays above the video, everything else
-// in file order. The file itself is never reordered.
+// Lanes as the editor stacks them: overlays and captions above the video,
+// everything else in file order. The file itself is never reordered.
 export function laneOrder(tracks: Track[]): Track[] {
-  return [...tracks.filter((tr) => tr.kind === "overlay"), ...tracks.filter((tr) => tr.kind !== "overlay")];
+  const above = tracks.filter((tr) => tr.kind === "overlay" || tr.kind === "captions");
+  return [...above, ...tracks.filter((tr) => tr.kind !== "overlay" && tr.kind !== "captions")];
 }
 
 // The lane markers go on: the audio track that already carries speech,
@@ -163,15 +266,87 @@ function nextId(track: Track, prefix: string): string {
   return `${prefix}${n}`;
 }
 
+// Editing text marks a spoken audio clip draft (it needs re-synthesis); a
+// caption clip edit needs nothing, the export reads the text as it is.
 export function setClipText(t: Timeline, trackId: string, clipId: string, text: string): Timeline {
+  const spoken = t.tracks.find((tr) => tr.id === trackId)?.kind === "audio";
   return {
     ...t,
     tracks: t.tracks.map((tr) =>
       tr.id !== trackId
         ? tr
-        : { ...tr, clips: tr.clips.map((c) => (c.id !== clipId ? c : { ...c, text, status: "draft" as const })) },
+        : {
+            ...tr,
+            clips: tr.clips.map((c) =>
+              c.id !== clipId ? c : { ...c, text, ...(spoken ? { status: "draft" as const } : {}) },
+            ),
+          },
     ),
   };
+}
+
+// The voice picked for one clip in the clip editor. A different voice makes
+// the clip's wav stale, like editing its text, so the clip goes back to draft
+// for the next redo; clearing the pick falls back to the track's sample.
+export function setClipSample(t: Timeline, trackId: string, clipId: string, sample?: string): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.id !== trackId
+        ? tr
+        : {
+            ...tr,
+            clips: tr.clips.map((c) => {
+              if (c.id !== clipId) return c;
+              const next = { ...c, voice_sample: sample };
+              return clipSample(tr, next) === clipSample(tr, c) ? next : { ...next, status: "draft" as const };
+            }),
+          },
+    ),
+  };
+}
+
+// Drag the captions block on the frame: `x`/`y` are the centre of the box as
+// fractions of it, and clearing them puts the block back on `position`.
+export function moveCaptions(t: Timeline, trackId: string, x?: number, y?: number): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) => (tr.id === trackId ? { ...tr, x: frac(x), y: frac(y) } : tr)),
+  };
+}
+
+// The timeline's captions track, if it has one (one per timeline is enough).
+export function captionTrack(t: Timeline): Track | undefined {
+  return t.tracks.find((tr) => tr.kind === "captions");
+}
+
+// Turn a caption into speech: a draft audio clip with the same text and range
+// on the spoken track, so "Redo drafts" voices it with the usual flow. An
+// audio clip already covering the same range is updated in place.
+export function speakClip(t: Timeline, trackId: string, clipId: string): Timeline {
+  const caption = t.tracks.find((tr) => tr.id === trackId)?.clips.find((c) => c.id === clipId);
+  if (!caption?.text) return t;
+  const existing = spokenTrack(t);
+  const track = existing ?? { id: "audio", kind: "audio" as const, clips: [] };
+  const same = (c: Clip) => c.start === caption.start && c.end === caption.end;
+  const clips = (
+    existing?.clips.some(same)
+      ? existing.clips.map((c) => (same(c) ? { ...c, text: caption.text, status: "draft" as const } : c))
+      : [
+          ...(existing?.clips ?? []),
+          {
+            id: nextId(track, "s"),
+            start: caption.start,
+            end: caption.end,
+            text: caption.text,
+            status: "draft" as const,
+          },
+        ]
+  ).sort((a, b) => a.start - b.start);
+  const tracks = existing
+    ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))
+    : [...t.tracks, { ...track, clips }];
+  return { ...t, tracks };
 }
 
 export function removeClip(t: Timeline, trackId: string, clipId: string): Timeline {
@@ -181,20 +356,30 @@ export function removeClip(t: Timeline, trackId: string, clipId: string): Timeli
   };
 }
 
-// Insert a draft spoken clip at `at`, ending at the next clip or after
-// MARKER_SECONDS, whichever comes first. Creates an audio track if missing.
-export function addMarker(t: Timeline, at: number, text = ""): Timeline {
-  const start = Math.max(0, Math.min(at, t.duration));
-  const existing = spokenTrack(t);
-  const track = existing ?? { id: "audio", kind: "audio" as const, clips: [] };
+// Insert an empty clip on `trackId` at `at`, ending at the next clip or after
+// NEW_CLIP_SECONDS, whichever comes first. It starts after any clip the
+// playhead sits in, so a lane never ends up with two clips at once; with no
+// room left it lands after the last clip and the timeline grows to fit, like
+// a dropped file. Spoken clips start as drafts for the agent to voice.
+export function addEmptyClip(t: Timeline, trackId: string, at: number, text = ""): Timeline {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  if (!track) return t;
+  let start = Math.max(0, Math.min(at, t.duration));
+  for (const c of [...track.clips].sort((a, b) => a.start - b.start)) {
+    if (start >= c.start && start < c.end) start = c.end;
+  }
   const next = track.clips.find((c) => c.start > start);
-  const end = Math.min(t.duration || start + MARKER_SECONDS, next?.start ?? Infinity, start + MARKER_SECONDS);
-  const clip: Clip = { id: nextId(track, "m"), start, end: Math.max(end, start + 0.5), text, status: "draft" };
+  const end = Math.max(Math.min(next?.start ?? Infinity, start + NEW_CLIP_SECONDS), start + 0.5);
+  const clip: Clip =
+    track.kind === "audio"
+      ? { id: nextId(track, "s"), start, end, text, status: "draft" }
+      : { id: nextId(track, "c"), start, end, text };
   const clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
-  const tracks = existing
-    ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))
-    : [...t.tracks, { ...track, clips }];
-  return { ...t, tracks };
+  return {
+    ...t,
+    duration: Math.max(t.duration, clip.end),
+    tracks: t.tracks.map((tr) => (tr.id === trackId ? { ...tr, clips } : tr)),
+  };
 }
 
 // What a content project shows before the agent writes any timeline: one
@@ -261,8 +446,11 @@ export function moveClip(t: Timeline, trackId: string, clipId: string, start: nu
 export const MIN_CLIP_S = 0.25;
 
 // Drag one edge of a clip. The head of a file clip keeps its content in place
-// by moving `offset`, like an in-point; the tail cannot pass the source's end
-// when `sourceLength` is known. Neither edge crosses a neighbour.
+// by moving `offset`, like an in-point; the tail of a plain file clip cannot
+// pass the source's end when `sourceLength` is known. A spoken clip is exempt:
+// its wav is generated to fit a slot and is routinely shorter than it, so the
+// clamp would snap the tail back to the end of the speech and pin the head
+// where it is. Neither edge crosses a neighbour.
 export function trimClip(
   t: Timeline,
   trackId: string,
@@ -280,16 +468,16 @@ export function trimClip(
   if (edge === "start") {
     const lo = Math.max(
       0,
-      clip.src ? clip.start - offset : 0,
+      clip.src && !isSpoken(clip) ? clip.start - offset : 0,
       ...others.filter((c) => c.end <= clip.start).map((c) => c.end),
     );
     const start = Math.min(Math.max(time, lo), clip.end - MIN_CLIP_S);
     next = { ...clip, start };
-    if (clip.src) next.offset = offset + (start - clip.start);
+    if (clip.src) next.offset = Math.max(0, offset + (start - clip.start));
   } else {
     const hi = Math.min(
       ...others.filter((c) => c.start >= clip.end).map((c) => c.start),
-      clip.src && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
+      clip.src && !isSpoken(clip) && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
     );
     next = { ...clip, end: Math.max(Math.min(time, hi), clip.start + MIN_CLIP_S) };
   }

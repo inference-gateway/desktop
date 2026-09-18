@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, or add a card, title or overlay to a video.
+description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, add captions or subtitles to a video, or add a card, title or overlay to a video.
 license: Apache-2.0
 ---
 
@@ -18,7 +18,8 @@ always read it first if it exists, always write it back after every step that ch
 
 Only these, nothing else: `Bash` for `ffmpeg`, `whisper-cli`, `cp`, `mkdir`, `ls`, `grep` and `rm` (scratch
 files only) inside the working directory, plus `node --version` and `npx hyperframes render` for cards;
-`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`. Do not
+`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`;
+`AskUserQuestion` to pick the voice sample. Do not
 use `WebFetch`, `WebSearch`, `find`, package managers, or any other binary, and do not look for
 this skill, other skills or tools on disk: everything you need is listed below at fixed paths.
 
@@ -31,18 +32,16 @@ under `~/.infer`; the only place you write is the working directory.
 - `ffmpeg` on `PATH` (the desktop's own copy lives in `~/.infer/bin/tools/ffmpeg`). There is no `ffprobe`;
   probe with `ffmpeg -hide_banner -i <file> 2>&1 | grep -E 'Duration|Stream'` (bare `ffmpeg -i` always
   exits 1 for lack of an output file; the `grep` exits 0 when the file was read).
-- `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (only for
-  `source_audio: transcribe`). Use a larger model only if one already exists in that directory.
+- `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (for
+  `source_audio: transcribe` and for caption word timing). Use a larger model only if one already
+  exists in that directory.
+- Captions are burned in with libass: `ffmpeg -hide_banner -filters | grep -c ' subtitles '` prints
+  `1`. Without it the desktop's Export fails, and the user needs a full ffmpeg (`brew install ffmpeg`).
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
   `~/.infer/models/tts/samples/`. `TextToSpeech` only accepts a bare file name inside the working
-  directory, so copy the chosen sample to `./voice.wav` once. When the track's `voice_sample` in the
-  timeline names a file from that folder, the user chose it on the timeline: use exactly that one and
-  keep the field as written. Otherwise pick one and write its bare library name into `voice_sample`
-  so the desktop shows which voice was used. When the recording itself contains the user's speech
-  (`source_audio: transcribe`) and no sample is chosen, the sample can be cut from it instead (see
-  Source audio); then set `voice_sample` to `"recording"`.
+  directory, so copy the chosen sample to `./voice.wav` once. See Picking the voice for which one.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
 installed by switching the project to Content in Settings > Projects; the two agent tools are
@@ -52,6 +51,28 @@ Media lives in `media/` inside the working directory: the recordings and music t
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
 `src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
 Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at the root.
+
+## Picking the voice
+
+Never choose the voice silently: it is the one thing only the user can judge.
+
+1. A clip's own `voice_sample`, and the track's for clips without one, is the user's pick from the
+   desktop's dropdowns. Use exactly that one, keep the field as written, and do not ask - a redo
+   prompt that names a sample is that pick, not an invitation to ask again. Only when the user says
+   they want a different voice do you go to step 2.
+2. Otherwise list the library, `ls ~/.infer/models/tts/samples/`, and ask with `AskUserQuestion`:
+   one option per sample, plus `Random`, plus `My voice from the recording` when `source_audio` is
+   `transcribe`. Put the track's current `voice_sample` first when it has one. Ask once per run,
+   never per clip, and only for the questions above - never ask about the script, the timing or the
+   clips.
+3. Nothing to choose between (one sample and no recording to cut from) - use it without asking. No
+   samples at all and no recording speech: stop and say so, samples are recorded in
+   Settings > Voice samples.
+4. On `Random`, pick one yourself and say which. On a library sample, write its bare name into
+   the track's `voice_sample` so the desktop shows the voice that was used. On the recording, set
+   `voice_sample` to `"recording"` and cut the sample from it (see Source audio).
+5. Write the same name into each clip you synthesize (see the contract's clip `voice_sample`), so a
+   clip keeps the voice it was made with when a later run picks a different one.
 
 ## Timeline contract (`<stem>.timeline.json`)
 
@@ -79,12 +100,34 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
           "end": 6.2,
           "text": "First we open the settings panel.",
           "src": "media/demo-s1.wav",
+          "voice_sample": "eden.wav",
           "status": "done"
         },
         { "id": "s2", "start": 6.2, "end": 12.0, "text": "", "status": "draft" }
       ]
     },
     { "id": "music", "kind": "audio", "gain": 0.2, "clips": [] },
+    {
+      "id": "captions",
+      "kind": "captions",
+      "style": "classic",
+      "position": "bottom",
+      "clips": [
+        { "id": "c1", "start": 0.0, "end": 4.6, "text": "First we open the settings panel." },
+        {
+          "id": "c2",
+          "start": 4.6,
+          "end": 9.2,
+          "text": "Then pick a voice",
+          "words": [
+            { "text": "Then", "start": 4.6, "end": 5.1 },
+            { "text": "pick", "start": 5.1, "end": 5.5 },
+            { "text": "a", "start": 5.5, "end": 5.6 },
+            { "text": "voice", "start": 5.9, "end": 6.4 }
+          ]
+        }
+      ]
+    },
     {
       "id": "cards",
       "kind": "overlay",
@@ -116,15 +159,24 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.
+- A spoken clip's `voice_sample` is the sample its wav was cloned from: set it to the sample you
+  used every time you synthesize the clip, and leave other clips' as they are - the timeline colours
+  each clip by it, so the user can see which voice every clip carries. The track's `voice_sample` is
+  the user's pick for clips that have none of their own.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
   means "suggest something for this range".
-- Tracks are `video`, `audio` or `overlay` (the older `voice` kind still loads as `audio`). On an audio track,
+- Tracks are `video`, `audio`, `overlay` or `captions` (the older `voice` kind still loads as
+  `audio`). On an audio track,
   a clip with `text` is spoken: you synthesize it. A clip with only `src` (music, SFX, a file the
   user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
   export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
   already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
+- A captions track is on-screen text burned into the export: `kind: "captions"`, a `style` preset
+  and an optional `position` (or `x`/`y`, the centre of the block as fractions of the frame, set by
+  dragging it on the preview), with clips of `id`, `start`, `end`, `text` and optional `words`. One
+  captions track per timeline; caption clips never carry `src` or `status`. See Captions.
 - `source_audio` says what to do with the recording's own audio track: `transcribe` (reuse the
   user's own speech as the script and as the voice sample, then replace it), `mute` (drop
   it), or `keep` (mix it under the voice). Missing means: `transcribe` when the recording has
@@ -159,12 +211,12 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
    at `duration`). Write short, spoken-style text sized to the slot: about 2.5 words per second, so a
    6 s slot gets at most 15 words. Merge any existing draft clips from the user by their time range.
    Write `<stem>.timeline.json` with all voice clips `status: "draft"`.
-5. **Synthesize.** For every draft clip:
+5. **Synthesize.** Settle the voice first (see Picking the voice), then for every draft clip:
    `TextToSpeech { text, voice_sample: "voice.wav", output_path: "<stem>-<id>.wav" }`.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
    `mkdir -p media && cp "<reported path>" "media/<stem>-<id>.wav"`, set `src` to
-   `media/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
+   `media/<stem>-<id>.wav`, `voice_sample` to the sample you cloned and `status: "done"`. Write the JSON after each clip so the desktop can
    show progress.
 6. **Stop here.** Do not mux, render or export anything, and do not run ffmpeg on the output:
    the user reviews the clips on the timeline and presses Export, which renders the video
@@ -184,14 +236,48 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
    from the offsets. Rewrite every clip's text into clean, simple spoken text: drop filler words, false
    starts and repetitions, fix grammar, keep the meaning, the order and the timing budget
    (2.5 words per second). Do not add facts the user did not say.
-4. Voice sample: unless a library sample was chosen, cut the cleanest 15-25 s stretch of
-   continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
+4. Voice sample: when Picking the voice landed on the recording, cut the cleanest 15-25 s stretch
+   of continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
 5. Continue with Synthesize, then stop; the export replaces the original track.
+
+## Captions
+
+Add a captions track when the user asks for captions or subtitles, or asks for a clip "to post"
+(short-form video is watched muted). Captions are independent of the voice: the export burns them
+in and also writes a sidecar `.srt`.
+
+1. **Text.** If the timeline already has spoken clips, their `text` is the script: reuse it, no
+   transcription. Otherwise, with `source_audio: transcribe`, use `transcript.json` from the Source
+   audio step. With neither, there is nothing to caption: say so instead of inventing lines.
+2. **Chunk.** One caption per breath: about 5 s, at most ~12 words and two lines. Break at sentence
+   ends and pauses, never mid-word and never mid-number. `start`/`end` come from the spoken clip or
+   the transcript offsets; a long spoken clip splits into several captions inside its own range.
+   Drop filler and trailing punctuation clutter, keep the words the user says.
+3. **Style.** `classic` (a broadcast subtitle: white on a translucent box), `bold` (the short-form
+   punch line: huge uppercase yellow with a thick outline), `highlight` (each word turns green as it
+   is spoken and stays) or `karaoke` (words are dim until spoken, then white). Use `classic` unless
+   the user asks for a word-by-word look or a short-form clip. `position` is `bottom` (default),
+   `center` or `top`; leave `x`/`y` alone, the user sets them by dragging the captions on the
+   preview and they win over `position`.
+4. **Words.** `highlight` and `karaoke` need per-word timing; the other two ignore it. Only for
+   those two, run a second pass for word-level splits over the wav the text came from - `audio.wav`
+   for a transcript, `media/<stem>-<id>.wav` for a synthesized clip:
+   `~/.infer/bin/tools/whisper-cli -m <model> -f <wav> -ml 1 -oj -of words`. Write `words` as
+   absolute seconds on the timeline (`{ "text", "start", "end" }`, offset by the clip's `start` when
+   the wav is a single clip), inside each caption's own range. Without `words` both presets fall
+   back to the whole line, so skipping the pass is safe but loses the effect.
+5. **Stop.** Write the JSON and stop, as in step 6 of Steps. The user reviews the captions on the
+   timeline and presses Export.
+
+Editing a captions track: read the file first, keep clip `id`s stable and change only what the user
+asked about. A misheard word is one clip's `text`, not a reason to rebuild the track. The user also
+adds caption clips on the timeline: a caption with empty `text` is a range they want filled, one
+with text is theirs and stays verbatim.
 
 ## Redo drafts
 
-When asked to redo or regenerate: read the JSON, run step 5 for `draft` clips only, then stop as in
-step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
+When asked to redo or regenerate: ask which voice to use (see Picking the voice), read the JSON,
+run step 5 for `draft` clips only, then stop as in step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
 has already marked that clip `draft` with the user's edited text: synthesize exactly that clip with
 that text, keep its `id`, `start` and `end`, and leave everything else alone.
 

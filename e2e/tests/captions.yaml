@@ -1,0 +1,10 @@
+name: captions - the agent writes a captions track to the timeline
+cleanup:
+  - captions.timeline.json
+steps:
+  - new_chat
+  - send: "add captions to this recording"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: captions.timeline.json, contains: '"kind": "captions"', timeout: 15 }
+  - wait_for: { text: "Captions added.", timeout: 15 }

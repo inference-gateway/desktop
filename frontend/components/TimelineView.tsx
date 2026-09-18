@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  BookmarkPlus,
   Download,
   FilePlus,
   Film,
@@ -19,6 +18,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Type,
   Volume2,
   VolumeX,
   ZoomIn,
@@ -28,11 +28,18 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
+  CAPTION_STYLES,
   DEFAULT_RESOLUTION,
   RESOLUTIONS,
+  SOURCE_AUDIO,
   addClip,
-  addMarker,
+  addEmptyClip,
   addTrack,
+  captionPreset,
+  captionStyle,
+  captionTrack,
+  clipSample,
+  moveCaptions,
   clipLayout,
   draftCount,
   emptyTimeline,
@@ -51,10 +58,12 @@ import {
   parseTimeline,
   removeClip,
   resolveSrc,
+  sampleColour,
   serializeTimeline,
+  setClipSample,
   setClipText,
+  speakClip,
   videoSource,
-  SOURCE_AUDIO,
   type Clip,
   type SourceAudio,
   type Timeline,
@@ -75,13 +84,19 @@ function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
-const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio", overlay: "Overlay" };
+const TRACK_LABEL: Record<Track["kind"], string> = {
+  video: "Video",
+  audio: "Audio",
+  overlay: "Overlay",
+  captions: "Captions",
+};
 const TRACK_SWATCH: Record<Track["kind"], string> = {
   video: "bg-sky-500",
   audio: "bg-emerald-500",
   overlay: "bg-fuchsia-500",
+  captions: "bg-zinc-400",
 };
-const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers };
+const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers, captions: Type };
 const AUDIO_ICON: Record<SourceAudio, typeof Mic> = { transcribe: Mic, mute: VolumeX, keep: Volume2 };
 // The timeline's frame size, falling back when the file holds a size the toolbar does not offer.
 const frameSize = (t: Timeline) =>
@@ -106,23 +121,159 @@ const clipClass = (tr: Track, c: Clip) =>
     ? "border-sky-400/60 bg-sky-700/80"
     : tr.kind === "overlay"
       ? "border-fuchsia-400/60 bg-fuchsia-700/80"
-      : !isSpoken(c)
-        ? "border-emerald-400/60 bg-emerald-700/80"
-        : c.status === "draft"
-          ? "border-amber-300/70 bg-amber-600/85"
-          : "border-violet-400/60 bg-violet-700/85";
+      : tr.kind === "captions"
+        ? "border-zinc-300/50 bg-zinc-600/85"
+        : !isSpoken(c)
+          ? "border-emerald-400/60 bg-emerald-700/80"
+          : c.status === "draft"
+            ? "border-amber-300/70 bg-amber-600/85"
+            : "border-violet-400/60 bg-violet-700/85";
+
 // ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
+
 // Name used when the user starts layering tracks before the agent wrote any timeline.
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
+// The voice picker the lane header (a track's default) and the clip editor
+// share. The blank option means "agent picks"; it only names `value` when the
+// library has no such sample - the recording, or one deleted since - so the
+// pick is never dropped silently, and never listed twice.
+function VoiceSelect({
+  label,
+  title,
+  samples,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  title: string;
+  samples: VoiceSample[];
+  value?: string;
+  onChange: (sample?: string) => void;
+  className: string;
+}) {
+  const known = samples.some((v) => v.name === value);
+  return (
+    <select
+      aria-label={label}
+      title={title}
+      value={known ? value : ""}
+      onChange={(e) => onChange(e.target.value || undefined)}
+      className={className}
+    >
+      <option value="">{value && !known ? `Voice: ${value}` : "Voice: agent picks"}</option>
+      {samples.map((v) => (
+        <option key={v.name} value={v.name}>
+          Voice: {v.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function TrackIcon({ kind }: { kind: TrackKind }) {
   const Icon = TRACK_ICON[kind];
   return <Icon size={11} className="shrink-0 text-zinc-500" />;
+}
+
+// The active caption drawn over the video, from the same preset table the
+// export reads: the whole line for the plain presets, words popped as spoken
+// for highlight (they stay, like the \k tags the export burns), words filled
+// as spoken for karaoke. Sizes are cqh of the stage, like the ASS style's
+// fraction of PlayResY; the stage is a size container. Dragging the box sets
+// the track's x/y, double-clicking clears them back to `position`.
+function CaptionOverlay({
+  track,
+  clip,
+  now,
+  stage,
+  onMove,
+}: {
+  track: Track;
+  clip: Clip;
+  now: number;
+  stage: React.RefObject<HTMLDivElement | null>;
+  onMove: (x?: number, y?: number) => void;
+}) {
+  const preset = captionPreset(captionStyle(track.style));
+  const words = preset.words && clip.words?.length ? clip.words : undefined;
+  const tokens = clip.text?.split(/\s+/).filter(Boolean) ?? [];
+  const text = (i: number) => words?.[i]?.text ?? tokens[i] ?? "";
+  const grab = useRef<{ dx: number; dy: number } | null>(null);
+  const ring = preset.outline
+    ? [
+        `${preset.outline}em ${preset.outline}em 0 #000`,
+        `-${preset.outline}em ${preset.outline}em 0 #000`,
+        `${preset.outline}em -${preset.outline}em 0 #000`,
+        `-${preset.outline}em -${preset.outline}em 0 #000`,
+      ].join(", ")
+    : undefined;
+  const placed = track.x !== undefined && track.y !== undefined;
+  const pos = track.position ?? "bottom";
+  const begin = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    grab.current = { dx: e.clientX - (box.left + box.width / 2), dy: e.clientY - (box.top + box.height / 2) };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const drag = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const g = grab.current;
+    const rect = stage.current?.getBoundingClientRect();
+    if (!g || !rect || !rect.width || !rect.height) return;
+    onMove((e.clientX - g.dx - rect.left) / rect.width, (e.clientY - g.dy - rect.top) / rect.height);
+  };
+  const drop = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    grab.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  return (
+    <div
+      className={cn("pointer-events-none absolute flex justify-center", !placed && "inset-x-0")}
+      style={
+        placed
+          ? { left: `${track.x! * 100}%`, top: `${track.y! * 100}%`, transform: "translate(-50%, -50%)" }
+          : pos === "bottom"
+            ? { bottom: "6cqh" }
+            : pos === "top"
+              ? { top: "6cqh" }
+              : { top: "50%", transform: "translateY(-50%)" }
+      }
+    >
+      <span
+        aria-label="Caption"
+        title="Drag to place the captions, double-click to put them back"
+        onPointerDown={begin}
+        onPointerMove={drag}
+        onPointerUp={drop}
+        onPointerCancel={drop}
+        onDoubleClick={() => onMove(undefined, undefined)}
+        className="pointer-events-auto max-w-[90%] cursor-move touch-none whitespace-pre-wrap text-center"
+        style={{
+          fontSize: `${preset.size * 100}cqh`,
+          fontWeight: preset.weight,
+          lineHeight: 1.25,
+          color: words ? (preset.ahead ?? preset.colour) : preset.colour,
+          ...(preset.upper ? { textTransform: "uppercase" } : {}),
+          ...(ring ? { textShadow: ring } : {}),
+          ...(preset.band ? { background: "rgba(0,0,0,0.6)", padding: "0.2em 0.5em", borderRadius: "0.15em" } : {}),
+        }}
+      >
+        {words
+          ? words.map((w, i) => (
+              <span key={i} style={now >= w.start ? { color: preset.colour } : undefined}>
+                {text(i)}{" "}
+              </span>
+            ))
+          : clip.text}
+      </span>
+    </div>
+  );
 }
 
 function sourceAudioInstruction(mode: SourceAudio): string {
@@ -167,20 +318,15 @@ export function TimelineView() {
   const [playing, setPlaying] = useState(false);
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  // The playhead clock: wall time while playing (it advances across clip
-  // boundaries and gaps in the video track); every media element follows it.
   const timeRef = useRef(0);
   const setTimeAt = (t: number) => {
     timeRef.current = t;
     setTime(t);
   };
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
+  const stageRef = useRef<HTMLDivElement>(null);
   const { setStatus } = useDesktop();
 
-  // The preview plays the timeline: every clip (video, audio, overlay) is
-  // kept in step with the playhead clock; clips outside their range are
-  // hidden and paused, videos show only while active and the recording's
-  // own sound stays only with "keep".
   const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
     for (const tr of timeline.tracks) {
@@ -191,9 +337,9 @@ export function TimelineView() {
         const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
         if (tr.kind === "audio") el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
         else el.hidden = !inside;
-        if (inside) {
-          if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
-          if (playing && el.paused) el.play().catch(() => {});
+        if (inside && Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
+        if (inside && playing) {
+          if (el.paused) el.play().catch(() => {});
         } else if (!el.paused) {
           el.pause();
         }
@@ -271,8 +417,6 @@ export function TimelineView() {
 
   const running = runningIds.size;
 
-  // Reload whenever the project directory changes on disk (agent writes, new
-  // media, external editors), unless local edits are pending.
   // ponytail: a half-written JSON can briefly fail to parse; the trailing
   // debounce makes it rare. Retry once on parse error if it shows up.
   useEffect(() => {
@@ -355,8 +499,6 @@ export function TimelineView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline, selected]);
 
-  // Blade at the playhead, Resolve-style: every clip it crosses (any track)
-  // is cut in two; the right half keeps playing the same source from the cut.
   const splitAtPlayhead = () => {
     if (!timeline) return;
     let next = timeline;
@@ -394,6 +536,8 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
+  const captions = timeline ? captionTrack(timeline) : undefined;
+  const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
       .filter((tr) => tr.kind === kind)
@@ -448,10 +592,6 @@ export function TimelineView() {
     return () => el.removeEventListener("wheel", onWheel);
   });
 
-  // All clips move and trim by pointer; edges snap to other clips and the
-  // playhead within SNAP_PX. Drag entry points cancel the pointerdown
-  // default, else the webview starts its native text selection once the drag
-  // wanders off the timeline over selectable chrome.
   const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: "move" | "start" | "end", tr: Track, c: Clip) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -485,15 +625,30 @@ export function TimelineView() {
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
     const prompt = hasVoice
-      ? `Redo the draft clips in ${name} with my cloned voice. ${sourceAudioInstruction(mode)}`
+      ? `Redo the draft clips in ${name}. Use the voice sample each clip names, and ask me only about clips that name none. ${sourceAudioInstruction(mode)}`
       : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"} and make the audio for every clip. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  // Regenerate one clip's voice with its current text: mark it draft, save
-  // right away (the agent reads the file), then ask for just that clip.
+  const addLaneClip = (tr: Track) => {
+    const before = new Set(tr.clips.map((c) => c.id));
+    const next = addEmptyClip(shown, tr.id, time);
+    update(next);
+    const fresh = next.tracks.find((t) => t.id === tr.id)?.clips.find((c) => !before.has(c.id));
+    if (fresh) setSelected({ track: tr.id, clip: fresh.id });
+  };
+
+  const captionize = () => {
+    const style = captionStyle(captionTrack(shown)?.style);
+    const prompt = `Add captions to ${name || DEFAULT_TIMELINE} in the "${style}" style: write a captions track following the captions rules in the skill, and leave every other track alone.`;
+    promptProject(project, prompt).catch((e) => setError(String(e)));
+  };
+
   const redoClip = (trackId: string, c: Clip) => {
     if (!timeline || !name) return;
+    const track = timeline.tracks.find((tr) => tr.id === trackId);
+    const sample = track && clipSample(track, c);
+    const voice = sample ? `and the voice sample ${sample}` : "and ask me which voice sample to use first";
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
     dirtyRef.current = false;
     setTimeline(next);
@@ -502,14 +657,18 @@ export function TimelineView() {
       .then(() =>
         promptProject(
           project,
-          `Redo only the voice of clip ${c.id} in ${name} with my cloned voice, using its current text. Leave every other clip untouched.`,
+          `Redo only the voice of clip ${c.id} in ${name}, using its current text ${voice}. Leave every other clip untouched.`,
         ),
       )
       .catch((e) => setError(String(e)));
   };
 
-  // Finder drops reach the page as File objects without a path, so the bytes
-  // are copied into the project through the import command.
+  const speakCaption = (trackId: string, c: Clip) => {
+    if (!timeline) return;
+    update(speakClip(timeline, trackId, c.id));
+    setStatus('Draft voice clip added: use "Redo drafts" to voice it');
+  };
+
   const importFiles = async (files: FileList) => {
     const media = Array.from(files).filter((f) => MEDIA_EXT.test(f.name));
     if (media.length === 0) return;
@@ -537,9 +696,6 @@ export function TimelineView() {
       .catch((e) => setError(String(e)));
   };
 
-  // Leaves source_audio to the skill: transcribe when whisper finds speech,
-  // otherwise mute and narrate the keyframes. Asserting "I am talking" made
-  // the agent chase silent tracks.
   const addVoiceTo = (video: string) => {
     const target =
       timeline && source === video && name
@@ -550,7 +706,7 @@ export function TimelineView() {
   };
 
   const laneAccepts = (tr: Track, file: string | null) =>
-    !!file && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
+    !!file && tr.kind !== "captions" && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
 
   const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
     const file = dragRef.current;
@@ -671,11 +827,12 @@ export function TimelineView() {
               <Button
                 variant="outline"
                 size="icon-sm"
-                aria-label="Add marker"
-                title="Add a marker at the playhead"
-                onClick={() => update(addMarker(timeline, time))}
+                aria-label="Add captions"
+                title="Ask for captions from the voice clips or the recording's transcript"
+                onClick={captionize}
+                disabled={running > 0}
               >
-                <BookmarkPlus size={14} />
+                <Type size={14} />
               </Button>
               <Button
                 size="icon-sm"
@@ -707,8 +864,13 @@ export function TimelineView() {
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
           {timeline && clipVideo.length > 0 ? (
             <div
+              ref={stageRef}
               className="relative"
-              style={{ aspectRatio: frameAspect(timeline), width: `min(100%, calc(50vh * ${frameAspect(timeline)}))` }}
+              style={{
+                aspectRatio: frameAspect(timeline),
+                width: `min(100%, calc(50vh * ${frameAspect(timeline)}))`,
+                containerType: "size",
+              }}
             >
               {clipVideo.map(({ clip: c, src }) => (
                 <video
@@ -747,6 +909,15 @@ export function TimelineView() {
                   }}
                 />
               ))}
+              {captions && activeCaption && (
+                <CaptionOverlay
+                  track={captions}
+                  clip={activeCaption}
+                  now={time}
+                  stage={stageRef}
+                  onMove={(x, y) => update(moveCaptions(shown, captions.id, x, y))}
+                />
+              )}
             </div>
           ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
@@ -811,44 +982,72 @@ export function TimelineView() {
                     {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
                   </span>
                   {tr.kind === "audio" && (tr.voice_sample || tr.clips.some(isSpoken)) && (
-                    <select
-                      aria-label={`Voice sample for ${tr.id}`}
+                    <VoiceSelect
+                      label={`Voice sample for ${tr.id}`}
                       title="The voice sample this track's speech is cloned from (recorded in Settings > Voice samples)"
-                      value={samples.some((v) => v.name === tr.voice_sample) ? tr.voice_sample : ""}
+                      samples={samples}
+                      value={tr.voice_sample}
+                      onChange={(sample) =>
+                        update({
+                          ...shown,
+                          tracks: shown.tracks.map((t) => (t.id === tr.id ? { ...t, voice_sample: sample } : t)),
+                        })
+                      }
+                      className="h-5 w-full truncate rounded border border-zinc-700 bg-zinc-900 px-1 text-[0.65rem] font-normal text-zinc-300"
+                    />
+                  )}
+                  {tr.kind === "captions" && (
+                    <select
+                      aria-label={`Caption style for ${tr.id}`}
+                      title="The caption look: the preview and the burned-in export share these presets. Highlight and Karaoke need per-word timing from the agent"
+                      value={captionStyle(tr.style)}
                       onChange={(e) =>
                         update({
                           ...shown,
-                          tracks: shown.tracks.map((t) =>
-                            t.id === tr.id ? { ...t, voice_sample: e.target.value || undefined } : t,
-                          ),
+                          tracks: shown.tracks.map((t) => (t.id === tr.id ? { ...t, style: e.target.value } : t)),
                         })
                       }
                       className="h-5 w-full truncate rounded border border-zinc-700 bg-zinc-900 px-1 text-[0.65rem] font-normal text-zinc-300"
                     >
-                      <option value="">{tr.voice_sample ? `Voice: ${tr.voice_sample}` : "Voice: agent picks"}</option>
-                      {samples.map((v) => (
-                        <option key={v.name} value={v.name}>
-                          Voice: {v.name}
+                      {CAPTION_STYLES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          Captions: {s.label}
                         </option>
                       ))}
                     </select>
                   )}
                 </div>
+                {(tr.kind === "audio" || tr.kind === "captions") && (
+                  <button
+                    aria-label={tr.kind === "captions" ? "Add caption" : "Add voice clip"}
+                    title={
+                      tr.kind === "captions"
+                        ? "Add a caption at the playhead"
+                        : "Add a clip at the playhead for the agent to voice"
+                    }
+                    onClick={() => addLaneClip(tr)}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <Plus size={14} />
+                  </button>
+                )}
                 <TrackIcon kind={tr.kind} />
               </div>
             ))}
             <div className="flex h-8 items-center gap-1 px-1.5">
-              {(["video", "audio", "overlay"] as TrackKind[]).map((k) => (
-                <button
-                  key={k}
-                  aria-label={`Add ${k} track`}
-                  title={`Add ${k} track`}
-                  onClick={() => update(addTrack(shown, k))}
-                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-                >
-                  <Plus size={10} /> <TrackIcon kind={k} />
-                </button>
-              ))}
+              {(["video", "audio", "overlay"] as TrackKind[])
+                .concat(shown.tracks.some((tr) => tr.kind === "captions") ? [] : (["captions"] as TrackKind[]))
+                .map((k) => (
+                  <button
+                    key={k}
+                    aria-label={`Add ${k} track`}
+                    title={`Add ${k} track`}
+                    onClick={() => update(addTrack(shown, k))}
+                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <Plus size={10} /> <TrackIcon kind={k} />
+                  </button>
+                ))}
             </div>
           </div>
           <div ref={scrollRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
@@ -919,10 +1118,11 @@ export function TimelineView() {
                         ? clipSrc(dir, c.src)
                         : safeProjectMediaSrc(resolveSrc(dir, c.src))
                       : null;
+                    const sample = clipSample(tr, c);
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
                         <button
-                          title={c.text || c.src || c.id}
+                          title={[c.text || c.src || c.id, sample && `Voice: ${sample}`].filter(Boolean).join("\n")}
                           aria-pressed={isSel}
                           onPointerDown={(e) => beginDrag(e, "move", tr, c)}
                           onPointerMove={(e) => dragTo(e, c)}
@@ -955,6 +1155,13 @@ export function TimelineView() {
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
                             {c.text || c.src?.replace(/^media\//, "") || c.id}
                           </span>
+                          {sample && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute inset-x-0 bottom-0 h-1"
+                              style={{ background: sampleColour(sample) }}
+                            />
+                          )}
                           <span
                             aria-hidden="true"
                             className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
@@ -1093,8 +1300,10 @@ export function TimelineView() {
             clip={clip}
             dir={dir}
             timeline={timeline}
+            samples={samples}
             onChange={update}
             onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
+            onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
           />
         )}
       </div>
@@ -1107,18 +1316,24 @@ function ClipEditor({
   clip,
   dir,
   timeline,
+  samples,
   onChange,
   onRedo,
+  onSpeak,
 }: {
   track: Track;
   clip: Clip;
   dir: string;
   timeline: Timeline;
+  samples: VoiceSample[];
   onChange: (t: Timeline) => void;
   onRedo?: () => void;
+  onSpeak?: () => void;
 }) {
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
   const spoken = track.kind === "audio" && isSpoken(clip);
+  const caption = track.kind === "captions";
+  const sample = clipSample(track, clip);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3">
       <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
@@ -1127,6 +1342,19 @@ function ClipEditor({
           {fmtTime(clip.start)} - {fmtTime(clip.end)}
         </span>
         {clip.status && <span className="rounded border border-border px-1">{clip.status}</span>}
+        {spoken && (
+          <span className="flex items-center gap-1">
+            {sample && <span className="size-2 rounded-full" style={{ background: sampleColour(sample) }} />}
+            <VoiceSelect
+              label={`Voice sample for ${clip.id}`}
+              title="The voice sample this clip is cloned from: pick another and redo the voice"
+              samples={samples}
+              value={sample}
+              onChange={(pick) => onChange(setClipSample(timeline, track.id, clip.id, pick))}
+              className="h-6 rounded border border-input bg-transparent px-1 text-[0.72rem] text-foreground"
+            />
+          </span>
+        )}
         {spoken && (
           <Button
             variant="outline"
@@ -1139,22 +1367,38 @@ function ClipEditor({
             <RefreshCw size={12} /> Redo voice
           </Button>
         )}
+        {caption && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-6 px-2 text-[0.72rem]"
+            title='Voice this caption: a draft audio clip with this text and range, "Redo drafts" synthesizes it'
+            disabled={!onSpeak}
+            onClick={onSpeak}
+          >
+            <Sparkles size={12} /> Speak this
+          </Button>
+        )}
         <button
           aria-label={`Delete clip ${clip.id}`}
           title="Delete clip"
           onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
-          className={cn("text-muted-foreground hover:text-destructive", !spoken && "ml-auto")}
+          className={cn("text-muted-foreground hover:text-destructive", !spoken && !caption && "ml-auto")}
         >
           <Trash2 size={14} />
         </button>
       </div>
-      {spoken && (
+      {(spoken || caption) && (
         <textarea
           id={`clip-text-${clip.id}`}
-          aria-label={`Voice text for ${clip.id}`}
+          aria-label={caption ? `Caption text for ${clip.id}` : `Voice text for ${clip.id}`}
           rows={3}
           value={clip.text ?? ""}
-          placeholder="What should be said here? Leave blank to let the agent suggest it."
+          placeholder={
+            caption
+              ? "What should this caption say?"
+              : "What should be said here? Leave blank to let the agent suggest it."
+          }
           onChange={(e) => onChange(setClipText(timeline, track.id, clip.id, e.target.value))}
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />

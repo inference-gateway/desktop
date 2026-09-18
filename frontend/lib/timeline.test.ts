@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CAPTION_STYLES,
   addClip,
   moveClip,
   rulerStep,
@@ -10,8 +11,14 @@ import {
   trimClip,
   spokenCount,
   spokenTrack,
-  addMarker,
+  addEmptyClip,
   addTrack,
+  captionStyle,
+  captionTrack,
+  clipSample,
+  sampleColour,
+  setClipSample,
+  moveCaptions,
   clipLayout,
   emptyTimeline,
   draftCount,
@@ -21,6 +28,7 @@ import {
   parseTimeline,
   removeClip,
   setClipText,
+  speakClip,
   videoSource,
 } from "./timeline";
 
@@ -102,16 +110,31 @@ describe("edits", () => {
     expect(draftCount(t)).toBe(1);
   });
 
-  test("addMarker inserts a draft clip capped at the next clip", () => {
-    const t = addMarker(parseTimeline(SAMPLE), 8);
-    const clips = t.tracks[1].clips;
-    expect(clips.map((c) => c.id)).toEqual(["s1", "m3", "s2"]);
-    expect(clips[1]).toMatchObject({ start: 8, end: 10, status: "draft" });
+  test("addEmptyClip drafts a spoken clip in the first gap after the playhead", () => {
+    const gappy = parseTimeline(
+      '{"duration":30,"tracks":[{"id":"voice","kind":"audio","clips":[{"id":"s1","start":0,"end":10}]}]}',
+    );
+    const t = addEmptyClip(gappy, "voice", 8);
+    expect(t.tracks[0].clips.map((c) => [c.id, c.start, c.end, c.status])).toEqual([
+      ["s1", 0, 10, undefined],
+      ["s2", 10, 15, "draft"],
+    ]);
   });
 
-  test("addMarker creates an audio track when missing", () => {
-    const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "hello");
-    expect(t.tracks[0]).toMatchObject({ kind: "audio", clips: [{ start: 3, end: 8, text: "hello" }] });
+  test("addEmptyClip appends past a full lane and grows the timeline", () => {
+    const t = addEmptyClip(parseTimeline(SAMPLE), "voice", 8);
+    const clips = t.tracks[1].clips;
+    expect(clips.map((c) => [c.id, c.start, c.end])).toEqual([
+      ["s1", 0, 10],
+      ["s2", 10, 20],
+      ["s3", 20, 25],
+    ]);
+    expect(t.duration).toBe(25);
+  });
+
+  test("addEmptyClip ignores an unknown track", () => {
+    const t = parseTimeline(SAMPLE);
+    expect(addEmptyClip(t, "nope", 3)).toBe(t);
   });
 
   test("legacy voice tracks load as audio and spoken clips are the ones with text", () => {
@@ -126,6 +149,130 @@ describe("edits", () => {
   test("removeClip drops the clip", () => {
     expect(removeClip(parseTimeline(SAMPLE), "voice", "s1").tracks[1].clips.map((c) => c.id)).toEqual(["s2"]);
   });
+});
+
+const CAPTIONS = JSON.stringify({
+  version: 1,
+  duration: 12,
+  tracks: [
+    { id: "video", kind: "video", clips: [{ id: "v1", src: "demo.mov", start: 0, end: 12 }] },
+    {
+      id: "subs",
+      kind: "captions",
+      style: "karaoke",
+      position: "top",
+      clips: [
+        {
+          id: "c1",
+          start: 0,
+          end: 3,
+          text: "hello there world",
+          words: [
+            { text: "hello", start: 0, end: 1 },
+            { text: "there", start: 1, end: 2 },
+            { text: "world", start: 2, end: 2.8 },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+test("captions track parses, round-trips and falls back to the default preset", () => {
+  const t = parseTimeline(CAPTIONS);
+  const tr = captionTrack(t)!;
+  expect(tr.style).toBe("karaoke");
+  expect(tr.position).toBe("top");
+  expect(tr.clips[0].words).toEqual([
+    { text: "hello", start: 0, end: 1 },
+    { text: "there", start: 1, end: 2 },
+    { text: "world", start: 2, end: 2.8 },
+  ]);
+  expect(captionStyle(tr.style)).toBe("karaoke");
+  expect(captionStyle("nope")).toBe(CAPTION_STYLES[0].value);
+  expect(captionStyle(undefined)).toBe(CAPTION_STYLES[0].value);
+  expect(laneOrder(t.tracks).map((tr) => tr.id)).toEqual(["subs", "video"]);
+  const round = parseTimeline(serializeTimeline(t));
+  expect(round.tracks[1].clips[0]).toMatchObject({ id: "c1", start: 0, end: 3, words: tr.clips[0].words });
+  const moved = moveClip(t, "subs", "c1", 1);
+  expect(moved.tracks[1].clips[0]).toMatchObject({ start: 1, end: 4, words: tr.clips[0].words });
+  expect(setClipText(t, "subs", "c1", "fixed").tracks[1].clips[0].status).toBeUndefined();
+  expect(draftCount(t)).toBe(0);
+  expect(spokenCount(t)).toBe(0);
+});
+
+test("trimClip does not pull a spoken clip's tail back to the length of its wav", () => {
+  const t = parseTimeline(
+    '{"duration":30,"tracks":[{"id":"voice","kind":"audio","clips":[{"id":"s1","start":2,"end":8,"text":"hello","src":"media/s1.wav"}]}]}',
+  );
+  const wav = 4.5;
+  const out = trimClip(t, "voice", "s1", "end", 9, wav);
+  expect(out.tracks[0].clips[0].end).toBe(9);
+
+  const music = parseTimeline(
+    '{"duration":30,"tracks":[{"id":"music","kind":"audio","clips":[{"id":"a1","start":2,"end":8,"src":"media/a.mp3"}]}]}',
+  );
+  expect(trimClip(music, "music", "a1", "end", 9, wav).tracks[0].clips[0].end).toBe(6.5);
+
+  const head = trimClip(t, "voice", "s1", "start", 0.5, wav).tracks[0].clips[0];
+  expect(head).toMatchObject({ start: 0.5, end: 8 });
+  expect(head.offset).toBeUndefined();
+  expect(trimClip(music, "music", "a1", "start", 0.5, wav).tracks[0].clips[0].start).toBe(2);
+});
+
+test("moveCaptions places the block by its centre and clears back to position", () => {
+  const t = parseTimeline(CAPTIONS);
+  const moved = moveCaptions(t, "subs", 0.25, 0.8);
+  expect(captionTrack(moved)).toMatchObject({ x: 0.25, y: 0.8, position: "top" });
+  expect(captionTrack(parseTimeline(serializeTimeline(moved)))).toMatchObject({ x: 0.25, y: 0.8 });
+  expect(captionTrack(moveCaptions(moved, "subs", -0.5, 2.4))).toMatchObject({ x: 0, y: 1 });
+  const cleared = moveCaptions(moved, "subs");
+  expect(cleared.tracks.map((tr) => [tr.x, tr.y])).toEqual([
+    [undefined, undefined],
+    [undefined, undefined],
+  ]);
+});
+
+test("addEmptyClip adds captions that never overlap and are not spoken", () => {
+  const empty = addTrack(parseTimeline('{"duration":30,"tracks":[]}'), "captions");
+  const t = addEmptyClip(empty, "captions", 3);
+  expect(captionTrack(t)!.clips[0]).toEqual({ id: "c1", start: 3, end: 8, text: "" });
+  expect(spokenCount(t)).toBe(0);
+  expect(draftCount(t)).toBe(0);
+
+  const two = addEmptyClip(t, "captions", 1);
+  expect(captionTrack(two)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
+    ["c2", 1, 3],
+    ["c1", 3, 8],
+  ]);
+
+  const three = addEmptyClip(two, "captions", 4);
+  expect(captionTrack(three)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
+    ["c2", 1, 3],
+    ["c1", 3, 8],
+    ["c3", 8, 13],
+  ]);
+});
+
+test("speakClip drafts a spoken clip from a caption, or updates the one at the same range", () => {
+  const t = parseTimeline(CAPTIONS);
+  const spoken = speakClip(t, "subs", "c1");
+  const audio = spoken.tracks.find((tr) => tr.kind === "audio");
+  expect(audio?.clips[0]).toMatchObject({ start: 0, end: 3, text: "hello there world", status: "draft" });
+  const again = speakClip(spoken, "subs", "c1");
+  expect(again.tracks.find((tr) => tr.kind === "audio")?.clips).toHaveLength(1);
+  expect(
+    speakClip(setClipText(again, "subs", "c1", "fixed"), "subs", "c1").tracks.find((tr) => tr.kind === "audio")
+      ?.clips[0].text,
+  ).toBe("fixed");
+  expect(draftCount(again)).toBe(1);
+  const empty = parseTimeline('{"tracks":[{"kind":"captions","clips":[{"id":"c","start":0,"end":1}]}]}');
+  expect(speakClip(empty, "subs", "c")).toBe(empty);
+});
+
+test("setClipText marks a spoken audio clip draft", () => {
+  const t = setClipText(parseTimeline(SAMPLE), "voice", "s1", "changed");
+  expect(t.tracks[1].clips[0]).toMatchObject({ text: "changed", status: "draft" });
 });
 
 test("clipLayout maps seconds to pixels at the zoom", () => {
@@ -237,4 +384,51 @@ test("snapTime picks the nearest point within tolerance", () => {
   expect(snapTime(3.9, [0, 4, 9], 0.2)).toBe(4);
   expect(snapTime(3.5, [0, 4, 9], 0.2)).toBe(3.5);
   expect(snapTime(4.1, [4, 4.15], 0.2)).toBe(4.15);
+});
+
+describe("clipSample", () => {
+  test("falls back to the track's pick and colours every sample apart", () => {
+    const t = parseTimeline(
+      JSON.stringify({
+        tracks: [
+          {
+            id: "voice",
+            kind: "audio",
+            voice_sample: "eden.wav",
+            clips: [
+              { id: "s1", start: 0, end: 5, text: "own", voice_sample: "ada.wav" },
+              { id: "s2", start: 5, end: 10, text: "track" },
+              { id: "m1", start: 10, end: 15, src: "media/music.mp3" },
+            ],
+          },
+        ],
+      }),
+    );
+    const [own, inherited, music] = t.tracks[0].clips;
+    expect(clipSample(t.tracks[0], own)).toBe("ada.wav");
+    expect(clipSample(t.tracks[0], inherited)).toBe("eden.wav");
+    expect(clipSample(t.tracks[0], music)).toBeUndefined();
+    expect(sampleColour("ada.wav")).toBe(sampleColour("ada.wav"));
+    expect(sampleColour("ada.wav")).not.toBe(sampleColour("eden.wav"));
+  });
+
+  test("picking another voice drafts the clip, picking the same one leaves it alone", () => {
+    const t = parseTimeline(
+      JSON.stringify({
+        tracks: [
+          {
+            id: "voice",
+            kind: "audio",
+            voice_sample: "eden.wav",
+            clips: [{ id: "s1", start: 0, end: 5, text: "hi", src: "media/s1.wav", status: "done" }],
+          },
+        ],
+      }),
+    );
+    const picked = setClipSample(t, "voice", "s1", "ada.wav").tracks[0].clips[0];
+    expect(picked.voice_sample).toBe("ada.wav");
+    expect(picked.status).toBe("draft");
+    expect(setClipSample(t, "voice", "s1", "eden.wav").tracks[0].clips[0].status).toBe("done");
+    expect(setClipSample(t, "voice", "s1", undefined).tracks[0].clips[0].status).toBe("done");
+  });
 });
