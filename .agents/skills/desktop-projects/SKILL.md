@@ -1,6 +1,6 @@
 ---
 name: desktop-projects
-description: Organise the Inference Gateway Desktop sidebar - its projects, groups, project directories and which chats belong to which project - by editing ~/.infer/projects.json and the projects.root key in ~/.infer/config.yaml. Use whenever the user wants to organise/organize, group, regroup, rename, move or import projects, change where projects live (the projects root, a folder like ~/Repositories), assign or tidy chats/conversations into projects, or switch a project between code and content, even if they do not say "project" explicitly.
+description: Organise the Inference Gateway Desktop sidebar - its projects, groups, project directories and which chats belong to which project - by editing ~/.infer/projects.yaml and the projects.root key in ~/.infer/config.yaml. Use whenever the user wants to organise/organize, group, regroup, rename, move or import projects, change where projects live (the projects root, a folder like ~/Repositories), assign or tidy chats/conversations into projects, or switch a project between code and content, even if they do not say "project" explicitly.
 license: Apache-2.0
 ---
 
@@ -8,19 +8,19 @@ license: Apache-2.0
 
 The desktop sidebar is a view over two files owned by the user, not by the app's source code:
 
-- `~/.infer/projects.json` - the projects, their groups, types, directory overrides and which chat belongs where.
+- `~/.infer/projects.yaml` - the projects, their groups, types, directory overrides and which chat belongs where.
 - `~/.infer/config.yaml` - the `projects.root` key, the folder every project directory is derived from.
 
 You organise projects by editing those two files and renaming directories on disk. The sidebar reloads
-`projects.json` after every run, so the result shows up as soon as you finish. Never edit the desktop's
+`projects.yaml` after every run, so the result shows up as soon as you finish. Never edit the desktop's
 source code for this.
 
 ## Tools you may use
 
 `Bash` for `infer conversations list --all-projects --format json`, `ls`, `mv`, `mkdir -p`, `git status --porcelain`,
-`git remote get-url origin` and `cat`; `Read` and `Write` (or `Edit`) for the two files above. Both files live
-under `~/.infer`, outside the file sandbox, so the desktop may ask the user to approve the write: that is
-expected, do not work around it. Do not use `find` over the whole home directory, package managers,
+`git remote get-url origin` and `cat`; `Read` and `Write` (or `Edit`) for the two files above. `projects.yaml` is
+carved out of the file sandbox so you can edit it directly; `config.yaml` is not, so the desktop may ask the
+user to approve that write: that is expected, do not work around it. Do not use `find` over the whole home directory, package managers,
 `WebFetch` or `WebSearch`.
 
 ## Where projects live
@@ -39,22 +39,28 @@ Sanitizing keeps letters, digits, space, `-`, `_` and `.`; every other character
 `-`, `.` and spaces are trimmed; an empty result becomes `project`. Names are mapped in sorted order and a
 collision gets a numeric suffix (`a-b`, then `a-b-2`).
 
-`paths[name]` in `projects.json` overrides the derived directory with an absolute path (`~` is expanded here).
+`paths[name]` in `projects.yaml` overrides the derived directory with an absolute path (`~` is expanded here).
 Use it when one project must live somewhere the mapping cannot express, for example an existing checkout
 outside the root.
 
-## `projects.json`
+## `projects.yaml`
 
-```json
-{
-  "names": ["desktop", "core/cli", "holiday-video"],
-  "assignments": { "<conversation-id>": "desktop" },
-  "contexts": { "desktop": "Always run task check before finishing." },
-  "groups": { "core/cli": "core" },
-  "types": { "holiday-video": "content" },
-  "paths": { "desktop": "/Users/me/Repositories/desktop" },
-  "selected": []
-}
+```yaml
+names:
+  - desktop
+  - core/cli
+  - holiday-video
+assignments:
+  <conversation-id>: desktop
+contexts:
+  desktop: Always run task check before finishing.
+groups:
+  core/cli: core
+types:
+  holiday-video: content
+paths:
+  desktop: /Users/me/Repositories/desktop
+selected: []
 ```
 
 - `names` - every project. A project only referenced from `assignments` is added to the list on load.
@@ -68,7 +74,7 @@ outside the root.
 - `selected` - internal to the "Init all projects" UI; leave it as you found it.
 
 The desktop rewrites the file with exactly these seven keys, so anything else you add is dropped. Read the
-file first, change only the entries the task needs, keep everything else byte-for-byte, and write valid JSON.
+file first, change only the entries the task needs, keep everything else byte-for-byte, and write valid YAML.
 
 ## Project types
 
@@ -85,7 +91,7 @@ Remove the entry to turn a project back into code.
 ## Sandbox
 
 The agent's file tools can write to the current project directory, `/tmp`, and every project directory
-resolved from `projects.json` (derived or overridden). Anything else prompts for approval. The grant is
+resolved from `projects.yaml` (derived or overridden). Anything else prompts for approval. The grant is
 computed when a session starts, so a moved project, a new override or a new `projects.root` applies to the
 next session, not the current one. Say so when you finish.
 
@@ -97,7 +103,7 @@ Moving projects outside the root:
 
 ## Recipes
 
-**List projects and chats.** Read `projects.json`; run `infer conversations list --all-projects --format json`
+**List projects and chats.** Read `projects.yaml`; run `infer conversations list --all-projects --format json`
 for the chats. Chats whose id is not in `assignments` are unfiled.
 
 **Rename a project.** Replace the name in `names`, `assignments`, `contexts`, `groups`, `types` and `paths`.
@@ -124,10 +130,10 @@ when the folder is not `projects.root`, its absolute path to `paths`.
 
 ## Guardrails
 
-- Never edit the desktop's source code, and never write anywhere except `projects.json`, `config.yaml`, the
+- Never edit the desktop's source code, and never write anywhere except `projects.yaml`, `config.yaml`, the
   projects root and directories named in `paths`.
 - Never delete a project directory or its contents; moving is fine, removal is the user's job.
 - Run `git status --porcelain` before moving a git checkout and ask before moving one with uncommitted
   changes or one that is not a git repository but is not empty.
-- Show the planned edits (old path to new path, the JSON diff) before applying them when more than one
+- Show the planned edits (old path to new path, the diff) before applying them when more than one
   project is affected.
