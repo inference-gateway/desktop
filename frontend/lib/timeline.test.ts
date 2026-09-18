@@ -11,7 +11,7 @@ import {
   trimClip,
   spokenCount,
   spokenTrack,
-  addMarker,
+  addEmptyClip,
   addTrack,
   captionStyle,
   captionTrack,
@@ -106,16 +106,31 @@ describe("edits", () => {
     expect(draftCount(t)).toBe(1);
   });
 
-  test("addMarker inserts a draft clip capped at the next clip", () => {
-    const t = addMarker(parseTimeline(SAMPLE), 8);
-    const clips = t.tracks[1].clips;
-    expect(clips.map((c) => c.id)).toEqual(["s1", "m3", "s2"]);
-    expect(clips[1]).toMatchObject({ start: 8, end: 10, status: "draft" });
+  test("addEmptyClip drafts a spoken clip in the first gap after the playhead", () => {
+    const gappy = parseTimeline(
+      '{"duration":30,"tracks":[{"id":"voice","kind":"audio","clips":[{"id":"s1","start":0,"end":10}]}]}',
+    );
+    const t = addEmptyClip(gappy, "voice", 8);
+    expect(t.tracks[0].clips.map((c) => [c.id, c.start, c.end, c.status])).toEqual([
+      ["s1", 0, 10, undefined],
+      ["s2", 10, 15, "draft"],
+    ]);
   });
 
-  test("addMarker creates an audio track when missing", () => {
-    const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "audio", "hello");
-    expect(t.tracks[0]).toMatchObject({ kind: "audio", clips: [{ start: 3, end: 8, text: "hello" }] });
+  test("addEmptyClip appends past a full lane and grows the timeline", () => {
+    const t = addEmptyClip(parseTimeline(SAMPLE), "voice", 8);
+    const clips = t.tracks[1].clips;
+    expect(clips.map((c) => [c.id, c.start, c.end])).toEqual([
+      ["s1", 0, 10],
+      ["s2", 10, 20],
+      ["s3", 20, 25],
+    ]);
+    expect(t.duration).toBe(25);
+  });
+
+  test("addEmptyClip ignores an unknown track", () => {
+    const t = parseTimeline(SAMPLE);
+    expect(addEmptyClip(t, "nope", 3)).toBe(t);
   });
 
   test("legacy voice tracks load as audio and spoken clips are the ones with text", () => {
@@ -182,21 +197,20 @@ test("captions track parses, round-trips and falls back to the default preset", 
   expect(spokenCount(t)).toBe(0);
 });
 
-test("addMarker inserts a caption clip and creates the captions track when missing", () => {
-  const t = addMarker(parseTimeline('{"duration":30,"tracks":[]}'), 3, "captions");
-  const tr = captionTrack(t)!;
-  expect(tr).toMatchObject({ id: "captions", kind: "captions" });
-  expect(tr.clips[0]).toEqual({ id: "c1", start: 3, end: 8, text: "" });
+test("addEmptyClip adds captions that never overlap and are not spoken", () => {
+  const empty = addTrack(parseTimeline('{"duration":30,"tracks":[]}'), "captions");
+  const t = addEmptyClip(empty, "captions", 3);
+  expect(captionTrack(t)!.clips[0]).toEqual({ id: "c1", start: 3, end: 8, text: "" });
   expect(spokenCount(t)).toBe(0);
   expect(draftCount(t)).toBe(0);
 
-  const two = addMarker(t, 1, "captions");
+  const two = addEmptyClip(t, "captions", 1);
   expect(captionTrack(two)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
     ["c2", 1, 3],
     ["c1", 3, 8],
   ]);
 
-  const three = addMarker(two, 4, "captions");
+  const three = addEmptyClip(two, "captions", 4);
   expect(captionTrack(three)!.clips.map((c) => [c.id, c.start, c.end])).toEqual([
     ["c2", 1, 3],
     ["c1", 3, 8],

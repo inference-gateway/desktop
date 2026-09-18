@@ -82,7 +82,7 @@ export const captionStyle = (style?: string): string =>
   CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
 
 const KINDS: TrackKind[] = ["video", "audio", "overlay", "captions"];
-const MARKER_SECONDS = 5;
+const NEW_CLIP_SECONDS = 5;
 
 function num(v: unknown, fallback = 0): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
@@ -263,31 +263,30 @@ export function removeClip(t: Timeline, trackId: string, clipId: string): Timeli
   };
 }
 
-// Insert an empty clip at `at`, ending at the next clip or after
-// MARKER_SECONDS, whichever comes first: a draft spoken clip on the audio
-// track, or a caption on the captions track; a caption starts after any clip
-// the playhead sits in, because two captions at once burn in on top of each
-// other. Creates the track if missing.
-export function addMarker(t: Timeline, at: number, kind: "audio" | "captions" = "audio", text = ""): Timeline {
-  const captions = kind === "captions";
-  const existing = captions ? captionTrack(t) : spokenTrack(t);
-  const track = existing ?? { id: kind, kind, clips: [] };
+// Insert an empty clip on `trackId` at `at`, ending at the next clip or after
+// NEW_CLIP_SECONDS, whichever comes first. It starts after any clip the
+// playhead sits in, so a lane never ends up with two clips at once; with no
+// room left it lands after the last clip and the timeline grows to fit, like
+// a dropped file. Spoken clips start as drafts for the agent to voice.
+export function addEmptyClip(t: Timeline, trackId: string, at: number, text = ""): Timeline {
+  const track = t.tracks.find((tr) => tr.id === trackId);
+  if (!track) return t;
   let start = Math.max(0, Math.min(at, t.duration));
-  if (captions) {
-    for (const c of [...track.clips].sort((a, b) => a.start - b.start)) {
-      if (start >= c.start && start < c.end) start = c.end;
-    }
+  for (const c of [...track.clips].sort((a, b) => a.start - b.start)) {
+    if (start >= c.start && start < c.end) start = c.end;
   }
   const next = track.clips.find((c) => c.start > start);
-  const end = Math.min(t.duration || start + MARKER_SECONDS, next?.start ?? Infinity, start + MARKER_SECONDS);
-  const clip: Clip = captions
-    ? { id: nextId(track, "c"), start, end: Math.max(end, start + 0.5), text }
-    : { id: nextId(track, "m"), start, end: Math.max(end, start + 0.5), text, status: "draft" };
+  const end = Math.max(Math.min(next?.start ?? Infinity, start + NEW_CLIP_SECONDS), start + 0.5);
+  const clip: Clip =
+    track.kind === "audio"
+      ? { id: nextId(track, "s"), start, end, text, status: "draft" }
+      : { id: nextId(track, "c"), start, end, text };
   const clips = [...track.clips, clip].sort((a, b) => a.start - b.start);
-  const tracks = existing
-    ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))
-    : [...t.tracks, { ...track, clips }];
-  return { ...t, tracks };
+  return {
+    ...t,
+    duration: Math.max(t.duration, clip.end),
+    tracks: t.tracks.map((tr) => (tr.id === trackId ? { ...tr, clips } : tr)),
+  };
 }
 
 // What a content project shows before the agent writes any timeline: one

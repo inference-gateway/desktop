@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  BookmarkPlus,
   Download,
   FilePlus,
   Film,
@@ -34,7 +33,7 @@ import {
   RESOLUTIONS,
   SOURCE_AUDIO,
   addClip,
-  addMarker,
+  addEmptyClip,
   addTrack,
   captionStyle,
   captionTrack,
@@ -267,9 +266,9 @@ export function TimelineView() {
         const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
         if (tr.kind === "audio") el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
         else el.hidden = !inside;
-        if (inside) {
-          if (Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
-          if (playing && el.paused) el.play().catch(() => {});
+        if (inside && Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
+        if (inside && playing) {
+          if (el.paused) el.play().catch(() => {});
         } else if (!el.paused) {
           el.pause();
         }
@@ -560,13 +559,12 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  const addCaption = () => {
-    const before = new Set(captionTrack(shown)?.clips.map((c) => c.id) ?? []);
-    const next = addMarker(shown, time, "captions");
+  const addLaneClip = (tr: Track) => {
+    const before = new Set(tr.clips.map((c) => c.id));
+    const next = addEmptyClip(shown, tr.id, time);
     update(next);
-    const tr = captionTrack(next);
-    const fresh = tr?.clips.find((c) => !before.has(c.id));
-    if (tr && fresh) setSelected({ track: tr.id, clip: fresh.id });
+    const fresh = next.tracks.find((t) => t.id === tr.id)?.clips.find((c) => !before.has(c.id));
+    if (fresh) setSelected({ track: tr.id, clip: fresh.id });
   };
 
   const captionize = () => {
@@ -751,15 +749,6 @@ export function TimelineView() {
                 onClick={splitAtPlayhead}
               >
                 <Scissors size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Add marker"
-                title="Add a marker at the playhead"
-                onClick={() => update(addMarker(timeline, time))}
-              >
-                <BookmarkPlus size={14} />
               </Button>
               <Button
                 variant="outline"
@@ -953,11 +942,15 @@ export function TimelineView() {
                     </select>
                   )}
                 </div>
-                {tr.kind === "captions" && (
+                {(tr.kind === "audio" || tr.kind === "captions") && (
                   <button
-                    aria-label="Add caption"
-                    title="Add a caption at the playhead"
-                    onClick={addCaption}
+                    aria-label={tr.kind === "captions" ? "Add caption" : "Add voice clip"}
+                    title={
+                      tr.kind === "captions"
+                        ? "Add a caption at the playhead"
+                        : "Add a clip at the playhead for the agent to voice"
+                    }
+                    onClick={() => addLaneClip(tr)}
                     className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
                   >
                     <Plus size={14} />
