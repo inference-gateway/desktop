@@ -35,8 +35,10 @@ import {
   addClip,
   addEmptyClip,
   addTrack,
+  captionPreset,
   captionStyle,
   captionTrack,
+  moveCaptions,
   clipLayout,
   draftCount,
   emptyTimeline,
@@ -139,69 +141,96 @@ function TrackIcon({ kind }: { kind: TrackKind }) {
   return <Icon size={11} className="shrink-0 text-zinc-500" />;
 }
 
-// Caption preset colours and sizes, mirrored by CAPTION_PRESETS in
-// backend/src/timeline.rs: the preview must look like the burned-in export.
-const CAPTION_ACCENT = "#ffd400";
-const CAPTION_DIM = "#999999";
-
-// The active caption drawn over the video: the whole line for the plain
-// presets, words popped as spoken for highlight (they stay, like the \k
-// tags the export burns), words filled as spoken for karaoke. Sizes in cqh
-// of the stage, like the ASS style's fraction of PlayResY; the stage is a
-// size container.
-function CaptionOverlay({ track, clip, now }: { track: Track; clip: Clip; now: number }) {
-  const style = captionStyle(track.style);
-  const words = clip.words?.length ? clip.words : undefined;
+// The active caption drawn over the video, from the same preset table the
+// export reads: the whole line for the plain presets, words popped as spoken
+// for highlight (they stay, like the \k tags the export burns), words filled
+// as spoken for karaoke. Sizes are cqh of the stage, like the ASS style's
+// fraction of PlayResY; the stage is a size container. Dragging the box sets
+// the track's x/y, double-clicking clears them back to `position`.
+function CaptionOverlay({
+  track,
+  clip,
+  now,
+  stage,
+  onMove,
+}: {
+  track: Track;
+  clip: Clip;
+  now: number;
+  stage: React.RefObject<HTMLDivElement | null>;
+  onMove: (x?: number, y?: number) => void;
+}) {
+  const preset = captionPreset(captionStyle(track.style));
+  const words = preset.words && clip.words?.length ? clip.words : undefined;
   const tokens = clip.text?.split(/\s+/).filter(Boolean) ?? [];
   const text = (i: number) => words?.[i]?.text ?? tokens[i] ?? "";
-  const outline = [
-    "0.4cqh 0.4cqh 0 #000",
-    "-0.4cqh 0.4cqh 0 #000",
-    "0.4cqh -0.4cqh 0 #000",
-    "-0.4cqh -0.4cqh 0 #000",
-  ].join(", ");
+  const grab = useRef<{ dx: number; dy: number } | null>(null);
+  const ring = preset.outline
+    ? [
+        `${preset.outline}em ${preset.outline}em 0 #000`,
+        `-${preset.outline}em ${preset.outline}em 0 #000`,
+        `${preset.outline}em -${preset.outline}em 0 #000`,
+        `-${preset.outline}em -${preset.outline}em 0 #000`,
+      ].join(", ")
+    : undefined;
+  const placed = track.x !== undefined && track.y !== undefined;
   const pos = track.position ?? "bottom";
+  const begin = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    grab.current = { dx: e.clientX - (box.left + box.width / 2), dy: e.clientY - (box.top + box.height / 2) };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const drag = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    const g = grab.current;
+    const rect = stage.current?.getBoundingClientRect();
+    if (!g || !rect || !rect.width || !rect.height) return;
+    onMove((e.clientX - g.dx - rect.left) / rect.width, (e.clientY - g.dy - rect.top) / rect.height);
+  };
+  const drop = (e: ReactPointerEvent<HTMLSpanElement>) => {
+    grab.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
   return (
     <div
-      aria-label="Caption"
-      className="pointer-events-none absolute inset-x-0 flex justify-center whitespace-pre-wrap text-center text-white"
-      style={{
-        ...(style === "classic"
-          ? {
-              fontSize: "5.2cqh",
-              fontWeight: 600,
-              lineHeight: 1.3,
-              background: "rgba(0,0,0,0.6)",
-              padding: "1cqh 2.6cqh",
-              borderRadius: "0.8cqh",
-            }
-          : style === "bold"
-            ? { fontSize: "7.5cqh", fontWeight: 800, textTransform: "uppercase", textShadow: outline }
-            : { fontSize: "6cqh", fontWeight: 700, textShadow: outline }),
-        ...(pos === "bottom"
-          ? { bottom: "6cqh" }
-          : pos === "top"
-            ? { top: "6cqh" }
-            : { top: "50%", transform: "translateY(-50%)" }),
-      }}
+      className={cn("pointer-events-none absolute flex justify-center", !placed && "inset-x-0")}
+      style={
+        placed
+          ? { left: `${track.x! * 100}%`, top: `${track.y! * 100}%`, transform: "translate(-50%, -50%)" }
+          : pos === "bottom"
+            ? { bottom: "6cqh" }
+            : pos === "top"
+              ? { top: "6cqh" }
+              : { top: "50%", transform: "translateY(-50%)" }
+      }
     >
-      {words && (style === "highlight" || style === "karaoke")
-        ? words.map((w, i) => {
-            const color =
-              style === "highlight"
-                ? now >= w.start
-                  ? CAPTION_ACCENT
-                  : undefined
-                : now < w.start
-                  ? CAPTION_DIM
-                  : undefined;
-            return (
-              <span key={i} style={color ? { color } : undefined}>
+      <span
+        aria-label="Caption"
+        title="Drag to place the captions, double-click to put them back"
+        onPointerDown={begin}
+        onPointerMove={drag}
+        onPointerUp={drop}
+        onPointerCancel={drop}
+        onDoubleClick={() => onMove(undefined, undefined)}
+        className="pointer-events-auto max-w-[90%] cursor-move touch-none whitespace-pre-wrap text-center"
+        style={{
+          fontSize: `${preset.size * 100}cqh`,
+          fontWeight: preset.weight,
+          lineHeight: 1.25,
+          color: words ? (preset.ahead ?? preset.colour) : preset.colour,
+          ...(preset.upper ? { textTransform: "uppercase" } : {}),
+          ...(ring ? { textShadow: ring } : {}),
+          ...(preset.band ? { background: "rgba(0,0,0,0.6)", padding: "0.2em 0.5em", borderRadius: "0.15em" } : {}),
+        }}
+      >
+        {words
+          ? words.map((w, i) => (
+              <span key={i} style={now >= w.start ? { color: preset.colour } : undefined}>
                 {text(i)}{" "}
               </span>
-            );
-          })
-        : clip.text}
+            ))
+          : clip.text}
+      </span>
     </div>
   );
 }
@@ -254,6 +283,7 @@ export function TimelineView() {
     setTime(t);
   };
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
+  const stageRef = useRef<HTMLDivElement>(null);
   const { setStatus } = useDesktop();
 
   const syncMedia = (t: number, playing: boolean) => {
@@ -790,6 +820,7 @@ export function TimelineView() {
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
           {timeline && clipVideo.length > 0 ? (
             <div
+              ref={stageRef}
               className="relative"
               style={{
                 aspectRatio: frameAspect(timeline),
@@ -834,7 +865,15 @@ export function TimelineView() {
                   }}
                 />
               ))}
-              {captions && activeCaption && <CaptionOverlay track={captions} clip={activeCaption} now={time} />}
+              {captions && activeCaption && (
+                <CaptionOverlay
+                  track={captions}
+                  clip={activeCaption}
+                  now={time}
+                  stage={stageRef}
+                  onMove={(x, y) => update(moveCaptions(shown, captions.id, x, y))}
+                />
+              )}
             </div>
           ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">

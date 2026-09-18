@@ -285,6 +285,8 @@ struct TrackFile {
     gain: Option<f64>,
     style: Option<String>,
     position: Option<String>,
+    x: Option<f64>,
+    y: Option<f64>,
     #[serde(default)]
     clips: Vec<ClipFile>,
 }
@@ -392,15 +394,18 @@ fn overlay_filter(
 
 /// Caption style presets, mirrored from CAPTION_STYLES in
 /// frontend/lib/timeline.ts and CaptionOverlay in TimelineView.tsx: the
-/// preview and the burned-in export must match. Sizes are fractions of the
-/// frame height (ASS PlayResY), colours are ASS &HAABBGGRR, and the word
-/// presets time their karaoke tags from the clip's `words`.
+/// preview and the burned-in export must match. `fontsize` is a fraction of
+/// the frame height (ASS PlayResY) and `outline` a fraction of the font size;
+/// colours are ASS &HAABBGGRR, where `primary` is a word once it has been
+/// spoken and `secondary` before, which is what the `\k` tags swap.
 /// ponytail: ASS cannot express per-axis band padding or a semi-bold weight;
 /// the closest standing-in values stand in for the preview's.
 struct CaptionPreset {
     name: &'static str,
     fontsize: f64,
+    outline: f64,
     uppercase: bool,
+    bold: bool,
     band: bool,
     primary: &'static str,
     secondary: &'static str,
@@ -408,33 +413,39 @@ struct CaptionPreset {
 }
 
 const CAPTION_PRESETS: [CaptionPreset; 4] = [
-    // White text on a dark band.
+    // Broadcast subtitle: white on a translucent box hugging the text.
     CaptionPreset {
         name: "Classic",
-        fontsize: 0.052,
+        fontsize: 0.048,
+        outline: 0.25,
         uppercase: false,
+        bold: false,
         band: true,
         primary: "&H00FFFFFF",
         secondary: "&H00FFFFFF",
         karaoke: None,
     },
-    // Large centered uppercase with a thick outline.
+    // The short-form punch line: huge uppercase yellow with a thick outline.
     CaptionPreset {
         name: "Bold",
-        fontsize: 0.075,
+        fontsize: 0.09,
+        outline: 0.09,
         uppercase: true,
+        bold: true,
         band: false,
-        primary: "&H00FFFFFF",
-        secondary: "&H00FFFFFF",
+        primary: "&H004DE1FF",
+        secondary: "&H004DE1FF",
         karaoke: None,
     },
-    // Word-by-word colour pop: words turn accent as spoken and stay.
+    // Word-by-word colour pop: white until spoken, then green, and it stays.
     CaptionPreset {
         name: "Highlight",
-        fontsize: 0.06,
+        fontsize: 0.07,
+        outline: 0.07,
         uppercase: false,
+        bold: true,
         band: false,
-        primary: "&H0000D4FF",
+        primary: "&H0088FF2B",
         secondary: "&H00FFFFFF",
         karaoke: Some("k"),
     },
@@ -442,10 +453,12 @@ const CAPTION_PRESETS: [CaptionPreset; 4] = [
     CaptionPreset {
         name: "Karaoke",
         fontsize: 0.06,
+        outline: 0.05,
         uppercase: false,
+        bold: false,
         band: false,
         primary: "&H00FFFFFF",
-        secondary: "&H00999999",
+        secondary: "&H008A8A8A",
         karaoke: Some("kf"),
     },
 ];
@@ -576,10 +589,22 @@ fn caption_sidecars(
     };
     let fontsize = (preset.fontsize * f64::from(fh)).round() as i32;
     let margin = (0.06 * f64::from(fh)).round() as i32;
-    let (border, outline, outline_colour) = if preset.band {
-        (3, 12, "&H99000000")
+    let (border, outline_colour) = if preset.band {
+        (3, "&H99000000")
     } else {
-        (1, 4, "&H00000000")
+        (1, "&H00000000")
+    };
+    let outline = (preset.outline * f64::from(fontsize)).round() as i32;
+    let bold = if preset.bold { -1 } else { 0 };
+    // A caption block the user dragged is anchored by its centre, as the
+    // preview places it; otherwise the style's alignment and margin place it.
+    let place = match (track.x, track.y) {
+        (Some(x), Some(y)) => format!(
+            "{{\\an5\\pos({},{})}}",
+            (x.clamp(0.0, 1.0) * f64::from(fw)).round() as i32,
+            (y.clamp(0.0, 1.0) * f64::from(fh)).round() as i32
+        ),
+        _ => format!("{{\\an{an}}}"),
     };
     let mut dialogue = String::new();
     for c in &clips {
@@ -588,7 +613,7 @@ fn caption_sidecars(
             .filter(|e| *e > c.start)
             .ok_or_else(|| format!("caption clip at {} needs an end after its start", c.start))?;
         dialogue.push_str(&format!(
-            "Dialogue: 0,{},{},{},,0,0,0,,{{\\an{an}}}{}\n",
+            "Dialogue: 0,{},{},{},,0,0,0,,{place}{}\n",
             ass_time(c.start),
             ass_time(end),
             preset.name,
@@ -596,7 +621,7 @@ fn caption_sidecars(
         ));
     }
     let style_line = format!(
-        "Style: {},Arial,{fontsize},{},{},{outline_colour},&H00000000,-1,0,0,0,100,100,0,0,{border},{outline},0,{an},60,60,{margin},1",
+        "Style: {},Arial,{fontsize},{},{},{outline_colour},&H00000000,{bold},0,0,0,100,100,0,0,{border},{outline},0,{an},60,60,{margin},1",
         preset.name, preset.primary, preset.secondary
     );
     let ass = format!(
@@ -1037,7 +1062,7 @@ mod tests {
         let ass = &sidecars[0].1;
         assert!(ass.contains("PlayResX: 1080\nPlayResY: 1920"), "{ass}");
         assert!(ass.contains(
-            "Style: Highlight,Arial,115,&H0000D4FF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,8,60,60,115,1"
+            "Style: Highlight,Arial,134,&H0088FF2B,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,9,0,8,60,60,115,1"
         ), "{ass}");
         assert!(ass.contains(
             "Dialogue: 0,0:00:01.00,0:00:04.00,Highlight,,0,0,0,,{\\an8}{\\k150}hello {\\k150}world"
@@ -1076,6 +1101,19 @@ mod tests {
         assert!(
             sidecars[0].1.contains(
                 "Dialogue: 0,0:00:01.00,0:00:04.00,Highlight,,0,0,0,,{\\an8}{\\k50}{\\k100}hello{\\k50} {\\k100}world"
+            ),
+            "{}",
+            sidecars[0].1
+        );
+
+        let placed = json.replace(
+            r#""position":"top""#,
+            r#""position":"top","x":0.25,"y":0.8"#,
+        );
+        let (_, _, sidecars) = export_args(&dir, "demo", &placed).unwrap();
+        assert!(
+            sidecars[0].1.contains(
+                "Dialogue: 0,0:00:05.00,0:00:07.00,Highlight,,0,0,0,,{\\an5\\pos(270,1536)}second line"
             ),
             "{}",
             sidecars[0].1

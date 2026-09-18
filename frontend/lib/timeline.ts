@@ -54,9 +54,13 @@ export type Track = {
   voice_sample?: string;
   gain?: number;
   // Captions tracks only: a preset name (unknown ones fall back to the
-  // default) and where the captions sit on the frame.
+  // default) and where the captions sit on the frame - `position` is the
+  // standard placement, `x`/`y` the centre of the caption box as fractions of
+  // the frame once the user has dragged it, and they win over `position`.
   style?: string;
   position?: "bottom" | "center" | "top";
+  x?: number;
+  y?: number;
 };
 
 export type Timeline = {
@@ -68,18 +72,56 @@ export type Timeline = {
   tracks: Track[];
 };
 
-// Caption style presets: the catalogue is mirrored by CAPTION_PRESETS in
-// backend/src/timeline.rs (the ASS export), so preview and export match.
-export const CAPTION_STYLES: { value: string; label: string; words?: boolean }[] = [
-  { value: "classic", label: "Classic" },
-  { value: "bold", label: "Bold" },
-  { value: "highlight", label: "Highlight", words: true },
-  { value: "karaoke", label: "Karaoke", words: true },
+// Caption style presets, in the looks the short-form platforms ship: a
+// broadcast subtitle on a band, a big uppercase punch line, a per-word colour
+// pop and a fill-as-spoken karaoke. `size` and `outline` are fractions of the
+// frame height and of the font size, `colour` is what a word looks like once
+// it has been spoken and `ahead` what it looks like before. The catalogue is
+// mirrored by CAPTION_PRESETS in backend/src/timeline.rs (the ASS export), so
+// the preview and the burned-in export match.
+export type CaptionStyle = {
+  value: string;
+  label: string;
+  words?: boolean;
+  size: number;
+  weight: number;
+  upper?: boolean;
+  band?: boolean;
+  outline: number;
+  colour: string;
+  ahead?: string;
+};
+
+export const CAPTION_STYLES: CaptionStyle[] = [
+  { value: "classic", label: "Classic", size: 0.048, weight: 600, band: true, outline: 0, colour: "#ffffff" },
+  { value: "bold", label: "Bold", size: 0.09, weight: 900, upper: true, outline: 0.09, colour: "#ffe14d" },
+  {
+    value: "highlight",
+    label: "Highlight",
+    words: true,
+    size: 0.07,
+    weight: 800,
+    outline: 0.07,
+    colour: "#2bff88",
+    ahead: "#ffffff",
+  },
+  {
+    value: "karaoke",
+    label: "Karaoke",
+    words: true,
+    size: 0.06,
+    weight: 700,
+    outline: 0.05,
+    colour: "#ffffff",
+    ahead: "#8a8a8a",
+  },
 ];
 export const DEFAULT_CAPTION_STYLE = "classic";
 // Unknown preset names fall back to the default preset.
 export const captionStyle = (style?: string): string =>
   CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
+export const captionPreset = (style?: string): CaptionStyle =>
+  CAPTION_STYLES.find((s) => s.value === style) ?? CAPTION_STYLES[0];
 
 const KINDS: TrackKind[] = ["video", "audio", "overlay", "captions"];
 const NEW_CLIP_SECONDS = 5;
@@ -90,6 +132,8 @@ function num(v: unknown, fallback = 0): number {
 }
 
 const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
+// A fraction of the frame, clamped so a dragged caption cannot leave it.
+const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
 
 export function parseTimeline(json: string): Timeline {
   const raw = JSON.parse(json) as Partial<Timeline> | null;
@@ -105,6 +149,8 @@ export function parseTimeline(json: string): Timeline {
       : t?.position === "bottom"
         ? "bottom"
         : undefined) as Track["position"],
+    x: frac(t?.x),
+    y: frac(t?.y),
     clips: (Array.isArray(t?.clips) ? t.clips : [])
       .map((c, j) => ({
         id: typeof c?.id === "string" && c.id ? c.id : `${t?.id ?? "clip"}-${j + 1}`,
@@ -219,6 +265,15 @@ export function setClipText(t: Timeline, trackId: string, clipId: string, text: 
             ),
           },
     ),
+  };
+}
+
+// Drag the captions block on the frame: `x`/`y` are the centre of the box as
+// fractions of it, and clearing them puts the block back on `position`.
+export function moveCaptions(t: Timeline, trackId: string, x?: number, y?: number): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) => (tr.id === trackId ? { ...tr, x: frac(x), y: frac(y) } : tr)),
   };
 }
 

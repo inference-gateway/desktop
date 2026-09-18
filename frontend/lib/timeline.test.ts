@@ -15,6 +15,7 @@ import {
   addTrack,
   captionStyle,
   captionTrack,
+  moveCaptions,
   clipLayout,
   emptyTimeline,
   draftCount,
@@ -195,6 +196,19 @@ test("captions track parses, round-trips and falls back to the default preset", 
   expect(setClipText(t, "subs", "c1", "fixed").tracks[1].clips[0].status).toBeUndefined();
   expect(draftCount(t)).toBe(0);
   expect(spokenCount(t)).toBe(0);
+});
+
+test("moveCaptions places the block by its centre and clears back to position", () => {
+  const t = parseTimeline(CAPTIONS);
+  const moved = moveCaptions(t, "subs", 0.25, 0.8);
+  expect(captionTrack(moved)).toMatchObject({ x: 0.25, y: 0.8, position: "top" });
+  expect(captionTrack(parseTimeline(serializeTimeline(moved)))).toMatchObject({ x: 0.25, y: 0.8 });
+  expect(captionTrack(moveCaptions(moved, "subs", -0.5, 2.4))).toMatchObject({ x: 0, y: 1 });
+  const cleared = moveCaptions(moved, "subs");
+  expect(cleared.tracks.map((tr) => [tr.x, tr.y])).toEqual([
+    [undefined, undefined],
+    [undefined, undefined],
+  ]);
 });
 
 test("addEmptyClip adds captions that never overlap and are not spoken", () => {

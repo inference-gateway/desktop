@@ -151,7 +151,8 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
   export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
   already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
 - A captions track is on-screen text burned into the export: `kind: "captions"`, a `style` preset
-  and an optional `position`, with clips of `id`, `start`, `end`, `text` and optional `words`. One
+  and an optional `position` (or `x`/`y`, the centre of the block as fractions of the frame, set by
+  dragging it on the preview), with clips of `id`, `start`, `end`, `text` and optional `words`. One
   captions track per timeline; caption clips never carry `src` or `status`. See Captions.
 - `source_audio` says what to do with the recording's own audio track: `transcribe` (reuse the
   user's own speech as the script and as the voice sample, then replace it), `mute` (drop
@@ -229,9 +230,12 @@ in and also writes a sidecar `.srt`.
    ends and pauses, never mid-word and never mid-number. `start`/`end` come from the spoken clip or
    the transcript offsets; a long spoken clip splits into several captions inside its own range.
    Drop filler and trailing punctuation clutter, keep the words the user says.
-3. **Style.** `classic` (white on a dark band), `bold` (large uppercase with an outline),
-   `highlight` (words pop as spoken) or `karaoke` (words fill as spoken). Use `classic` unless the
-   user asks for a word-by-word look. `position` is `bottom` (default), `center` or `top`.
+3. **Style.** `classic` (a broadcast subtitle: white on a translucent box), `bold` (the short-form
+   punch line: huge uppercase yellow with a thick outline), `highlight` (each word turns green as it
+   is spoken and stays) or `karaoke` (words are dim until spoken, then white). Use `classic` unless
+   the user asks for a word-by-word look or a short-form clip. `position` is `bottom` (default),
+   `center` or `top`; leave `x`/`y` alone, the user sets them by dragging the captions on the
+   preview and they win over `position`.
 4. **Words.** `highlight` and `karaoke` need per-word timing; the other two ignore it. Only for
    those two, run a second pass for word-level splits over the wav the text came from - `audio.wav`
    for a transcript, `media/<stem>-<id>.wav` for a synthesized clip:
