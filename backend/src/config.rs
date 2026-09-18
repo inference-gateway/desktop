@@ -79,8 +79,10 @@ pub(crate) async fn set_auth(
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopConfig {
     pub(crate) storage_backend: String,
-    /// Empty means unset: the CLI defaults to
-    /// ~/.infer/projects/<project-slug>/conversations.
+    /// Verbatim `storage.jsonl.path` from ~/.infer/config.yaml; empty means unset
+    /// (the CLI defaults to ~/.infer/projects/<project-slug>/conversations).
+    /// Relative paths resolve only for spawned processes
+    /// (env::absolute_storage_path) and are never rewritten into the config file.
     pub(crate) storage_directory: String,
     pub(crate) gateway_url: String,
     pub(crate) default_model: String,
@@ -233,17 +235,7 @@ pub(crate) fn config_from_value(
     let d = default_config();
     DesktopConfig {
         storage_backend: str_at(&["storage", "type"]).unwrap_or_else(|| "jsonl".into()),
-        storage_directory: str_at(&["storage", "jsonl", "path"])
-            .map(|s| {
-                if let Some(rest) = s.strip_prefix('~') {
-                    format!("{}{}", home.display(), rest)
-                } else if std::path::Path::new(&s).is_relative() {
-                    home.join(&s).display().to_string()
-                } else {
-                    s
-                }
-            })
-            .unwrap_or_default(),
+        storage_directory: str_at(&["storage", "jsonl", "path"]).unwrap_or_default(),
         gateway_url: str_at(&["gateway", "url"]).unwrap_or_else(|| "http://localhost:8080".into()),
         default_model: str_at(&["agent", "model"])
             .or_else(|| str_at(&["default_model"]))
@@ -728,14 +720,14 @@ mod tests {
     }
 
     #[test]
-    fn config_from_value_reads_fields_and_expands_tilde() {
+    fn config_from_value_reads_fields_verbatim() {
         let home = PathBuf::from("/home/tester");
         let val = parse_yaml(
             "storage:\n  type: postgres\n  jsonl:\n    path: ~/conv\n  sqlite:\n    path: /db/conv.db\n  postgres:\n    host: db.example\n    port: 6543\n    database: mydb\n    username: alice\n    password: secret\n    ssl_mode: require\n  redis:\n    host: cache\n    port: 6380\n    password: rpw\n    db: 3\n  d1:\n    account_id: acc\n    database_id: dbid\n    api_token: tok\n    base_url: https://d1.example\ngateway:\n  url: http://gw:9000\ndefault_model: gpt-x\n",
         );
         let cfg = config_from_value(&val, &home);
         assert_eq!(cfg.storage_backend, "postgres");
-        assert_eq!(cfg.storage_directory, "/home/tester/conv");
+        assert_eq!(cfg.storage_directory, "~/conv");
         assert_eq!(cfg.gateway_url, "http://gw:9000");
         assert_eq!(cfg.default_model, "gpt-x");
         assert_eq!(cfg.sqlite_path, "/db/conv.db");
@@ -755,12 +747,26 @@ mod tests {
         assert_eq!(cfg.d1_base_url, "https://d1.example");
     }
 
+    /// The CLI anchors a relative storage.jsonl.path at its own cwd and only
+    /// expands a leading `~`; the desktop reads the value verbatim so the two
+    /// agree on what the file says and saving Settings never rewrites it.
     #[test]
-    fn config_from_value_resolves_relative_storage_path_against_home() {
+    fn config_from_value_keeps_relative_storage_path_verbatim() {
         let home = PathBuf::from("/home/tester");
         let val = parse_yaml("storage:\n  jsonl:\n    path: .infer/conversations\n");
         let cfg = config_from_value(&val, &home);
-        assert_eq!(cfg.storage_directory, "/home/tester/.infer/conversations");
+        assert_eq!(cfg.storage_directory, ".infer/conversations");
+    }
+
+    #[test]
+    fn merge_config_preserves_relative_storage_path_verbatim() {
+        let existing = "storage:\n  type: jsonl\n  jsonl:\n    path: .infer/conversations\n";
+        let cfg = config_from_value(&parse_yaml(existing), &PathBuf::from("/home/tester"));
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["storage", "jsonl", "path"]),
+            Some(".infer/conversations")
+        );
     }
 
     #[test]
