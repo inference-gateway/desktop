@@ -1,51 +1,54 @@
 use crate::env::{config_path, home_dir};
-use std::path::PathBuf;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
-/// App-owned provider key store at ~/.infer/auth.json (Codex-style).
-/// infer does not read this file; the desktop injects its values as env vars
+/// App-owned provider key store at ~/.infer/auth.yaml: a flat YAML map of
+/// provider key env vars to values (`OPENAI_API_KEY: sk-...`). infer reads this
+/// file too, as the lowest-precedence source after the system environment and
+/// the project .env; the desktop additionally injects the pairs as env vars
 /// when spawning `infer`.
-pub(crate) fn auth_path() -> PathBuf {
-    home_dir().join(".infer").join("auth.json")
+fn auth_path(home: &Path) -> PathBuf {
+    home.join(".infer").join("auth.yaml")
 }
 
-pub(crate) fn read_auth() -> serde_json::Map<String, serde_json::Value> {
-    std::fs::read_to_string(auth_path())
+/// A missing or malformed file yields no keys, matching the CLI's own reader.
+fn read_auth_in(home: &Path) -> BTreeMap<String, String> {
+    std::fs::read_to_string(auth_path(home))
         .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.as_object().cloned())
+        .and_then(|s| serde_norway::from_str(&s).ok())
         .unwrap_or_default()
+}
+
+fn read_auth() -> BTreeMap<String, String> {
+    read_auth_in(&home_dir())
 }
 
 /// Non-empty (KEY, value) pairs to inject as environment variables.
 pub(crate) fn auth_env() -> Vec<(String, String)> {
     read_auth()
         .into_iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
         .filter(|(_, v)| !v.is_empty())
         .collect()
 }
 
-#[tauri::command]
-pub(crate) async fn get_auth() -> Result<serde_json::Value, String> {
-    Ok(serde_json::Value::Object(read_auth()))
-}
-
-#[tauri::command]
-pub(crate) async fn set_auth(
+/// `set_auth` rooted at an arbitrary home. Blank values are dropped rather than
+/// written; the file is chmod 0600 on unix, which the CLI warns about when it
+/// is broader. Permissions are set after the write rather than at creation so
+/// an existing file is re-tightened too.
+fn write_auth_in(
+    home: &Path,
     keys: std::collections::HashMap<String, String>,
 ) -> Result<(), String> {
-    let path = auth_path();
+    let path = auth_path(home);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let map: serde_json::Map<String, serde_json::Value> = keys
+    let map: BTreeMap<String, String> = keys
         .into_iter()
         .filter(|(_, v)| !v.trim().is_empty())
-        .map(|(k, v)| (k, serde_json::Value::String(v)))
         .collect();
-    let json =
-        serde_json::to_string_pretty(&serde_json::Value::Object(map)).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    let yaml = serde_norway::to_string(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -56,6 +59,18 @@ pub(crate) async fn set_auth(
         std::fs::set_permissions(&path, perms).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn get_auth() -> Result<BTreeMap<String, String>, String> {
+    Ok(read_auth())
+}
+
+#[tauri::command]
+pub(crate) async fn set_auth(
+    keys: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    write_auth_in(&home_dir(), keys)
 }
 
 /// Desktop-facing config fields read from ~/.infer/config.yaml.
@@ -644,6 +659,61 @@ pub(crate) async fn set_default_model(model: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_round_trips_yaml_and_ignores_legacy_json() {
+        let home = std::env::temp_dir().join(format!("infer-auth-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(read_auth_in(&home).is_empty());
+
+        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::write(
+            home.join(".infer").join("auth.json"),
+            r#"{"OPENAI_API_KEY": "from-json"}"#,
+        )
+        .unwrap();
+        assert!(read_auth_in(&home).is_empty());
+
+        write_auth_in(
+            &home,
+            std::collections::HashMap::from([
+                ("OPENAI_API_KEY".to_string(), "sk-test".to_string()),
+                ("GROQ_API_KEY".to_string(), "  ".to_string()),
+            ]),
+        )
+        .unwrap();
+
+        let path = auth_path(&home);
+        assert!(path.ends_with(".infer/auth.yaml"));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "OPENAI_API_KEY: sk-test\n"
+        );
+        assert_eq!(
+            read_auth_in(&home),
+            BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-test".to_string())])
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            write_auth_in(
+                &home,
+                std::collections::HashMap::from([(
+                    "OPENAI_API_KEY".to_string(),
+                    "sk-test".to_string(),
+                )]),
+            )
+            .unwrap();
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        std::fs::remove_dir_all(&home).unwrap();
+    }
 
     fn parse_yaml(text: &str) -> serde_norway::Value {
         serde_norway::from_str(text).unwrap()
