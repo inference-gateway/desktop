@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CAPTION_STYLES,
   addClip,
   moveClip,
   rulerStep,
@@ -12,6 +13,8 @@ import {
   spokenTrack,
   addMarker,
   addTrack,
+  captionStyle,
+  captionTrack,
   clipLayout,
   emptyTimeline,
   draftCount,
@@ -21,6 +24,7 @@ import {
   parseTimeline,
   removeClip,
   setClipText,
+  speakClip,
   videoSource,
 } from "./timeline";
 
@@ -126,6 +130,82 @@ describe("edits", () => {
   test("removeClip drops the clip", () => {
     expect(removeClip(parseTimeline(SAMPLE), "voice", "s1").tracks[1].clips.map((c) => c.id)).toEqual(["s2"]);
   });
+});
+
+const CAPTIONS = JSON.stringify({
+  version: 1,
+  duration: 12,
+  tracks: [
+    { id: "video", kind: "video", clips: [{ id: "v1", src: "demo.mov", start: 0, end: 12 }] },
+    {
+      id: "subs",
+      kind: "captions",
+      style: "karaoke",
+      position: "top",
+      clips: [
+        {
+          id: "c1",
+          start: 0,
+          end: 3,
+          text: "hello there world",
+          words: [
+            { text: "hello", start: 0, end: 1 },
+            { text: "there", start: 1, end: 2 },
+            { text: "world", start: 2, end: 2.8 },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+test("captions track parses, round-trips and falls back to the default preset", () => {
+  const t = parseTimeline(CAPTIONS);
+  const tr = captionTrack(t)!;
+  expect(tr.style).toBe("karaoke");
+  expect(tr.position).toBe("top");
+  expect(tr.clips[0].words).toEqual([
+    { text: "hello", start: 0, end: 1 },
+    { text: "there", start: 1, end: 2 },
+    { text: "world", start: 2, end: 2.8 },
+  ]);
+  expect(captionStyle(tr.style)).toBe("karaoke");
+  expect(captionStyle("nope")).toBe(CAPTION_STYLES[0].value);
+  expect(captionStyle(undefined)).toBe(CAPTION_STYLES[0].value);
+  // The lane sits with the overlays, above the video.
+  expect(laneOrder(t.tracks).map((tr) => tr.id)).toEqual(["subs", "video"]);
+  // Clip identity and words survive a write/read cycle.
+  const round = parseTimeline(serializeTimeline(t));
+  expect(round.tracks[1].clips[0]).toMatchObject({ id: "c1", start: 0, end: 3, words: tr.clips[0].words });
+  // Edits keep the words and do not mark captions draft.
+  const moved = moveClip(t, "subs", "c1", 1);
+  expect(moved.tracks[1].clips[0]).toMatchObject({ start: 1, end: 4, words: tr.clips[0].words });
+  expect(setClipText(t, "subs", "c1", "fixed").tracks[1].clips[0].status).toBeUndefined();
+  expect(draftCount(t)).toBe(0);
+});
+
+test("speakClip drafts a spoken clip from a caption, or updates the one at the same range", () => {
+  const t = parseTimeline(CAPTIONS);
+  const spoken = speakClip(t, "subs", "c1");
+  const audio = spoken.tracks.find((tr) => tr.kind === "audio");
+  expect(audio?.clips[0]).toMatchObject({ start: 0, end: 3, text: "hello there world", status: "draft" });
+  // Same range again updates in place instead of stacking duplicates.
+  const again = speakClip(spoken, "subs", "c1");
+  expect(again.tracks.find((tr) => tr.kind === "audio")?.clips).toHaveLength(1);
+  // Editing the caption text after speaking updates the draft too.
+  expect(
+    speakClip(setClipText(again, "subs", "c1", "fixed"), "subs", "c1").tracks.find((tr) => tr.kind === "audio")
+      ?.clips[0].text,
+  ).toBe("fixed");
+  expect(draftCount(again)).toBe(1);
+  // A caption without text says nothing.
+  const empty = parseTimeline('{"tracks":[{"kind":"captions","clips":[{"id":"c","start":0,"end":1}]}]}');
+  expect(speakClip(empty, "subs", "c")).toBe(empty);
+});
+
+test("setClipText marks a spoken audio clip draft", () => {
+  const t = setClipText(parseTimeline(SAMPLE), "voice", "s1", "changed");
+  expect(t.tracks[1].clips[0]).toMatchObject({ text: "changed", status: "draft" });
 });
 
 test("clipLayout maps seconds to pixels at the zoom", () => {

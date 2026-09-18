@@ -1,12 +1,16 @@
 // The <stem>.timeline.json contract shared with the video-editing skill:
-// a duration plus video and audio tracks of clips. An audio clip with
-// `text` is spoken by the agent (cloned voice); one with only `src` is a
-// plain file the user placed. "voice" is accepted as a legacy track kind.
-// An overlay clip is a rendered card (a .mov with alpha; the webview drops
-// VP9 alpha in webm) composited over the video; `x`/`y`/`width`/`height`
-// are fractions of the frame.
+// a duration plus video, audio, overlay and captions tracks of clips. An
+// audio clip with `text` is spoken by the agent (cloned voice); one with
+// only `src` is a plain file the user placed. "voice" is accepted as a
+// legacy track kind. An overlay clip is a rendered card (a .mov with alpha;
+// the webview drops VP9 alpha in webm) composited over the video;
+// `x`/`y`/`width`/`height` are fractions of the frame. A captions clip is
+// text over the video, styled by the track's preset and burned in on export.
 export type ClipStatus = "draft" | "done";
-export type TrackKind = "video" | "audio" | "overlay";
+export type TrackKind = "video" | "audio" | "overlay" | "captions";
+// Per-word timing of a caption clip (absolute seconds), for the word-by-word
+// presets. Missing `text` falls back to the i-th word of the clip's text.
+export type CaptionWord = { text?: string; start: number; end: number };
 // What to do with the recording's own audio track: transcribe it and replace
 // it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
@@ -39,6 +43,8 @@ export type Clip = {
   height?: number;
   // The HTML composition an overlay's `src` was rendered from.
   html?: string;
+  // Caption clips only: when each word is spoken, for the word presets.
+  words?: CaptionWord[];
 };
 
 export type Track = {
@@ -47,6 +53,10 @@ export type Track = {
   clips: Clip[];
   voice_sample?: string;
   gain?: number;
+  // Captions tracks only: a preset name (unknown ones fall back to the
+  // default) and where the captions sit on the frame.
+  style?: string;
+  position?: "bottom" | "center" | "top";
 };
 
 export type Timeline = {
@@ -58,7 +68,20 @@ export type Timeline = {
   tracks: Track[];
 };
 
-const KINDS: TrackKind[] = ["video", "audio", "overlay"];
+// Caption style presets: the catalogue is mirrored by CAPTION_PRESETS in
+// backend/src/timeline.rs (the ASS export), so preview and export match.
+export const CAPTION_STYLES: { value: string; label: string; words?: boolean }[] = [
+  { value: "classic", label: "Classic" },
+  { value: "bold", label: "Bold" },
+  { value: "highlight", label: "Highlight", words: true },
+  { value: "karaoke", label: "Karaoke", words: true },
+];
+export const DEFAULT_CAPTION_STYLE = "classic";
+// Unknown preset names fall back to the default preset.
+export const captionStyle = (style?: string): string =>
+  CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
+
+const KINDS: TrackKind[] = ["video", "audio", "overlay", "captions"];
 const MARKER_SECONDS = 5;
 
 function num(v: unknown, fallback = 0): number {
@@ -76,6 +99,12 @@ export function parseTimeline(json: string): Timeline {
     kind: KINDS.includes(t?.kind as TrackKind) ? (t.kind as TrackKind) : "audio",
     voice_sample: typeof t?.voice_sample === "string" ? t.voice_sample : undefined,
     gain: t?.gain === undefined ? undefined : num(t.gain, 1),
+    style: typeof t?.style === "string" ? t.style : undefined,
+    position: (t?.position === "center" || t?.position === "top"
+      ? t.position
+      : t?.position === "bottom"
+        ? "bottom"
+        : undefined) as Track["position"],
     clips: (Array.isArray(t?.clips) ? t.clips : [])
       .map((c, j) => ({
         id: typeof c?.id === "string" && c.id ? c.id : `${t?.id ?? "clip"}-${j + 1}`,
@@ -90,6 +119,13 @@ export function parseTimeline(json: string): Timeline {
         width: optNum(c?.width),
         height: optNum(c?.height),
         html: typeof c?.html === "string" ? c.html : undefined,
+        words: (Array.isArray(c?.words) && c.words.length
+          ? c.words.map((w) => ({
+              text: typeof w?.text === "string" ? w.text : undefined,
+              start: num(w?.start),
+              end: num(w?.end),
+            }))
+          : undefined) as Clip["words"],
       }))
       .sort((a, b) => a.start - b.start),
   }));
@@ -128,10 +164,11 @@ export function overlayCount(t: Timeline): number {
   return t.tracks.filter((tr) => tr.kind === "overlay").flatMap((tr) => tr.clips).length;
 }
 
-// Lanes as the editor stacks them: overlays above the video, everything else
-// in file order. The file itself is never reordered.
+// Lanes as the editor stacks them: overlays and captions above the video,
+// everything else in file order. The file itself is never reordered.
 export function laneOrder(tracks: Track[]): Track[] {
-  return [...tracks.filter((tr) => tr.kind === "overlay"), ...tracks.filter((tr) => tr.kind !== "overlay")];
+  const above = tracks.filter((tr) => tr.kind === "overlay" || tr.kind === "captions");
+  return [...above, ...tracks.filter((tr) => tr.kind !== "overlay" && tr.kind !== "captions")];
 }
 
 // The lane markers go on: the audio track that already carries speech,
@@ -163,15 +200,57 @@ function nextId(track: Track, prefix: string): string {
   return `${prefix}${n}`;
 }
 
+// Editing text marks a spoken audio clip draft (it needs re-synthesis); a
+// caption clip edit needs nothing, the export reads the text as it is.
 export function setClipText(t: Timeline, trackId: string, clipId: string, text: string): Timeline {
+  const spoken = t.tracks.find((tr) => tr.id === trackId)?.kind === "audio";
   return {
     ...t,
     tracks: t.tracks.map((tr) =>
       tr.id !== trackId
         ? tr
-        : { ...tr, clips: tr.clips.map((c) => (c.id !== clipId ? c : { ...c, text, status: "draft" as const })) },
+        : {
+            ...tr,
+            clips: tr.clips.map((c) =>
+              c.id !== clipId ? c : { ...c, text, ...(spoken ? { status: "draft" as const } : {}) },
+            ),
+          },
     ),
   };
+}
+
+// The timeline's captions track, if it has one (one per timeline is enough).
+export function captionTrack(t: Timeline): Track | undefined {
+  return t.tracks.find((tr) => tr.kind === "captions");
+}
+
+// Turn a caption into speech: a draft audio clip with the same text and range
+// on the spoken track, so "Redo drafts" voices it with the usual flow. An
+// audio clip already covering the same range is updated in place.
+export function speakClip(t: Timeline, trackId: string, clipId: string): Timeline {
+  const caption = t.tracks.find((tr) => tr.id === trackId)?.clips.find((c) => c.id === clipId);
+  if (!caption?.text) return t;
+  const existing = spokenTrack(t);
+  const track = existing ?? { id: "audio", kind: "audio" as const, clips: [] };
+  const same = (c: Clip) => c.start === caption.start && c.end === caption.end;
+  const clips = (
+    existing?.clips.some(same)
+      ? existing.clips.map((c) => (same(c) ? { ...c, text: caption.text, status: "draft" as const } : c))
+      : [
+          ...(existing?.clips ?? []),
+          {
+            id: nextId(track, "s"),
+            start: caption.start,
+            end: caption.end,
+            text: caption.text,
+            status: "draft" as const,
+          },
+        ]
+  ).sort((a, b) => a.start - b.start);
+  const tracks = existing
+    ? t.tracks.map((tr) => (tr.id === track.id ? { ...tr, clips } : tr))
+    : [...t.tracks, { ...track, clips }];
+  return { ...t, tracks };
 }
 
 export function removeClip(t: Timeline, trackId: string, clipId: string): Timeline {

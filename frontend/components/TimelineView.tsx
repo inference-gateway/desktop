@@ -13,6 +13,7 @@ import {
   Scissors,
   Sparkles,
   Trash2,
+  Type,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -20,11 +21,15 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import {
+  CAPTION_STYLES,
   DEFAULT_RESOLUTION,
   RESOLUTIONS,
+  SOURCE_AUDIO,
   addClip,
   addMarker,
   addTrack,
+  captionStyle,
+  captionTrack,
   clipLayout,
   draftCount,
   emptyTimeline,
@@ -45,8 +50,8 @@ import {
   resolveSrc,
   serializeTimeline,
   setClipText,
+  speakClip,
   videoSource,
-  SOURCE_AUDIO,
   type Clip,
   type SourceAudio,
   type Timeline,
@@ -67,13 +72,19 @@ function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
 }
-const TRACK_LABEL: Record<Track["kind"], string> = { video: "Video", audio: "Audio", overlay: "Overlay" };
+const TRACK_LABEL: Record<Track["kind"], string> = {
+  video: "Video",
+  audio: "Audio",
+  overlay: "Overlay",
+  captions: "Captions",
+};
 const TRACK_SWATCH: Record<Track["kind"], string> = {
   video: "bg-sky-500",
   audio: "bg-emerald-500",
   overlay: "bg-fuchsia-500",
+  captions: "bg-zinc-400",
 };
-const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers };
+const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers, captions: Type };
 // px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
@@ -94,11 +105,13 @@ const clipClass = (tr: Track, c: Clip) =>
     ? "border-sky-400/60 bg-sky-700/80"
     : tr.kind === "overlay"
       ? "border-fuchsia-400/60 bg-fuchsia-700/80"
-      : !isSpoken(c)
-        ? "border-emerald-400/60 bg-emerald-700/80"
-        : c.status === "draft"
-          ? "border-amber-300/70 bg-amber-600/85"
-          : "border-violet-400/60 bg-violet-700/85";
+      : tr.kind === "captions"
+        ? "border-zinc-300/50 bg-zinc-600/85"
+        : !isSpoken(c)
+          ? "border-emerald-400/60 bg-emerald-700/80"
+          : c.status === "draft"
+            ? "border-amber-300/70 bg-amber-600/85"
+            : "border-violet-400/60 bg-violet-700/85";
 // ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
@@ -111,6 +124,67 @@ const fmtBytes = (n: number) =>
 function TrackIcon({ kind }: { kind: TrackKind }) {
   const Icon = TRACK_ICON[kind];
   return <Icon size={11} className="shrink-0 text-zinc-500" />;
+}
+
+// Caption preset colours and sizes, mirrored by CAPTION_PRESETS in
+// backend/src/timeline.rs: the preview must look like the burned-in export.
+const CAPTION_ACCENT = "#ffd400";
+const CAPTION_DIM = "#999999";
+
+// The active caption drawn over the video: the whole line for the plain
+// presets, the spoken word popped for highlight, words filled as spoken for
+// karaoke. Sizes in cqh of the stage, like the ASS style's fraction of
+// PlayResY; the stage is a size container.
+function CaptionOverlay({ track, clip, now }: { track: Track; clip: Clip; now: number }) {
+  const style = captionStyle(track.style);
+  const words = clip.words?.length ? clip.words : undefined;
+  const tokens = clip.text?.split(/\s+/).filter(Boolean) ?? [];
+  const text = (i: number) => words?.[i]?.text ?? tokens[i] ?? "";
+  const outline = [
+    "0.4cqh 0.4cqh 0 #000",
+    "-0.4cqh 0.4cqh 0 #000",
+    "0.4cqh -0.4cqh 0 #000",
+    "-0.4cqh -0.4cqh 0 #000",
+  ].join(", ");
+  const pos = track.position ?? "bottom";
+  return (
+    <div
+      aria-label="Caption"
+      className="pointer-events-none absolute inset-x-0 flex justify-center whitespace-pre-wrap text-center text-white"
+      style={{
+        ...(style === "classic"
+          ? {
+              fontSize: "5.2cqh",
+              fontWeight: 600,
+              lineHeight: 1.3,
+              background: "rgba(0,0,0,0.6)",
+              padding: "1cqh 2.6cqh",
+              borderRadius: "0.8cqh",
+            }
+          : style === "bold"
+            ? { fontSize: "7.5cqh", fontWeight: 800, textTransform: "uppercase", textShadow: outline }
+            : { fontSize: "6cqh", fontWeight: 700, textShadow: outline }),
+        ...(pos === "bottom"
+          ? { bottom: "6cqh" }
+          : pos === "top"
+            ? { top: "6cqh" }
+            : { top: "50%", transform: "translateY(-50%)" }),
+      }}
+    >
+      {words && (style === "highlight" || style === "karaoke")
+        ? words.map((w, i) => {
+            const active = now >= w.start && now < w.end;
+            const color =
+              style === "highlight" ? (active ? CAPTION_ACCENT : undefined) : now < w.start ? CAPTION_DIM : undefined;
+            return (
+              <span key={i} style={color ? { color } : undefined}>
+                {text(i)}{" "}
+              </span>
+            );
+          })
+        : clip.text}
+    </div>
+  );
 }
 
 function sourceAudioInstruction(mode: SourceAudio): string {
@@ -382,6 +456,8 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
+  const captions = timeline ? captionTrack(timeline) : undefined;
+  const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
       .filter((tr) => tr.kind === kind)
@@ -494,6 +570,14 @@ export function TimelineView() {
         ),
       )
       .catch((e) => setError(String(e)));
+  };
+
+  // Voice a caption: a draft audio clip with the caption's text and range on
+  // the spoken track; the agent synthesizes it with the usual draft flow.
+  const speakCaption = (trackId: string, c: Clip) => {
+    if (!timeline) return;
+    update(speakClip(timeline, trackId, c.id));
+    setStatus('Draft voice clip added: use "Redo drafts" to voice it');
   };
 
   // Finder drops reach the page as File objects without a path, so the bytes
@@ -668,7 +752,11 @@ export function TimelineView() {
           {timeline && clipVideo.length > 0 ? (
             <div
               className="relative"
-              style={{ aspectRatio: frameAspect(timeline), width: `min(100%, calc(50vh * ${frameAspect(timeline)}))` }}
+              style={{
+                aspectRatio: frameAspect(timeline),
+                width: `min(100%, calc(50vh * ${frameAspect(timeline)}))`,
+                containerType: "size",
+              }}
             >
               {clipVideo.map(({ clip: c, src }) => (
                 <video
@@ -707,6 +795,7 @@ export function TimelineView() {
                   }}
                 />
               ))}
+              {captions && activeCaption && <CaptionOverlay track={captions} clip={activeCaption} now={time} />}
             </div>
           ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
@@ -793,22 +882,44 @@ export function TimelineView() {
                       ))}
                     </select>
                   )}
+                  {tr.kind === "captions" && (
+                    <select
+                      aria-label={`Caption style for ${tr.id}`}
+                      title="The caption look: the preview and the burned-in export share these presets"
+                      value={captionStyle(tr.style)}
+                      onChange={(e) =>
+                        update({
+                          ...shown,
+                          tracks: shown.tracks.map((t) => (t.id === tr.id ? { ...t, style: e.target.value } : t)),
+                        })
+                      }
+                      className="h-5 w-full truncate rounded border border-zinc-700 bg-zinc-900 px-1 text-[0.65rem] font-normal text-zinc-300"
+                    >
+                      {CAPTION_STYLES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          Captions: {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <TrackIcon kind={tr.kind} />
               </div>
             ))}
             <div className="flex h-8 items-center gap-1 px-1.5">
-              {(["video", "audio", "overlay"] as TrackKind[]).map((k) => (
-                <button
-                  key={k}
-                  aria-label={`Add ${k} track`}
-                  title={`Add ${k} track`}
-                  onClick={() => update(addTrack(shown, k))}
-                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-                >
-                  <Plus size={10} /> <TrackIcon kind={k} />
-                </button>
-              ))}
+              {(["video", "audio", "overlay"] as TrackKind[])
+                .concat(shown.tracks.some((tr) => tr.kind === "captions") ? [] : (["captions"] as TrackKind[]))
+                .map((k) => (
+                  <button
+                    key={k}
+                    aria-label={`Add ${k} track`}
+                    title={`Add ${k} track`}
+                    onClick={() => update(addTrack(shown, k))}
+                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[0.68rem] text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <Plus size={10} /> <TrackIcon kind={k} />
+                  </button>
+                ))}
             </div>
           </div>
           <div ref={scrollRef} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
@@ -1055,6 +1166,7 @@ export function TimelineView() {
             timeline={timeline}
             onChange={update}
             onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
+            onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
           />
         )}
       </div>
@@ -1069,6 +1181,7 @@ function ClipEditor({
   timeline,
   onChange,
   onRedo,
+  onSpeak,
 }: {
   track: Track;
   clip: Clip;
@@ -1076,9 +1189,11 @@ function ClipEditor({
   timeline: Timeline;
   onChange: (t: Timeline) => void;
   onRedo?: () => void;
+  onSpeak?: () => void;
 }) {
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
   const spoken = track.kind === "audio" && isSpoken(clip);
+  const caption = track.kind === "captions";
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3">
       <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
@@ -1099,22 +1214,38 @@ function ClipEditor({
             <RefreshCw size={12} /> Redo voice
           </Button>
         )}
+        {caption && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-6 px-2 text-[0.72rem]"
+            title='Voice this caption: a draft audio clip with this text and range, "Redo drafts" synthesizes it'
+            disabled={!onSpeak}
+            onClick={onSpeak}
+          >
+            <Sparkles size={12} /> Speak this
+          </Button>
+        )}
         <button
           aria-label={`Delete clip ${clip.id}`}
           title="Delete clip"
           onClick={() => onChange(removeClip(timeline, track.id, clip.id))}
-          className={cn("text-muted-foreground hover:text-destructive", !spoken && "ml-auto")}
+          className={cn("text-muted-foreground hover:text-destructive", !spoken && !caption && "ml-auto")}
         >
           <Trash2 size={14} />
         </button>
       </div>
-      {spoken && (
+      {(spoken || caption) && (
         <textarea
           id={`clip-text-${clip.id}`}
-          aria-label={`Voice text for ${clip.id}`}
+          aria-label={caption ? `Caption text for ${clip.id}` : `Voice text for ${clip.id}`}
           rows={3}
           value={clip.text ?? ""}
-          placeholder="What should be said here? Leave blank to let the agent suggest it."
+          placeholder={
+            caption
+              ? "What should this caption say?"
+              : "What should be said here? Leave blank to let the agent suggest it."
+          }
           onChange={(e) => onChange(setClipText(timeline, track.id, clip.id, e.target.value))}
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
