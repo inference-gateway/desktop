@@ -1174,7 +1174,6 @@ mod tests {
         let home = std::env::temp_dir().join(format!("igd-projects-yaml-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
 
-        // A fresh install rebuilds from an empty mapping rather than failing.
         assert_eq!(read_projects_in(&home), serde_json::json!({}));
 
         let state = serde_json::json!({
