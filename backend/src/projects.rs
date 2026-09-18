@@ -83,7 +83,7 @@ fn leaf_name<'a>(name: &'a str, group: &str) -> &'a str {
 /// `root/<name>` without a group), and a numeric suffix is appended on
 /// collision ("a/b" and "a:b" both sanitize to "a-b"; the second sorted name
 /// gets "a-b-2"). Pure function of (root, names, groups) so grants can be
-/// re-derived from projects.json alone and repeated calls are idempotent.
+/// re-derived from projects.yaml alone and repeated calls are idempotent.
 fn assign_dirs(
     root: &Path,
     names: &[String],
@@ -106,20 +106,40 @@ fn assign_dirs(
     map
 }
 
-/// Raw ~/.infer/projects.json (the sidebar's persisted state); Null when
-/// missing or unparseable.
-fn projects_json() -> serde_json::Value {
-    let path = crate::env::home_dir().join(".infer").join("projects.json");
-    std::fs::read_to_string(&path)
+/// The sidebar's persisted state. YAML because people open it to work out why
+/// a chat landed in the wrong project, and the CLI carves it out of the agent
+/// sandbox so the agent can edit it on the user's behalf.
+fn projects_path(home: &Path) -> PathBuf {
+    home.join(".infer").join("projects.yaml")
+}
+
+/// Raw projects.yaml as a JSON value (the shape the sidebar and the export
+/// both work in); an empty mapping when the file is missing or unparseable, so
+/// a fresh install rebuilds its state rather than failing.
+pub(crate) fn read_projects_in(home: &Path) -> serde_json::Value {
+    std::fs::read_to_string(projects_path(home))
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or(serde_json::Value::Null)
+        .and_then(|text| serde_norway::from_str(&text).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+pub(crate) fn write_projects_in(home: &Path, val: &serde_json::Value) -> Result<(), String> {
+    let path = projects_path(home);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let text = serde_norway::to_string(val).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("failed to write {}: {e}", path.display()))
+}
+
+fn projects_state() -> serde_json::Value {
+    read_projects_in(&crate::env::home_dir())
 }
 
 /// Project names known to the app: the explicit `names` list plus every value
-/// in `assignments`, from ~/.infer/projects.json (same sources the sidebar uses).
+/// in `assignments`, from ~/.infer/projects.yaml (same sources the sidebar uses).
 fn project_names() -> Vec<String> {
-    let val = projects_json();
+    let val = projects_state();
     let mut names: BTreeSet<String> = BTreeSet::new();
     if let Some(list) = val.get("names").and_then(|v| v.as_array()) {
         names.extend(
@@ -141,11 +161,11 @@ fn project_names() -> Vec<String> {
     names.into_iter().collect()
 }
 
-/// Per-project directory overrides from the `paths` object in projects.json:
+/// Per-project directory overrides from the `paths` object in projects.yaml:
 /// trimmed, `~`-expanded, and only absolute paths (a relative override would
 /// grant a meaningless relative sandbox entry).
 fn project_paths() -> BTreeMap<String, PathBuf> {
-    let val = projects_json();
+    let val = projects_state();
     let Some(paths) = val.get("paths").and_then(|v| v.as_object()) else {
         return BTreeMap::new();
     };
@@ -159,9 +179,9 @@ fn project_paths() -> BTreeMap<String, PathBuf> {
         .collect()
 }
 
-/// Per-project sidebar group from the `groups` object in projects.json.
+/// Per-project sidebar group from the `groups` object in projects.yaml.
 fn project_groups() -> BTreeMap<String, String> {
-    let val = projects_json();
+    let val = projects_state();
     let Some(groups) = val.get("groups").and_then(|v| v.as_object()) else {
         return BTreeMap::new();
     };
@@ -231,9 +251,9 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         .cloned()
 }
 
-/// Files directory of the project a chat is assigned to in projects.json.
+/// Files directory of the project a chat is assigned to in projects.yaml.
 pub(crate) fn assigned_dir(session_id: &str) -> Option<PathBuf> {
-    let name = projects_json()["assignments"][session_id]
+    let name = projects_state()["assignments"][session_id]
         .as_str()?
         .to_owned();
     project_dir(&name)
@@ -250,7 +270,7 @@ pub(crate) struct GitRepo {
 }
 
 /// Agent instructions from the repo root: AGENTS.md, else CLAUDE.md.
-/// ponytail: 64 KB cap so a runaway file cannot bloat projects.json.
+/// ponytail: 64 KB cap so a runaway file cannot bloat projects.yaml.
 pub(crate) fn repo_context(dir: &Path) -> Option<String> {
     ["AGENTS.md", "CLAUDE.md"]
         .iter()
@@ -1147,6 +1167,40 @@ mod tests {
         std::fs::write(wt.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
         assert_eq!(git_dir(&wt), Some(wt.join("../repo/.git/worktrees/wt")));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn projects_state_round_trips_yaml() {
+        let home = std::env::temp_dir().join(format!("igd-projects-yaml-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+
+        assert_eq!(read_projects_in(&home), serde_json::json!({}));
+
+        let state = serde_json::json!({
+            "names": ["desktop", "core/cli"],
+            "assignments": {"abc-123": "desktop"},
+            "groups": {"core/cli": "core"},
+            "paths": {"desktop": "/Users/me/code/desktop"},
+        });
+        write_projects_in(&home, &state).unwrap();
+
+        let text = std::fs::read_to_string(projects_path(&home)).unwrap();
+        assert!(!text.starts_with('{'), "wrote JSON, not YAML: {text}");
+        assert!(
+            text.starts_with("assignments:\n  abc-123: desktop\n"),
+            "{text}"
+        );
+        assert!(text.contains("names:\n- desktop\n- core/cli\n"), "{text}");
+        assert_eq!(read_projects_in(&home), state);
+
+        // A hand-edited file is read as written - this is why it is YAML.
+        std::fs::write(projects_path(&home), "names:\n  - solo\ngroups: {}\n").unwrap();
+        assert_eq!(
+            read_projects_in(&home)["names"],
+            serde_json::json!(["solo"])
+        );
+
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

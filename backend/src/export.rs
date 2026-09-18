@@ -13,7 +13,7 @@ const EXPORT_VERSION: u32 = 1;
 /// Default file name of an export (the extension follows the chosen format).
 pub(crate) const EXPORT_BASENAME: &str = "infer-desktop-export";
 
-/// One snippet as persisted in ~/.infer/desktop.json and the export file.
+/// One snippet as persisted in ~/.infer/desktop.yaml and the export file.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub(crate) struct SnippetEntry {
     pub(crate) id: String,
@@ -21,7 +21,7 @@ pub(crate) struct SnippetEntry {
     pub(crate) prompt: String,
 }
 
-/// Desktop-only UI state under ~/.infer/desktop.json: the localStorage items
+/// Desktop-only UI state under ~/.infer/desktop.yaml: the localStorage items
 /// (snippets, skills registry URL) that must survive machine moves.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopData {
@@ -38,7 +38,7 @@ pub(crate) struct DesktopExport {
     version: u32,
     /// All Settings-managed fields; machine paths are `~/`-relative.
     config: DesktopConfig,
-    /// Raw ~/.infer/projects.json value (`paths` overrides tilde-relative).
+    /// Raw ~/.infer/projects.yaml value (`paths` overrides tilde-relative).
     #[serde(default)]
     projects: serde_json::Value,
     /// Git-repo projects as their GitHub `owner/name`: re-cloned on import so the
@@ -148,14 +148,10 @@ fn read_schedules_in(home: &Path) -> BTreeMap<String, serde_norway::Value> {
         .collect()
 }
 
-/// projects.json content, with machine-absolute `paths` overrides stored
+/// projects.yaml content, with machine-absolute `paths` overrides stored
 /// tilde-relative (projects.rs re-expands `~` when reading them).
-fn read_projects_in(home: &Path) -> serde_json::Value {
-    let mut raw: serde_json::Value =
-        std::fs::read_to_string(home.join(".infer").join("projects.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_else(|| json!({}));
+fn projects_for_export(home: &Path) -> serde_json::Value {
+    let mut raw = crate::projects::read_projects_in(home);
     if let Some(paths) = raw.get_mut("paths").and_then(|p| p.as_object_mut()) {
         for v in paths.values_mut() {
             if let Some(s) = v.as_str() {
@@ -231,7 +227,7 @@ fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
     }
     scrub_credentials(&mut config);
     let mut data = read_desktop_data_in(home);
-    let mut projects = read_projects_in(home);
+    let mut projects = projects_for_export(home);
     let project_remotes = strip_git_project_remotes(&mut projects, home);
     DesktopExport {
         version: EXPORT_VERSION,
@@ -279,21 +275,21 @@ fn serialize_export(export: &DesktopExport, format: ExportFormat) -> Result<Stri
     }
 }
 
-// --- ~/.infer/desktop.json ----------------------------------------------------
+// --- ~/.infer/desktop.yaml ----------------------------------------------------
 
 fn read_desktop_data_in(home: &Path) -> DesktopData {
-    std::fs::read_to_string(home.join(".infer").join("desktop.json"))
+    std::fs::read_to_string(home.join(".infer").join("desktop.yaml"))
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+        .and_then(|text| serde_norway::from_str(&text).ok())
         .unwrap_or_default()
 }
 
 fn write_desktop_data(data: &DesktopData, home: &Path) -> Result<(), String> {
-    let path = home.join(".infer").join("desktop.json");
+    let path = home.join(".infer").join("desktop.yaml");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let text = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
+    let text = serde_norway::to_string(data).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| format!("failed to write {}: {e}", path.display()))
 }
 
@@ -334,8 +330,8 @@ fn valid_schedule_file(name: &str) -> bool {
 }
 
 /// Write the file-backed state from `export` into `home`: config.yaml (merged
-/// with `merge_config` semantics so CLI-managed keys survive), projects.json
-/// (merged), schedules (verbatim, traversal-guarded) and desktop.json.
+/// with `merge_config` semantics so CLI-managed keys survive), projects.yaml
+/// (merged), schedules (verbatim, traversal-guarded) and desktop.yaml.
 /// Agents and skills need the `infer` CLI and are handled separately.
 fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportReport, String> {
     let mut imported = Vec::new();
@@ -377,21 +373,10 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     std::fs::write(&config_path, text).map_err(|e| e.to_string())?;
     imported.push("Settings (config.yaml)".into());
 
-    let projects_path = home.join(".infer").join("projects.json");
-    let mut projects: serde_json::Value = std::fs::read_to_string(&projects_path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_else(|| json!({}));
+    let mut projects = crate::projects::read_projects_in(home);
     merge_json(&mut projects, &export.projects);
-    if let Some(parent) = projects_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(
-        &projects_path,
-        serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    imported.push("Projects (projects.json)".into());
+    crate::projects::write_projects_in(home, &projects)?;
+    imported.push("Projects (projects.yaml)".into());
 
     if !export.schedules.is_empty() {
         let dir = home.join(".infer").join("schedules");
@@ -473,22 +458,18 @@ async fn apply_export_skills(skills: &[String], warnings: &mut Vec<String>) -> u
 }
 
 /// Write each cloned checkout's path (and its AGENTS.md context, unless the export
-/// already carried one) onto its project in projects.json.
-fn patch_projects_json(
+/// already carried one) onto its project in projects.yaml.
+fn patch_projects(
     home: &Path,
     cloned: &BTreeMap<String, crate::projects::GitRepo>,
 ) -> Result<(), String> {
     if cloned.is_empty() {
         return Ok(());
     }
-    let path = home.join(".infer").join("projects.json");
-    let mut projects: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_else(|| json!({}));
+    let mut projects = crate::projects::read_projects_in(home);
     let obj = projects
         .as_object_mut()
-        .ok_or("projects.json is not an object")?;
+        .ok_or("projects.yaml is not a mapping")?;
     {
         let paths = obj.entry("paths").or_insert_with(|| json!({}));
         if let Some(paths) = paths.as_object_mut() {
@@ -509,16 +490,12 @@ fn patch_projects_json(
             }
         }
     }
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    crate::projects::write_projects_in(home, &projects)
 }
 
 /// Re-clone the git-repo projects recorded in `project_remotes` under the imported
 /// projects root, then record their checkout path and AGENTS.md context in
-/// projects.json. Clone failures are warnings, not fatal (as with agents/skills).
+/// projects.yaml. Clone failures are warnings, not fatal (as with agents/skills).
 async fn apply_export_project_repos(
     remotes: &BTreeMap<String, String>,
     warnings: &mut Vec<String>,
@@ -544,7 +521,7 @@ async fn apply_export_project_repos(
             Err(e) => warnings.push(format!("project {name} clone task failed: {e}")),
         }
     }
-    if let Err(e) = patch_projects_json(&home, &cloned) {
+    if let Err(e) = patch_projects(&home, &cloned) {
         warnings.push(format!("cloned projects not recorded: {e}"));
     }
     cloned.len()
@@ -802,7 +779,7 @@ pub(crate) async fn import_desktop_github(
     apply_export(&parse_export(&text)?).await
 }
 
-/// The localStorage-backed desktop state, persisted under ~/.infer/desktop.json.
+/// The localStorage-backed desktop state, persisted under ~/.infer/desktop.yaml.
 #[tauri::command]
 pub(crate) fn read_desktop_data() -> DesktopData {
     read_desktop_data_in(&home_dir())
@@ -870,9 +847,9 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            infer.join("projects.json"),
+            infer.join("projects.yaml"),
             format!(
-                "{{\"assignments\":{{\"a\":\"p1\"}},\"names\":[\"p1\"],\"contexts\":{{\"p1\":\"ctx\"}},\"groups\":{{\"p1\":\"g1\"}},\"paths\":{{\"p1\":\"{h}/src\"}}}}"
+                "assignments:\n  a: p1\nnames:\n  - p1\ncontexts:\n  p1: ctx\ngroups:\n  p1: g1\npaths:\n  p1: {h}/src\n"
             ),
         )
         .unwrap();
@@ -882,8 +859,8 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            infer.join("desktop.json"),
-            "{\"snippets\":[{\"id\":\"s1\",\"label\":\"Say hi\",\"prompt\":\"hi\"}],\"skills_registry_url\":\"https://reg.example/c.json\"}",
+            infer.join("desktop.yaml"),
+            "snippets:\n  - id: s1\n    label: Say hi\n    prompt: hi\nskills_registry_url: https://reg.example/c.json\n",
         )
         .unwrap();
     }
@@ -980,9 +957,9 @@ mod tests {
         std::fs::write(repo.join("AGENTS.md"), "live rules").unwrap();
 
         std::fs::write(
-            infer.join("projects.json"),
+            infer.join("projects.yaml"),
             format!(
-                "{{\"names\":[\"repo\",\"local\"],\"contexts\":{{\"repo\":\"stale snapshot\",\"local\":\"local notes\"}},\"paths\":{{\"repo\":\"{h}/code/repo\",\"local\":\"{h}/code/local\"}}}}",
+                "names:\n  - repo\n  - local\ncontexts:\n  repo: stale snapshot\n  local: local notes\npaths:\n  repo: {h}/code/repo\n  local: {h}/code/local\n",
                 h = home.display()
             ),
         )

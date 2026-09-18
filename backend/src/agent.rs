@@ -1031,25 +1031,21 @@ pub(crate) fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, Stri
     Ok(p.to_path_buf())
 }
 
-/// Read ~/.infer/projects.json - mapping of session IDs to project names.
-/// Returns an empty object when the file does not exist yet.
+/// Read ~/.infer/projects.yaml as JSON text for the sidebar. The file is YAML
+/// on disk; the frontend keeps its JSON view of it, so the conversion lives
+/// here rather than shipping a YAML parser to the webview. An empty object
+/// when the file does not exist yet.
 #[tauri::command]
 pub(crate) fn read_projects() -> Result<String, String> {
-    let path = home_dir().join(".infer").join("projects.json");
-    if !path.exists() {
-        return Ok("{}".into());
-    }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    serde_json::to_string(&crate::projects::read_projects_in(&home_dir()))
+        .map_err(|e| e.to_string())
 }
 
-/// Write ~/.infer/projects.json (entire mapping, atomically replaced).
+/// Write ~/.infer/projects.yaml (entire mapping, atomically replaced).
 #[tauri::command]
 pub(crate) fn write_projects(data: String) -> Result<(), String> {
-    let path = home_dir().join(".infer").join("projects.json");
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, &data).map_err(|e| e.to_string())
+    let val: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    crate::projects::write_projects_in(&home_dir(), &val)
 }
 
 /// Copy a generated image (the absolute path `infer` reported) to the user's
