@@ -169,7 +169,7 @@ fn read_projects_in(home: &Path) -> serde_json::Value {
 // --- Collecting the export ---------------------------------------------------
 
 /// Secrets must not appear in exported files: backend passwords, tokens, and
-/// the GitHub App secret references are blanked (`auth.json` provider keys are
+/// the GitHub App secret references are blanked (`auth.yaml` provider keys are
 /// never read for the export at all). This is the allowlist the "no secrets"
 /// guarantee rests on - add any new secret-bearing field here.
 fn scrub_credentials(cfg: &mut DesktopConfig) {

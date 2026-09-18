@@ -193,7 +193,7 @@ export function SettingsView() {
             <>
               <h2 className="text-[1.05rem] font-semibold">API Keys</h2>
               <p className="mb-4 text-[0.8rem] text-muted-foreground">
-                Stored in ~/.infer/auth.json and passed to the agent as environment variables.
+                Stored in ~/.infer/auth.yaml and passed to the agent as environment variables.
               </p>
               <div className="flex flex-col gap-[0.7rem]">
                 {PROVIDERS.map((p) => (
