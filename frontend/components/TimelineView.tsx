@@ -220,7 +220,6 @@ export function TimelineView() {
       latest.current.sync(timeRef.current, false);
     };
   }, [playing]);
-  // Show the right frames when the timeline (or its media) changes.
   useEffect(() => {
     syncMedia(timeRef.current, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
