@@ -53,6 +53,31 @@ pub(crate) fn gateway_reachable() -> bool {
         .is_ok()
 }
 
+/// Whether a gateway already serving `url` can be reused, decided once
+/// everything the desktop owns has been stopped - so whatever answers now is a
+/// gateway the desktop does not own. A plain start reuses it, which is how an
+/// externally run gateway is supported. `force` and `restart` exist to respawn
+/// with fresh env (API keys, AUDIO_ENABLED), and a spawn cannot take a port
+/// that is already held: the new gateway would come up serving nothing while
+/// the old one keeps answering with the old env. That is an error the user can
+/// act on, not a silent no-op.
+pub(crate) fn reuse_running_gateway(
+    reachable: bool,
+    force: bool,
+    restart: bool,
+    url: &str,
+) -> Result<bool, String> {
+    if !reachable {
+        return Ok(false);
+    }
+    if force || restart {
+        return Err(format!(
+            "{url} is already served by a gateway the desktop does not own, so it cannot be restarted with the current settings; stop that process and try again"
+        ));
+    }
+    Ok(true)
+}
+
 /// Download and extract the gateway binary if it isn't already present.
 /// `force` re-downloads over an existing binary; the caller must have stopped it
 /// first, otherwise the extraction hits ETXTBSY.
@@ -171,6 +196,18 @@ pub(crate) async fn start_gateway(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reuse_running_gateway_refuses_a_foreign_gateway_on_restart() {
+        assert_eq!(reuse_running_gateway(false, false, false, "u"), Ok(false));
+        assert_eq!(reuse_running_gateway(false, true, true, "u"), Ok(false));
+        assert_eq!(reuse_running_gateway(true, false, false, "u"), Ok(true));
+        for (force, restart) in [(true, false), (false, true), (true, true)] {
+            let err = reuse_running_gateway(true, force, restart, "http://localhost:8080")
+                .expect_err("a foreign gateway cannot be restarted");
+            assert!(err.contains("http://localhost:8080"), "{err}");
+        }
+    }
 
     #[test]
     fn audio_env_sets_audio_vars_only_when_tts_enabled() {

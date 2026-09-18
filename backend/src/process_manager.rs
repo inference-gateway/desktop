@@ -112,7 +112,12 @@ impl ProcessManager {
         self.recover_owned_gateway(&crate::gateway::gateway_bin_path())?;
         self.ensure_running()?;
 
-        if crate::gateway::gateway_reachable() {
+        if crate::gateway::reuse_running_gateway(
+            crate::gateway::gateway_reachable(),
+            force,
+            restart,
+            &crate::agent::gateway_url(),
+        )? {
             return Ok(());
         }
 
