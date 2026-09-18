@@ -408,8 +408,11 @@ export function moveClip(t: Timeline, trackId: string, clipId: string, start: nu
 export const MIN_CLIP_S = 0.25;
 
 // Drag one edge of a clip. The head of a file clip keeps its content in place
-// by moving `offset`, like an in-point; the tail cannot pass the source's end
-// when `sourceLength` is known. Neither edge crosses a neighbour.
+// by moving `offset`, like an in-point; the tail of a plain file clip cannot
+// pass the source's end when `sourceLength` is known. A spoken clip is exempt:
+// its wav is generated to fit a slot and is routinely shorter than it, so the
+// clamp would snap the tail back to the end of the speech and pin the head
+// where it is. Neither edge crosses a neighbour.
 export function trimClip(
   t: Timeline,
   trackId: string,
@@ -427,16 +430,16 @@ export function trimClip(
   if (edge === "start") {
     const lo = Math.max(
       0,
-      clip.src ? clip.start - offset : 0,
+      clip.src && !isSpoken(clip) ? clip.start - offset : 0,
       ...others.filter((c) => c.end <= clip.start).map((c) => c.end),
     );
     const start = Math.min(Math.max(time, lo), clip.end - MIN_CLIP_S);
     next = { ...clip, start };
-    if (clip.src) next.offset = offset + (start - clip.start);
+    if (clip.src) next.offset = Math.max(0, offset + (start - clip.start));
   } else {
     const hi = Math.min(
       ...others.filter((c) => c.start >= clip.end).map((c) => c.start),
-      clip.src && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
+      clip.src && !isSpoken(clip) && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
     );
     next = { ...clip, end: Math.max(Math.min(time, hi), clip.start + MIN_CLIP_S) };
   }

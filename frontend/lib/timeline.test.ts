@@ -198,6 +198,25 @@ test("captions track parses, round-trips and falls back to the default preset", 
   expect(spokenCount(t)).toBe(0);
 });
 
+test("trimClip does not pull a spoken clip's tail back to the length of its wav", () => {
+  const t = parseTimeline(
+    '{"duration":30,"tracks":[{"id":"voice","kind":"audio","clips":[{"id":"s1","start":2,"end":8,"text":"hello","src":"media/s1.wav"}]}]}',
+  );
+  const wav = 4.5;
+  const out = trimClip(t, "voice", "s1", "end", 9, wav);
+  expect(out.tracks[0].clips[0].end).toBe(9);
+
+  const music = parseTimeline(
+    '{"duration":30,"tracks":[{"id":"music","kind":"audio","clips":[{"id":"a1","start":2,"end":8,"src":"media/a.mp3"}]}]}',
+  );
+  expect(trimClip(music, "music", "a1", "end", 9, wav).tracks[0].clips[0].end).toBe(6.5);
+
+  const head = trimClip(t, "voice", "s1", "start", 0.5, wav).tracks[0].clips[0];
+  expect(head).toMatchObject({ start: 0.5, end: 8 });
+  expect(head.offset).toBeUndefined();
+  expect(trimClip(music, "music", "a1", "start", 0.5, wav).tracks[0].clips[0].start).toBe(2);
+});
+
 test("moveCaptions places the block by its centre and clears back to position", () => {
   const t = parseTimeline(CAPTIONS);
   const moved = moveCaptions(t, "subs", 0.25, 0.8);
