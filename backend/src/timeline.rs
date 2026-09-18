@@ -410,9 +410,6 @@ fn export_args(dir: &Path, stem: &str, json: &str) -> Result<(Vec<String>, Strin
     }
     let (fw, fh) = parse_resolution(t.resolution.as_deref())?;
     let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into()];
-    // One whole untrimmed clip: the plain scale+pad render. Anything else -
-    // several clips, an offset, a bounded end - gets per-clip trims, freeze
-    // frame gap fill (tpad) and concat, keeping timeline time intact.
     let simple =
         clips.len() == 1 && clips[0].offset.unwrap_or(0.0) == 0.0 && clips[0].end.is_none();
     let keep = t.source_audio.as_deref() == Some("keep");
