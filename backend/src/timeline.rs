@@ -501,7 +501,9 @@ fn filter_name(name: &str) -> String {
 
 /// A caption clip's ASS text: per-word `\k`/`\kf` centisecond tags for the
 /// word presets (timing from `words`, the word itself falling back to the
-/// i-th token of the text), else the raw text, uppercased for Bold.
+/// i-th token of the text), else the raw text, uppercased for Bold. A pause
+/// before a word gets its own tag so the burn-in tracks the preview, which
+/// times every word from its absolute `start`.
 fn caption_text(preset: &CaptionPreset, c: &ClipFile) -> String {
     let raw = c.text.as_deref().unwrap_or_default();
     if let Some(tag) = preset.karaoke
@@ -509,7 +511,15 @@ fn caption_text(preset: &CaptionPreset, c: &ClipFile) -> String {
     {
         let tokens: Vec<&str> = raw.split_whitespace().collect();
         let mut out = String::new();
+        let mut cursor = c.start;
         for (i, w) in c.words.iter().enumerate() {
+            let gap = ((w.start - cursor).max(0.0) * 100.0).round() as i64;
+            if gap > 0 {
+                out.push_str(&format!("{{\\{tag}{gap}}}"));
+            }
+            if i > 0 {
+                out.push(' ');
+            }
             let cs = ((w.end - w.start).max(0.0) * 100.0).round() as i64;
             out.push_str(&format!("{{\\{tag}{cs}}}"));
             out.push_str(
@@ -517,9 +527,9 @@ fn caption_text(preset: &CaptionPreset, c: &ClipFile) -> String {
                     .as_deref()
                     .unwrap_or(tokens.get(i).copied().unwrap_or("")),
             );
-            out.push(' ');
+            cursor = w.end;
         }
-        return out.trim_end().to_string();
+        return out;
     }
     if preset.uppercase {
         raw.to_uppercase()
@@ -726,7 +736,7 @@ fn export_args(
     for tr in t
         .tracks
         .iter()
-        .filter(|tr| tr.kind != "video" && tr.kind != "overlay")
+        .filter(|tr| tr.kind == "audio" || tr.kind == "voice")
     {
         for c in tr.clips.iter().filter(|c| c.has_src()) {
             let src = resolve_src(dir, c.src.as_deref().unwrap_or_default());
@@ -825,12 +835,12 @@ pub(crate) async fn export_timeline(project: String, name: String) -> Result<Str
     let export_dir = dir.join(EXPORT_DIR);
     std::fs::create_dir_all(&export_dir)
         .map_err(|e| format!("creating {}: {e}", export_dir.display()))?;
-    for (path, body) in &sidecars {
-        std::fs::write(path, body).map_err(|e| format!("writing {}: {e}", path.display()))?;
-    }
     let ffmpeg = video_ffmpeg()?;
     if !sidecars.is_empty() && !has_filters(&ffmpeg, &[" subtitles "]) {
         return Err("no ffmpeg with libass found: captions cannot be burned in; install a full ffmpeg (brew install ffmpeg)".into());
+    }
+    for (path, body) in &sidecars {
+        std::fs::write(path, body).map_err(|e| format!("writing {}: {e}", path.display()))?;
     }
     tokio::task::spawn_blocking(move || {
         let out = std::process::Command::new(ffmpeg)
@@ -1058,6 +1068,19 @@ mod tests {
             "{}",
             sidecars[0].1
         );
+        let gapped = json.replace(
+            r#""words":[{"start":1,"end":2.5},{"start":2.5,"end":4}]"#,
+            r#""words":[{"start":1.5,"end":2.5},{"start":3,"end":4}]"#,
+        );
+        let (_, _, sidecars) = export_args(&dir, "demo", &gapped).unwrap();
+        assert!(
+            sidecars[0].1.contains(
+                "Dialogue: 0,0:00:01.00,0:00:04.00,Highlight,,0,0,0,,{\\an8}{\\k50}{\\k100}hello{\\k50} {\\k100}world"
+            ),
+            "{}",
+            sidecars[0].1
+        );
+
         let nocap = r#"{"tracks":[
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"}]},
             {"kind":"audio","clips":[{"start":1,"end":4,"src":"s1.wav"}]}]}"#;
