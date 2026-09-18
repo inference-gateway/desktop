@@ -18,7 +18,8 @@ always read it first if it exists, always write it back after every step that ch
 
 Only these, nothing else: `Bash` for `ffmpeg`, `whisper-cli`, `cp`, `mkdir`, `ls`, `grep` and `rm` (scratch
 files only) inside the working directory, plus `node --version` and `npx hyperframes render` for cards;
-`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`. Do not
+`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`;
+`AskUserQuestion` to pick the voice sample. Do not
 use `WebFetch`, `WebSearch`, `find`, package managers, or any other binary, and do not look for
 this skill, other skills or tools on disk: everything you need is listed below at fixed paths.
 
@@ -40,12 +41,7 @@ under `~/.infer`; the only place you write is the working directory.
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
   `~/.infer/models/tts/samples/`. `TextToSpeech` only accepts a bare file name inside the working
-  directory, so copy the chosen sample to `./voice.wav` once. When the track's `voice_sample` in the
-  timeline names a file from that folder, the user chose it on the timeline: use exactly that one and
-  keep the field as written. Otherwise pick one and write its bare library name into `voice_sample`
-  so the desktop shows which voice was used. When the recording itself contains the user's speech
-  (`source_audio: transcribe`) and no sample is chosen, the sample can be cut from it instead (see
-  Source audio); then set `voice_sample` to `"recording"`.
+  directory, so copy the chosen sample to `./voice.wav` once. See Picking the voice for which one.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
 installed by switching the project to Content in Settings > Projects; the two agent tools are
@@ -55,6 +51,25 @@ Media lives in `media/` inside the working directory: the recordings and music t
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
 `src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
 Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at the root.
+
+## Picking the voice
+
+Never choose the voice silently: it is the one thing only the user can judge.
+
+1. The track's `voice_sample` in the timeline is the user's own pick from the lane header. Use
+   exactly that one, keep the field as written, and do not ask - unless the user asked you to redo
+   a clip or the drafts, which is when they change their mind about the voice.
+2. Otherwise list the library, `ls ~/.infer/models/tts/samples/`, and ask with `AskUserQuestion`:
+   one option per sample, plus `Random`, plus `My voice from the recording` when `source_audio` is
+   `transcribe`. Put the track's current `voice_sample` first when it has one. Ask once per run,
+   never per clip, and only for the questions above - never ask about the script, the timing or the
+   clips.
+3. Nothing to choose between (one sample and no recording to cut from) - use it without asking. No
+   samples at all and no recording speech: stop and say so, samples are recorded in
+   Settings > Voice samples.
+4. On `Random`, pick one yourself and say which. On a library sample, write its bare name into
+   `voice_sample` so the desktop shows the voice that was used. On the recording, set
+   `voice_sample` to `"recording"` and cut the sample from it (see Source audio).
 
 ## Timeline contract (`<stem>.timeline.json`)
 
@@ -188,7 +203,7 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
    at `duration`). Write short, spoken-style text sized to the slot: about 2.5 words per second, so a
    6 s slot gets at most 15 words. Merge any existing draft clips from the user by their time range.
    Write `<stem>.timeline.json` with all voice clips `status: "draft"`.
-5. **Synthesize.** For every draft clip:
+5. **Synthesize.** Settle the voice first (see Picking the voice), then for every draft clip:
    `TextToSpeech { text, voice_sample: "voice.wav", output_path: "<stem>-<id>.wav" }`.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
@@ -213,8 +228,8 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
    from the offsets. Rewrite every clip's text into clean, simple spoken text: drop filler words, false
    starts and repetitions, fix grammar, keep the meaning, the order and the timing budget
    (2.5 words per second). Do not add facts the user did not say.
-4. Voice sample: unless a library sample was chosen, cut the cleanest 15-25 s stretch of
-   continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
+4. Voice sample: when Picking the voice landed on the recording, cut the cleanest 15-25 s stretch
+   of continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
 5. Continue with Synthesize, then stop; the export replaces the original track.
 
 ## Captions
@@ -253,8 +268,8 @@ with text is theirs and stays verbatim.
 
 ## Redo drafts
 
-When asked to redo or regenerate: read the JSON, run step 5 for `draft` clips only, then stop as in
-step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
+When asked to redo or regenerate: ask which voice to use (see Picking the voice), read the JSON,
+run step 5 for `draft` clips only, then stop as in step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
 has already marked that clip `draft` with the user's edited text: synthesize exactly that clip with
 that text, keep its `id`, `start` and `end`, and leave everything else alone.
 

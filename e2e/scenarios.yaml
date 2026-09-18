@@ -79,6 +79,21 @@ scenarios:
                 }
       - content: "Captions added."
 
+  - name: voice-sample-choice
+    match: '(?i)ask me which voice sample'
+    turns:
+      - tool_calls:
+          - name: AskUserQuestion
+            args:
+              questions:
+                - header: Voice
+                  question: "Which voice sample should I clone?"
+                  options:
+                    - { label: "eden.wav", description: "Your most recent sample" }
+                    - { label: Random, description: "Pick one for me" }
+                  multiSelect: false
+      - content: "Redone with eden.wav."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:

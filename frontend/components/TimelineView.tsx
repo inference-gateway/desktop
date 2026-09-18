@@ -584,7 +584,7 @@ export function TimelineView() {
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
     const prompt = hasVoice
-      ? `Redo the draft clips in ${name} with my cloned voice. ${sourceAudioInstruction(mode)}`
+      ? `Redo the draft clips in ${name}. Ask me which voice sample to use first. ${sourceAudioInstruction(mode)}`
       : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"} and make the audio for every clip. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
@@ -613,7 +613,7 @@ export function TimelineView() {
       .then(() =>
         promptProject(
           project,
-          `Redo only the voice of clip ${c.id} in ${name} with my cloned voice, using its current text. Leave every other clip untouched.`,
+          `Redo only the voice of clip ${c.id} in ${name}, using its current text. Ask me which voice sample to use first. Leave every other clip untouched.`,
         ),
       )
       .catch((e) => setError(String(e)));
