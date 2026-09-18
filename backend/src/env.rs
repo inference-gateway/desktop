@@ -67,9 +67,27 @@ pub(crate) fn collector_env() -> Vec<(String, String)> {
     )]
 }
 
+/// Absolute form of a configured `storage.jsonl.path`: a leading `~` expands
+/// against `home` (the CLI's own expandHome does the same) and a relative path
+/// anchors there, because the app's cwd is not the user's project directory
+/// (Finder-launched apps inherit `/`). Applied in memory only -
+/// ~/.infer/config.yaml keeps the verbatim value so the CLI's cwd-anchored
+/// reading is never rewritten by a Settings save.
+pub(crate) fn absolute_storage_path(configured: &str, home: &Path) -> String {
+    if let Some(rest) = configured.strip_prefix('~') {
+        return format!("{}{}", home.display(), rest);
+    }
+    let path = Path::new(configured);
+    if path.is_relative() {
+        home.join(path).display().to_string()
+    } else {
+        configured.to_string()
+    }
+}
+
 /// Extra env vars for spawned infer processes: provider keys, the jsonl
-/// storage path pinned to the absolute directory from Settings when one is
-/// set (an unset path lets the CLI use its home-anchored default,
+/// storage path resolved from storage.jsonl.path when one is set (an unset
+/// path lets the CLI use its home-anchored default,
 /// ~/.infer/projects/<slug>/conversations), plus the CLI mock switch when
 /// the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
@@ -79,7 +97,10 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
     env.push(("PATH".into(), composed_path()));
     let storage_directory = crate::config::read_config().storage_directory;
     if !storage_directory.is_empty() {
-        env.push(("INFER_STORAGE_JSONL_PATH".into(), storage_directory));
+        env.push((
+            "INFER_STORAGE_JSONL_PATH".into(),
+            absolute_storage_path(&storage_directory, &home_dir()),
+        ));
     }
     if let Some(dirs) = crate::projects::sandbox_allowed_dirs() {
         env.push(("INFER_TOOLS_SANDBOX_DIRECTORIES".into(), dirs));
@@ -238,6 +259,18 @@ mod tests {
 
     /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a
     /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
+
+    #[test]
+    fn absolute_storage_path_expands_tilde_and_anchors_relative_at_home() {
+        let home = Path::new("/home/tester");
+        assert_eq!(absolute_storage_path("~/conv", home), "/home/tester/conv");
+        assert_eq!(
+            absolute_storage_path(".infer/conversations", home),
+            "/home/tester/.infer/conversations"
+        );
+        assert_eq!(absolute_storage_path("/abs/conv", home), "/abs/conv");
+        assert_eq!(absolute_storage_path("~", home), "/home/tester");
+    }
 
     #[test]
     fn test_resolve_agent_cwd_falls_back_to_workspace_at_root() {
