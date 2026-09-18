@@ -15,6 +15,9 @@ import {
   addTrack,
   captionStyle,
   captionTrack,
+  clipSample,
+  sampleColour,
+  setClipSample,
   moveCaptions,
   clipLayout,
   emptyTimeline,
@@ -381,4 +384,51 @@ test("snapTime picks the nearest point within tolerance", () => {
   expect(snapTime(3.9, [0, 4, 9], 0.2)).toBe(4);
   expect(snapTime(3.5, [0, 4, 9], 0.2)).toBe(3.5);
   expect(snapTime(4.1, [4, 4.15], 0.2)).toBe(4.15);
+});
+
+describe("clipSample", () => {
+  test("falls back to the track's pick and colours every sample apart", () => {
+    const t = parseTimeline(
+      JSON.stringify({
+        tracks: [
+          {
+            id: "voice",
+            kind: "audio",
+            voice_sample: "eden.wav",
+            clips: [
+              { id: "s1", start: 0, end: 5, text: "own", voice_sample: "ada.wav" },
+              { id: "s2", start: 5, end: 10, text: "track" },
+              { id: "m1", start: 10, end: 15, src: "media/music.mp3" },
+            ],
+          },
+        ],
+      }),
+    );
+    const [own, inherited, music] = t.tracks[0].clips;
+    expect(clipSample(t.tracks[0], own)).toBe("ada.wav");
+    expect(clipSample(t.tracks[0], inherited)).toBe("eden.wav");
+    expect(clipSample(t.tracks[0], music)).toBeUndefined();
+    expect(sampleColour("ada.wav")).toBe(sampleColour("ada.wav"));
+    expect(sampleColour("ada.wav")).not.toBe(sampleColour("eden.wav"));
+  });
+
+  test("picking another voice drafts the clip, picking the same one leaves it alone", () => {
+    const t = parseTimeline(
+      JSON.stringify({
+        tracks: [
+          {
+            id: "voice",
+            kind: "audio",
+            voice_sample: "eden.wav",
+            clips: [{ id: "s1", start: 0, end: 5, text: "hi", src: "media/s1.wav", status: "done" }],
+          },
+        ],
+      }),
+    );
+    const picked = setClipSample(t, "voice", "s1", "ada.wav").tracks[0].clips[0];
+    expect(picked.voice_sample).toBe("ada.wav");
+    expect(picked.status).toBe("draft");
+    expect(setClipSample(t, "voice", "s1", "eden.wav").tracks[0].clips[0].status).toBe("done");
+    expect(setClipSample(t, "voice", "s1", undefined).tracks[0].clips[0].status).toBe("done");
+  });
 });

@@ -56,9 +56,10 @@ Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at t
 
 Never choose the voice silently: it is the one thing only the user can judge.
 
-1. The track's `voice_sample` in the timeline is the user's own pick from the lane header. Use
-   exactly that one, keep the field as written, and do not ask - unless the user asked you to redo
-   a clip or the drafts, which is when they change their mind about the voice.
+1. A clip's own `voice_sample`, and the track's for clips without one, is the user's pick from the
+   desktop's dropdowns. Use exactly that one, keep the field as written, and do not ask - a redo
+   prompt that names a sample is that pick, not an invitation to ask again. Only when the user says
+   they want a different voice do you go to step 2.
 2. Otherwise list the library, `ls ~/.infer/models/tts/samples/`, and ask with `AskUserQuestion`:
    one option per sample, plus `Random`, plus `My voice from the recording` when `source_audio` is
    `transcribe`. Put the track's current `voice_sample` first when it has one. Ask once per run,
@@ -68,8 +69,10 @@ Never choose the voice silently: it is the one thing only the user can judge.
    samples at all and no recording speech: stop and say so, samples are recorded in
    Settings > Voice samples.
 4. On `Random`, pick one yourself and say which. On a library sample, write its bare name into
-   `voice_sample` so the desktop shows the voice that was used. On the recording, set
+   the track's `voice_sample` so the desktop shows the voice that was used. On the recording, set
    `voice_sample` to `"recording"` and cut the sample from it (see Source audio).
+5. Write the same name into each clip you synthesize (see the contract's clip `voice_sample`), so a
+   clip keeps the voice it was made with when a later run picks a different one.
 
 ## Timeline contract (`<stem>.timeline.json`)
 
@@ -97,6 +100,7 @@ Never choose the voice silently: it is the one thing only the user can judge.
           "end": 6.2,
           "text": "First we open the settings panel.",
           "src": "media/demo-s1.wav",
+          "voice_sample": "eden.wav",
           "status": "done"
         },
         { "id": "s2", "start": 6.2, "end": 12.0, "text": "", "status": "draft" }
@@ -155,6 +159,10 @@ Never choose the voice silently: it is the one thing only the user can judge.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.
+- A spoken clip's `voice_sample` is the sample its wav was cloned from: set it to the sample you
+  used every time you synthesize the clip, and leave other clips' as they are - the timeline colours
+  each clip by it, so the user can see which voice every clip carries. The track's `voice_sample` is
+  the user's pick for clips that have none of their own.
 - `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
   `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
@@ -208,7 +216,7 @@ Never choose the voice silently: it is the one thing only the user can judge.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
    `mkdir -p media && cp "<reported path>" "media/<stem>-<id>.wav"`, set `src` to
-   `media/<stem>-<id>.wav` and `status: "done"`. Write the JSON after each clip so the desktop can
+   `media/<stem>-<id>.wav`, `voice_sample` to the sample you cloned and `status: "done"`. Write the JSON after each clip so the desktop can
    show progress.
 6. **Stop here.** Do not mux, render or export anything, and do not run ffmpeg on the output:
    the user reviews the clips on the timeline and presses Export, which renders the video

@@ -38,6 +38,7 @@ import {
   captionPreset,
   captionStyle,
   captionTrack,
+  clipSample,
   moveCaptions,
   clipLayout,
   draftCount,
@@ -57,7 +58,9 @@ import {
   parseTimeline,
   removeClip,
   resolveSrc,
+  sampleColour,
   serializeTimeline,
+  setClipSample,
   setClipText,
   speakClip,
   videoSource,
@@ -135,6 +138,44 @@ const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+
+// The voice picker the lane header (a track's default) and the clip editor
+// share. The blank option means "agent picks"; it only names `value` when the
+// library has no such sample - the recording, or one deleted since - so the
+// pick is never dropped silently, and never listed twice.
+function VoiceSelect({
+  label,
+  title,
+  samples,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  title: string;
+  samples: VoiceSample[];
+  value?: string;
+  onChange: (sample?: string) => void;
+  className: string;
+}) {
+  const known = samples.some((v) => v.name === value);
+  return (
+    <select
+      aria-label={label}
+      title={title}
+      value={known ? value : ""}
+      onChange={(e) => onChange(e.target.value || undefined)}
+      className={className}
+    >
+      <option value="">{value && !known ? `Voice: ${value}` : "Voice: agent picks"}</option>
+      {samples.map((v) => (
+        <option key={v.name} value={v.name}>
+          Voice: {v.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function TrackIcon({ kind }: { kind: TrackKind }) {
   const Icon = TRACK_ICON[kind];
@@ -584,7 +625,7 @@ export function TimelineView() {
   const generate = () => {
     const mode = timeline?.source_audio ?? "mute";
     const prompt = hasVoice
-      ? `Redo the draft clips in ${name}. Ask me which voice sample to use first. ${sourceAudioInstruction(mode)}`
+      ? `Redo the draft clips in ${name}. Use the voice sample each clip names, and ask me only about clips that name none. ${sourceAudioInstruction(mode)}`
       : `Add my cloned voice to ${source ?? "the video in this project"}: write ${name || "<stem>.timeline.json"} and make the audio for every clip. ${sourceAudioInstruction(mode)}`;
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
@@ -605,6 +646,9 @@ export function TimelineView() {
 
   const redoClip = (trackId: string, c: Clip) => {
     if (!timeline || !name) return;
+    const track = timeline.tracks.find((tr) => tr.id === trackId);
+    const sample = track && clipSample(track, c);
+    const voice = sample ? `and the voice sample ${sample}` : "and ask me which voice sample to use first";
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
     dirtyRef.current = false;
     setTimeline(next);
@@ -613,7 +657,7 @@ export function TimelineView() {
       .then(() =>
         promptProject(
           project,
-          `Redo only the voice of clip ${c.id} in ${name}, using its current text. Ask me which voice sample to use first. Leave every other clip untouched.`,
+          `Redo only the voice of clip ${c.id} in ${name}, using its current text ${voice}. Leave every other clip untouched.`,
         ),
       )
       .catch((e) => setError(String(e)));
@@ -938,27 +982,19 @@ export function TimelineView() {
                     {TRACK_LABEL[tr.kind]} {tr.id.startsWith(tr.kind) ? tr.id.slice(tr.kind.length) : ""}
                   </span>
                   {tr.kind === "audio" && (tr.voice_sample || tr.clips.some(isSpoken)) && (
-                    <select
-                      aria-label={`Voice sample for ${tr.id}`}
+                    <VoiceSelect
+                      label={`Voice sample for ${tr.id}`}
                       title="The voice sample this track's speech is cloned from (recorded in Settings > Voice samples)"
-                      value={samples.some((v) => v.name === tr.voice_sample) ? tr.voice_sample : ""}
-                      onChange={(e) =>
+                      samples={samples}
+                      value={tr.voice_sample}
+                      onChange={(sample) =>
                         update({
                           ...shown,
-                          tracks: shown.tracks.map((t) =>
-                            t.id === tr.id ? { ...t, voice_sample: e.target.value || undefined } : t,
-                          ),
+                          tracks: shown.tracks.map((t) => (t.id === tr.id ? { ...t, voice_sample: sample } : t)),
                         })
                       }
                       className="h-5 w-full truncate rounded border border-zinc-700 bg-zinc-900 px-1 text-[0.65rem] font-normal text-zinc-300"
-                    >
-                      <option value="">{tr.voice_sample ? `Voice: ${tr.voice_sample}` : "Voice: agent picks"}</option>
-                      {samples.map((v) => (
-                        <option key={v.name} value={v.name}>
-                          Voice: {v.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   )}
                   {tr.kind === "captions" && (
                     <select
@@ -1082,10 +1118,11 @@ export function TimelineView() {
                         ? clipSrc(dir, c.src)
                         : safeProjectMediaSrc(resolveSrc(dir, c.src))
                       : null;
+                    const sample = clipSample(tr, c);
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
                         <button
-                          title={c.text || c.src || c.id}
+                          title={[c.text || c.src || c.id, sample && `Voice: ${sample}`].filter(Boolean).join("\n")}
                           aria-pressed={isSel}
                           onPointerDown={(e) => beginDrag(e, "move", tr, c)}
                           onPointerMove={(e) => dragTo(e, c)}
@@ -1118,6 +1155,13 @@ export function TimelineView() {
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
                             {c.text || c.src?.replace(/^media\//, "") || c.id}
                           </span>
+                          {sample && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute inset-x-0 bottom-0 h-1"
+                              style={{ background: sampleColour(sample) }}
+                            />
+                          )}
                           <span
                             aria-hidden="true"
                             className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize hover:bg-white/40"
@@ -1256,6 +1300,7 @@ export function TimelineView() {
             clip={clip}
             dir={dir}
             timeline={timeline}
+            samples={samples}
             onChange={update}
             onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
             onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
@@ -1271,6 +1316,7 @@ function ClipEditor({
   clip,
   dir,
   timeline,
+  samples,
   onChange,
   onRedo,
   onSpeak,
@@ -1279,6 +1325,7 @@ function ClipEditor({
   clip: Clip;
   dir: string;
   timeline: Timeline;
+  samples: VoiceSample[];
   onChange: (t: Timeline) => void;
   onRedo?: () => void;
   onSpeak?: () => void;
@@ -1286,6 +1333,7 @@ function ClipEditor({
   const audio = clip.src && track.kind !== "video" ? safeAudioSrc(resolveSrc(dir, clip.src)) : null;
   const spoken = track.kind === "audio" && isSpoken(clip);
   const caption = track.kind === "captions";
+  const sample = clipSample(track, clip);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3">
       <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
@@ -1294,6 +1342,19 @@ function ClipEditor({
           {fmtTime(clip.start)} - {fmtTime(clip.end)}
         </span>
         {clip.status && <span className="rounded border border-border px-1">{clip.status}</span>}
+        {spoken && (
+          <span className="flex items-center gap-1">
+            {sample && <span className="size-2 rounded-full" style={{ background: sampleColour(sample) }} />}
+            <VoiceSelect
+              label={`Voice sample for ${clip.id}`}
+              title="The voice sample this clip is cloned from: pick another and redo the voice"
+              samples={samples}
+              value={sample}
+              onChange={(pick) => onChange(setClipSample(timeline, track.id, clip.id, pick))}
+              className="h-6 rounded border border-input bg-transparent px-1 text-[0.72rem] text-foreground"
+            />
+          </span>
+        )}
         {spoken && (
           <Button
             variant="outline"

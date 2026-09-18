@@ -43,6 +43,9 @@ export type Clip = {
   height?: number;
   // The HTML composition an overlay's `src` was rendered from.
   html?: string;
+  // Spoken clips only: the voice sample this clip's wav was cloned from,
+  // written by the agent when it synthesizes. Absent means the track's pick.
+  voice_sample?: string;
   // Caption clips only: when each word is spoken, for the word presets.
   words?: CaptionWord[];
 };
@@ -165,6 +168,7 @@ export function parseTimeline(json: string): Timeline {
         width: optNum(c?.width),
         height: optNum(c?.height),
         html: typeof c?.html === "string" ? c.html : undefined,
+        voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
         words: (Array.isArray(c?.words) && c.words.length
           ? c.words.map((w) => ({
               text: typeof w?.text === "string" ? w.text : undefined,
@@ -195,6 +199,19 @@ export function videoSource(t: Timeline): string | undefined {
 }
 
 export const isSpoken = (c: Clip): boolean => c.text !== undefined;
+
+// The voice a spoken clip was cloned from: its own sample, else the track's
+// pick. `sampleColour` gives every sample a stable colour so a lane shows at a
+// glance which clips share a voice; the clip editor spells the name out.
+export function clipSample(track: Track, clip: Clip): string | undefined {
+  return track.kind === "audio" && isSpoken(clip) ? (clip.voice_sample ?? track.voice_sample) : undefined;
+}
+
+export function sampleColour(name: string): string {
+  let hue = 0;
+  for (const ch of name) hue = (hue * 31 + ch.codePointAt(0)!) % 360;
+  return `hsl(${hue} 80% 62%)`;
+}
 
 export function spokenCount(t: Timeline): number {
   return t.tracks
@@ -263,6 +280,27 @@ export function setClipText(t: Timeline, trackId: string, clipId: string, text: 
             clips: tr.clips.map((c) =>
               c.id !== clipId ? c : { ...c, text, ...(spoken ? { status: "draft" as const } : {}) },
             ),
+          },
+    ),
+  };
+}
+
+// The voice picked for one clip in the clip editor. A different voice makes
+// the clip's wav stale, like editing its text, so the clip goes back to draft
+// for the next redo; clearing the pick falls back to the track's sample.
+export function setClipSample(t: Timeline, trackId: string, clipId: string, sample?: string): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.id !== trackId
+        ? tr
+        : {
+            ...tr,
+            clips: tr.clips.map((c) => {
+              if (c.id !== clipId) return c;
+              const next = { ...c, voice_sample: sample };
+              return clipSample(tr, next) === clipSample(tr, c) ? next : { ...next, status: "draft" as const };
+            }),
           },
     ),
   };
