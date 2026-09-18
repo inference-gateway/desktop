@@ -383,11 +383,12 @@ function useDesktopStore() {
         await api.startGateway(force, restart);
       } catch (e) {
         console.error("start_gateway failed:", e);
+        setError(String(e));
       }
       setStatus("Ready");
       fetchModelsWithRetry();
     },
-    [setStatus, fetchModelsWithRetry],
+    [setStatus, setError, fetchModelsWithRetry],
   );
 
   const refreshConversations = useCallback(async () => {
