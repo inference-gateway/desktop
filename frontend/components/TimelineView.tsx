@@ -381,7 +381,6 @@ export function TimelineView() {
     syncMedia(timeRef.current, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline]);
-  // Re-showing a lane remounts its media elements: pin them to the playhead at once.
   useEffect(() => {
     syncMedia(timeRef.current, playing);
     // eslint-disable-next-line react-hooks/exhaustive-deps
