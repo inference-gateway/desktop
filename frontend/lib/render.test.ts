@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { activeVideo, containRect, coverRect, fitScale, layoutCaption, overlayRect, videoRect } from "./render";
-import type { Timeline, Track } from "./timeline";
+import { framingAt, type Clip, type Timeline, type Track } from "./timeline";
 
 const measure = (text: string) => text.length;
 
@@ -78,6 +78,24 @@ describe("video framing", () => {
 
   test("a zero or missing scale falls back to filling", () => {
     expect(videoRect(clip({ scale: 0 }), src, 1000, 1000)).toEqual(videoRect(clip(), src, 1000, 1000));
+  });
+
+  test("a scale keyframe channel drives videoRect through framingAt, as the renderer wires it", () => {
+    const c: Clip = {
+      id: "v1",
+      start: 0,
+      end: 2,
+      keys: {
+        scale: [
+          { t: 0, v: 1 },
+          { t: 2, v: 2 },
+        ],
+      },
+    };
+    const mid = videoRect({ ...c, ...framingAt(c, 1) }, src, 1000, 1000); // local 1 → scale 1.5
+    const filled = videoRect(clip(), src, 1000, 1000);
+    expect(mid.w).toBeCloseTo(filled.w * 1.5, 5);
+    expect(mid.h).toBeCloseTo(filled.h * 1.5, 5);
   });
 });
 

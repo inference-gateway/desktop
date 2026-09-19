@@ -162,7 +162,12 @@ Never choose the voice silently: it is the one thing only the user can judge.
   the rate the export renders at; keep it as is too. Export writes `export/<output>`.
 - A video clip's `scale` (a multiplier on the size that covers the frame) and `x`/`y` (the centre it
   is framed on, fractions of the frame) are how the user has framed the recording - they drag it in
-  the preview and scroll to zoom, or press Fit and Fill. Leave them exactly as they are.
+  the preview and scroll to zoom, or press Fit and Fill. `speed` (default `1`) retimes the clip:
+  below `1` is slow motion, above is fast forward. `keys` animates any of these across the clip with
+  keyframes - `{"scale": [{"t": 0, "v": 1}, {"t": 2, "v": 1.4}], "x": [...], "y": [...], "speed":
+  [...]}`, each a channel of `{"t": <seconds from the clip's start>, "v": <value>}` sorted by `t`,
+  held flat before the first key and after the last and linear between. Leave `scale`, `x`, `y`,
+  `speed` and `keys` exactly as they are.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.

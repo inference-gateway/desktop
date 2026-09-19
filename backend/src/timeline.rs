@@ -293,9 +293,25 @@ struct TrackFile {
     clips: Vec<ClipFile>,
 }
 
-/// Only what the audio mix and the SRT need. Placement, sizes, styles and
-/// word timings are the canvas renderer's business now, and serde ignores the
-/// fields it is not asked for, so the JSON contract is unchanged.
+/// One key on a speed channel: value `v` at clip-local time `t`.
+#[derive(serde::Deserialize)]
+struct KfFile {
+    t: f64,
+    v: f64,
+}
+
+/// The only keyframe channel the export reads: the rest (scale, x, y) are the
+/// canvas renderer's business and never reach the audio mix.
+#[derive(serde::Deserialize, Default)]
+struct ClipKeysFile {
+    #[serde(default)]
+    speed: Vec<KfFile>,
+}
+
+/// Only what the audio mix and the SRT need. Placement, sizes, styles and word
+/// timings are the canvas renderer's business now; speed is the exception,
+/// because a retimed clip's own sound has to be stretched to match. Serde
+/// ignores the fields it is not asked for, so the JSON contract is unchanged.
 #[derive(serde::Deserialize)]
 struct ClipFile {
     start: f64,
@@ -303,11 +319,60 @@ struct ClipFile {
     offset: Option<f64>,
     src: Option<String>,
     text: Option<String>,
+    #[serde(default)]
+    speed: Option<f64>,
+    #[serde(default)]
+    keys: Option<ClipKeysFile>,
 }
 
 impl ClipFile {
     fn has_src(&self) -> bool {
         self.src.as_deref().is_some_and(|s| !s.is_empty())
+    }
+
+    /// Seconds of source consumed from the clip's start to clip-local `local`:
+    /// the integral of the piecewise-linear speed curve, mirroring the
+    /// frontend's `sourceConsumed` so the kept audio matches the retimed
+    /// picture. Plain `speed * local` without a speed channel.
+    fn source_consumed(&self, local: f64) -> f64 {
+        if local <= 0.0 {
+            return 0.0;
+        }
+        let ch = self
+            .keys
+            .as_ref()
+            .map(|k| k.speed.as_slice())
+            .unwrap_or(&[]);
+        if ch.is_empty() {
+            return self.speed.unwrap_or(1.0) * local;
+        }
+        let mut acc = 0.0;
+        let mut t0 = 0.0;
+        let mut s0 = ch[0].v;
+        for k in ch {
+            if k.t <= t0 {
+                s0 = k.v;
+                continue;
+            }
+            let end = k.t.min(local);
+            let s1 = s0 + (k.v - s0) * ((end - t0) / (k.t - t0));
+            acc += (s0 + s1) / 2.0 * (end - t0);
+            if local <= k.t {
+                return acc;
+            }
+            t0 = k.t;
+            s0 = k.v;
+        }
+        acc + s0 * (local - t0)
+    }
+
+    /// Source-seconds per timeline-second over the whole clip: what the kept
+    /// audio is sped up or slowed by so it still fills the clip's slot.
+    fn avg_speed(&self, len: f64) -> f64 {
+        if len <= 0.0 {
+            return 1.0;
+        }
+        (self.source_consumed(len) / len).max(0.05)
     }
 }
 
@@ -338,6 +403,28 @@ fn atrim_filter(offset: f64, len: Option<f64>) -> String {
         None if offset > 0.0 => format!("atrim=start={offset},asetpts=PTS-STARTPTS,"),
         None => String::new(),
     }
+}
+
+/// Stretch a kept clip's audio to match its speed: `factor` is source-seconds
+/// per timeline-second. ffmpeg's `atempo` only takes 0.5..2.0, so a bigger
+/// change is a chain of them; empty (no filter) when the speed is ~1. Ends with
+/// a comma so it slots between the atrim and the adelay in the filter string.
+fn atempo_filter(factor: f64) -> String {
+    if (factor - 1.0).abs() < 1e-3 || factor <= 0.0 {
+        return String::new();
+    }
+    let mut f = factor;
+    let mut parts: Vec<String> = Vec::new();
+    while f > 2.0 {
+        parts.push("atempo=2.0".into());
+        f /= 2.0;
+    }
+    while f < 0.5 {
+        parts.push("atempo=0.5".into());
+        f *= 2.0;
+    }
+    parts.push(format!("atempo={f}"));
+    format!("{},", parts.join(","))
 }
 
 /// A clip's own length, for the clips that are not part of the video sequence.
@@ -513,9 +600,16 @@ fn export_plan(
             args.extend(["-vn", "-i"].map(String::from));
             args.push(src.to_string_lossy().into_owned());
             let ms = (c.start.max(0.0) * 1000.0).round() as u64;
+            let (src_len, tempo) = match lens[k] {
+                Some(len) if len > 0.0 => (
+                    Some(c.source_consumed(len)),
+                    atempo_filter(c.avg_speed(len)),
+                ),
+                other => (other, String::new()),
+            };
             filters.push(format!(
-                "[{input}:a]{}adelay={ms}|{ms}[a{input}]",
-                atrim_filter(c.offset.unwrap_or(0.0), lens[k])
+                "[{input}:a]{}{tempo}adelay={ms}|{ms}[a{input}]",
+                atrim_filter(c.offset.unwrap_or(0.0), src_len)
             ));
             mix.push(format!("[a{input}]"));
             input += 1;
@@ -926,6 +1020,48 @@ mod tests {
             )
             .is_err()
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_plan_retimes_kept_audio_to_match_a_sped_clip() {
+        let dir = std::env::temp_dir().join(format!("infer-export-speed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("demo.mov"), b"x").unwrap();
+
+        let fast = r#"{"duration":4,"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"end":4,"offset":1,"src":"demo.mov","speed":2}]}]}"#;
+        let joined = export_plan(&dir, "demo", fast).unwrap().0.join(" ");
+        assert!(
+            joined
+                .contains("[1:a]atrim=start=1:end=9,asetpts=PTS-STARTPTS,atempo=2,adelay=0|0[a1]"),
+            "{joined}"
+        );
+
+        // A 1->3 ramp over 4s consumes the same 8s of source (average speed 2).
+        let ramp = r#"{"duration":4,"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","keys":{"speed":[{"t":0,"v":1},{"t":4,"v":3}]}}]}]}"#;
+        let joined = export_plan(&dir, "demo", ramp).unwrap().0.join(" ");
+        assert!(
+            joined.contains("atrim=start=0:end=8,asetpts=PTS-STARTPTS,atempo=2,"),
+            "{joined}"
+        );
+
+        // Slow motion 0.5x takes 2s of source and slows it with one atempo step.
+        let slow = r#"{"duration":4,"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","speed":0.5}]}]}"#;
+        let joined = export_plan(&dir, "demo", slow).unwrap().0.join(" ");
+        assert!(
+            joined.contains("atrim=start=0:end=2,asetpts=PTS-STARTPTS,atempo=0.5,"),
+            "{joined}"
+        );
+
+        // A still clip keeps the old byte-for-byte filter: no atempo at all.
+        let still = r#"{"duration":4,"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov"}]}]}"#;
+        let joined = export_plan(&dir, "demo", still).unwrap().0.join(" ");
+        assert!(!joined.contains("atempo"), "{joined}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

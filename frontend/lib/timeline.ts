@@ -15,6 +15,13 @@ export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
   { value: "keep", label: "Keep under the voice" },
 ];
 
+// A keyframe on a per-property channel: value `v` at clip-local time `t`
+// (seconds from the clip's start). A channel is sorted by `t`; its value is
+// held flat before the first key and after the last, and linear in between.
+export type Kf = { t: number; v: number };
+export type TransformProp = "scale" | "x" | "y" | "speed";
+export type ClipKeys = { scale?: Kf[]; x?: Kf[]; y?: Kf[]; speed?: Kf[] };
+
 export type Clip = {
   id: string;
   start: number;
@@ -28,6 +35,8 @@ export type Clip = {
   width?: number;
   height?: number;
   scale?: number;
+  speed?: number;
+  keys?: ClipKeys;
 
   html?: string;
   voice_sample?: string;
@@ -109,6 +118,15 @@ export const captionPreset = (style?: string): CaptionStyle =>
 const KINDS: TrackKind[] = ["video", "audio", "overlay", "captions"];
 const NEW_CLIP_SECONDS = 5;
 
+// A clip's playback speed multiplier: above 1 fast-forwards (compresses source
+// time), below 1 is slow motion (stretches it). Clamped so the source-time map
+// stays monotonic and never runs backwards.
+export const MIN_SPEED = 0.1;
+export const MAX_SPEED = 8;
+export const clampSpeed = (v: number) => (Number.isFinite(v) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, v)) : 1);
+// Keyframes closer together in time than this are the same keyframe.
+const KF_EPS = 1e-3;
+
 function num(v: unknown, fallback = 0): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
   return Number.isFinite(n) ? n : fallback;
@@ -116,6 +134,28 @@ function num(v: unknown, fallback = 0): number {
 
 const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
 const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
+
+// Rebuild one keyframe channel from loose JSON: coerce every key to numbers,
+// clamp speed into range, sort by time, and drop an empty channel.
+function parseChannel(raw: unknown, prop: TransformProp): Kf[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const ch = raw
+    .map((k) => k as { t?: unknown; v?: unknown })
+    .map((k) => ({ t: Math.max(0, num(k.t)), v: prop === "speed" ? clampSpeed(num(k.v, 1)) : num(k.v) }))
+    .sort((a, b) => a.t - b.t);
+  return ch.length ? ch : undefined;
+}
+
+function parseKeys(raw: unknown): ClipKeys | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  return pruneKeys({
+    scale: parseChannel(r.scale, "scale"),
+    x: parseChannel(r.x, "x"),
+    y: parseChannel(r.y, "y"),
+    speed: parseChannel(r.speed, "speed"),
+  });
+}
 
 export function parseTimeline(json: string): Timeline {
   const raw = JSON.parse(json) as Partial<Timeline> | null;
@@ -147,6 +187,8 @@ export function parseTimeline(json: string): Timeline {
         width: optNum(c?.width),
         height: optNum(c?.height),
         scale: optNum(c?.scale),
+        speed: c?.speed === undefined ? undefined : clampSpeed(num(c.speed, 1)),
+        keys: parseKeys(c?.keys),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
         words: (Array.isArray(c?.words) && c.words.length
@@ -312,6 +354,184 @@ export function frameClip(t: Timeline, clipId: string, next: { x?: number; y?: n
   };
 }
 
+// --- Keyframes: per-property channels sampled at a clip-local time -----------
+
+// Replace the one clip with `clipId`, leaving the rest of the timeline shared.
+function mapClip(t: Timeline, clipId: string, f: (c: Clip) => Clip): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.clips.some((c) => c.id === clipId) ? { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? f(c) : c)) } : tr,
+    ),
+  };
+}
+
+// Drop empty channels, and the whole `keys` object once nothing is animated.
+function pruneKeys(keys: ClipKeys | undefined): ClipKeys | undefined {
+  if (!keys) return undefined;
+  const kept = (Object.entries(keys) as [TransformProp, Kf[] | undefined][]).filter(([, ch]) => ch && ch.length > 0);
+  return kept.length ? (Object.fromEntries(kept) as ClipKeys) : undefined;
+}
+
+// The value of a channel at clip-local time `local`: linear between the keys it
+// falls between, held flat outside them, and `fallback` when there is no key.
+export function sampleKf(ch: Kf[] | undefined, local: number, fallback: number): number {
+  if (!ch || ch.length === 0) return fallback;
+  if (local <= ch[0].t) return ch[0].v;
+  const last = ch[ch.length - 1];
+  if (local >= last.t) return last.v;
+  for (let i = 1; i < ch.length; i++) {
+    const b = ch[i];
+    if (local <= b.t) {
+      const a = ch[i - 1];
+      const span = b.t - a.t;
+      return span > 0 ? a.v + (b.v - a.v) * ((local - a.t) / span) : b.v;
+    }
+  }
+  return last.v;
+}
+
+// The framing (centre x/y, scale) a video clip shows at timeline time `now`:
+// each animated channel sampled, falling back to the clip's static field. Speed
+// never bends this - the picture animates in timeline time.
+export function framingAt(clip: Clip, now: number): { x?: number; y?: number; scale?: number } {
+  const keys = clip.keys;
+  if (!keys?.x && !keys?.y && !keys?.scale) return { x: clip.x, y: clip.y, scale: clip.scale };
+  const local = now - clip.start;
+  const at = (ch: Kf[] | undefined, base?: number) => (ch && ch.length ? sampleKf(ch, local, base ?? 0) : base);
+  return { x: at(keys.x, clip.x), y: at(keys.y, clip.y), scale: at(keys.scale, clip.scale) };
+}
+
+// A clip's playback speed at clip-local time `local`.
+export function speedAt(clip: Clip, local: number): number {
+  return sampleKf(clip.keys?.speed, local, clip.speed ?? 1);
+}
+
+// Seconds of source consumed from the clip's start to clip-local time `local`:
+// the integral of the piecewise-linear speed curve. With no speed keyframes it
+// is just `speed * local`. This is the one place timeline time turns into
+// source time, so the seek, the trims and the audio mix all agree through it.
+export function sourceConsumed(clip: Clip, local: number): number {
+  if (local <= 0) return 0;
+  const ch = clip.keys?.speed;
+  if (!ch || ch.length === 0) return (clip.speed ?? 1) * local;
+  let acc = 0;
+  let t0 = 0;
+  let s0 = ch[0].v;
+  for (const k of ch) {
+    if (k.t <= t0) {
+      s0 = k.v;
+      continue;
+    }
+    const end = Math.min(k.t, local);
+    const s1 = s0 + (k.v - s0) * ((end - t0) / (k.t - t0));
+    acc += ((s0 + s1) / 2) * (end - t0);
+    if (local <= k.t) return acc;
+    t0 = k.t;
+    s0 = k.v;
+  }
+  return acc + s0 * (local - t0);
+}
+
+// Where in the source file a clip is showing at timeline time `now`: its
+// in-point plus the source consumed so far. Replaces the old linear
+// `offset + (now - start)` in both the preview sync and the export seek.
+export function sourceTimeAt(clip: Clip, now: number): number {
+  return (clip.offset ?? 0) + sourceConsumed(clip, now - clip.start);
+}
+
+// The current value of `prop` at clip-local `local`, to seed a new keyframe.
+function valueAt(clip: Clip, prop: TransformProp, local: number): number {
+  if (prop === "speed") return speedAt(clip, local);
+  const ch = clip.keys?.[prop];
+  if (ch && ch.length) return sampleKf(ch, local, 0);
+  if (prop === "scale") return clip.scale && clip.scale > 0 ? clip.scale : 1;
+  return clip[prop] ?? 0.5;
+}
+
+const clampLocal = (clip: Clip, local: number) => Math.max(0, Math.min(local, clip.end - clip.start));
+
+// Whether `prop` has a key sitting at clip-local `local`, and whether it is
+// animated at all.
+export function keyAt(clip: Clip, prop: TransformProp, local: number): boolean {
+  return !!clip.keys?.[prop]?.some((k) => Math.abs(k.t - local) <= KF_EPS);
+}
+export function hasChannel(clip: Clip, prop: TransformProp): boolean {
+  return !!clip.keys?.[prop]?.length;
+}
+
+// The clip-local times a diamond sits on: every key time across all channels.
+export function keyTimes(clip: Clip): number[] {
+  const keys = clip.keys;
+  if (!keys) return [];
+  const all = [...(keys.scale ?? []), ...(keys.x ?? []), ...(keys.y ?? []), ...(keys.speed ?? [])];
+  const grid = all.map((k) => Math.round(k.t / KF_EPS) * KF_EPS);
+  return [...new Set(grid)].sort((a, b) => a - b);
+}
+
+// Set `prop` to `v` at clip-local `local`, replacing a key already there.
+export function setKf(t: Timeline, clipId: string, prop: TransformProp, local: number, v: number): Timeline {
+  const value = prop === "speed" ? clampSpeed(v) : v;
+  return mapClip(t, clipId, (c) => {
+    const at = clampLocal(c, local);
+    const rest = (c.keys?.[prop] ?? []).filter((k) => Math.abs(k.t - at) > KF_EPS);
+    const ch = [...rest, { t: at, v: value }].sort((a, b) => a.t - b.t);
+    return { ...c, keys: { ...c.keys, [prop]: ch } };
+  });
+}
+
+// Toggle a key for `prop` at clip-local `local`: remove the one there, else add
+// one capturing the value showing now, which turns a static field into a
+// channel. Removing the last key drops the channel.
+export function toggleKf(t: Timeline, clipId: string, prop: TransformProp, local: number): Timeline {
+  return mapClip(t, clipId, (c) => {
+    const at = clampLocal(c, local);
+    const ch = c.keys?.[prop];
+    if (ch?.some((k) => Math.abs(k.t - at) <= KF_EPS)) {
+      const rest = ch.filter((k) => Math.abs(k.t - at) > KF_EPS);
+      return { ...c, keys: pruneKeys({ ...c.keys, [prop]: rest }) };
+    }
+    const next = [...(ch ?? []), { t: at, v: valueAt(c, prop, at) }].sort((a, b) => a.t - b.t);
+    return { ...c, keys: { ...c.keys, [prop]: next } };
+  });
+}
+
+// Drag every key sitting at clip-local `local` to `to`: a whole diamond moves.
+export function moveKf(t: Timeline, clipId: string, local: number, to: number): Timeline {
+  return mapClip(t, clipId, (c) => {
+    if (!c.keys) return c;
+    const at = clampLocal(c, to);
+    const shift = (ch?: Kf[]) =>
+      ch?.map((k) => (Math.abs(k.t - local) <= KF_EPS ? { ...k, t: at } : k)).sort((a, b) => a.t - b.t);
+    return {
+      ...c,
+      keys: pruneKeys({
+        scale: shift(c.keys.scale),
+        x: shift(c.keys.x),
+        y: shift(c.keys.y),
+        speed: shift(c.keys.speed),
+      }),
+    };
+  });
+}
+
+// A clip's constant playback speed, when it has no speed keyframes.
+export function setSpeed(t: Timeline, clipId: string, speed: number): Timeline {
+  const v = clampSpeed(speed);
+  return mapClip(t, clipId, (c) => ({ ...c, speed: v }));
+}
+
+// Cut a channel at clip-local `at` into the two halves a split makes: the first
+// keeps its keys up to `at` with a key pinned there, the second restarts at 0
+// from the same value, so the animation is continuous across the cut.
+function splitChannel(ch: Kf[] | undefined, at: number): [Kf[] | undefined, Kf[] | undefined] {
+  if (!ch || ch.length === 0) return [undefined, undefined];
+  const mid = sampleKf(ch, at, ch[0].v);
+  const first = [...ch.filter((k) => k.t < at - KF_EPS), { t: at, v: mid }];
+  const second = [{ t: 0, v: mid }, ...ch.filter((k) => k.t > at + KF_EPS).map((k) => ({ t: k.t - at, v: k.v }))];
+  return [first, second];
+}
+
 // Drag the captions block on the frame: `x`/`y` are the centre of the box as
 // fractions of it, and clearing them puts the block back on `position`.
 export function moveCaptions(t: Timeline, trackId: string, x?: number, y?: number): Timeline {
@@ -470,20 +690,31 @@ export function trimClip(
   if (!track || !clip) return t;
   const others = track.clips.filter((c) => c.id !== clipId);
   const offset = clip.offset ?? 0;
+  // ponytail: source-end bounds divide by the edge's speed, exact only when the
+  // ramp does not cross that edge; an inverse integral is the upgrade if a
+  // ramped clip's trimmed tail overruns the file. Speed keyframes stay indexed
+  // from the (unchanged for a tail-trim) start; a head-trim is left approximate.
+  const headSpeed = speedAt(clip, 0);
+  const tailSpeed = speedAt(clip, clip.end - clip.start);
   let next: Clip;
   if (edge === "start") {
     const lo = Math.max(
       0,
-      clip.src && !isSpoken(clip) ? clip.start - offset : 0,
+      clip.src && !isSpoken(clip) ? clip.start - offset / headSpeed : 0,
       ...others.filter((c) => c.end <= clip.start).map((c) => c.end),
     );
     const start = Math.min(Math.max(time, lo), clip.end - MIN_CLIP_S);
     next = { ...clip, start };
-    if (clip.src) next.offset = Math.max(0, offset + (start - clip.start));
+    if (clip.src) {
+      const d = start - clip.start;
+      next.offset = Math.max(0, offset + (d >= 0 ? sourceConsumed(clip, d) : headSpeed * d));
+    }
   } else {
     const hi = Math.min(
       ...others.filter((c) => c.start >= clip.end).map((c) => c.start),
-      clip.src && !isSpoken(clip) && sourceLength !== undefined ? clip.start + sourceLength - offset : Infinity,
+      clip.src && !isSpoken(clip) && sourceLength !== undefined
+        ? clip.start + (sourceLength - offset) / tailSpeed
+        : Infinity,
     );
     next = { ...clip, end: Math.max(Math.min(time, hi), clip.start + MIN_CLIP_S) };
   }
@@ -505,14 +736,20 @@ export function splitClip(t: Timeline, trackId: string, clipId: string, at: numb
   const track = t.tracks.find((tr) => tr.id === trackId);
   const clip = track?.clips.find((c) => c.id === clipId);
   if (!track || !clip || at < clip.start + MIN_CLIP_S || at > clip.end - MIN_CLIP_S) return null;
-  const first: Clip = { ...clip, end: at };
+  const sL = at - clip.start;
+  const [scaleA, scaleB] = splitChannel(clip.keys?.scale, sL);
+  const [xA, xB] = splitChannel(clip.keys?.x, sL);
+  const [yA, yB] = splitChannel(clip.keys?.y, sL);
+  const [speedA, speedB] = splitChannel(clip.keys?.speed, sL);
+  const first: Clip = { ...clip, end: at, keys: pruneKeys({ scale: scaleA, x: xA, y: yA, speed: speedA }) };
   const second: Clip = {
     ...clip,
     id: nextId(track, clip.id[0]),
     start: at,
     status: clip.text === undefined ? clip.status : "draft",
+    keys: pruneKeys({ scale: scaleB, x: xB, y: yB, speed: speedB }),
   };
-  if (clip.src) second.offset = (clip.offset ?? 0) + (at - clip.start);
+  if (clip.src) second.offset = (clip.offset ?? 0) + sourceConsumed(clip, sL);
   const clips = [...track.clips.filter((c) => c.id !== clipId), first, second].sort((a, b) => a.start - b.start);
   return {
     ...t,
