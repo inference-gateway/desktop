@@ -30,6 +30,16 @@ import {
   setClipText,
   speakClip,
   videoSource,
+  MAX_SPEED,
+  sampleKf,
+  framingAt,
+  sourceConsumed,
+  sourceTimeAt,
+  setKf,
+  toggleKf,
+  moveKf,
+  type Clip,
+  type Timeline,
 } from "./timeline";
 
 const SAMPLE = JSON.stringify({
@@ -430,5 +440,134 @@ describe("clipSample", () => {
     expect(picked.status).toBe("draft");
     expect(setClipSample(t, "voice", "s1", "eden.wav").tracks[0].clips[0].status).toBe("done");
     expect(setClipSample(t, "voice", "s1", undefined).tracks[0].clips[0].status).toBe("done");
+  });
+});
+
+describe("keyframes", () => {
+  const timelineOf = (clip: Clip): Timeline => ({
+    version: 1,
+    duration: clip.end,
+    tracks: [{ id: "video", kind: "video", clips: [clip] }],
+  });
+
+  test("sampleKf holds before the first key and after the last, lerps between", () => {
+    const ch = [
+      { t: 1, v: 10 },
+      { t: 3, v: 20 },
+    ];
+    expect(sampleKf(ch, 0, 99)).toBe(10);
+    expect(sampleKf(ch, 2, 99)).toBe(15);
+    expect(sampleKf(ch, 5, 99)).toBe(20);
+    expect(sampleKf(undefined, 2, 42)).toBe(42);
+    expect(sampleKf([], 2, 42)).toBe(42);
+  });
+
+  test("framingAt samples animated fields and passes static ones through", () => {
+    const clip: Clip = {
+      id: "v1",
+      start: 2,
+      end: 6,
+      x: 0.3,
+      scale: 1,
+      keys: {
+        scale: [
+          { t: 0, v: 1 },
+          { t: 2, v: 2 },
+        ],
+      },
+    };
+    expect(framingAt(clip, 3).scale).toBe(1.5); // local 1, halfway 1..2
+    expect(framingAt(clip, 3).x).toBe(0.3); // no x channel, static passes
+    expect(framingAt({ id: "v", start: 0, end: 1, x: 0.4, scale: 2 }, 0.5)).toEqual({ x: 0.4, y: undefined, scale: 2 });
+  });
+
+  test("sourceConsumed integrates a speed ramp and is linear without one", () => {
+    const ramp: Clip = {
+      id: "v",
+      start: 0,
+      end: 2,
+      keys: {
+        speed: [
+          { t: 0, v: 1 },
+          { t: 2, v: 3 },
+        ],
+      },
+    };
+    expect(sourceConsumed(ramp, 0)).toBe(0);
+    expect(sourceConsumed(ramp, 1)).toBeCloseTo(1.5, 6); // ∫₀¹(1+u)du
+    expect(sourceConsumed(ramp, 2)).toBeCloseTo(4, 6); // ∫₀²(1+u)du
+    expect(sourceConsumed({ id: "v", start: 0, end: 4, speed: 0.5 }, 4)).toBe(2);
+    expect(sourceConsumed({ id: "v", start: 0, end: 4 }, 3)).toBe(3);
+    expect(sourceTimeAt({ id: "v", start: 5, end: 9, offset: 2, speed: 2 }, 7)).toBe(6); // 2 + 2s*2
+  });
+
+  test("setKf upserts, toggleKf captures then removes, moveKf retimes a diamond", () => {
+    const on = toggleKf(timelineOf({ id: "v1", start: 0, end: 10, scale: 1.2 }), "v1", "scale", 3);
+    expect(on.tracks[0].clips[0].keys?.scale).toEqual([{ t: 3, v: 1.2 }]);
+    const set = setKf(setKf(on, "v1", "scale", 3, 2), "v1", "scale", 6, 3);
+    expect(set.tracks[0].clips[0].keys?.scale).toEqual([
+      { t: 3, v: 2 },
+      { t: 6, v: 3 },
+    ]);
+    const moved = moveKf(set, "v1", 3, 4);
+    expect(moved.tracks[0].clips[0].keys?.scale).toEqual([
+      { t: 4, v: 2 },
+      { t: 6, v: 3 },
+    ]);
+    expect(toggleKf(moved, "v1", "scale", 6).tracks[0].clips[0].keys?.scale).toEqual([{ t: 4, v: 2 }]);
+  });
+
+  test("speed keys are clamped and the channel is dropped when the last key goes", () => {
+    const on = setKf(timelineOf({ id: "v1", start: 0, end: 5 }), "v1", "speed", 1, 99);
+    expect(on.tracks[0].clips[0].keys?.speed).toEqual([{ t: 1, v: MAX_SPEED }]);
+    expect(toggleKf(on, "v1", "speed", 1).tracks[0].clips[0].keys).toBeUndefined();
+  });
+
+  test("splitClip advances the second offset by the integral and keeps the ramp on both halves", () => {
+    const base = timelineOf({
+      id: "v1",
+      src: "a.mov",
+      start: 0,
+      end: 4,
+      offset: 0,
+      keys: {
+        speed: [
+          { t: 0, v: 2 },
+          { t: 4, v: 2 },
+        ],
+      },
+    });
+    const clips = splitClip(base, "video", "v1", 2)!.tracks[0].clips;
+    expect(clips).toHaveLength(2);
+    expect(clips[1].offset).toBeCloseTo(4, 6); // speed 2 over 2s consumes 4s of source
+    expect(clips[0].keys?.speed?.length).toBeGreaterThan(0);
+    expect(clips[1].keys?.speed?.[0].t).toBe(0);
+  });
+
+  test("trimClip head advances the offset by the source consumed at speed", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4, offset: 1, speed: 2 });
+    const out = trimClip(base, "video", "v1", "start", 1); // 1s at speed 2 consumes 2s of source
+    expect(out.tracks[0].clips[0]).toMatchObject({ start: 1 });
+    expect(out.tracks[0].clips[0].offset).toBeCloseTo(3, 6);
+  });
+
+  test("keyframes survive a parse round-trip, sorted and clamped", () => {
+    const json = serializeTimeline(
+      timelineOf({
+        id: "v1",
+        start: 0,
+        end: 5,
+        keys: {
+          speed: [
+            { t: 3, v: 99 },
+            { t: 1, v: 0.5 },
+          ],
+        },
+      }),
+    );
+    expect(parseTimeline(json).tracks[0].clips[0].keys?.speed).toEqual([
+      { t: 1, v: 0.5 },
+      { t: 3, v: MAX_SPEED },
+    ]);
   });
 });

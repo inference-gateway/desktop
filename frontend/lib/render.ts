@@ -2,6 +2,7 @@ import {
   captionPreset,
   captionStyle,
   frameDims,
+  framingAt,
   type CaptionStyle,
   type Clip,
   type Timeline,
@@ -231,7 +232,7 @@ export function drawFrame(
   const img = base && sources(base.id);
   const size = img && sizeOf(img);
   if (base && img && size) {
-    const r = videoRect(base, size, fw, fh);
+    const r = videoRect({ ...base, ...framingAt(base, now) }, size, fw, fh);
     ctx.drawImage(img, r.x, r.y, r.w, r.h);
   }
   for (const tr of visible(t, "overlay", hidden)) {
@@ -281,7 +282,7 @@ export function drawPreview(
   const img = base && sources(base.id);
   const size = img && sizeOf(img);
   if (base && img && size) {
-    const v = videoRect(base, size, fw, fh);
+    const v = videoRect({ ...base, ...framingAt(base, now) }, size, fw, fh);
     const on = {
       x: frame.x + (v.x * frame.w) / fw,
       y: frame.y + (v.y * frame.h) / fh,

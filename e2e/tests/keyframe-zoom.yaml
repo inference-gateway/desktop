@@ -1,0 +1,18 @@
+name: keyframe zoom - a video clip animates its scale from a keyframe channel
+content_project: e2e-keyframe
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
+  - "Ask for a slow zoom; the model returns a Write of keyframe-zoom.timeline.json."
+  - "The Write pauses for approval - approving is the precondition for the file landing."
+  - "Approve it."
+  - "The timeline loads the clip, whose scale channel zooms it in over the first six seconds."
+  - "The agent confirms."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-keyframe" }
+  - send: "add a slow zoom to this recording"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { button: "demo.mov", timeout: 20 }
+  - wait_for: { text: "Slow zoom added.", timeout: 15 }

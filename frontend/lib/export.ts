@@ -1,6 +1,6 @@
 import { api } from "./tauri";
 import { activeVideo, drawFrame } from "./render";
-import { serializeTimeline, type Timeline } from "./timeline";
+import { serializeTimeline, sourceTimeAt, type Timeline } from "./timeline";
 
 const PRESENT_TIMEOUT_MS = 50;
 
@@ -30,8 +30,8 @@ function seekTo(el: HTMLMediaElement, time: number): Promise<void> {
   );
 }
 
-// Every element the frame at `now` draws from, put on its own local time -
-// the same `offset + (now - start)` the preview plays at.
+// Every element the frame at `now` draws from, put on its own source time -
+// `sourceTimeAt`, the speed-curve integral the preview sync also seeks to.
 async function seekAll(t: Timeline, now: number, elements: Elements): Promise<void> {
   const clips = [
     activeVideo(t, now),
@@ -43,7 +43,7 @@ async function seekAll(t: Timeline, now: number, elements: Elements): Promise<vo
   await Promise.all(
     clips.flatMap((c) => {
       const el = c && elements(c.id);
-      return el ? [seekTo(el, (c.offset ?? 0) + (now - c.start))] : [];
+      return el ? [seekTo(el, sourceTimeAt(c, now))] : [];
     }),
   );
 }
