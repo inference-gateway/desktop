@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 const POLL_INTERVAL: Duration = Duration::from_millis(300);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 
-const PROCESS_MATCH: &str = "inference-gateway-desktop";
+pub(crate) const PROCESS_MATCH: &str = "inference-gateway-desktop";
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 

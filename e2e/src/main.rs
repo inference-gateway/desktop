@@ -14,6 +14,7 @@ use std::process::{Child, Command};
 use std::time::Duration;
 
 fn main() {
+    install_sigint_cleanup();
     match run() {
         Ok(true) => {}
         Ok(false) => std::process::exit(1),
@@ -22,6 +23,19 @@ fn main() {
             std::process::exit(2);
         }
     }
+}
+
+/// Ctrl+C skips `Drop`, so the spawned app (and its infer children) would leak,
+/// bundle runs especially, whose app lives outside our process group. Reap them
+/// explicitly, then exit. A `record:` run's screencapture gets its own SIGINT
+/// via the process group and finalizes the .mov on its own.
+fn install_sigint_cleanup() {
+    let _ = ctrlc::set_handler(|| {
+        let _ = Command::new("pkill")
+            .args(["-f", driver::PROCESS_MATCH])
+            .status();
+        std::process::exit(130);
+    });
 }
 
 fn run() -> Result<bool> {
