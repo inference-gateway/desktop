@@ -88,6 +88,7 @@ export type GitProjectStatus = {
   dirty: string[];
   branches: Record<string, string>;
   default_branches: Record<string, string>;
+  remotes: Record<string, string>;
 };
 export type DesktopConfig = {
   storage_backend: string;

@@ -236,6 +236,7 @@ function ProjectGroup({
   dirty,
   branch,
   defaultBranch,
+  remote,
   busy,
   collapsed,
   active,
@@ -243,6 +244,7 @@ function ProjectGroup({
   onSelect,
   onInit,
   onOpenInVsCode,
+  onOpenOnGithub,
   onSyncDefaultBranch,
   onCleanup,
   onSettings,
@@ -262,6 +264,7 @@ function ProjectGroup({
   dirty: boolean;
   branch?: string;
   defaultBranch?: string;
+  remote?: string;
   busy: boolean;
   collapsed: boolean;
   active: boolean;
@@ -269,6 +272,7 @@ function ProjectGroup({
   onSelect: () => void;
   onInit: () => void;
   onOpenInVsCode: () => void;
+  onOpenOnGithub?: () => void;
   onSyncDefaultBranch: () => void;
   onCleanup: () => void;
   onSettings: () => void;
@@ -382,13 +386,29 @@ function ProjectGroup({
           )}
           <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
           {isContent && <Clapperboard size={11} className="ml-1 shrink-0 text-muted-foreground/60" />}
-          {isGit && (
-            <GitBranch
-              size={11}
-              aria-label="Git repository"
-              className={cn("ml-0.5 shrink-0", dirty ? "text-amber-500" : "text-muted-foreground/60")}
-            />
-          )}
+          {isGit &&
+            (remote && onOpenOnGithub ? (
+              <button
+                aria-label={`Open project ${name} on GitHub`}
+                title="Open on GitHub"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenOnGithub();
+                }}
+                className="inline-flex shrink-0 items-center"
+              >
+                <GitBranch
+                  size={11}
+                  className={cn("ml-0.5 shrink-0", dirty ? "text-amber-500" : "text-muted-foreground/60")}
+                />
+              </button>
+            ) : (
+              <GitBranch
+                size={11}
+                aria-label="Git repository"
+                className={cn("ml-0.5 shrink-0", dirty ? "text-amber-500" : "text-muted-foreground/60")}
+              />
+            ))}
           {isGit && branch && (
             <span title={branch} className="max-w-28 truncate text-[0.65rem] font-normal text-muted-foreground/60">
               {branch}
@@ -444,7 +464,7 @@ function ProjectGroup({
             }}
           />
           <div
-            style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 120) }}
+            style={{ left: menu.x, top: Math.min(menu.y, window.innerHeight - 160) }}
             className="fixed z-50 min-w-36 rounded-md border border-border bg-card p-1 shadow-md"
           >
             <button
@@ -459,6 +479,19 @@ function ProjectGroup({
             >
               Open in VS Code
             </button>
+            {isGit && remote && onOpenOnGithub && (
+              <button
+                aria-label={`Open project ${name} on GitHub`}
+                title={`Open https://github.com/${remote} in your browser`}
+                onClick={() => {
+                  setMenu(null);
+                  onOpenOnGithub();
+                }}
+                className="w-full rounded px-2 py-1.5 text-left text-[0.8rem] text-foreground hover:bg-background"
+              >
+                Open on GitHub
+              </button>
+            )}
             <button
               aria-label={`Init project ${name}`}
               title="Run /init to create or update AGENTS.md"
@@ -541,6 +574,7 @@ export function ChatList() {
     dirtyProjects,
     projectBranches,
     projectDefaultBranches,
+    projectRemotes,
     refreshGitProjects,
     refreshProjects,
     cleanupProject,
@@ -704,6 +738,7 @@ export function ChatList() {
                 dirty={dirtyProjects.has(name)}
                 branch={projectBranches[name]}
                 defaultBranch={projectDefaultBranches[name]}
+                remote={projectRemotes[name]}
                 busy={projectBusy(name)}
                 collapsed={collapsed}
                 active={activeProject === name}
@@ -711,6 +746,11 @@ export function ChatList() {
                 onSelect={() => setActiveProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
                 onOpenInVsCode={() => api.openInVsCode(name).catch((e) => setError(String(e)))}
+                onOpenOnGithub={
+                  projectRemotes[name]
+                    ? () => api.openUrl(`https://github.com/${projectRemotes[name]}`).catch((e) => setError(String(e)))
+                    : undefined
+                }
                 onSyncDefaultBranch={() => syncDefaultBranch(name).then(refreshGitProjects)}
                 onCleanup={() => cleanupProject(name).then(refreshGitProjects)}
                 onSettings={() => {
