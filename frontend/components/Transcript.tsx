@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
@@ -544,7 +544,12 @@ export function Transcript() {
     setShowScrollButton(!atBottom);
   }, []);
 
-  useEffect(() => {
+  // Layout effect, not passive: pin synchronously per commit so scrollTop
+  // tracks scrollHeight before any scroll event can observe a grown transcript
+  // against a stale scrollTop. As a passive effect, rapid streaming let that
+  // stale read flip isAtBottom to false, which stuck auto-follow off and left
+  // a late approval card below the fold (transcript-overflow.yaml).
+  useLayoutEffect(() => {
     const el = ref.current;
     if (el && isAtBottomRef.current) {
       el.scrollTop = el.scrollHeight;
