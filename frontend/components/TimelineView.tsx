@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { listen } from "@tauri-apps/api/event";
 import {
   Download,
+  Eye,
+  EyeOff,
   FilePlus,
   Film,
   Layers,
@@ -316,6 +318,7 @@ export function TimelineView() {
   const [dropLane, setDropLane] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(new Set());
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const timeRef = useRef(0);
@@ -378,6 +381,10 @@ export function TimelineView() {
     syncMedia(timeRef.current, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline]);
+  useEffect(() => {
+    syncMedia(timeRef.current, playing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenLanes]);
 
   const load = useCallback(
     async (pick?: string) => {
@@ -455,6 +462,14 @@ export function TimelineView() {
     if (!name) setName(DEFAULT_TIMELINE);
     setTimeline(next);
   };
+
+  const toggleLane = (id: string) =>
+    setHiddenLanes((h) => {
+      const next = new Set(h);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const seek = (t: number) => {
     setTimeAt(t);
@@ -536,11 +551,12 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
-  const captions = timeline ? captionTrack(timeline) : undefined;
+  const captionTr = timeline ? captionTrack(timeline) : undefined;
+  const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
   const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
-      .filter((tr) => tr.kind === kind)
+      .filter((tr) => tr.kind === kind && !hiddenLanes.has(tr.id))
       .flatMap((tr) => tr.clips)
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
@@ -548,6 +564,9 @@ export function TimelineView() {
   const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
+  const hasHiddenVideo = (timeline?.tracks ?? []).some(
+    (tr) => tr.kind === "video" && hiddenLanes.has(tr.id) && tr.clips.some((c) => c.src),
+  );
   const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
@@ -862,7 +881,7 @@ export function TimelineView() {
         {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
 
         <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
-          {timeline && clipVideo.length > 0 ? (
+          {timeline && (clipVideo.length > 0 || hasHiddenVideo) ? (
             <div
               ref={stageRef}
               className="relative"
@@ -1031,6 +1050,17 @@ export function TimelineView() {
                     <Plus size={14} />
                   </button>
                 )}
+                <button
+                  aria-label={`${hiddenLanes.has(tr.id) ? "Show" : "Hide"} ${tr.kind} lane ${tr.id}`}
+                  title={hiddenLanes.has(tr.id) ? "Show this lane in the preview" : "Hide this lane from the preview"}
+                  onClick={() => toggleLane(tr.id)}
+                  className={cn(
+                    "shrink-0 rounded p-0.5 hover:bg-white/10",
+                    hiddenLanes.has(tr.id) ? "text-zinc-600 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-100",
+                  )}
+                >
+                  {hiddenLanes.has(tr.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
                 <TrackIcon kind={tr.kind} />
               </div>
             ))}
