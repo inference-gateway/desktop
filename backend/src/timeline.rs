@@ -1034,7 +1034,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("demo.mov"), b"x").unwrap();
 
-        // Constant 2x over a 4s slot takes 8s of source, sped back to fill 4s.
         let fast = r#"{"duration":4,"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"end":4,"offset":1,"src":"demo.mov","speed":2}]}]}"#;
         let joined = export_plan(&dir, "demo", fast).unwrap().0.join(" ");
