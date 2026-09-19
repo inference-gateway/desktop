@@ -600,10 +600,6 @@ fn export_plan(
             args.extend(["-vn", "-i"].map(String::from));
             args.push(src.to_string_lossy().into_owned());
             let ms = (c.start.max(0.0) * 1000.0).round() as u64;
-            // A sped clip took `source_consumed(len)` seconds of source over its
-            // `len`-second slot, so trim that span and atempo it back to `len`.
-            // ponytail: one average-speed atempo per clip - exact for a constant
-            // speed, a touch of drift mid-ramp; per-segment atempo is the fix.
             let (src_len, tempo) = match lens[k] {
                 Some(len) if len > 0.0 => (
                     Some(c.source_consumed(len)),
