@@ -1173,6 +1173,10 @@ export function TimelineView() {
                     bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
+                  // A speed change or a scrub reseeks this element to a new
+                  // source time; repaint once that frame lands, or the stage
+                  // keeps showing the frame from before the retime.
+                  onSeeked={() => paint(timeRef.current)}
                 />
               ))}
               {clipOverlays.map(({ clip: c, src }) => (
@@ -1190,6 +1194,7 @@ export function TimelineView() {
                   }}
                   onLoadedMetadata={() => paint(timeRef.current)}
                   onLoadedData={() => paint(timeRef.current)}
+                  onSeeked={() => paint(timeRef.current)}
                 />
               ))}
               <span
