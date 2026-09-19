@@ -1,4 +1,16 @@
 name: init all projects - selection mode and fan-out
+narration:
+  - "Open a fresh chat."
+  - "Create a project from the sidebar."
+  - "Name it e2e-init-project."
+  - "The project shows up in the sidebar."
+  - "Open the broadcast sheet to init projects."
+  - "One project is staged for init."
+  - "Toggle it into the selection."
+  - "Toggle it back out - the selection is two-way."
+  - "Stage it again."
+  - "Arm the init - a second click confirms, so a stray click cannot fan out."
+  - "Init runs and the project answers (the gateway fallback)."
 steps:
   - new_chat
   - click: { button: "New project" }
@@ -6,6 +18,7 @@ steps:
   - wait_for: { text: "e2e-init-project", timeout: 15 }
   - click: { button: "Broadcast to projects" }
   - wait_for: { button: "Init 1 project", timeout: 10 }
+  - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Init 1 project" }

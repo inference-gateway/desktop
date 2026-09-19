@@ -1,7 +1,11 @@
 name: a2a query renders a visible tool card
+narration:
+  - "Open a fresh chat."
+  - "Ask what agents are available; the model calls the A2A_QueryAgent tool."
+  - "The tool card renders in the transcript while the run is still going."
+  - "The final answer arrives after the card."
 steps:
   - new_chat
   - send: "What agents do you have available?"
-  # The A2A_QueryAgent card must appear in the transcript (not just the final text).
   - wait_for: { text: "A2A_QueryAgent", timeout: 40 }
   - wait_for: { text: "The documentation-agent is available via A2A.", timeout: 20 }

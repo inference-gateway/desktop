@@ -1,7 +1,26 @@
 name: multi-project broadcast - fan-out to multiple selected projects
-
 cleanup:
   - approved.txt
+narration:
+  - "Open a fresh chat."
+  - "Create a project from the sidebar."
+  - "Name it e2e-bcast-a."
+  - "The project shows up in the sidebar."
+  - "Create a second project."
+  - "Name it e2e-bcast-b."
+  - "The second project shows up too."
+  - "Open the broadcast sheet."
+  - "Selection mode starts with everything selected."
+  - "Clear the selection."
+  - "All projects are deselected."
+  - "Stage project e2e-bcast-a for the fan-out."
+  - "Stage project e2e-bcast-b as well."
+  - "Two projects are staged."
+  - "Send the prompt; every staged project runs it in its own session."
+  - "The fan-out count shows 2."
+  - "Both children pause at the Write approval - approving is the precondition for the file landing."
+  - "Approve from the broadcast view."
+  - "Both sessions complete and confirm the write."
 steps:
   - new_chat
   - click: { button: "New project" }

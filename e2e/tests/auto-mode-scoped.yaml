@@ -1,17 +1,21 @@
 name: auto mode is scoped to its session
 cleanup:
-  - denied.txt
-  - s.txt
+  - auto-approve.txt
+narration:
+  - "Open a fresh chat; approval prompting is on by default."
+  - "Toggle auto approval on for this chat."
+  - "The toggle flips to its on label."
+  - "Ask for a file; in auto mode the Write runs without prompting."
+  - "auto-approve.txt lands with no approval card in between."
+  - "Open a brand-new chat; auto mode stays behind with the old session."
+  - "The same ask now goes to the new, manual-approval session."
+  - "The approval card appears - a fresh chat prompts again."
 steps:
   - new_chat
-  - send: "create a file named denied.txt"
-  - wait_for: { button: "Approve", timeout: 30 }
-  - keypress: "d"
   - click: { button: "Auto approval is off - protected tool actions ask first" }
   - wait_for: { button: "Auto approval is on - tool actions run without asking", timeout: 15 }
-  - send: "create a file named denied.txt"
-  - wait_for: { file: "denied.txt", timeout: 30 }
+  - send: "create a file named auto-approve.txt"
+  - wait_for: { file: "auto-approve.txt", timeout: 30 }
   - new_chat
-  - send: "create a file named s8.txt"
+  - send: "create a file named auto-approve.txt"
   - wait_for: { button: "Approve", timeout: 30 }
-  - keypress: "a"

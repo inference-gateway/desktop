@@ -79,21 +79,6 @@ scenarios:
                 }
       - content: "Captions added."
 
-  - name: voice-sample-choice
-    match: '(?i)ask me which voice sample'
-    turns:
-      - tool_calls:
-          - name: AskUserQuestion
-            args:
-              questions:
-                - header: Voice
-                  question: "Which voice sample should I clone?"
-                  options:
-                    - { label: "eden.wav", description: "Your most recent sample" }
-                    - { label: Random, description: "Pick one for me" }
-                  multiSelect: false
-      - content: "Redone with eden.wav."
-
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:
@@ -118,28 +103,6 @@ scenarios:
                     - { label: Go, description: "Matches the CLI" }
                   multiSelect: false
       - content: "Thanks, noted your choice."
-
-  - name: markdown-showcase
-    match: '(?i)show me some markdown'
-    turns:
-      - content: |
-          # Markdown Showcase
-
-          Here is some **bold text** and *italics* and `inline code`.
-
-          - First bullet point
-          - Second bullet point
-          - Third bullet point
-
-          A fenced code block:
-
-          ```rust
-          fn main() {
-              println!("hello, markdown");
-          }
-          ```
-
-          And a [link to the gateway](https://github.com/inference-gateway).
 
   - name: a2a-query-agent
     match: '(?i)what agents.*available'
@@ -167,13 +130,6 @@ scenarios:
       - tool_calls:
           - { name: Write, args: { file_path: "s.txt", content: "parallel" } }
       - content: "Parallel file written."
-
-  - name: write-project-test
-    match: '(?i)create a file named project-test\.txt'
-    turns:
-      - tool_calls:
-          - { name: Write, args: { file_path: "project-test.txt", content: "hello from e2e" } }
-      - content: "The file was written."
 
   - name: computer-use
     match: '(?i)click the button on screen'
@@ -210,3 +166,90 @@ scenarios:
       - tool_calls:
           - { name: Bash, args: { command: "sleep 20", detached: true } }
       - content: "Job started in the background."
+
+  # Auto mode runs protected tools without a prompt; a fresh chat is back to
+  # manual approval (used by auto-mode-scoped).
+  - name: write-auto-approve
+    match: '(?i)create a file named auto-approve\.txt'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "auto-approve.txt", content: "auto approved" } }
+      - content: "The file was written."
+
+  # One screenful-plus of markdown followed by a Write that pauses at
+  # approval, so a pending approval card sits at the bottom of a long
+  # transcript (used by transcript-overflow).
+  - name: long-transcript
+    match: '(?i)stream a long response and end with a pending write'
+    turns:
+      - content: |
+          # A deliberately long response
+
+          This response exists to fill the transcript far past one screen, so
+          the conversation area has to scroll instead of spilling over the
+          composer.
+
+          ## Section one
+
+          - First point of many
+          - Second point of many
+          - Third point of many
+
+          ## Section two
+
+          A fenced block in the middle of the scroll:
+
+          ```rust
+          fn long() {
+                  for i in 0..100 {
+                      println!("line {i} of the long transcript");
+                  }
+          }
+          ```
+
+          ## Section three
+
+          Paragraph after paragraph keeps the transcript growing. The pending
+          approval card at the end of this turn is what must stay above the
+          composer - if it lands below it, content is escaping the
+          conversation area.
+
+          ## Section four
+
+          - More bullets to push the page down
+          - Another bullet to push the page down
+          - A third bullet to push the page down
+          - A fourth bullet to push the page down
+
+          ## Section five
+
+          More filler text keeps streaming in. Scroll behaviour, not content,
+          is what this response is testing.
+
+          ## Section six
+
+          - Fill lines keep arriving, one after the other
+          - The transcript keeps growing, one after the other
+          - The page keeps getting longer, one after the other
+          - And there is still more to come, one after the other
+
+          ## Section seven
+
+          Another paragraph of filler text, so the tail of the transcript is
+          well past the fold by the time the tool call lands.
+
+          ## Section eight
+
+          - Still scrolling
+          - Still scrolling
+          - Still scrolling
+          - Still scrolling
+          - Still scrolling
+          - Still scrolling
+
+          ## The end
+
+          Final paragraph before the tool call takes over.
+      - tool_calls:
+          - { name: Write, args: { file_path: "long-transcript.txt", content: "end of the long transcript" } }
+      - content: "Written at the end of the long transcript."

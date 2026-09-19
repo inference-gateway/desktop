@@ -57,7 +57,7 @@ pub enum Step {
         assert_model: String,
     },
     AssertComposer {
-        assert_composer: String,
+        assert_composer: TextTarget,
     },
     Screenshot {
         screenshot: String,
@@ -93,6 +93,12 @@ pub struct ClickTarget {
 #[serde(deny_unknown_fields)]
 pub struct FileTarget {
     pub file: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TextTarget {
+    pub text: String,
 }
 
 fn default_timeout() -> u64 {

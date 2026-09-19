@@ -1,7 +1,19 @@
-name: follow-up typed while running is queued and sent when the turn ends
+name: queued prompt - a follow-up typed mid-run is sent when the turn ends
 cleanup:
   - queue-first.txt
   - queue-second.txt
+narration:
+  - "Open a fresh chat."
+  - "Send a first prompt; it pauses at the Write approval."
+  - "The first session is waiting."
+  - "Type a follow-up while the run is still going."
+  - "The prompt is queued, not sent."
+  - "The queued chip sits above the composer, inside the conversation area."
+  - "Approve the first Write."
+  - "The queued prompt is sent and pauses at its own approval."
+  - "Approve the second Write."
+  - "The follow-up turn completes."
+  - "The second file lands."
 steps:
   - new_chat
   - send: "create a file named queue-first.txt"

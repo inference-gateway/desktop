@@ -1,6 +1,15 @@
-name: follow-up typed while waiting on tasks runs before the job finishes
+name: queued prompt - typed while waiting on tasks, runs before the job finishes
 cleanup:
   - queue-second.txt
+narration:
+  - "Open a fresh chat."
+  - "Start a slow background job; the session waits on it."
+  - "The waiting banner shows one pending task."
+  - "Type a follow-up while waiting on tasks."
+  - "Unlike a mid-run follow-up, this one runs immediately - it pauses at its own approval."
+  - "Approve the Write."
+  - "The follow-up completes before the background job finishes."
+  - "The file lands."
 steps:
   - new_chat
   - send: "start a slow background job"

@@ -1,6 +1,13 @@
 name: title card overlay - the agent writes an overlay track to the timeline
 cleanup:
   - title-card.timeline.json
+narration:
+  - "Open a fresh chat."
+  - "Ask for a title card; the model returns a Write of title-card.timeline.json."
+  - "The Write pauses for approval - approving is the precondition for the file landing."
+  - "Approve it."
+  - "The timeline file lands with an overlay track."
+  - "The agent confirms."
 steps:
   - new_chat
   - send: "add a title card saying Hello"

@@ -1,6 +1,13 @@
 name: approval flow - TodoWrite batched with Write prompts only for Write
 cleanup:
   - todo-batch.txt
+narration:
+  - "Open a fresh chat."
+  - "Ask for a plan plus a file: one TodoWrite and one Write in the same turn."
+  - "Only the Write pauses for approval - TodoWrite is a safe tool and runs without asking."
+  - "Approve with 'a'."
+  - "The Write runs and todo-batch.txt lands."
+  - "Both tools completed."
 steps:
   - new_chat
   - send: "plan and create a file named todo-batch.txt"

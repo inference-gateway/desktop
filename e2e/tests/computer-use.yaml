@@ -1,4 +1,12 @@
 name: Computer tool calls render and input actions are approval-gated
+narration:
+  - "Open a fresh chat."
+  - "Ask to click a button on screen; the model issues a Computer tool call."
+  - "The tool call renders in the transcript."
+  - "Input actions are approval-gated: the card shows Approve."
+  - "The computer-use overlay spans the primary screen, menu bar to bottom edge."
+  - "Approve the click."
+  - "The action runs and the agent confirms."
 steps:
   - new_chat
   - send: "click the button on screen"

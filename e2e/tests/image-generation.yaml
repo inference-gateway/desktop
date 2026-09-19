@@ -1,4 +1,9 @@
 name: image generation renders in chat transcript
+narration:
+  - "Open a fresh chat."
+  - "Ask for an image; the model answers with a markdown image."
+  - "The heading renders in the transcript."
+  - "The generated image renders inline from the data URI."
 steps:
   - new_chat
   - send: "generate an image of a cat"

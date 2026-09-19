@@ -1,6 +1,13 @@
 name: captions - the agent writes a captions track to the timeline
 cleanup:
   - captions.timeline.json
+narration:
+  - "Open a fresh chat."
+  - "Ask for captions; the model returns a Write of captions.timeline.json."
+  - "The Write pauses for approval - approving is the precondition for the file landing."
+  - "Approve it."
+  - "The timeline file lands with a captions track."
+  - "The agent confirms."
 steps:
   - new_chat
   - send: "add captions to this recording"

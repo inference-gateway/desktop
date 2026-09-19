@@ -1,10 +1,13 @@
 name: prompt history recall with arrow keys
+narration:
+  - "Open a fresh chat."
+  - "Send a prompt so it lands in the prompt history."
+  - "The run completes - no scenario matches, the gateway fallback answers."
+  - "macOS only: ArrowUp in the composer recalls the previous prompt (CI only parses the YAML)."
+  - "The composer now holds the recalled prompt - fails when recall breaks."
 steps:
   - new_chat
-  - send: "create a file named history-test.txt"
+  - send: "remember this prompt for history recall"
   - wait_for: { text: "Done.", timeout: 30 }
-  # macOS-only: ArrowUp via AX keystroke should recall the prompt into the
-  # textarea. Only works on macOS where AX keystroke targets the focused
-  # textarea element. On CI (ubuntu) the YAML is only parsed for syntax
-  # validation.
   - keypress: "up"
+  - assert_composer: { text: "remember this prompt for history recall" }

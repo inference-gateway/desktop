@@ -250,8 +250,8 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
         }
         Step::AssertComposer { assert_composer } => {
             let got = app.composer_value()?;
-            if got.trim() != assert_composer.trim() {
-                bail!("composer is {got:?}, expected {assert_composer:?}");
+            if got.trim() != assert_composer.text.trim() {
+                bail!("composer is {got:?}, expected {:?}", assert_composer.text);
             }
             Ok(())
         }

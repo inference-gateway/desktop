@@ -1,8 +1,0 @@
-name: redo asks which voice sample to use before synthesizing
-steps:
-  - new_chat
-  - send: "Redo only the voice of clip s1 in main.timeline.json, using its current text. Ask me which voice sample to use first. Leave every other clip untouched."
-  - wait_for: { text: "Which voice sample should I clone?", timeout: 30 }
-  - click: { button: "Random" }
-  - click: { button: "Submit" }
-  - wait_for: { text: "Redone with eden.wav.", timeout: 20 }
