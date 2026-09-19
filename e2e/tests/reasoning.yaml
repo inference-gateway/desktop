@@ -1,4 +1,9 @@
 name: reasoning renders a collapsible Thought process block
+narration:
+  - "Open a fresh chat."
+  - "Ask the model to think out loud; the turn carries a reasoning block plus the answer."
+  - "The reasoning renders as a collapsible Thought process block."
+  - "The plain answer renders after it."
 steps:
   - new_chat
   - send: "think out loud about the meaning of life"

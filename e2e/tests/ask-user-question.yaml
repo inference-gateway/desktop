@@ -1,4 +1,12 @@
 name: ask-user-question - the form answers the agent and the run continues
+narration:
+  - "Open a fresh chat."
+  - "Ask which language to use; the model answers with an AskUserQuestion form."
+  - "The form renders with its Submit button."
+  - "Pick the 'Go' option."
+  - "Submit the answer."
+  - "The answer is echoed in the transcript."
+  - "The run continues with the choice and the agent confirms."
 steps:
   - new_chat
   - send: "ask me which language to use"

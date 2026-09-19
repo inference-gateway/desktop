@@ -1,6 +1,13 @@
 name: approval flow - deny blocks the tool
 cleanup:
   - denied.txt
+narration:
+  - "Open a fresh chat."
+  - "Ask for a file; the Write tool call pauses for approval."
+  - "The approval card shows Deny."
+  - "Press 'd' to deny the action."
+  - "The denial is reported and the run ends - a denied tool call never gets a follow-up turn."
+  - "denied.txt was never created."
 steps:
   - new_chat
   - send: "create a file named denied.txt"

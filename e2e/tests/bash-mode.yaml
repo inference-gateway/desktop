@@ -1,4 +1,9 @@
 name: bash mode - !command runs directly without a model turn
+record: true
+narration:
+  - "Open a fresh chat."
+  - "A prompt starting with '!' bypasses the model and runs as a shell command."
+  - "The command's output appears in the transcript."
 steps:
   - new_chat
   - send: "!echo bash-mode-e2e-marker"

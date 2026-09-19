@@ -1,7 +1,11 @@
-# Mock mode simulates TCC: statuses start not_granted and flip when the
-# request commands run. Both banners share the "Granted" label, so the flip is
-# asserted for accessibility (the first grant) and screenshotted for the rest.
 name: computer use permissions start not granted and flip after Grant in mock mode
+narration:
+  - "Open Settings; mock mode simulates the macOS TCC permission flow."
+  - "Both permissions start not granted."
+  - "Request Accessibility."
+  - "The first banner flips to granted - the mock flips statuses when the request command runs."
+  - "Request Screen Recording."
+  - "Screenshot the granted state."
 steps:
   - click: { button: "Settings" }
   - wait_for: { text: "Not granted", timeout: 10 }

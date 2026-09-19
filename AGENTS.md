@@ -27,7 +27,23 @@ The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **e
 
 ## Verifying the UI
 
-`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Canned LLM turns live in `e2e/scenarios.yaml`; manual mock mode is `DESKTOP_MOCK=true task dev`. CI (ubuntu) runs `bun run build` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu) runs `bun run build` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
+
+Running the tests (macOS only):
+
+```bash
+task e2e -- tests/approval-approve.yaml   # one feature
+task e2e                                  # all features, alphabetical
+cargo test -p desktop-e2e                 # parse/validate the YAML only (what CI does)
+```
+
+Every model turn is tokenless: the runner launches the app with `DESKTOP_MOCK=true` and `INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml`, and the spawned `infer` children serve those scripted scenarios - nothing hits a real provider. A prompt with no matching scenario gets the `fallback` answer, so a test prompt must only promise what its scenario's turns produce. The `models:` block at the top of `scenarios.yaml` is the single source of truth for the mock-mode model list (the app reads it instead of hitting a gateway), so manual mock mode needs the same env var for both turns and models:
+
+```bash
+DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml task dev
+```
+
+Test-file extras: `record: true` wraps the run in `screencapture -v` and writes `artifacts/<slug>.mov` (no editing, no captions - that is what the app's own timeline tooling is for); missing `narration:` entries fall back to the mechanical step label, and `cargo test -p desktop-e2e` rejects duplicate test names and narration lists longer than the step list. The remaining `DESKTOP_MOCK` fakes (permissions, stt, timeline, screen records, scheduler) are OS/tool shims, not LLM shims.
 
 ## DOM contract (load-bearing)
 

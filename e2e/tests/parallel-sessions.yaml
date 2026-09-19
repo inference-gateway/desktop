@@ -1,12 +1,24 @@
 name: five sessions run in parallel with a configurable cap
-# Start five sessions that each pause at the Write approval, so all five are
-# live at the same time. In the old single-session design "+ New chat" was
-# disabled while a run was active and the backend kept one child slot, so a
-# second concurrent session was impossible. Reaching a fresh Approve five times
-# proves five separate infer children are streaming at once; the sixth send is
-# rejected by the configured cap (default 5). Switching between running sessions
-# and approving a background one is verified manually (the AX harness can only
-# click buttons, not sidebar list items).
+narration:
+  - "Open chat 1 of 5 - five will run at the same time."
+  - "Ask for a file that pauses at approval, so the session stays live."
+  - "Session 1 is waiting at its approval card."
+  - "Open chat 2; a running session does not block a new one."
+  - "Session 2 asks for its own file."
+  - "Session 2 is live as well - two infer children stream at once."
+  - "Open chat 3."
+  - "Session 3 asks for its file."
+  - "Three live sessions."
+  - "Open chat 4."
+  - "Session 4 asks for its file."
+  - "Four live sessions."
+  - "Open chat 5."
+  - "Session 5 asks for its file."
+  - "Five live sessions - the configured cap (default 5) is reached."
+  - "Screenshot all five waiting at once (approving a background session is verified manually - the AX harness clicks buttons, not sidebar items)."
+  - "Open a sixth chat."
+  - "The sixth send is rejected."
+  - "The cap holds - the rejected prompt stays in the composer instead of sending."
 cleanup:
   - s.txt
 steps:
@@ -28,4 +40,4 @@ steps:
   - screenshot: "five-parallel-sessions"
   - new_chat
   - send: "create a file named s6.txt"
-  - wait_for: { text: "Max 5 concurrent sessions reached", timeout: 10 }
+  - assert_composer: { text: "create a file named s6.txt" }

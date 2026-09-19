@@ -1,19 +1,13 @@
 name: long transcript scrolls instead of overflowing the conversation area
 cleanup:
-  - summary.txt
-  - s.txt
+  - long-transcript.txt
+narration:
+  - "Open a fresh chat."
+  - "One scenario streams a screenful-plus of markdown, then a Write pauses at approval."
+  - "The pending approval card sits at the bottom of the long transcript."
+  - "The Approve button must stay above the composer - the transcript scrolls instead of overflowing."
 steps:
   - new_chat
-  - send: "show me some markdown"
-  - wait_for: { text: "link to the gateway", timeout: 20 }
-  - send: "inspect the project and write a summary"
-  - wait_for: { button: "Approve", timeout: 30 }
-  - click: { button: "Approve" }
-  - wait_for: { text: "Summary written.", timeout: 20 }
-  - send: "think out loud about it"
-  - wait_for: { text: "The answer is 42, plainly.", timeout: 20 }
-  - send: "show me some markdown again"
-  - wait_for: { text: "link to the gateway", timeout: 20 }
-  - send: "create a file named s1.txt"
+  - send: "stream a long response and end with a pending write"
   - wait_for: { button: "Approve", timeout: 30 }
   - assert_above_composer: { button: "Approve" }

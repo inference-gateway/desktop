@@ -830,6 +830,7 @@ name = "desktop-e2e"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ctrlc",
  "serde",
  "serde_norway",
 ]
