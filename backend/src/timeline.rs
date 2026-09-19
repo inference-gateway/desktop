@@ -561,9 +561,6 @@ fn export_plan(
             args.extend(["-vn", "-i"].map(String::from));
             args.push(src.to_string_lossy().into_owned());
             let ms = (c.start.max(0.0) * 1000.0).round() as u64;
-            // ponytail: one average-speed atempo per clip - exact for a constant
-            // clip, a touch of drift through an ease-in-out bell; per-segment
-            // atempo is the upgrade if mid-ramp kept-audio sync ever matters.
             let (src_len, tempo) = match lens[k] {
                 Some(len) if len > 0.0 => (
                     Some(c.source_consumed(len)),
