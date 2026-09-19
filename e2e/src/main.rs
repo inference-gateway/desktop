@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use driver::AppDriver;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 fn main() {
@@ -218,6 +218,7 @@ fn start_recording(record: bool, artifacts: &Path, slug: &str) -> Result<Recordi
         Command::new("screencapture")
             .arg("-v")
             .arg(path)
+            .stdin(Stdio::null())
             .spawn()
             .context("starting screencapture -v")?,
     )))
