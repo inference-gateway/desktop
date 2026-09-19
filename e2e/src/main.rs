@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use driver::AppDriver;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::Duration;
 
 fn main() {
@@ -156,6 +156,7 @@ fn run_test(
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
+    let _recording = start_recording(test.record, artifacts, &slug)?;
     let app = AppDriver::launch(repo_root, artifacts, &slug, mock, scenarios, infer_bin)?;
     clean(&app, &test.cleanup);
 
@@ -170,6 +171,36 @@ fn run_test(
     result
 }
 
+/// A `record: true` run is wrapped in `screencapture -v`, which finalizes
+/// artifacts/<slug>.mov when its process is stopped - drop does that, covering
+/// the failure paths.
+struct Recording(Option<Child>);
+
+impl Drop for Recording {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn start_recording(record: bool, artifacts: &Path, slug: &str) -> Result<Recording> {
+    if !record {
+        return Ok(Recording(None));
+    }
+    let path = artifacts.join(format!("{slug}.mov"));
+    let _ = std::fs::remove_file(&path);
+    println!("  recording -> {}", path.display());
+    Ok(Recording(Some(
+        Command::new("screencapture")
+            .arg("-v")
+            .arg(path)
+            .spawn()
+            .context("starting screencapture -v")?,
+    )))
+}
+
 fn clean(app: &AppDriver, paths: &[PathBuf]) {
     for p in paths {
         let _ = std::fs::remove_file(app.resolve(p));
@@ -180,7 +211,13 @@ fn run_steps(test: &spec::Test, app: &AppDriver) -> Result<()> {
     for (i, step) in test.steps.iter().enumerate() {
         let label = describe(step);
         step_run(app, step).with_context(|| format!("step {} ({label})", i + 1))?;
-        println!("  ok  {label}");
+        let note = test
+            .narration
+            .get(i)
+            .map(String::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(label.as_str());
+        println!("  ok  {}/{} {note}", i + 1, test.steps.len());
     }
     Ok(())
 }
@@ -208,6 +245,13 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
             let got = app.model_value()?;
             if got != *assert_model {
                 bail!("model is {got:?}, expected {assert_model:?}");
+            }
+            Ok(())
+        }
+        Step::AssertComposer { assert_composer } => {
+            let got = app.composer_value()?;
+            if got.trim() != assert_composer.trim() {
+                bail!("composer is {got:?}, expected {assert_composer:?}");
             }
             Ok(())
         }
@@ -266,6 +310,7 @@ fn describe(step: &Step) -> String {
         Step::Click { click } => format!("click {:?}", click.button),
         Step::Screenshot { screenshot } => format!("screenshot {screenshot}"),
         Step::AssertModel { assert_model } => format!("assert_model {assert_model}"),
+        Step::AssertComposer { .. } => "assert_composer".into(),
         Step::AssertAbsent { assert_absent } => {
             format!("assert_absent {}", assert_absent.file.display())
         }

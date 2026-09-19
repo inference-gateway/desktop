@@ -323,6 +323,16 @@ impl AppDriver {
         osascript(&script)
     }
 
+    /// The composer textarea's current text - used by assert_composer, e.g. to
+    /// prove that ArrowUp recalled the previous prompt.
+    pub fn composer_value(&self) -> Result<String> {
+        let script = format!(
+            "tell application \"System Events\"\n{root}\nreturn value of text area 1 of root as text\nend tell",
+            root = ax_root(),
+        );
+        osascript(&script)
+    }
+
     /// The overlay starts below the primary screen's menu bar, spans its full
     /// width, and reaches the physical bottom edge behind the Dock.
     pub fn overlay_matches_primary_screen(&self) -> Result<bool> {
