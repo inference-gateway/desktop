@@ -400,6 +400,83 @@ test("loadHistory unwraps the CLI v2 entry envelope and skips meta/system-remind
   expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
 });
 
+// A tool entry's content is the tree the CLI renders for humans and the LLM.
+// Guessing success from it reads "error" in a commit subject as a failure, which
+// is what painted a successful `git commit` red (inference-gateway/desktop#289).
+// The projected tool_execution is authoritative.
+test("loadHistory takes the tool state from tool_execution, not from the rendered content", () => {
+  const content = [
+    'Bash(command=git commit -m "fix: handle the error path")',
+    "\u251c\u2500\u2500 Duration: 49ms",
+    "\u251c\u2500\u2500 Status: \u2713 Success",
+    "\u2570\u2500\u2500 Result:",
+    "    Exit Code: 0",
+  ].join("\n");
+  const doc = JSON.stringify({
+    metadata: { id: "s1" },
+    entries: [
+      {
+        role: "tool",
+        content,
+        tool_call_id: "call_x",
+        tool_execution: {
+          tool_name: "Bash",
+          arguments: { command: 'git commit -m "fix: handle the error path"' },
+          success: true,
+          data: { output: "[main abc1234] fix: handle the error path", exit_code: 0 },
+        },
+      },
+    ],
+  });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
+  expect(s.items).toHaveLength(1);
+  expect(s.items[0]).toMatchObject({
+    kind: "tool",
+    name: "Bash",
+    state: "done",
+    output: "[main abc1234] fix: handle the error path",
+  });
+});
+
+test("loadHistory marks a tool failed when tool_execution says so", () => {
+  const doc = JSON.stringify({
+    metadata: { id: "s1" },
+    entries: [
+      {
+        role: "tool",
+        content: "Bash(command=false)\n\u251c\u2500\u2500 Status: \u2717 Failed",
+        tool_execution: { tool_name: "Bash", arguments: { command: "false" }, success: false, error: "exit status 1" },
+      },
+    ],
+  });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
+  expect(s.items[0]).toMatchObject({ kind: "tool", name: "Bash", state: "failed", output: "exit status 1" });
+});
+
+test("loadHistory reads tool_execution out of the CLI v2 storage envelope too", () => {
+  const ndjson = JSON.stringify({
+    v: 2,
+    type: "entry",
+    index: 0,
+    entry: {
+      message: { role: "tool", content: "Read(file_path=/tmp/x)\n\u251c\u2500\u2500 Status: \u2713 Success" },
+      tool_execution: { tool_name: "Read", arguments: { file_path: "/tmp/x" }, success: true, data: { output: "x" } },
+    },
+  });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(s.items[0]).toMatchObject({ kind: "tool", name: "Read", state: "done", output: "x" });
+});
+
+// Older CLIs do not project tool_execution; that path must keep working.
+test("loadHistory falls back to the content when no tool_execution is projected", () => {
+  const ndjson = JSON.stringify({
+    role: "tool",
+    content: '{"tool_name":"Read","data":{"output":"file"},"success":true}',
+  });
+  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  expect(s.items[0]).toMatchObject({ kind: "tool", name: "Read", state: "done", output: "file" });
+});
+
 test("loadHistory reads the pretty-printed { metadata, entries } document from newer CLIs", () => {
   const doc = JSON.stringify(
     {
