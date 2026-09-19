@@ -60,13 +60,15 @@ async function seekAll(t: Timeline, now: number, elements: Elements): Promise<vo
 
 // Render the whole timeline into the ffmpeg the backend has waiting. Frame n
 // is drawn at exactly n / fps, never in real time, so the same JSON produces
-// the same frames. Returns the exported file name.
+// the same frames. Returns the exported file name. Aborting stops at the next
+// frame and takes the half-written file with it.
 export async function runExport(
   project: string,
   name: string,
   timeline: Timeline,
   elements: Elements,
   onProgress: (frame: number, frames: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const plan = await api.exportBegin(project, name, serializeTimeline(timeline));
   try {
@@ -76,6 +78,7 @@ export async function runExport(
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("this webview has no 2D canvas context");
     for (let n = 0; n < plan.frames; n++) {
+      signal?.throwIfAborted();
       const now = n / plan.fps;
       await seekAll(timeline, now, elements);
       drawFrame(ctx, timeline, now, (id) => elements(id) as CanvasImageSource | null);

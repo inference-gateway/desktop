@@ -8,7 +8,9 @@ import {
   Film,
   Layers,
   Loader2,
+  Maximize2,
   Mic,
+  Minimize2,
   Music,
   Pause,
   Play,
@@ -32,7 +34,17 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import { createHistory } from "@/lib/history";
-import { drawPreview, layoutCaption, type Rect } from "@/lib/render";
+import {
+  MAX_FRAME_SCALE,
+  MIN_FRAME_SCALE,
+  activeVideo,
+  clampCentre,
+  clampScale,
+  drawPreview,
+  fitScale,
+  layoutCaption,
+  type Rect,
+} from "@/lib/render";
 import { runExport } from "@/lib/export";
 import {
   CAPTION_STYLES,
@@ -51,7 +63,9 @@ import {
   emptyTimeline,
   fmtTime,
   frameAspect,
+  frameClip,
   frameDims,
+  frameFps,
   isSpoken,
   laneOrder,
   moveClip,
@@ -116,6 +130,11 @@ const DRAG_SLOP_PX = 3;
 // Lane height minus the clip inset, the height clip media draws at.
 const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
+// Framing the video in the export frame: how far a scroll scales it, how long
+// a scroll gesture stays open as one undo entry, and the scale bounds.
+const ZOOM_PIXELS = 700;
+const ZOOM_SETTLE_MS = 400;
+const asPercent = (scale: number) => Math.round(scale * 1000) / 10;
 const ZOOM_BTN =
   "inline-flex h-5 min-w-5 items-center justify-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100";
 const isEditable = (t: EventTarget | null) =>
@@ -257,6 +276,15 @@ export function TimelineView() {
   const frameRef = useRef<Rect | null>(null);
   const grabRef = useRef<HTMLSpanElement>(null);
   const grab = useRef<{ dx: number; dy: number } | null>(null);
+  // Panning the video inside the frame, and the wheel-zoom transaction that
+  // coalesces a whole scroll gesture into one undo entry.
+  const pan = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  const zoomGesture = useRef<{ base: number; factor: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const onWheel = useRef<(e: WheelEvent) => void>(() => {});
+  const wheelListener = useRef<((e: WheelEvent) => void) | null>(null);
+  const [progress, setProgress] = useState<{ pct: number; frame: number; frames: number } | null>(null);
+  const shownPct = useRef(-1);
+  const abort = useRef<AbortController | null>(null);
   const { setStatus } = useDesktop();
   const captionTr = timeline ? captionTrack(timeline) : undefined;
   const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
@@ -338,9 +366,15 @@ export function TimelineView() {
   });
   // The canvas is measured in CSS pixels, so a window resize has to repaint it.
   const attachCanvas = (el: HTMLCanvasElement | null) => {
+    if (canvasRef.current && wheelListener.current) {
+      canvasRef.current.removeEventListener("wheel", wheelListener.current);
+    }
     stageObserver.current?.disconnect();
     canvasRef.current = el;
+    wheelListener.current = null;
     if (!el) return;
+    wheelListener.current = (e: WheelEvent) => onWheel.current(e);
+    el.addEventListener("wheel", wheelListener.current, { passive: false });
     stageObserver.current = new ResizeObserver(() => latest.current.paint(timeRef.current));
     stageObserver.current.observe(el);
   };
@@ -511,25 +545,44 @@ export function TimelineView() {
     syncMedia(t, playing);
   };
 
+  // Export walks the timeline frame by frame, so the playhead follows it and
+  // the preview shows the frame being written. Both are stepped once per
+  // percent rather than once per frame, which keeps a long export from
+  // re-rendering thousands of times.
   const exportVideo = () => {
     if (!name || !timeline) return;
+    const fps = frameFps(timeline);
     setPlaying(false);
     setExporting(true);
+    shownPct.current = -1;
+    setProgress({ pct: 0, frame: 0, frames: 0 });
     setStatus("Exporting video...");
+    abort.current = new AbortController();
     runExport(
       project!,
       name,
       timeline,
       (id) => mediaRefs.current.get(id) ?? null,
-      (frame, frames) => setStatus(`Exporting frame ${frame} of ${frames}...`),
+      (frame, frames) => {
+        const pct = Math.round((frame / frames) * 100);
+        if (pct === shownPct.current) return;
+        shownPct.current = pct;
+        setProgress({ pct, frame, frames });
+        setTimeAt((frame - 1) / fps);
+      },
+      abort.current.signal,
     )
       .then((out) => {
         setStatus(`Exported ${out}`);
         return api.revealProjectFile(project!, out);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) =>
+        e instanceof Error && e.name === "AbortError" ? setStatus("Export cancelled") : setError(String(e)),
+      )
       .finally(() => {
+        abort.current = null;
         setExporting(false);
+        setProgress(null);
         syncMedia(timeRef.current, false);
         paint(timeRef.current);
       });
@@ -620,6 +673,60 @@ export function TimelineView() {
   const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
+  // The video clip under the playhead is the one the frame controls act on:
+  // framing is per clip, so a timeline of several recordings keeps one each.
+  const framed = timeline ? activeVideo(timeline, time, hiddenLanes) : null;
+  const framedEl = framed ? mediaRefs.current.get(framed.id) : null;
+  const framedSize =
+    framedEl instanceof HTMLVideoElement && framedEl.videoWidth > 0
+      ? { w: framedEl.videoWidth, h: framedEl.videoHeight }
+      : null;
+  const scaleOf = (c: Clip) => clampScale(c.scale && c.scale > 0 ? c.scale : 1);
+  const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
+    framed && (live ? preview : update)(frameClip(shown, framed.id, next));
+
+  const startPan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!framed || e.button !== 0 || exporting) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pan.current = { x: e.clientX, y: e.clientY, cx: framed.x ?? 0.5, cy: framed.y ?? 0.5 };
+    beginEdit();
+  };
+  const movePan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const held = pan.current;
+    const frame = frameRef.current;
+    if (!held || !frame) return;
+    reframe(
+      {
+        x: clampCentre(held.cx + (e.clientX - held.x) / frame.w),
+        y: clampCentre(held.cy + (e.clientY - held.y) / frame.h),
+      },
+      true,
+    );
+  };
+  const endPan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!pan.current) return;
+    pan.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    commitEdit();
+  };
+  // A whole scroll (or trackpad pinch, which arrives as a ctrl-wheel) is one
+  // undo entry: the gesture opens on the first event and commits once it has
+  // been quiet for ZOOM_SETTLE_MS.
+  onWheel.current = (e: WheelEvent) => {
+    if (!framed || exporting) return;
+    e.preventDefault();
+    const gesture = zoomGesture.current;
+    if (gesture) clearTimeout(gesture.timer);
+    else beginEdit();
+    const base = gesture?.base ?? scaleOf(framed);
+    const factor = (gesture?.factor ?? 1) * Math.exp(-e.deltaY / ZOOM_PIXELS);
+    const timer = setTimeout(() => {
+      zoomGesture.current = null;
+      commitEdit();
+    }, ZOOM_SETTLE_MS);
+    zoomGesture.current = { base, factor, timer };
+    reframe({ scale: clampScale(base * factor) }, true);
+  };
   const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
@@ -963,7 +1070,14 @@ export function TimelineView() {
         <div className="relative flex h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
           {timeline && (clipVideo.length > 0 || clipOverlays.length > 0 || captionTr) ? (
             <>
-              <canvas ref={attachCanvas} className="absolute inset-0 size-full" />
+              <canvas
+                ref={attachCanvas}
+                onPointerDown={startPan}
+                onPointerMove={movePan}
+                onPointerUp={endPan}
+                onPointerCancel={endPan}
+                className={cn("absolute inset-0 size-full touch-none", framed && !exporting && "cursor-move")}
+              />
               {clipVideo.map(({ clip: c, src }) => (
                 <video
                   key={c.id}
@@ -980,6 +1094,9 @@ export function TimelineView() {
                   onLoadedMetadata={() => {
                     syncMedia(timeRef.current, playing);
                     paint(timeRef.current);
+                    // The framing row reads the element's intrinsic size, which
+                    // only exists from here on, and nothing else re-renders.
+                    bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
                 />
@@ -1044,6 +1161,23 @@ export function TimelineView() {
                 className="absolute cursor-move touch-none"
                 style={{ display: "none" }}
               />
+              {progress && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70">
+                  <p className="text-[0.8rem] font-medium text-zinc-100">Exporting {progress.pct}%</p>
+                  <div className="h-1.5 w-64 max-w-[70%] overflow-hidden rounded-full bg-white/15">
+                    <div
+                      className="h-full rounded-full bg-sky-400 transition-[width] duration-200 ease-out"
+                      style={{ width: `${progress.pct}%` }}
+                    />
+                  </div>
+                  <p className="text-[0.7rem] tabular-nums text-zinc-400">
+                    {progress.frames ? `frame ${progress.frame} of ${progress.frames}` : "starting ffmpeg..."}
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={() => abort.current?.abort()}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </>
           ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
@@ -1057,6 +1191,48 @@ export function TimelineView() {
             </p>
           )}
         </div>
+        {framed && framedSize && (
+          <div
+            className="flex items-center justify-center gap-2 text-[0.7rem] text-muted-foreground"
+            role="group"
+            aria-label="Video framing"
+          >
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Fit"
+              title="Scale the whole recording to fit inside the export frame"
+              onClick={() => reframe({ scale: fitScale(framedSize, ...frameDims(shown)), x: 0.5, y: 0.5 })}
+            >
+              <Minimize2 size={13} />
+            </Button>
+            <input
+              type="range"
+              aria-label="Video scale"
+              title="Scale the recording in the export frame - arrow keys step it finely"
+              min={MIN_FRAME_SCALE * 100}
+              max={MAX_FRAME_SCALE * 100}
+              step={0.5}
+              value={asPercent(scaleOf(framed))}
+              onFocus={beginEdit}
+              onBlur={commitEdit}
+              onPointerUp={commitEdit}
+              onChange={(e) => reframe({ scale: Number(e.target.value) / 100 }, true)}
+              className="h-1 w-56 accent-sky-400"
+            />
+            <span className="w-14 tabular-nums text-zinc-300">{asPercent(scaleOf(framed))}%</span>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Fill"
+              title="Fill the export frame, cropping the recording"
+              onClick={() => reframe({ scale: undefined, x: undefined, y: undefined })}
+            >
+              <Maximize2 size={13} />
+            </Button>
+            <span className="ml-1 opacity-70">drag the video to move it</span>
+          </div>
+        )}
         {clipAudio.map(({ clip: c, src }) => (
           <audio
             key={c.id}

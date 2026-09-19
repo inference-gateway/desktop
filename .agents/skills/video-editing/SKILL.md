@@ -160,6 +160,9 @@ Never choose the voice silently: it is the one thing only the user can judge.
   the recording is scaled to cover it, so a clip of a different shape is cropped rather than padded,
   and the preview shows what falls outside the frame blurred. Keep it as is. `fps` (default `30`) is
   the rate the export renders at; keep it as is too. Export writes `export/<output>`.
+- A video clip's `scale` (a multiplier on the size that covers the frame) and `x`/`y` (the centre it
+  is framed on, fractions of the frame) are how the user has framed the recording - they drag it in
+  the preview and scroll to zoom, or press Fit and Fill. Leave them exactly as they are.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.

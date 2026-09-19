@@ -42,10 +42,17 @@ export type Clip = {
   src?: string;
   text?: string;
   status?: ClipStatus;
+  // Where the clip sits in the export frame, as fractions of it. An overlay
+  // card's `x`/`y` are its top-left corner and `width`/`height` its size; a
+  // video clip's are the centre it is framed on, with `scale` a multiplier on
+  // the size that covers the frame - 1 fills it, less of it shows more of the
+  // clip. Absent means centred and filling, which is what an untouched
+  // recording does.
   x?: number;
   y?: number;
   width?: number;
   height?: number;
+  scale?: number;
   // The HTML composition an overlay's `src` was rendered from.
   html?: string;
   // Spoken clips only: the voice sample this clip's wav was cloned from,
@@ -173,6 +180,7 @@ export function parseTimeline(json: string): Timeline {
         y: optNum(c?.y),
         width: optNum(c?.width),
         height: optNum(c?.height),
+        scale: optNum(c?.scale),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
         words: (Array.isArray(c?.words) && c.words.length
@@ -320,6 +328,20 @@ export function setClipSample(t: Timeline, trackId: string, clipId: string, samp
               return clipSample(tr, next) === clipSample(tr, c) ? next : { ...next, status: "draft" as const };
             }),
           },
+    ),
+  };
+}
+
+// Move or scale a video clip inside the export frame: `x`/`y` are the centre
+// it is framed on and `scale` a multiplier on the size that covers the frame.
+// Passing undefined clears a field, which puts the clip back to filling.
+export function frameClip(t: Timeline, clipId: string, next: { x?: number; y?: number; scale?: number }): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.clips.some((c) => c.id === clipId)
+        ? { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? { ...c, ...next } : c)) }
+        : tr,
     ),
   };
 }

@@ -42,6 +42,9 @@ const BAND_RADIUS = 0.15;
 const BLUR_W = 96;
 const BLUR_PX = 6;
 const WING_DIM = 0.45;
+// How much of the stage the export frame takes, leaving a margin for whatever
+// the clip pushes outside it to show in.
+const STAGE_MARGIN = 0.82;
 
 // What a clip draws from, resolved by the caller (a <video>, usually).
 export type Sources = (clipId: string) => CanvasImageSource | null;
@@ -80,22 +83,6 @@ export function coverRect(sw: number, sh: number, dw: number, dh: number): Rect 
 const visible = (t: Timeline, kind: Track["kind"], hidden?: ReadonlySet<string>) =>
   t.tracks.filter((tr) => tr.kind === kind && !hidden?.has(tr.id));
 
-// The shape the stage is laid out to: the first video clip whose metadata has
-// loaded, not whichever clip is showing. Taking it from the playhead would
-// resize the frame rect under the user every time they scrubbed across a gap.
-function stageSize(t: Timeline, sources: Sources, hidden?: ReadonlySet<string>): { w: number; h: number } | null {
-  const clips = visible(t, "video", hidden)
-    .flatMap((tr) => tr.clips)
-    .filter((c) => c.src)
-    .sort((a, b) => a.start - b.start);
-  for (const c of clips) {
-    const img = sources(c.id);
-    const size = img && sizeOf(img);
-    if (size) return size;
-  }
-  return null;
-}
-
 // The video clip showing at `now`, or nothing in a gap between clips. A gap
 // is black, which is what the lanes show and what the preview has always
 // drawn; the old export froze the previous frame there instead, and the two
@@ -115,6 +102,37 @@ export function overlayRect(c: Clip, src: { w: number; h: number }, fw: number, 
   const w = c.width !== undefined ? c.width * fw : c.height !== undefined ? (c.height * fh * src.w) / src.h : fw;
   const h = c.height !== undefined ? c.height * fh : (w * src.h) / src.w;
   return { x: (c.x ?? 0) * fw, y: (c.y ?? 0) * fh, w, h };
+}
+
+// What a video clip's framing may be set to: small enough to sit well inside
+// the frame, large enough to push well past it, and its centre never outside
+// the frame, so a clip can always be seen and never lost off-screen.
+export const MIN_FRAME_SCALE = 0.05;
+export const MAX_FRAME_SCALE = 3;
+export const clampScale = (v: number) => Math.min(MAX_FRAME_SCALE, Math.max(MIN_FRAME_SCALE, v));
+export const clampCentre = (v: number) => Math.min(1, Math.max(0, v));
+
+// Where a video clip is drawn: the size that covers the frame, times the
+// clip's `scale`, centred on its `x`/`y`. The defaults - scale 1, centre
+// (0.5, 0.5) - are a plain cover fit, so an untouched recording fills the
+// frame and is cropped, and scaling down reveals more of it.
+export function videoRect(c: Clip, src: { w: number; h: number }, fw: number, fh: number): Rect {
+  const cover = coverRect(src.w, src.h, fw, fh);
+  const scale = clampScale(c.scale && c.scale > 0 ? c.scale : 1);
+  const w = cover.w * scale;
+  const h = cover.h * scale;
+  return {
+    x: clampCentre(c.x ?? 0.5) * fw - w / 2,
+    y: clampCentre(c.y ?? 0.5) * fh - h / 2,
+    w,
+    h,
+  };
+}
+
+// The `scale` at which the whole clip is visible inside the frame - what the
+// Fit button writes. Fill is scale 1, so this is always at most 1.
+export function fitScale(src: { w: number; h: number }, fw: number, fh: number): number {
+  return Math.min(fw / src.w, fh / src.h) / Math.max(fw / src.w, fh / src.h);
 }
 
 export type CaptionLine = { tokens: { text: string; x: number; w: number; index: number }[]; w: number };
@@ -233,8 +251,8 @@ export function drawFrame(
   const base = activeVideo(t, now, hidden);
   const img = base && sources(base.id);
   const size = img && sizeOf(img);
-  if (img && size) {
-    const r = coverRect(size.w, size.h, fw, fh);
+  if (base && img && size) {
+    const r = videoRect(base, size, fw, fh);
     ctx.drawImage(img, r.x, r.y, r.w, r.h);
   }
   for (const tr of visible(t, "overlay", hidden)) {
@@ -273,13 +291,27 @@ export function drawPreview(
 ): Rect {
   const [fw, fh] = frameDims(t);
   ctx.clearRect(0, 0, w, h);
-  const size = stageSize(t, sources, hidden);
-  const srcRect = size ? containRect(size.w, size.h, w, h) : containRect(fw, fh, w, h);
-  const inner = containRect(fw, fh, srcRect.w, srcRect.h);
-  const frame: Rect = { x: srcRect.x + inner.x, y: srcRect.y + inner.y, w: inner.w, h: inner.h };
+  const inset = containRect(fw, fh, w * STAGE_MARGIN, h * STAGE_MARGIN);
+  const frame: Rect = {
+    x: inset.x + (w * (1 - STAGE_MARGIN)) / 2,
+    y: inset.y + (h * (1 - STAGE_MARGIN)) / 2,
+    w: inset.w,
+    h: inset.h,
+  };
   const base = activeVideo(t, now, hidden);
   const img = base && sources(base.id);
-  if (img && size && (inner.w < srcRect.w - 1 || inner.h < srcRect.h - 1)) {
+  const size = img && sizeOf(img);
+  if (base && img && size) {
+    // The backdrop is the clip itself under the same transform, blurred and
+    // dimmed, so moving or scaling the video moves the blur with it. The
+    // sharp copy goes over the top, clipped to the frame.
+    const v = videoRect(base, size, fw, fh);
+    const on = {
+      x: frame.x + (v.x * frame.w) / fw,
+      y: frame.y + (v.y * frame.h) / fh,
+      w: (v.w * frame.w) / fw,
+      h: (v.h * frame.h) / fh,
+    };
     const small = (scratch ??= document.createElement("canvas"));
     small.width = BLUR_W;
     small.height = Math.max(1, Math.round((BLUR_W * size.h) / size.w));
@@ -288,10 +320,10 @@ export function drawPreview(
       sctx.drawImage(img, 0, 0, small.width, small.height);
       ctx.save();
       ctx.filter = `blur(${BLUR_PX}px)`;
-      ctx.drawImage(small, srcRect.x, srcRect.y, srcRect.w, srcRect.h);
+      ctx.drawImage(small, on.x, on.y, on.w, on.h);
       ctx.restore();
       ctx.fillStyle = `rgba(0,0,0,${WING_DIM})`;
-      ctx.fillRect(srcRect.x, srcRect.y, srcRect.w, srcRect.h);
+      ctx.fillRect(on.x, on.y, on.w, on.h);
     }
   }
   ctx.save();

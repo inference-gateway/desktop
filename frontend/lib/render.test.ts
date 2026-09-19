@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { activeVideo, containRect, coverRect, layoutCaption, overlayRect } from "./render";
+import { activeVideo, containRect, coverRect, fitScale, layoutCaption, overlayRect, videoRect } from "./render";
 import type { Timeline, Track } from "./timeline";
 
 // Every glyph is one unit wide per character, so a layout assertion reads as
@@ -51,6 +51,37 @@ describe("overlay boxes", () => {
     expect(
       overlayRect({ id: "o1", start: 0, end: 1, x: 0.25, y: 0.5, width: 0.4, height: 0.2 }, src, 1920, 1080),
     ).toEqual({ x: 480, y: 540, w: 768, h: 216 });
+  });
+});
+
+describe("video framing", () => {
+  const src = { w: 1280, h: 720 };
+  const clip = (extra: { x?: number; y?: number; scale?: number } = {}) => ({ id: "v1", start: 0, end: 1, ...extra });
+
+  test("an untouched clip covers the frame, cropped and centred", () => {
+    expect(videoRect(clip(), src, 1080, 1920)).toEqual(coverRect(src.w, src.h, 1080, 1920));
+  });
+
+  test("the fit scale is exactly the scale at which the whole clip is visible", () => {
+    const r = videoRect(clip({ scale: fitScale(src, 1080, 1920) }), src, 1080, 1920);
+    expect(r.w).toBeCloseTo(1080, 5);
+    expect(r.h).toBeCloseTo(607.5, 5);
+    // A square frame over a 16:9 clip has to come down to 9/16 to fit.
+    expect(fitScale({ w: 16, h: 9 }, 100, 100)).toBeCloseTo(9 / 16, 10);
+    // Fill is scale 1, so fitting never scales up.
+    expect(fitScale(src, 1920, 1080)).toBe(1);
+  });
+
+  test("x and y are the point in the frame the clip is centred on", () => {
+    const filled = videoRect(clip(), src, 1000, 1000);
+    const moved = videoRect(clip({ x: 0.25, y: 0.75 }), src, 1000, 1000);
+    expect(moved.x - filled.x).toBeCloseTo(-250, 5);
+    expect(moved.y - filled.y).toBeCloseTo(250, 5);
+    expect(moved.w).toBe(filled.w);
+  });
+
+  test("a zero or missing scale falls back to filling", () => {
+    expect(videoRect(clip({ scale: 0 }), src, 1000, 1000)).toEqual(videoRect(clip(), src, 1000, 1000));
   });
 });
 
