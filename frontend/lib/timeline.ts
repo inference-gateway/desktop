@@ -430,7 +430,6 @@ export function sourceConsumed(clip: Clip, local: number): number {
   if (clip.speed_ease !== "easeInOut" || L <= 0) return s * local;
   const t = Math.min(local, L);
   const eased = t + ((s - 1) / 2) * (t - (L / (2 * Math.PI)) * Math.sin((2 * Math.PI * t) / L));
-  // ponytail: past the clip end the bell has returned to 1x, so extend at 1x.
   return local > L ? eased + (local - L) : eased;
 }
 
@@ -745,10 +744,6 @@ export function trimClip(
   if (!track || !clip) return t;
   const others = track.clips.filter((c) => c.id !== clipId);
   const offset = clip.offset ?? 0;
-  // ponytail: source-end bounds divide by the edge's instantaneous speed, exact
-  // for a constant clip; an eased clip is approximate at the edges (the bell is
-  // 1x there) and reshapes over the new length. Fine until a trimmed eased tail
-  // overruns the file, when an inverse integral is the upgrade.
   const headSpeed = speedAt(clip, 0);
   const tailSpeed = speedAt(clip, clip.end - clip.start);
   let next: Clip;
@@ -795,8 +790,6 @@ export function splitClip(t: Timeline, trackId: string, clipId: string, at: numb
   const [scaleA, scaleB] = splitChannel(clip.keys?.scale, sL);
   const [xA, xB] = splitChannel(clip.keys?.x, sL);
   const [yA, yB] = splitChannel(clip.keys?.y, sL);
-  // ponytail: each half keeps the clip's speed + ease and re-bells over its own
-  // (shorter) length; the source offset below stays continuous at the cut.
   const first: Clip = { ...clip, end: at, keys: pruneKeys({ scale: scaleA, x: xA, y: yA }) };
   const second: Clip = {
     ...clip,

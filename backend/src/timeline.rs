@@ -1008,7 +1008,6 @@ mod tests {
             "{joined}"
         );
 
-        // Slow motion 0.5x takes 2s of source and slows it with one atempo step.
         let slow = r#"{"duration":4,"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","speed":0.5}]}]}"#;
         let joined = export_plan(&dir, "demo", slow).unwrap().0.join(" ");
@@ -1017,7 +1016,6 @@ mod tests {
             "{joined}"
         );
 
-        // A still clip keeps the old byte-for-byte filter: no atempo at all.
         let still = r#"{"duration":4,"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov"}]}]}"#;
         let joined = export_plan(&dir, "demo", still).unwrap().0.join(" ");

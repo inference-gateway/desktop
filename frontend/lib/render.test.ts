@@ -92,7 +92,7 @@ describe("video framing", () => {
         ],
       },
     };
-    const mid = videoRect({ ...c, ...framingAt(c, 1) }, src, 1000, 1000); // local 1 → scale 1.5
+    const mid = videoRect({ ...c, ...framingAt(c, 1) }, src, 1000, 1000);
     const filled = videoRect(clip(), src, 1000, 1000);
     expect(mid.w).toBeCloseTo(filled.w * 1.5, 5);
     expect(mid.h).toBeCloseTo(filled.h * 1.5, 5);
