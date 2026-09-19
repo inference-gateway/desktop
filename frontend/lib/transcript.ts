@@ -2,7 +2,7 @@
 // to a flat list of render items. A faithful port of the imperative DOM logic
 // in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
 import type { AgentEvent, BackgroundJob, HistoryLine, UserQuestion, UserQuestionAnswer } from "./tauri";
-import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc, toolResultFrom } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
 
@@ -211,6 +211,11 @@ export type ChatAction =
   | { type: "error"; text: string };
 
 const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
+// Last resort when a tool result carries no structured success flag: a CLI
+// older than the one that projects entry.tool_execution, or a result string
+// that is not JSON. ponytail: a substring guess over the whole result - it
+// reads "error" in a commit message as a failure. Delete once the desktop can
+// require a CLI that always projects tool_execution.
 const FAILISH = /fail|error/i;
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -616,7 +621,10 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
         items.push({ kind: "reasoning", id: String(seq++), paragraphs: [entry.reasoning_content] });
       if (content) items.push({ kind: "assistant", id: String(seq++), chunks: [content] });
     } else if (entry.role === "tool") {
-      const parsed = parseToolResult(content);
+      // `conversations show --format json` projects the structured result flat
+      // on the entry; the v2 storage envelope keeps it beside the message.
+      const execution = raw?.tool_execution ?? raw?.entry?.tool_execution;
+      const parsed = execution ? toolResultFrom(execution) : parseToolResult(content);
       if (parsed) {
         items.push({
           kind: "tool",
