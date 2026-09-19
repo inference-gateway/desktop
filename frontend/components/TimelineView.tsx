@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   Download,
@@ -15,12 +15,14 @@ import {
   Plus,
   RectangleHorizontal,
   RectangleVertical,
+  Redo2,
   RefreshCw,
   Scissors,
   Sparkles,
   Square,
   Trash2,
   Type,
+  Undo2,
   Volume2,
   VolumeX,
   ZoomIn,
@@ -108,6 +110,7 @@ const frameSize = (t: Timeline) =>
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 const SNAP_PX = 8;
+const DRAG_SLOP_PX = 3;
 // Lane height minus the clip inset, the height clip media draws at.
 const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
@@ -197,12 +200,16 @@ function CaptionOverlay({
   now,
   stage,
   onMove,
+  onGrab,
+  onDrop,
 }: {
   track: Track;
   clip: Clip;
   now: number;
   stage: React.RefObject<HTMLDivElement | null>;
   onMove: (x?: number, y?: number) => void;
+  onGrab: () => void;
+  onDrop: () => void;
 }) {
   const preset = captionPreset(captionStyle(track.style));
   const words = preset.words && clip.words?.length ? clip.words : undefined;
@@ -224,6 +231,7 @@ function CaptionOverlay({
     grab.current = { dx: e.clientX - (box.left + box.width / 2), dy: e.clientY - (box.top + box.height / 2) };
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
+    onGrab();
   };
   const drag = (e: ReactPointerEvent<HTMLSpanElement>) => {
     const g = grab.current;
@@ -234,6 +242,7 @@ function CaptionOverlay({
   const drop = (e: ReactPointerEvent<HTMLSpanElement>) => {
     grab.current = null;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    onDrop();
   };
   return (
     <div
@@ -311,8 +320,17 @@ export function TimelineView() {
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
   const history = useRef(createHistory<Timeline>());
-  const pushedRef = useRef(false);
-  const dragClipRef = useRef<{ kind: "move" | "start" | "end"; track: string; clip: Clip; x0: number } | null>(null);
+  const liveRef = useRef<Timeline | null>(null);
+  const savedRef = useRef({ name: "", data: "" });
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const dragClipRef = useRef<{
+    kind: "move" | "start" | "end";
+    track: string;
+    clip: Clip;
+    x0: number;
+    pps: number;
+    moved: boolean;
+  } | null>(null);
   const scrubRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [laneWidth, setLaneWidth] = useState(0);
@@ -400,15 +418,19 @@ export function TimelineView() {
           .listProjectMedia(project)
           .then((files) => setMedia(files.filter((f) => MEDIA_EXT.test(f.name))))
           .catch(() => setMedia([]));
+        const current = savedRef.current.name || name;
         const chosen =
-          pick && list.names.includes(pick) ? pick : list.names.includes(name) ? name : (list.names[0] ?? "");
+          pick && list.names.includes(pick) ? pick : list.names.includes(current) ? current : (list.names[0] ?? "");
         setName(chosen);
         if (!chosen) {
           setTimeline(null);
           history.current.reset();
           return;
         }
-        setTimeline(parseTimeline(await api.readTimeline(project, chosen)));
+        const raw = await api.readTimeline(project, chosen);
+        if (chosen === savedRef.current.name && raw === savedRef.current.data) return;
+        savedRef.current = { name: chosen, data: raw };
+        setTimeline(parseTimeline(raw));
         history.current.reset();
         setLoadError("");
       } catch (e) {
@@ -419,6 +441,7 @@ export function TimelineView() {
   );
 
   useEffect(() => {
+    savedRef.current = { name: "", data: "" };
     load();
     api
       .listVoiceSamples()
@@ -452,8 +475,10 @@ export function TimelineView() {
   useEffect(() => {
     if (!dirtyRef.current || !timeline || !project || !name) return;
     const t = setTimeout(() => {
+      const data = serializeTimeline(timeline);
+      savedRef.current = { name, data };
       api
-        .writeTimeline(project, name, serializeTimeline(timeline))
+        .writeTimeline(project, name, data)
         .then(() => {
           dirtyRef.current = false;
         })
@@ -465,10 +490,25 @@ export function TimelineView() {
   const update = (next: Timeline) => {
     dirtyRef.current = true;
     if (!name) setName(DEFAULT_TIMELINE);
-    if (!pushedRef.current) {
-      pushedRef.current = true;
-      if (timeline) history.current.push(timeline);
+    if (timeline) {
+      history.current.commit(timeline);
+      history.current.push(timeline);
     }
+    setTimeline(next);
+  };
+
+  const commitEdit = () => {
+    if (liveRef.current && history.current.commit(liveRef.current)) bump();
+  };
+  const beginEdit = () => {
+    if (!timeline) return;
+    commitEdit();
+    liveRef.current = timeline;
+    history.current.begin(timeline);
+  };
+  const preview = (next: Timeline) => {
+    dirtyRef.current = true;
+    liveRef.current = next;
     setTimeline(next);
   };
 
@@ -618,7 +658,7 @@ export function TimelineView() {
     : 0;
 
   const fitPps = duration > 0 ? Math.max(MIN_PPS, (laneWidth - 24) / duration) : 40;
-  const pps = zoom ?? fitPps;
+  const pps = dragClipRef.current?.pps ?? zoom ?? fitPps;
   const contentWidth = Math.max(laneWidth, duration * pps + 24);
   const step = rulerStep(pps);
   const ticks = Array.from({ length: Math.floor(duration / step) + 1 }, (_, i) => i * step);
@@ -656,12 +696,15 @@ export function TimelineView() {
     e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
-    dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX };
+    dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX, pps, moved: false };
+    beginEdit();
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const dragTo = (e: ReactPointerEvent<HTMLElement>, c: Clip) => {
     const d = dragClipRef.current;
     if (!d || d.clip.id !== c.id) return;
+    if (!d.moved && Math.abs(e.clientX - d.x0) < DRAG_SLOP_PX) return;
+    d.moved = true;
     const dx = (e.clientX - d.x0) / pps;
     const tol = SNAP_PX / pps;
     const points = snapPoints(shown, c.id, time);
@@ -669,16 +712,19 @@ export function TimelineView() {
       const len = d.clip.end - d.clip.start;
       const start = snapTime(d.clip.start + dx, points, tol);
       const end = snapTime(d.clip.end + dx, points, tol);
-      update(moveClip(shown, d.track, c.id, start !== d.clip.start + dx ? start : end - len));
+      preview(moveClip(shown, d.track, c.id, start !== d.clip.start + dx ? start : end - len));
       return;
     }
     const base = d.kind === "start" ? d.clip.start : d.clip.end;
     const el = mediaRefs.current.get(c.id);
     const sourceLength = el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : undefined;
-    update(trimClip(shown, d.track, c.id, d.kind, snapTime(base + dx, points, tol), sourceLength));
+    preview(trimClip(shown, d.track, c.id, d.kind, snapTime(base + dx, points, tol), sourceLength));
   };
   const endDrag = () => {
+    if (!dragClipRef.current) return;
     dragClipRef.current = null;
+    commitEdit();
+    bump();
   };
 
   const generate = () => {
@@ -709,6 +755,7 @@ export function TimelineView() {
     const sample = track && clipSample(track, c);
     const voice = sample ? `and the voice sample ${sample}` : "and ask me which voice sample to use first";
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
+    history.current.push(timeline);
     dirtyRef.current = false;
     setTimeline(next);
     api
@@ -778,19 +825,7 @@ export function TimelineView() {
   };
 
   return (
-    <div
-      id="timeline-view"
-      onPointerDownCapture={() => {
-        pushedRef.current = false;
-      }}
-      onPointerUpCapture={() => {
-        pushedRef.current = false;
-      }}
-      onPointerCancelCapture={() => {
-        pushedRef.current = false;
-      }}
-      className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
-    >
+    <div id="timeline-view" className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         {names.length > 1 ? (
           <select
@@ -886,6 +921,26 @@ export function TimelineView() {
                 })}
               </div>
               <span className="mx-0.5 h-5 w-px bg-border" />
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Undo"
+                title="Undo (Ctrl/Cmd+Z)"
+                disabled={!history.current.canUndo()}
+                onClick={undoEdit}
+              >
+                <Undo2 size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Redo"
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+                disabled={!history.current.canRedo()}
+                onClick={redoEdit}
+              >
+                <Redo2 size={14} />
+              </Button>
               <Button
                 variant="outline"
                 size="icon-sm"
@@ -986,7 +1041,9 @@ export function TimelineView() {
                   clip={activeCaption}
                   now={time}
                   stage={stageRef}
-                  onMove={(x, y) => update(moveCaptions(shown, captions.id, x, y))}
+                  onMove={(x, y) => (x === undefined ? update : preview)(moveCaptions(shown, captions.id, x, y))}
+                  onGrab={beginEdit}
+                  onDrop={commitEdit}
                 />
               )}
             </div>
@@ -1384,6 +1441,9 @@ export function TimelineView() {
             timeline={timeline}
             samples={samples}
             onChange={update}
+            onType={preview}
+            onTypeStart={beginEdit}
+            onTypeEnd={commitEdit}
             onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
             onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
           />
@@ -1400,6 +1460,9 @@ function ClipEditor({
   timeline,
   samples,
   onChange,
+  onType,
+  onTypeStart,
+  onTypeEnd,
   onRedo,
   onSpeak,
 }: {
@@ -1409,6 +1472,9 @@ function ClipEditor({
   timeline: Timeline;
   samples: VoiceSample[];
   onChange: (t: Timeline) => void;
+  onType: (t: Timeline) => void;
+  onTypeStart: () => void;
+  onTypeEnd: () => void;
   onRedo?: () => void;
   onSpeak?: () => void;
 }) {
@@ -1481,7 +1547,9 @@ function ClipEditor({
               ? "What should this caption say?"
               : "What should be said here? Leave blank to let the agent suggest it."
           }
-          onChange={(e) => onChange(setClipText(timeline, track.id, clip.id, e.target.value))}
+          onFocus={onTypeStart}
+          onBlur={onTypeEnd}
+          onChange={(e) => onType(setClipText(timeline, track.id, clip.id, e.target.value))}
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       )}

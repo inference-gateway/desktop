@@ -32,6 +32,24 @@ describe("createHistory", () => {
     expect(h.undo(3)).toBeUndefined();
   });
 
+  test("a gesture records where it began, once, when it commits", () => {
+    const h = createHistory<string>();
+    h.begin("a");
+    expect(h.canUndo()).toBe(false);
+    expect(h.commit("c")).toBe(true);
+    expect(h.commit("d")).toBe(false);
+    expect(h.undo("c")).toBe("a");
+    expect(h.canUndo()).toBe(false);
+    expect(h.canRedo()).toBe(true);
+  });
+
+  test("a gesture that changes nothing records nothing", () => {
+    const h = createHistory<string>();
+    h.begin("a");
+    expect(h.commit("a")).toBe(false);
+    expect(h.canUndo()).toBe(false);
+  });
+
   test("reset clears both stacks", () => {
     const h = createHistory<number>();
     h.push(1);
