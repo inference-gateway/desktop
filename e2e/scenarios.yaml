@@ -250,6 +250,6 @@ scenarios:
           ## The end
 
           Final paragraph before the tool call takes over.
-      - tool_calls:
+        tool_calls:
           - { name: Write, args: { file_path: "long-transcript.txt", content: "end of the long transcript" } }
       - content: "Written at the end of the long transcript."

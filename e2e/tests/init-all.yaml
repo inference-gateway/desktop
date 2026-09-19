@@ -15,7 +15,7 @@ steps:
   - new_chat
   - click: { button: "New project" }
   - type: "e2e-init-project"
-  - wait_for: { text: "e2e-init-project", timeout: 15 }
+  - wait_for: { button: "Select project e2e-init-project", timeout: 15 }
   - click: { button: "Broadcast to projects" }
   - wait_for: { button: "Init 1 project", timeout: 10 }
   - click: { button: "Toggle init for project e2e-init-project" }

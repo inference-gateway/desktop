@@ -2,8 +2,9 @@ name: auto mode is scoped to its session
 cleanup:
   - auto-approve.txt
 narration:
-  - "Open a fresh chat; approval prompting is on by default."
-  - "Toggle auto approval on for this chat."
+  - "Open a fresh chat."
+  - "Run a bash command - that opens the session the toggle will be scoped to."
+  - "Toggle auto approval on for this chat only."
   - "The toggle flips to its on label."
   - "Ask for a file; in auto mode the Write runs without prompting."
   - "auto-approve.txt lands with no approval card in between."
@@ -12,6 +13,7 @@ narration:
   - "The approval card appears - a fresh chat prompts again."
 steps:
   - new_chat
+  - send: "!echo scoping this toggle to a session"
   - click: { button: "Auto approval is off - protected tool actions ask first" }
   - wait_for: { button: "Auto approval is on - tool actions run without asking", timeout: 15 }
   - send: "create a file named auto-approve.txt"

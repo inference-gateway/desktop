@@ -25,10 +25,10 @@ steps:
   - new_chat
   - click: { button: "New project" }
   - type: "e2e-bcast-a"
-  - wait_for: { text: "e2e-bcast-a", timeout: 15 }
+  - wait_for: { button: "Select project e2e-bcast-a", timeout: 15 }
   - click: { button: "New project" }
   - type: "e2e-bcast-b"
-  - wait_for: { text: "e2e-bcast-b", timeout: 15 }
+  - wait_for: { button: "Select project e2e-bcast-b", timeout: 15 }
   - click: { button: "Broadcast to projects" }
   - wait_for: { button: "Deselect all projects", timeout: 10 }
   - click: { button: "Deselect all projects" }

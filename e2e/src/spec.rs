@@ -4,8 +4,9 @@
 //! the repo root, the infer child's cwd, deleted before and after the run), an
 //! optional `record` flag (screen-record the run into artifacts/<slug>.mov), an
 //! optional `narration` list (one line per step index, printed by the runner so
-//! the file reads top to bottom as a walkthrough of the feature it demos), and
-//! a list of steps. Steps are either a bare verb (`- new_chat`) or a
+//! the file reads top to bottom as a walkthrough of the feature it demos), an
+//! optional `content_project` name (seeded into the fresh HOME before launch),
+//! and a list of steps. Steps are either a bare verb (`- new_chat`) or a
 //! single-key map (`- send: "..."`).
 
 use serde::Deserialize;
@@ -24,6 +25,11 @@ pub struct Test {
     /// mechanical step label. Missing entries fall back to the label.
     #[serde(default)]
     pub narration: Vec<String>,
+    /// Seed this project into the fresh HOME as a content project before the
+    /// app starts. The type picker is a native `<select>`, which the AX driver
+    /// cannot drive, so a content-project demo cannot create one through the UI.
+    #[serde(default)]
+    pub content_project: Option<String>,
     pub steps: Vec<Step>,
 }
 

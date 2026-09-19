@@ -157,7 +157,15 @@ fn run_test(
         .collect();
 
     let _recording = start_recording(test.record, artifacts, &slug)?;
-    let app = AppDriver::launch(repo_root, artifacts, &slug, mock, scenarios, infer_bin)?;
+    let app = AppDriver::launch(
+        repo_root,
+        artifacts,
+        &slug,
+        mock,
+        scenarios,
+        infer_bin,
+        test.content_project.as_deref(),
+    )?;
     clean(&app, &test.cleanup);
 
     let result = run_steps(test, &app);

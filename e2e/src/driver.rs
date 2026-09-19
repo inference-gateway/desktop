@@ -18,11 +18,13 @@ const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead. Matches AXCheckBox and
 /// AXRadioButton too: buttons with aria-pressed (toggles/checkboxes) surface as
-/// AXCheckBox, and question-form options are native radios.
+/// AXCheckBox, and question-form options are native radios. The ceiling
+/// matches the text finder's: a content project docks the chat one level
+/// deeper than a code project's transcript, and 8 no longer reaches it.
 const FIND_BUTTON_FN: &str = r#"
 on findButton(el, btnName, depth)
 	tell application "System Events"
-		if depth > 8 then return missing value
+		if depth > 10 then return missing value
 		try
 			if (role of el is "AXButton" or role of el is "AXCheckBox" or role of el is "AXRadioButton") and name of el is btnName then return el
 		end try
@@ -90,6 +92,43 @@ pub struct AppDriver {
     artifacts: PathBuf,
 }
 
+/// macOS keeps the webview's localStorage under `~/Library/WebKit/<app>`, keyed
+/// by the executable (dev binary) or bundle id (`.app`), NOT under the child's
+/// overridden HOME - so it survives the per-test HOME wipe and leaks state
+/// (e.g. a global auto-approval toggle) across runs and into the dev's real
+/// app. Wipe it too, using the runner's OWN home (`$HOME`, never the child
+/// override). Bundle runs (`DESKTOP_APP`) use the bundle-id store instead.
+fn wipe_webkit_store(bundle: bool) {
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let webkit = PathBuf::from(home).join("Library").join("WebKit");
+    let app = if bundle {
+        "com.inference-gateway.desktop"
+    } else {
+        "inference-gateway-desktop"
+    };
+    let _ = std::fs::remove_dir_all(webkit.join(app));
+}
+
+/// Write a content project into a fresh HOME before the app reads it. Only
+/// `types:` needs seeding - a code project is creatable through the UI - and
+/// `paths:` pins the directory so the project dir never depends on the
+/// platform Documents lookup.
+fn seed_content_project(home: &Path, name: &str) -> Result<()> {
+    let dir = home.join("projects").join(name);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::create_dir_all(home.join(".infer"))?;
+    std::fs::write(
+        home.join(".infer").join("projects.yaml"),
+        format!(
+            "names:\n  - \"{name}\"\ntypes:\n  \"{name}\": content\npaths:\n  \"{name}\": \"{dir}\"\n",
+            dir = dir.display(),
+        ),
+    )?;
+    Ok(())
+}
+
 impl AppDriver {
     /// Kill stale instances, launch the prebuilt binary fresh (mock mode by
     /// default), and wait until the AX tree answers.
@@ -100,6 +139,7 @@ impl AppDriver {
         mock: bool,
         scenarios: &Path,
         infer_bin: Option<&Path>,
+        content_project: Option<&str>,
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
@@ -123,6 +163,10 @@ impl AppDriver {
         if mock {
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(&home)?;
+            wipe_webkit_store(app_bundle.is_some());
+            if let Some(name) = content_project {
+                seed_content_project(&home, name)?;
+            }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);
 

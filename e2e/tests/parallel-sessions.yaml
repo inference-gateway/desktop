@@ -18,7 +18,7 @@ narration:
   - "Screenshot all five waiting at once (approving a background session is verified manually - the AX harness clicks buttons, not sidebar items)."
   - "Open a sixth chat."
   - "The sixth send is rejected."
-  - "The cap error surfaces in the transcript."
+  - "The cap holds - the rejected prompt stays in the composer instead of sending."
 cleanup:
   - s.txt
 steps:
@@ -40,4 +40,4 @@ steps:
   - screenshot: "five-parallel-sessions"
   - new_chat
   - send: "create a file named s6.txt"
-  - wait_for: { text: "Max 5 concurrent sessions reached", timeout: 10 }
+  - assert_composer: { text: "create a file named s6.txt" }
