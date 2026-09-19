@@ -1000,8 +1000,6 @@ mod tests {
             "{joined}"
         );
 
-        // An ease-in-out 2x clip over 4s averages (2+1)/2 = 1.5x, so it takes 6s
-        // of source and one atempo=1.5 step stretches it back to the 4s slot.
         let eased = r#"{"duration":4,"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","speed":2,"speed_ease":"easeInOut"}]}]}"#;
         let joined = export_plan(&dir, "demo", eased).unwrap().0.join(" ");
