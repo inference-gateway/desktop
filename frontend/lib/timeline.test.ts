@@ -30,6 +30,21 @@ import {
   setClipText,
   speakClip,
   videoSource,
+  MAX_SPEED,
+  sampleKf,
+  framingAt,
+  speedAt,
+  avgSpeed,
+  sourceConsumed,
+  sourceTimeAt,
+  setKf,
+  setSpeed,
+  toggleKf,
+  moveKf,
+  clearKeys,
+  removeKf,
+  type Clip,
+  type Timeline,
 } from "./timeline";
 
 const SAMPLE = JSON.stringify({
@@ -430,5 +445,156 @@ describe("clipSample", () => {
     expect(picked.status).toBe("draft");
     expect(setClipSample(t, "voice", "s1", "eden.wav").tracks[0].clips[0].status).toBe("done");
     expect(setClipSample(t, "voice", "s1", undefined).tracks[0].clips[0].status).toBe("done");
+  });
+});
+
+describe("keyframes", () => {
+  const timelineOf = (clip: Clip): Timeline => ({
+    version: 1,
+    duration: clip.end,
+    tracks: [{ id: "video", kind: "video", clips: [clip] }],
+  });
+
+  test("sampleKf holds before the first key and after the last, lerps between", () => {
+    const ch = [
+      { t: 1, v: 10 },
+      { t: 3, v: 20 },
+    ];
+    expect(sampleKf(ch, 0, 99)).toBe(10);
+    expect(sampleKf(ch, 2, 99)).toBe(15);
+    expect(sampleKf(ch, 5, 99)).toBe(20);
+    expect(sampleKf(undefined, 2, 42)).toBe(42);
+    expect(sampleKf([], 2, 42)).toBe(42);
+  });
+
+  test("framingAt samples animated fields and passes static ones through", () => {
+    const clip: Clip = {
+      id: "v1",
+      start: 2,
+      end: 6,
+      x: 0.3,
+      scale: 1,
+      keys: {
+        scale: [
+          { t: 0, v: 1 },
+          { t: 2, v: 2 },
+        ],
+      },
+    };
+    expect(framingAt(clip, 3).scale).toBe(1.5);
+    expect(framingAt(clip, 3).x).toBe(0.3);
+    expect(framingAt({ id: "v", start: 0, end: 1, x: 0.4, scale: 2 }, 0.5)).toEqual({ x: 0.4, y: undefined, scale: 2 });
+  });
+
+  test("sourceConsumed is linear for constant speed", () => {
+    expect(sourceConsumed({ id: "v", start: 0, end: 4, speed: 0.5 }, 4)).toBe(2);
+    expect(sourceConsumed({ id: "v", start: 0, end: 4 }, 3)).toBe(3);
+    expect(sourceConsumed({ id: "v", start: 0, end: 4, speed: 2 }, 1)).toBe(2);
+    expect(sourceTimeAt({ id: "v", start: 5, end: 9, offset: 2, speed: 2 }, 7)).toBe(6);
+  });
+
+  test("an ease-in-out clip bells 1x at the edges to the target in the middle", () => {
+    const eased: Clip = { id: "v", start: 0, end: 4, speed: 3, speed_ease: "easeInOut" };
+    expect(speedAt(eased, 0)).toBeCloseTo(1, 6);
+    expect(speedAt(eased, 4)).toBeCloseTo(1, 6);
+    expect(speedAt(eased, 2)).toBeCloseTo(3, 6);
+
+    expect(sourceConsumed(eased, 4)).toBeCloseTo(8, 6);
+    expect(sourceConsumed(eased, 2)).toBeCloseTo(4, 6);
+    expect(avgSpeed(eased)).toBeCloseTo(2, 6);
+    expect(avgSpeed({ id: "v", start: 0, end: 4, speed: 3 })).toBeCloseTo(3, 6);
+  });
+
+  test("setKf upserts, toggleKf captures then removes, moveKf retimes a diamond", () => {
+    const on = toggleKf(timelineOf({ id: "v1", start: 0, end: 10, scale: 1.2 }), "v1", "scale", 3);
+    expect(on.tracks[0].clips[0].keys?.scale).toEqual([{ t: 3, v: 1.2 }]);
+    const set = setKf(setKf(on, "v1", "scale", 3, 2), "v1", "scale", 6, 3);
+    expect(set.tracks[0].clips[0].keys?.scale).toEqual([
+      { t: 3, v: 2 },
+      { t: 6, v: 3 },
+    ]);
+    const moved = moveKf(set, "v1", 3, 4);
+    expect(moved.tracks[0].clips[0].keys?.scale).toEqual([
+      { t: 4, v: 2 },
+      { t: 6, v: 3 },
+    ]);
+    expect(toggleKf(moved, "v1", "scale", 6).tracks[0].clips[0].keys?.scale).toEqual([{ t: 4, v: 2 }]);
+  });
+
+  test("splitClip advances the second offset by the source consumed and carries speed to both halves", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4, offset: 0, speed: 2, speed_ease: "easeInOut" });
+    const clips = splitClip(base, "video", "v1", 2)!.tracks[0].clips;
+    expect(clips).toHaveLength(2);
+    expect(clips[1].offset).toBeCloseTo(3, 6);
+    expect(clips[0]).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
+    expect(clips[1]).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
+  });
+
+  test("trimClip head advances the offset by the source consumed at speed", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4, offset: 1, speed: 2 });
+    const out = trimClip(base, "video", "v1", "start", 1);
+    expect(out.tracks[0].clips[0]).toMatchObject({ start: 1 });
+    expect(out.tracks[0].clips[0].offset).toBeCloseTo(3, 6);
+  });
+
+  test("keyframes and speed survive a parse round-trip, sorted and clamped", () => {
+    const json = serializeTimeline(
+      timelineOf({
+        id: "v1",
+        start: 0,
+        end: 5,
+        speed: 99,
+        speed_ease: "easeInOut",
+        keys: {
+          scale: [
+            { t: 3, v: 2 },
+            { t: 1, v: 1 },
+          ],
+        },
+      }),
+    );
+    const clip = parseTimeline(json).tracks[0].clips[0];
+    expect(clip.keys?.scale).toEqual([
+      { t: 1, v: 1 },
+      { t: 3, v: 2 },
+    ]);
+    expect(clip.speed).toBe(MAX_SPEED);
+    expect(clip.speed_ease).toBe("easeInOut");
+  });
+
+  test("setSpeed resizes the clip, holding the source span, and stops at the next clip", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4 });
+    expect(setSpeed(base, "v1", 2).tracks[0].clips[0]).toMatchObject({ speed: 2, end: 2 });
+    expect(setSpeed(base, "v1", 99).tracks[0].clips[0].speed).toBe(MAX_SPEED);
+
+    const eased = setSpeed(base, "v1", 2, "easeInOut").tracks[0].clips[0];
+    expect(eased).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
+    expect(eased.end).toBeCloseTo(4 / 1.5, 6);
+
+    expect(setSpeed(setSpeed(base, "v1", 2, "easeInOut"), "v1", 4).tracks[0].clips[0].speed_ease).toBe("easeInOut");
+
+    expect(setSpeed(setSpeed(base, "v1", 3), "v1", 1).tracks[0].clips[0].end).toBeCloseTo(4, 6);
+    const two: Timeline = {
+      version: 1,
+      duration: 10,
+      tracks: [
+        {
+          id: "video",
+          kind: "video",
+          clips: [
+            { id: "v1", src: "a.mov", start: 0, end: 4 },
+            { id: "v2", src: "b.mov", start: 5, end: 8 },
+          ],
+        },
+      ],
+    };
+    expect(setSpeed(two, "v1", 0.5).tracks[0].clips[0].end).toBeCloseTo(5, 6);
+  });
+
+  test("clearKeys removes one property or all, removeKf deletes a diamond", () => {
+    const t = setKf(setKf(timelineOf({ id: "v1", start: 0, end: 10 }), "v1", "scale", 2, 1.5), "v1", "x", 2, 0.3);
+    expect(clearKeys(t, "v1", "scale").tracks[0].clips[0].keys).toEqual({ x: [{ t: 2, v: 0.3 }] });
+    expect(clearKeys(t, "v1").tracks[0].clips[0].keys).toBeUndefined();
+    expect(removeKf(t, "v1", 2).tracks[0].clips[0].keys).toBeUndefined();
   });
 });

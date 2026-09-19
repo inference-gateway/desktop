@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  ChevronLeft,
+  ChevronRight,
+  Diamond,
   Download,
   Eye,
   EyeOff,
@@ -27,6 +30,7 @@ import {
   Undo2,
   Volume2,
   VolumeX,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -54,8 +58,11 @@ import {
   addClip,
   addEmptyClip,
   addTrack,
+  MAX_SPEED,
+  MIN_SPEED,
   captionStyle,
   captionTrack,
+  clearKeys,
   clipSample,
   moveCaptions,
   clipLayout,
@@ -64,16 +71,27 @@ import {
   fmtTime,
   frameAspect,
   frameClip,
+  framingAt,
   frameDims,
   frameFps,
+  hasChannel,
   isSpoken,
+  keyAt,
+  keyTimes,
   laneOrder,
   moveClip,
+  moveKf,
   overlayCount,
+  removeKf,
   rulerStep,
+  setKf,
+  setSpeed,
   snapPoints,
   snapTime,
+  sourceTimeAt,
+  speedAt,
   splitClip,
+  toggleKf,
   trimClip,
   spokenCount,
   parseTimeline,
@@ -87,9 +105,11 @@ import {
   videoSource,
   type Clip,
   type SourceAudio,
+  type SpeedEase,
   type Timeline,
   type Track,
   type TrackKind,
+  type TransformProp,
 } from "@/lib/timeline";
 import { useDesktop } from "@/store";
 import { AudioPlayer } from "./AudioPlayer";
@@ -232,6 +252,7 @@ export function TimelineView() {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<{ track: string; clip: string } | null>(null);
+  const [selectedKf, setSelectedKf] = useState<{ clip: string; t: number } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [time, setTime] = useState(0);
   const [media, setMedia] = useState<ProjectFile[]>([]);
@@ -248,6 +269,16 @@ export function TimelineView() {
     clip: Clip;
     x0: number;
     pps: number;
+    moved: boolean;
+  } | null>(null);
+  const dragKfRef = useRef<{
+    track: string;
+    clip: string;
+    from: number;
+    to: number;
+    startAbs: number;
+    x0: number;
+    base: Timeline;
     moved: boolean;
   } | null>(null);
   const scrubRef = useRef(false);
@@ -291,10 +322,14 @@ export function TimelineView() {
       for (const c of tr.clips) {
         const el = mediaRefs.current.get(c.id);
         if (!el) continue;
-        const offset = (c.offset ?? 0) + (t - c.start);
-        const inside = lane && t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
+        const src = sourceTimeAt(c, t);
+        const inside = lane && t >= c.start && t < c.end && (!Number.isFinite(el.duration) || src < el.duration);
         if (tr.kind === "audio") el.volume = lane ? Math.max(0, Math.min(1, tr.gain ?? 1)) : 0;
-        if (inside && Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
+        if (tr.kind === "video") {
+          const rate = speedAt(c, t - c.start);
+          if (el.playbackRate !== rate) el.playbackRate = rate;
+        }
+        if (inside && Math.abs(el.currentTime - src) > SYNC_TOLERANCE_S) el.currentTime = src;
         if (inside && playing) {
           if (el.paused) el.play().catch(() => {});
         } else if (!el.paused) {
@@ -589,7 +624,17 @@ export function TimelineView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline || !selected) return;
+      if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline) return;
+      if (selectedKf) {
+        e.preventDefault();
+        const clip = timeline.tracks.flatMap((tr) => tr.clips).find((c) => c.id === selectedKf.clip);
+        if (clip && keyTimes(clip).some((kt) => Math.abs(kt - selectedKf.t) < 1e-3)) {
+          update(removeKf(timeline, selectedKf.clip, selectedKf.t));
+        }
+        setSelectedKf(null);
+        return;
+      }
+      if (!selected) return;
       e.preventDefault();
       update(removeClip(timeline, selected.track, selected.clip));
       setSelected(null);
@@ -597,7 +642,7 @@ export function TimelineView() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeline, selected]);
+  }, [timeline, selected, selectedKf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -666,14 +711,53 @@ export function TimelineView() {
     framedEl instanceof HTMLVideoElement && framedEl.videoWidth > 0
       ? { w: framedEl.videoWidth, h: framedEl.videoHeight }
       : null;
-  const scaleOf = (c: Clip) => clampScale(c.scale && c.scale > 0 ? c.scale : 1);
+  const framedKeyed = !!framed && keyAt(framed, "scale", time - framed.start);
+  const framedTrack = framed ? shown.tracks.find((t) => t.clips.some((x) => x.id === framed.id)) : undefined;
+  const scaleOf = (c: Clip) => {
+    const s = framingAt(c, time).scale;
+    return clampScale(s && s > 0 ? s : 1);
+  };
+  const applyFraming = (t: Timeline, c: Clip, next: { x?: number; y?: number; scale?: number }): Timeline => {
+    const local = time - c.start;
+    let out = t;
+    const stat: { x?: number; y?: number; scale?: number } = {};
+    let anyStatic = false;
+    for (const prop of ["scale", "x", "y"] as const) {
+      if (!(prop in next)) continue;
+      const v = next[prop];
+      if (v !== undefined && hasChannel(c, prop)) out = setKf(out, c.id, prop, local, v);
+      else {
+        stat[prop] = v;
+        anyStatic = true;
+      }
+    }
+    return anyStatic ? frameClip(out, c.id, stat) : out;
+  };
   const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
-    framed && (live ? preview : update)(frameClip(shown, framed.id, next));
+    framed && (live ? preview : update)(applyFraming(shown, framed, next));
+
+  // Drop one keyframe snapshotting the clip's framing (scale/x/y) at the
+  // playhead, then select it: this is the quick add the framing row and the
+  // selected clip both expose. The first starts the animation; scrub and change
+  // the framing for the next. Selecting it parks the playhead there so the
+  // inspector edits it and Backspace deletes it.
+  const addKey = (trackId: string, c: Clip) => {
+    const local = Math.max(0, Math.min(time - c.start, c.end - c.start));
+    const f = framingAt(c, c.start + local);
+    let next = setKf(shown, c.id, "scale", local, clampScale(f.scale && f.scale > 0 ? f.scale : 1));
+    next = setKf(next, c.id, "x", local, f.x ?? 0.5);
+    next = setKf(next, c.id, "y", local, f.y ?? 0.5);
+    update(next);
+    setSelected({ track: trackId, clip: c.id });
+    setSelectedKf({ clip: c.id, t: local });
+    seek(c.start + local);
+  };
 
   const startPan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!framed || e.button !== 0 || exporting) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    pan.current = { x: e.clientX, y: e.clientY, cx: framed.x ?? 0.5, cy: framed.y ?? 0.5 };
+    const f = framingAt(framed, time);
+    pan.current = { x: e.clientX, y: e.clientY, cx: f.x ?? 0.5, cy: f.y ?? 0.5 };
     beginEdit();
   };
   const movePan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -758,6 +842,7 @@ export function TimelineView() {
     e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
+    setSelectedKf(null);
     dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX, pps, moved: false };
     beginEdit();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -785,6 +870,50 @@ export function TimelineView() {
   const endDrag = () => {
     if (!dragClipRef.current) return;
     dragClipRef.current = null;
+    commitEdit();
+    bump();
+  };
+
+  // Diamonds on the selected clip: pressing one selects it (Backspace then
+  // deletes it) and parks the playhead on it so the inspector edits it; a drag
+  // retimes it. moveKf runs off the drag-start snapshot so the keys stay found
+  // as they move.
+  const beginKfDrag = (e: ReactPointerEvent<HTMLElement>, tr: Track, c: Clip, kfT: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected({ track: tr.id, clip: c.id });
+    setSelectedKf({ clip: c.id, t: kfT });
+    dragKfRef.current = {
+      track: tr.id,
+      clip: c.id,
+      from: kfT,
+      to: kfT,
+      startAbs: c.start,
+      x0: e.clientX,
+      base: shown,
+      moved: false,
+    };
+    beginEdit();
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const kfDragTo = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = dragKfRef.current;
+    if (!d) return;
+    if (!d.moved && Math.abs(e.clientX - d.x0) < DRAG_SLOP_PX) return;
+    d.moved = true;
+    d.to = d.from + (e.clientX - d.x0) / pps;
+    preview(moveKf(d.base, d.clip, d.from, d.to));
+  };
+  const endKfDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = dragKfRef.current;
+    if (!d) return;
+    dragKfRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    const clip = shown.tracks.flatMap((t) => t.clips).find((c) => c.id === d.clip);
+    const at = Math.max(0, Math.min(d.moved ? d.to : d.from, clip ? clip.end - clip.start : d.from));
+    setSelectedKf({ clip: d.clip, t: at });
+    seek(d.startAbs + at);
     commitEdit();
     bump();
   };
@@ -1081,6 +1210,7 @@ export function TimelineView() {
                     bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
+                  onSeeked={() => paint(timeRef.current)}
                 />
               ))}
               {clipOverlays.map(({ clip: c, src }) => (
@@ -1098,6 +1228,7 @@ export function TimelineView() {
                   }}
                   onLoadedMetadata={() => paint(timeRef.current)}
                   onLoadedData={() => paint(timeRef.current)}
+                  onSeeked={() => paint(timeRef.current)}
                 />
               ))}
               <span
@@ -1211,6 +1342,16 @@ export function TimelineView() {
               onClick={() => reframe({ scale: undefined, x: undefined, y: undefined })}
             >
               <Maximize2 size={13} />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Add keyframe"
+              title="Keyframe the framing here - scrub, change the zoom or position, and it animates between keyframes"
+              onClick={() => framed && framedTrack && addKey(framedTrack.id, framed)}
+              className={cn("ml-1", framedKeyed && "text-sky-400")}
+            >
+              <Diamond size={13} fill={framedKeyed ? "currentColor" : "none"} />
             </Button>
             <span className="ml-1 opacity-70">drag the video to move it</span>
           </div>
@@ -1481,6 +1622,44 @@ export function TimelineView() {
                             <Sparkles size={13} />
                           </button>
                         )}
+                        {isSel && tr.kind === "video" && (
+                          <button
+                            aria-label="Add keyframe"
+                            title="Add a keyframe at the playhead - then drag it, or edit its values in the inspector below"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addKey(tr.id, c);
+                            }}
+                            className="absolute top-1 left-1 z-20 flex size-5 items-center justify-center rounded bg-black/60 text-amber-300 shadow hover:bg-black/80"
+                          >
+                            <Diamond size={12} />
+                          </button>
+                        )}
+                        {isSel &&
+                          tr.kind === "video" &&
+                          keyTimes(c).map((kfT) => {
+                            const picked = selectedKf?.clip === c.id && Math.abs(selectedKf.t - kfT) < 1e-3;
+                            return (
+                              <button
+                                key={kfT}
+                                aria-label={`Keyframe at ${fmtTime(c.start + kfT)}`}
+                                aria-pressed={picked}
+                                title="Drag to retime, click to select (Backspace deletes it)"
+                                onPointerDown={(e) => beginKfDrag(e, tr, c, kfT)}
+                                onPointerMove={kfDragTo}
+                                onPointerUp={endKfDrag}
+                                onPointerCancel={endKfDrag}
+                                className={cn(
+                                  "absolute bottom-0.5 z-20 -ml-[7px] size-3.5 rotate-45 cursor-grab touch-none rounded-[2px] border shadow active:cursor-grabbing",
+                                  picked
+                                    ? "border-white bg-sky-400 ring-2 ring-sky-300"
+                                    : "border-zinc-900 bg-amber-300 hover:bg-amber-200",
+                                )}
+                                style={{ left: kfT * pps }}
+                              />
+                            );
+                          })}
                       </div>
                     );
                   })}
@@ -1589,6 +1768,18 @@ export function TimelineView() {
           })}
         </div>
 
+        {timeline && track && clip && track.kind === "video" && (
+          <TransformPanel
+            timeline={timeline}
+            clip={clip}
+            now={time}
+            begin={beginEdit}
+            live={preview}
+            commit={update}
+            end={commitEdit}
+            seek={seek}
+          />
+        )}
         {timeline && track && clip && (
           <ClipEditor
             track={track}
@@ -1605,6 +1796,220 @@ export function TimelineView() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+const TRANSFORM_ROWS: { prop: TransformProp; label: string; aria: string; unit: string }[] = [
+  { prop: "scale", label: "Scale", aria: "Scale", unit: "%" },
+  { prop: "x", label: "Pos X", aria: "Position X", unit: "" },
+  { prop: "y", label: "Pos Y", aria: "Position Y", unit: "" },
+];
+
+// A number field that shows the value sampled at the playhead but leaves what
+// the user is typing alone until they blur, so it never fights mid-keystroke.
+function NumberField({
+  value,
+  aria,
+  min,
+  max,
+  step,
+  disabled,
+  begin,
+  change,
+  end,
+}: {
+  value: number;
+  aria: string;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  begin: () => void;
+  change: (v: number) => void;
+  end: () => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  return (
+    <input
+      type="number"
+      aria-label={aria}
+      value={editing ?? String(value)}
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      onFocus={() => {
+        setEditing(String(value));
+        begin();
+      }}
+      onChange={(e) => {
+        setEditing(e.target.value);
+        const n = Number(e.target.value);
+        if (e.target.value !== "" && Number.isFinite(n)) change(n);
+      }}
+      onBlur={() => {
+        setEditing(null);
+        end();
+      }}
+      className="h-6 w-16 rounded border border-input bg-transparent px-1.5 text-right text-foreground tabular-nums outline-none focus-visible:border-ring disabled:opacity-40"
+    />
+  );
+}
+
+// The transform inspector for a video clip: Scale / X / Y each show the value
+// sampled at the playhead, with a keyframe diamond that animates the property -
+// editing an animated one writes a key at the playhead, a still one the static
+// field. The header arrows jump between the clip's keys. Speed sits below as a
+// per-clip value plus a constant/ease-in-out choice (it resizes the clip, so it
+// is not a keyframe channel).
+function TransformPanel({
+  timeline,
+  clip,
+  now,
+  begin,
+  live,
+  commit,
+  end,
+  seek,
+}: {
+  timeline: Timeline;
+  clip: Clip;
+  now: number;
+  begin: () => void;
+  live: (t: Timeline) => void;
+  commit: (t: Timeline) => void;
+  end: () => void;
+  seek: (t: number) => void;
+}) {
+  const local = now - clip.start;
+  const inside = now >= clip.start && now < clip.end;
+  const f = framingAt(clip, now);
+  const shown: Record<TransformProp, number> = {
+    scale: asPercent(clampScale(f.scale && f.scale > 0 ? f.scale : 1)),
+    x: Math.round((f.x ?? 0.5) * 1000) / 1000,
+    y: Math.round((f.y ?? 0.5) * 1000) / 1000,
+  };
+  const bounds: Record<TransformProp, { min: number; max: number; step: number }> = {
+    scale: { min: MIN_FRAME_SCALE * 100, max: MAX_FRAME_SCALE * 100, step: 0.5 },
+    x: { min: 0, max: 1, step: 0.001 },
+    y: { min: 0, max: 1, step: 0.001 },
+  };
+  const edit = (prop: TransformProp, raw: number) => {
+    const v = prop === "scale" ? raw / 100 : raw;
+    if (hasChannel(clip, prop)) live(setKf(timeline, clip.id, prop, local, v));
+    else live(frameClip(timeline, clip.id, prop === "scale" ? { scale: v } : prop === "x" ? { x: v } : { y: v }));
+  };
+  const times = keyTimes(clip).map((t) => clip.start + t);
+  const prev = [...times].reverse().find((t) => t < now - 1e-3);
+  const nextKey = times.find((t) => t > now + 1e-3);
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-secondary/40 p-3 text-[0.75rem]">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="font-medium text-foreground">Transform</span>
+        <span className="ml-auto flex items-center gap-1">
+          {keyTimes(clip).length > 0 && (
+            <button
+              aria-label="Clear all keyframes"
+              title="Remove every keyframe on this clip"
+              onClick={() => commit(clearKeys(timeline, clip.id))}
+              className={cn(ZOOM_BTN, "mr-1 w-auto px-1.5 text-zinc-400 hover:text-destructive")}
+            >
+              Reset
+            </button>
+          )}
+          <button
+            aria-label="Previous keyframe"
+            title="Jump to the previous keyframe"
+            disabled={prev === undefined}
+            onClick={() => prev !== undefined && seek(prev)}
+            className={cn(ZOOM_BTN, "disabled:opacity-30")}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            aria-label="Next keyframe"
+            title="Jump to the next keyframe"
+            disabled={nextKey === undefined}
+            onClick={() => nextKey !== undefined && seek(nextKey)}
+            className={cn(ZOOM_BTN, "disabled:opacity-30")}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </span>
+      </div>
+      {TRANSFORM_ROWS.map(({ prop, label, aria, unit }) => {
+        const animated = hasChannel(clip, prop);
+        const on = keyAt(clip, prop, local);
+        return (
+          <div key={prop} className="flex items-center gap-2">
+            <span className="w-12 text-muted-foreground">{label}</span>
+            <NumberField
+              value={shown[prop]}
+              aria={aria}
+              min={bounds[prop].min}
+              max={bounds[prop].max}
+              step={bounds[prop].step}
+              disabled={!inside}
+              begin={begin}
+              change={(v) => edit(prop, v)}
+              end={end}
+            />
+            <span className="w-3 text-muted-foreground">{unit}</span>
+            <span className="ml-auto flex items-center gap-0.5">
+              <button
+                aria-label={`Keyframe ${prop}`}
+                title={
+                  animated ? (on ? "Remove the keyframe here" : "Add a keyframe here") : "Animate this with keyframes"
+                }
+                disabled={!inside}
+                onClick={() => commit(toggleKf(timeline, clip.id, prop, local))}
+                className={cn(
+                  ZOOM_BTN,
+                  "disabled:opacity-30",
+                  on ? "text-sky-400" : animated ? "text-zinc-200" : "text-zinc-500",
+                )}
+              >
+                <Diamond size={13} fill={on ? "currentColor" : "none"} />
+              </button>
+              <button
+                aria-label={`Clear ${prop} keyframes`}
+                title="Remove all keyframes for this property"
+                onClick={() => commit(clearKeys(timeline, clip.id, prop))}
+                className={cn(ZOOM_BTN, "text-zinc-500 hover:text-destructive", !animated && "invisible")}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          </div>
+        );
+      })}
+      <div className="flex items-center gap-2 border-t border-border/60 pt-1.5">
+        <span className="w-12 text-muted-foreground">Speed</span>
+        <NumberField
+          value={Math.round((clip.speed ?? 1) * 100) / 100}
+          aria="Speed"
+          min={MIN_SPEED}
+          max={MAX_SPEED}
+          step={0.05}
+          disabled={false}
+          begin={begin}
+          change={(v) => live(setSpeed(timeline, clip.id, v, clip.speed_ease))}
+          end={end}
+        />
+        <span className="w-3 text-muted-foreground">×</span>
+        <select
+          aria-label="Speed easing"
+          title="Constant speed, or ease in and out to the target"
+          value={clip.speed_ease === "easeInOut" ? "easeInOut" : "constant"}
+          onChange={(e) => commit(setSpeed(timeline, clip.id, clip.speed ?? 1, e.target.value as SpeedEase))}
+          className="ml-auto h-6 rounded border border-input bg-transparent px-1 text-foreground outline-none focus-visible:border-ring"
+        >
+          <option value="constant">Constant</option>
+          <option value="easeInOut">Ease in-out</option>
+        </select>
+      </div>
+      {!inside && <span className="text-muted-foreground">Move the playhead over the clip to keyframe it.</span>}
     </div>
   );
 }

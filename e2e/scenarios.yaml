@@ -79,6 +79,23 @@ scenarios:
                 }
       - content: "Captions added."
 
+  - name: keyframe-zoom
+    match: '(?i)add a slow zoom'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "keyframe-zoom.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 20,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 20, "keys": { "scale": [{ "t": 0, "v": 1 }, { "t": 6, "v": 1.4 }] } }] }
+                  ]
+                }
+      - content: "Slow zoom added."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:
