@@ -30,6 +30,7 @@ import {
   Undo2,
   Volume2,
   VolumeX,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -61,6 +62,7 @@ import {
   MIN_SPEED,
   captionStyle,
   captionTrack,
+  clearKeys,
   clipSample,
   moveCaptions,
   clipLayout,
@@ -80,6 +82,7 @@ import {
   moveClip,
   moveKf,
   overlayCount,
+  removeKf,
   rulerStep,
   setKf,
   setSpeed,
@@ -248,6 +251,7 @@ export function TimelineView() {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<{ track: string; clip: string } | null>(null);
+  const [selectedKf, setSelectedKf] = useState<{ clip: string; t: number } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [time, setTime] = useState(0);
   const [media, setMedia] = useState<ProjectFile[]>([]);
@@ -270,6 +274,7 @@ export function TimelineView() {
     track: string;
     clip: string;
     from: number;
+    to: number;
     startAbs: number;
     x0: number;
     base: Timeline;
@@ -621,7 +626,19 @@ export function TimelineView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline || !selected) return;
+      if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline) return;
+      // A selected keyframe goes first, so Backspace deletes the diamond, not
+      // the whole clip out from under it. A stale selection just clears.
+      if (selectedKf) {
+        e.preventDefault();
+        const clip = timeline.tracks.flatMap((tr) => tr.clips).find((c) => c.id === selectedKf.clip);
+        if (clip && keyTimes(clip).some((kt) => Math.abs(kt - selectedKf.t) < 1e-3)) {
+          update(removeKf(timeline, selectedKf.clip, selectedKf.t));
+        }
+        setSelectedKf(null);
+        return;
+      }
+      if (!selected) return;
       e.preventDefault();
       update(removeClip(timeline, selected.track, selected.clip));
       setSelected(null);
@@ -629,7 +646,7 @@ export function TimelineView() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeline, selected]);
+  }, [timeline, selected, selectedKf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -699,6 +716,7 @@ export function TimelineView() {
       ? { w: framedEl.videoWidth, h: framedEl.videoHeight }
       : null;
   const framedKeyed = !!framed && keyAt(framed, "scale", time - framed.start);
+  const framedTrack = framed ? shown.tracks.find((t) => t.clips.some((x) => x.id === framed.id)) : undefined;
   const scaleOf = (c: Clip) => {
     const s = framingAt(c, time).scale;
     return clampScale(s && s > 0 ? s : 1);
@@ -725,18 +743,21 @@ export function TimelineView() {
   const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
     framed && (live ? preview : update)(applyFraming(shown, framed, next));
 
-  // Snapshot the active clip's framing as one keyframe at the playhead: the
-  // quick "add keyframe" the framing row exposes so a zoom or pan can be set
-  // without opening the inspector. The first starts the animation; scrub and
-  // change the framing for the next.
-  const keyFrame = () => {
-    if (!framed) return;
-    const local = time - framed.start;
-    const f = framingAt(framed, time);
-    let next = setKf(shown, framed.id, "scale", local, clampScale(f.scale && f.scale > 0 ? f.scale : 1));
-    next = setKf(next, framed.id, "x", local, f.x ?? 0.5);
-    next = setKf(next, framed.id, "y", local, f.y ?? 0.5);
+  // Drop one keyframe snapshotting the clip's framing (scale/x/y) at the
+  // playhead, then select it: this is the quick add the framing row and the
+  // selected clip both expose. The first starts the animation; scrub and change
+  // the framing for the next. Selecting it parks the playhead there so the
+  // inspector edits it and Backspace deletes it.
+  const addKey = (trackId: string, c: Clip) => {
+    const local = Math.max(0, Math.min(time - c.start, c.end - c.start));
+    const f = framingAt(c, c.start + local);
+    let next = setKf(shown, c.id, "scale", local, clampScale(f.scale && f.scale > 0 ? f.scale : 1));
+    next = setKf(next, c.id, "x", local, f.x ?? 0.5);
+    next = setKf(next, c.id, "y", local, f.y ?? 0.5);
     update(next);
+    setSelected({ track: trackId, clip: c.id });
+    setSelectedKf({ clip: c.id, t: local });
+    seek(c.start + local);
   };
 
   const startPan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -828,6 +849,7 @@ export function TimelineView() {
     e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
+    setSelectedKf(null);
     dragClipRef.current = { kind, track: tr.id, clip: c, x0: e.clientX, pps, moved: false };
     beginEdit();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -859,18 +881,21 @@ export function TimelineView() {
     bump();
   };
 
-  // Diamonds on the selected clip: a click seeks to the keyframe, a drag retimes
-  // every key sitting there. moveKf runs off the drag-start snapshot so the keys
-  // stay found as they move.
+  // Diamonds on the selected clip: pressing one selects it (Backspace then
+  // deletes it) and parks the playhead on it so the inspector edits it; a drag
+  // retimes it. moveKf runs off the drag-start snapshot so the keys stay found
+  // as they move.
   const beginKfDrag = (e: ReactPointerEvent<HTMLElement>, tr: Track, c: Clip, kfT: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     setSelected({ track: tr.id, clip: c.id });
+    setSelectedKf({ clip: c.id, t: kfT });
     dragKfRef.current = {
       track: tr.id,
       clip: c.id,
       from: kfT,
+      to: kfT,
       startAbs: c.start,
       x0: e.clientX,
       base: shown,
@@ -884,14 +909,18 @@ export function TimelineView() {
     if (!d) return;
     if (!d.moved && Math.abs(e.clientX - d.x0) < DRAG_SLOP_PX) return;
     d.moved = true;
-    preview(moveKf(d.base, d.clip, d.from, d.from + (e.clientX - d.x0) / pps));
+    d.to = d.from + (e.clientX - d.x0) / pps;
+    preview(moveKf(d.base, d.clip, d.from, d.to));
   };
   const endKfDrag = (e: ReactPointerEvent<HTMLElement>) => {
     const d = dragKfRef.current;
     if (!d) return;
     dragKfRef.current = null;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!d.moved) seek(d.startAbs + d.from);
+    const clip = shown.tracks.flatMap((t) => t.clips).find((c) => c.id === d.clip);
+    const at = Math.max(0, Math.min(d.moved ? d.to : d.from, clip ? clip.end - clip.start : d.from));
+    setSelectedKf({ clip: d.clip, t: at });
+    seek(d.startAbs + at);
     commitEdit();
     bump();
   };
@@ -1329,7 +1358,7 @@ export function TimelineView() {
               variant="ghost"
               aria-label="Add keyframe"
               title="Keyframe the framing here - scrub, change the zoom or position, and it animates between keyframes"
-              onClick={keyFrame}
+              onClick={() => framed && framedTrack && addKey(framedTrack.id, framed)}
               className={cn("ml-1", framedKeyed && "text-sky-400")}
             >
               <Diamond size={13} fill={framedKeyed ? "currentColor" : "none"} />
@@ -1603,21 +1632,44 @@ export function TimelineView() {
                             <Sparkles size={13} />
                           </button>
                         )}
+                        {isSel && tr.kind === "video" && (
+                          <button
+                            aria-label="Add keyframe"
+                            title="Add a keyframe at the playhead - then drag it, or edit its values in the inspector below"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addKey(tr.id, c);
+                            }}
+                            className="absolute top-1 left-1 z-20 flex size-5 items-center justify-center rounded bg-black/60 text-amber-300 shadow hover:bg-black/80"
+                          >
+                            <Diamond size={12} />
+                          </button>
+                        )}
                         {isSel &&
                           tr.kind === "video" &&
-                          keyTimes(c).map((kfT) => (
-                            <button
-                              key={kfT}
-                              aria-label={`Keyframe at ${fmtTime(c.start + kfT)}`}
-                              title="Drag to retime this keyframe, click to jump to it"
-                              onPointerDown={(e) => beginKfDrag(e, tr, c, kfT)}
-                              onPointerMove={kfDragTo}
-                              onPointerUp={endKfDrag}
-                              onPointerCancel={endKfDrag}
-                              className="absolute bottom-0 z-20 -ml-1.5 size-3 rotate-45 touch-none rounded-[1px] border border-zinc-900 bg-amber-300 shadow hover:bg-amber-200"
-                              style={{ left: kfT * pps }}
-                            />
-                          ))}
+                          keyTimes(c).map((kfT) => {
+                            const picked = selectedKf?.clip === c.id && Math.abs(selectedKf.t - kfT) < 1e-3;
+                            return (
+                              <button
+                                key={kfT}
+                                aria-label={`Keyframe at ${fmtTime(c.start + kfT)}`}
+                                aria-pressed={picked}
+                                title="Drag to retime, click to select (Backspace deletes it)"
+                                onPointerDown={(e) => beginKfDrag(e, tr, c, kfT)}
+                                onPointerMove={kfDragTo}
+                                onPointerUp={endKfDrag}
+                                onPointerCancel={endKfDrag}
+                                className={cn(
+                                  "absolute bottom-0.5 z-20 -ml-[7px] size-3.5 rotate-45 cursor-grab touch-none rounded-[2px] border shadow active:cursor-grabbing",
+                                  picked
+                                    ? "border-white bg-sky-400 ring-2 ring-sky-300"
+                                    : "border-zinc-900 bg-amber-300 hover:bg-amber-200",
+                                )}
+                                style={{ left: kfT * pps }}
+                              />
+                            );
+                          })}
                       </div>
                     );
                   })}
@@ -1868,6 +1920,16 @@ function TransformPanel({
       <div className="flex items-center gap-2 text-muted-foreground">
         <span className="font-medium text-foreground">Transform</span>
         <span className="ml-auto flex items-center gap-1">
+          {keyTimes(clip).length > 0 && (
+            <button
+              aria-label="Clear all keyframes"
+              title="Remove every keyframe on this clip"
+              onClick={() => commit(clearKeys(timeline, clip.id))}
+              className={cn(ZOOM_BTN, "mr-1 w-auto px-1.5 text-zinc-400 hover:text-destructive")}
+            >
+              Reset
+            </button>
+          )}
           <button
             aria-label="Previous keyframe"
             title="Jump to the previous keyframe"
@@ -1900,27 +1962,37 @@ function TransformPanel({
               min={bounds[prop].min}
               max={bounds[prop].max}
               step={bounds[prop].step}
-              disabled={!inside}
+              disabled={prop !== "speed" && !inside}
               begin={begin}
               change={(v) => edit(prop, v)}
               end={end}
             />
             <span className="w-3 text-muted-foreground">{unit}</span>
-            <button
-              aria-label={`Keyframe ${prop}`}
-              title={
-                animated ? (on ? "Remove the keyframe here" : "Add a keyframe here") : "Animate this with keyframes"
-              }
-              disabled={!inside}
-              onClick={() => commit(toggleKf(timeline, clip.id, prop, local))}
-              className={cn(
-                ZOOM_BTN,
-                "ml-auto disabled:opacity-30",
-                on ? "text-sky-400" : animated ? "text-zinc-200" : "text-zinc-500",
-              )}
-            >
-              <Diamond size={13} fill={on ? "currentColor" : "none"} />
-            </button>
+            <span className="ml-auto flex items-center gap-0.5">
+              <button
+                aria-label={`Keyframe ${prop}`}
+                title={
+                  animated ? (on ? "Remove the keyframe here" : "Add a keyframe here") : "Animate this with keyframes"
+                }
+                disabled={!inside}
+                onClick={() => commit(toggleKf(timeline, clip.id, prop, local))}
+                className={cn(
+                  ZOOM_BTN,
+                  "disabled:opacity-30",
+                  on ? "text-sky-400" : animated ? "text-zinc-200" : "text-zinc-500",
+                )}
+              >
+                <Diamond size={13} fill={on ? "currentColor" : "none"} />
+              </button>
+              <button
+                aria-label={`Clear ${prop} keyframes`}
+                title="Remove all keyframes for this property"
+                onClick={() => commit(clearKeys(timeline, clip.id, prop))}
+                className={cn(ZOOM_BTN, "text-zinc-500 hover:text-destructive", !animated && "invisible")}
+              >
+                <X size={12} />
+              </button>
+            </span>
           </div>
         );
       })}

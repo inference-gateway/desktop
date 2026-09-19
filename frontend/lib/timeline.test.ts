@@ -36,8 +36,11 @@ import {
   sourceConsumed,
   sourceTimeAt,
   setKf,
+  setSpeed,
   toggleKf,
   moveKf,
+  clearKeys,
+  removeKf,
   type Clip,
   type Timeline,
 } from "./timeline";
@@ -569,5 +572,35 @@ describe("keyframes", () => {
       { t: 1, v: 0.5 },
       { t: 3, v: MAX_SPEED },
     ]);
+  });
+
+  test("setSpeed resizes the clip, holding the source span, and stops at the next clip", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4 });
+    expect(setSpeed(base, "v1", 2).tracks[0].clips[0]).toMatchObject({ speed: 2, end: 2 }); // 4 / 2
+    // chained edits hold the same source span, so back to 1x restores the length
+    expect(setSpeed(setSpeed(base, "v1", 3), "v1", 1).tracks[0].clips[0].end).toBeCloseTo(4, 6);
+    const two: Timeline = {
+      version: 1,
+      duration: 10,
+      tracks: [
+        {
+          id: "video",
+          kind: "video",
+          clips: [
+            { id: "v1", src: "a.mov", start: 0, end: 4 },
+            { id: "v2", src: "b.mov", start: 5, end: 8 },
+          ],
+        },
+      ],
+    };
+    // 4 / 0.5 = 8 would overlap v2 at 5, so growth stops there
+    expect(setSpeed(two, "v1", 0.5).tracks[0].clips[0].end).toBeCloseTo(5, 6);
+  });
+
+  test("clearKeys removes one property or all, removeKf deletes a diamond", () => {
+    const t = setKf(setKf(timelineOf({ id: "v1", start: 0, end: 10 }), "v1", "scale", 2, 1.5), "v1", "x", 2, 0.3);
+    expect(clearKeys(t, "v1", "scale").tracks[0].clips[0].keys).toEqual({ x: [{ t: 2, v: 0.3 }] });
+    expect(clearKeys(t, "v1").tracks[0].clips[0].keys).toBeUndefined();
+    expect(removeKf(t, "v1", 2).tracks[0].clips[0].keys).toBeUndefined(); // both props keyed at t=2
   });
 });

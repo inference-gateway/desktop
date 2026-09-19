@@ -515,10 +515,59 @@ export function moveKf(t: Timeline, clipId: string, local: number, to: number): 
   });
 }
 
-// A clip's constant playback speed, when it has no speed keyframes.
+// A clip's constant playback speed, when it has no speed keyframes. Changing it
+// resizes the clip on the timeline the way every editor does - same source
+// content, so twice the speed is half the length - by holding the source span
+// (speed * length) fixed. Growth stops at the next clip; a ramped clip (one
+// with speed keyframes) keeps its length and retimes inside it, so there this
+// only sets the fallback speed.
 export function setSpeed(t: Timeline, clipId: string, speed: number): Timeline {
-  const v = clampSpeed(speed);
-  return mapClip(t, clipId, (c) => ({ ...c, speed: v }));
+  const s = clampSpeed(speed);
+  let end = 0;
+  const tracks = t.tracks.map((tr) => {
+    if (!tr.clips.some((c) => c.id === clipId)) return tr;
+    return {
+      ...tr,
+      clips: tr.clips.map((c) => {
+        if (c.id !== clipId) return c;
+        if (c.keys?.speed?.length) return { ...c, speed: s };
+        const span = (c.speed ?? 1) * (c.end - c.start);
+        const room =
+          tr.clips.filter((o) => o.id !== c.id && o.start > c.start).reduce((m, o) => Math.min(m, o.start), Infinity) -
+          c.start;
+        const len = Math.max(MIN_CLIP_S, Math.min(span / s, room));
+        const next = { ...c, speed: s, end: c.start + len };
+        end = next.end;
+        return next;
+      }),
+    };
+  });
+  return { ...t, duration: Math.max(t.duration, end), tracks };
+}
+
+// Remove a clip's keyframes: one property's channel, or every channel at once.
+export function clearKeys(t: Timeline, clipId: string, prop?: TransformProp): Timeline {
+  return mapClip(t, clipId, (c) => {
+    if (!c.keys) return c;
+    return prop ? { ...c, keys: pruneKeys({ ...c.keys, [prop]: undefined }) } : { ...c, keys: undefined };
+  });
+}
+
+// Delete every key sitting at clip-local `local` (a whole diamond removed).
+export function removeKf(t: Timeline, clipId: string, local: number): Timeline {
+  return mapClip(t, clipId, (c) => {
+    if (!c.keys) return c;
+    const strip = (ch?: Kf[]) => ch?.filter((k) => Math.abs(k.t - local) > KF_EPS);
+    return {
+      ...c,
+      keys: pruneKeys({
+        scale: strip(c.keys.scale),
+        x: strip(c.keys.x),
+        y: strip(c.keys.y),
+        speed: strip(c.keys.speed),
+      }),
+    };
+  });
 }
 
 // Cut a channel at clip-local `at` into the two halves a split makes: the first
