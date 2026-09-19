@@ -134,6 +134,7 @@ export type DesktopConfig = {
   vision_annotator_model: string;
 };
 export type Timelines = { dir: string; names: string[] };
+export type ExportPlan = { width: number; height: number; fps: number; frames: number; output: string };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {
   snippets: { id: string; label: string; prompt: string }[];
@@ -331,7 +332,11 @@ export const api = {
       },
     }),
   prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
-  exportTimeline: (project: string, name: string) => invoke<string>("export_timeline", { project, name }),
+  exportBegin: (project: string, name: string, timeline: string) =>
+    invoke<ExportPlan>("export_begin", { project, name, timeline }),
+  exportFrame: (frame: ArrayBuffer) => invoke<void>("export_frame", frame),
+  exportEnd: () => invoke<string>("export_end"),
+  exportCancel: () => invoke<void>("export_cancel"),
   readHistory: () => invoke<string[]>("read_history"),
   appendHistory: (line: string) => invoke<void>("append_history", { line }),
   readBashHistory: () => invoke<string[]>("read_history", { bash: true }),

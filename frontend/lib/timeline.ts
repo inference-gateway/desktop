@@ -1,22 +1,9 @@
-// The <stem>.timeline.json contract shared with the video-editing skill:
-// a duration plus video, audio, overlay and captions tracks of clips. An
-// audio clip with `text` is spoken by the agent (cloned voice); one with
-// only `src` is a plain file the user placed. "voice" is accepted as a
-// legacy track kind. An overlay clip is a rendered card (a .mov with alpha;
-// the webview drops VP9 alpha in webm) composited over the video;
-// `x`/`y`/`width`/`height` are fractions of the frame. A captions clip is
-// text over the video, styled by the track's preset and burned in on export.
 export type ClipStatus = "draft" | "done";
 export type TrackKind = "video" | "audio" | "overlay" | "captions";
-// Per-word timing of a caption clip (absolute seconds), for the word-by-word
-// presets. Missing `text` falls back to the i-th word of the clip's text.
 export type CaptionWord = { text?: string; start: number; end: number };
-// What to do with the recording's own audio track: transcribe it and replace
-// it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
-// Export frame size: the standard delivery sizes. The recording is scaled to
-// fit and padded; overlays are placed in this frame.
 export const DEFAULT_RESOLUTION = "1920x1080";
+export const DEFAULT_FPS = 30;
 export const RESOLUTIONS: { value: string; label: string }[] = [
   { value: "1920x1080", label: "1920x1080 Landscape" },
   { value: "1080x1920", label: "1080x1920 Portrait" },
@@ -32,7 +19,6 @@ export type Clip = {
   id: string;
   start: number;
   end: number;
-  // Seconds into `src` where the clip begins; set by trimming a clip's head.
   offset?: number;
   src?: string;
   text?: string;
@@ -41,12 +27,10 @@ export type Clip = {
   y?: number;
   width?: number;
   height?: number;
-  // The HTML composition an overlay's `src` was rendered from.
+  scale?: number;
+
   html?: string;
-  // Spoken clips only: the voice sample this clip's wav was cloned from,
-  // written by the agent when it synthesizes. Absent means the track's pick.
   voice_sample?: string;
-  // Caption clips only: when each word is spoken, for the word presets.
   words?: CaptionWord[];
 };
 
@@ -56,10 +40,6 @@ export type Track = {
   clips: Clip[];
   voice_sample?: string;
   gain?: number;
-  // Captions tracks only: a preset name (unknown ones fall back to the
-  // default) and where the captions sit on the frame - `position` is the
-  // standard placement, `x`/`y` the centre of the caption box as fractions of
-  // the frame once the user has dragged it, and they win over `position`.
   style?: string;
   position?: "bottom" | "center" | "top";
   x?: number;
@@ -71,6 +51,7 @@ export type Timeline = {
   duration: number;
   output?: string;
   resolution?: string;
+  fps?: number;
   source_audio?: SourceAudio;
   tracks: Track[];
 };
@@ -79,9 +60,9 @@ export type Timeline = {
 // broadcast subtitle on a band, a big uppercase punch line, a per-word colour
 // pop and a fill-as-spoken karaoke. `size` and `outline` are fractions of the
 // frame height and of the font size, `colour` is what a word looks like once
-// it has been spoken and `ahead` what it looks like before. The catalogue is
-// mirrored by CAPTION_PRESETS in backend/src/timeline.rs (the ASS export), so
-// the preview and the burned-in export match.
+// it has been spoken and `ahead` what it looks like before. This is the only
+// copy: frontend/lib/render.ts draws captions for both the preview and the
+// export, so there is nothing to keep in sync.
 export type CaptionStyle = {
   value: string;
   label: string;
@@ -120,7 +101,6 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   },
 ];
 export const DEFAULT_CAPTION_STYLE = "classic";
-// Unknown preset names fall back to the default preset.
 export const captionStyle = (style?: string): string =>
   CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
 export const captionPreset = (style?: string): CaptionStyle =>
@@ -135,7 +115,6 @@ function num(v: unknown, fallback = 0): number {
 }
 
 const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
-// A fraction of the frame, clamped so a dragged caption cannot leave it.
 const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
 
 export function parseTimeline(json: string): Timeline {
@@ -167,6 +146,7 @@ export function parseTimeline(json: string): Timeline {
         y: optNum(c?.y),
         width: optNum(c?.width),
         height: optNum(c?.height),
+        scale: optNum(c?.scale),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
         words: (Array.isArray(c?.words) && c.words.length
@@ -185,6 +165,7 @@ export function parseTimeline(json: string): Timeline {
     duration: num(raw.duration, clipEnd) || clipEnd,
     output: typeof raw.output === "string" ? raw.output : undefined,
     resolution: typeof raw.resolution === "string" && /^\d+x\d+$/.test(raw.resolution) ? raw.resolution : undefined,
+    fps: raw.fps === undefined ? undefined : num(raw.fps, DEFAULT_FPS) || undefined,
     source_audio: SOURCE_AUDIO.some((o) => o.value === raw.source_audio) ? raw.source_audio : undefined,
     tracks,
   };
@@ -220,10 +201,21 @@ export function spokenCount(t: Timeline): number {
     .filter(isSpoken).length;
 }
 
+// The export frame in pixels, falling back to the default for a size the
+// toolbar does not offer or a hand-edited file with a bad one.
+export function frameDims(t: { resolution?: string }): [number, number] {
+  const [w, h] = (t.resolution ?? DEFAULT_RESOLUTION).split("x").map(Number);
+  return w > 0 && h > 0 ? [w, h] : (DEFAULT_RESOLUTION.split("x").map(Number) as [number, number]);
+}
+
 // Width / height of the export frame.
 export function frameAspect(t: { resolution?: string }): number {
-  const [w, h] = (t.resolution ?? DEFAULT_RESOLUTION).split("x").map(Number);
-  return w > 0 && h > 0 ? w / h : 16 / 9;
+  const [w, h] = frameDims(t);
+  return w / h;
+}
+
+export function frameFps(t: { fps?: number }): number {
+  return t.fps && t.fps > 0 ? t.fps : DEFAULT_FPS;
 }
 
 export function overlayCount(t: Timeline): number {
@@ -302,6 +294,20 @@ export function setClipSample(t: Timeline, trackId: string, clipId: string, samp
               return clipSample(tr, next) === clipSample(tr, c) ? next : { ...next, status: "draft" as const };
             }),
           },
+    ),
+  };
+}
+
+// Move or scale a video clip inside the export frame: `x`/`y` are the centre
+// it is framed on and `scale` a multiplier on the size that covers the frame.
+// Passing undefined clears a field, which puts the clip back to filling.
+export function frameClip(t: Timeline, clipId: string, next: { x?: number; y?: number; scale?: number }): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.clips.some((c) => c.id === clipId)
+        ? { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? { ...c, ...next } : c)) }
+        : tr,
     ),
   };
 }
