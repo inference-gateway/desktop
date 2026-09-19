@@ -628,8 +628,6 @@ export function TimelineView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== "Backspace" && e.key !== "Delete") || isEditable(e.target) || !timeline) return;
-      // A selected keyframe goes first, so Backspace deletes the diamond, not
-      // the whole clip out from under it. A stale selection just clears.
       if (selectedKf) {
         e.preventDefault();
         const clip = timeline.tracks.flatMap((tr) => tr.clips).find((c) => c.id === selectedKf.clip);
