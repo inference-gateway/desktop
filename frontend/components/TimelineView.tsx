@@ -564,7 +564,6 @@ export function TimelineView() {
   const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
-  // A hidden video lane keeps the stage up (over black) so overlays and captions can be watched alone.
   const hasHiddenVideo = (timeline?.tracks ?? []).some(
     (tr) => tr.kind === "video" && hiddenLanes.has(tr.id) && tr.clips.some((c) => c.src),
   );
