@@ -579,7 +579,6 @@ export function TimelineView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline, selected]);
 
-  // Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z / Ctrl+Y, like the editors the timeline imitates.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
