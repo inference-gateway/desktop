@@ -621,8 +621,6 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
         items.push({ kind: "reasoning", id: String(seq++), paragraphs: [entry.reasoning_content] });
       if (content) items.push({ kind: "assistant", id: String(seq++), chunks: [content] });
     } else if (entry.role === "tool") {
-      // `conversations show --format json` projects the structured result flat
-      // on the entry; the v2 storage envelope keeps it beside the message.
       const execution = raw?.tool_execution ?? raw?.entry?.tool_execution;
       const parsed = execution ? toolResultFrom(execution) : parseToolResult(content);
       if (parsed) {
