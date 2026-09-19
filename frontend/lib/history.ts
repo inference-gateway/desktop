@@ -1,9 +1,3 @@
-// Bounded snapshot history for whole-document undo/redo: push the previous
-// value before an edit, undo/redo swap it with the current one. Snapshots beat
-// command inversion when every edit is a pure function to a new value, as the
-// timeline helpers are. push drops the redo branch and trims entries past the
-// limit. ponytail: snapshots only - per-command deltas if timelines get huge.
-
 export interface History<T> {
   push: (prev: T) => void;
   undo: (current: T) => T | undefined;
