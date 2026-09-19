@@ -1,25 +1,7 @@
-// The <stem>.timeline.json contract shared with the video-editing skill:
-// a duration plus video, audio, overlay and captions tracks of clips. An
-// audio clip with `text` is spoken by the agent (cloned voice); one with
-// only `src` is a plain file the user placed. "voice" is accepted as a
-// legacy track kind. An overlay clip is a rendered card (a .mov with alpha;
-// the webview drops VP9 alpha in webm) composited over the video;
-// `x`/`y`/`width`/`height` are fractions of the frame. A captions clip is
-// text over the video, styled by the track's preset. Preview and export are
-// the same canvas renderer (frontend/lib/render.ts), so what the editor shows
-// is what the file gets.
 export type ClipStatus = "draft" | "done";
 export type TrackKind = "video" | "audio" | "overlay" | "captions";
-// Per-word timing of a caption clip (absolute seconds), for the word-by-word
-// presets. Missing `text` falls back to the i-th word of the clip's text.
 export type CaptionWord = { text?: string; start: number; end: number };
-// What to do with the recording's own audio track: transcribe it and replace
-// it with the cloned voice, drop it, or mix it under the voice.
 export type SourceAudio = "transcribe" | "mute" | "keep";
-// Export frame size: the standard delivery sizes. The recording is scaled to
-// cover the frame, so a clip of a different shape is cropped rather than
-// padded; the preview shows what falls outside. Overlays and captions are
-// placed in this frame. `fps` is the rate the renderer walks the timeline at.
 export const DEFAULT_RESOLUTION = "1920x1080";
 export const DEFAULT_FPS = 30;
 export const RESOLUTIONS: { value: string; label: string }[] = [
@@ -37,28 +19,18 @@ export type Clip = {
   id: string;
   start: number;
   end: number;
-  // Seconds into `src` where the clip begins; set by trimming a clip's head.
   offset?: number;
   src?: string;
   text?: string;
   status?: ClipStatus;
-  // Where the clip sits in the export frame, as fractions of it. An overlay
-  // card's `x`/`y` are its top-left corner and `width`/`height` its size; a
-  // video clip's are the centre it is framed on, with `scale` a multiplier on
-  // the size that covers the frame - 1 fills it, less of it shows more of the
-  // clip. Absent means centred and filling, which is what an untouched
-  // recording does.
   x?: number;
   y?: number;
   width?: number;
   height?: number;
   scale?: number;
-  // The HTML composition an overlay's `src` was rendered from.
+
   html?: string;
-  // Spoken clips only: the voice sample this clip's wav was cloned from,
-  // written by the agent when it synthesizes. Absent means the track's pick.
   voice_sample?: string;
-  // Caption clips only: when each word is spoken, for the word presets.
   words?: CaptionWord[];
 };
 
@@ -68,10 +40,6 @@ export type Track = {
   clips: Clip[];
   voice_sample?: string;
   gain?: number;
-  // Captions tracks only: a preset name (unknown ones fall back to the
-  // default) and where the captions sit on the frame - `position` is the
-  // standard placement, `x`/`y` the centre of the caption box as fractions of
-  // the frame once the user has dragged it, and they win over `position`.
   style?: string;
   position?: "bottom" | "center" | "top";
   x?: number;
@@ -133,7 +101,6 @@ export const CAPTION_STYLES: CaptionStyle[] = [
   },
 ];
 export const DEFAULT_CAPTION_STYLE = "classic";
-// Unknown preset names fall back to the default preset.
 export const captionStyle = (style?: string): string =>
   CAPTION_STYLES.some((s) => s.value === style) ? style! : DEFAULT_CAPTION_STYLE;
 export const captionPreset = (style?: string): CaptionStyle =>
@@ -148,7 +115,6 @@ function num(v: unknown, fallback = 0): number {
 }
 
 const optNum = (v: unknown): number | undefined => (v === undefined ? undefined : num(v));
-// A fraction of the frame, clamped so a dragged caption cannot leave it.
 const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
 
 export function parseTimeline(json: string): Timeline {

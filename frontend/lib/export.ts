@@ -1,15 +1,7 @@
-// Walking the timeline frame by frame and handing the pixels to ffmpeg. The
-// frames come from the same drawFrame() the preview uses, drawn at the export
-// frame's own pixel size, so the file is the preview by construction rather
-// than by review. ffmpeg only mixes the audio and encodes; it is given the
-// picture already composed, one raw RGBA frame every 1/fps.
 import { api } from "./tauri";
 import { activeVideo, drawFrame } from "./render";
 import { serializeTimeline, type Timeline } from "./timeline";
 
-// How long to wait for the seeked frame to be presented before drawing
-// anyway. The wait is a frame when the window is on screen; when it is hidden
-// the callbacks never fire, and an export must not hang because of that.
 const PRESENT_TIMEOUT_MS = 50;
 
 type Elements = (clipId: string) => HTMLMediaElement | null;
@@ -18,8 +10,6 @@ const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // `seeked` says the position moved, not that the new picture is drawable, so
 // wait for the frame to be presented as well.
-// ponytail: requestVideoFrameCallback where the webview has it, a double rAF
-// otherwise; WebCodecs VideoDecoder is the upgrade if this is ever too slow.
 function presented(el: HTMLVideoElement): Promise<void> {
   const rvfc = (el as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number })
     .requestVideoFrameCallback;

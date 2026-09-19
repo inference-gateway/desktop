@@ -166,9 +166,6 @@ fn lists(ffmpeg: &Path, query: &str, wanted: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
-// The export only mixes audio and encodes: the picture arrives already
-// composed on the frontend's canvas, so no scale, overlay or subtitles filter
-// is wanted, and libass is not needed at all.
 const EXPORT_FILTERS: [&str; 3] = [" adelay ", " amix ", " apad "];
 const EXPORT_ENCODERS: [&str; 2] = [" libx264 ", " aac "];
 
@@ -870,8 +867,6 @@ mod tests {
             ),
             "{joined}"
         );
-        // The open-ended first clip's sound stops where the next clip takes
-        // the picture over, not where its file ends.
         assert!(
             joined.contains(
                 "[1:a]atrim=start=0:end=6,asetpts=PTS-STARTPTS,adelay=0|0[a1];[2:a]atrim=start=2:end=6,asetpts=PTS-STARTPTS,adelay=6000|6000[a2];[3:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500[a3];[4:a]adelay=0|0,volume=0.2[a4];[a1][a2][a3][a4]amix=inputs=4:normalize=0[mix];[mix]apad[a]"
@@ -893,14 +888,12 @@ mod tests {
             "no video filter survives: {joined}"
         );
 
-        // Muting drops the recording, so its file is never opened at all.
         let muted = json.replace("\"keep\"", "\"mute\"");
         let (args, _, _) = export_plan(&dir, "demo", &muted).unwrap();
         let joined = args.join(" ");
         assert!(!joined.contains("demo.mov"), "{joined}");
         assert!(joined.contains("[1:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500[a1];[2:a]adelay=0|0,volume=0.2[a2];[a1][a2]amix=inputs=2"), "{joined}");
 
-        // A picture with no sound needs no filtergraph at all.
         let silent = r#"{"duration":4,"tracks":[{"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov"}]}]}"#;
         let (args, plan, sidecar) = export_plan(&dir, "demo", silent).unwrap();
         assert!(!args.contains(&"-filter_complex".to_string()));
@@ -908,7 +901,6 @@ mod tests {
         assert_eq!(plan.frames, 120);
         assert!(sidecar.is_none());
 
-        // An empty timeline, a bad frame size and a backwards clip all refuse.
         assert!(export_plan(&dir, "demo", r#"{"tracks":[]}"#).is_err());
         assert!(
             export_plan(
@@ -950,7 +942,6 @@ mod tests {
                 {"start":0,"end":1.5,"text":"first line"},
                 {"start":5,"end":6,"text":"   "}]}]}"#;
         let (args, plan, sidecar) = export_plan(&dir, "demo", json).unwrap();
-        // The captions are drawn on the canvas, so nothing burns them in here.
         assert!(!args.join(" ").contains("subtitles="));
         assert_eq!((plan.width, plan.height), (1080, 1920));
         let (path, body) = sidecar.unwrap();

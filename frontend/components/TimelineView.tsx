@@ -156,12 +156,10 @@ const clipClass = (tr: Track, c: Clip) =>
             ? "border-amber-300/70 bg-amber-600/85"
             : "border-violet-400/60 bg-violet-700/85";
 
-// ponytail: length for a dropped file whose metadata could not be read (outside the projects root).
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
 
-// Name used when the user starts layering tracks before the agent wrote any timeline.
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -271,13 +269,9 @@ export function TimelineView() {
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageObserver = useRef<ResizeObserver | null>(null);
-  // The export frame inside the stage, in CSS pixels: where the sharp rect is
-  // drawn, and what a dragged caption's position is a fraction of.
   const frameRef = useRef<Rect | null>(null);
   const grabRef = useRef<HTMLSpanElement>(null);
   const grab = useRef<{ dx: number; dy: number } | null>(null);
-  // Panning the video inside the frame, and the wheel-zoom transaction that
-  // coalesces a whole scroll gesture into one undo entry.
   const pan = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
   const zoomGesture = useRef<{ base: number; factor: number; timer: ReturnType<typeof setTimeout> } | null>(null);
   const onWheel = useRef<(e: WheelEvent) => void>(() => {});
@@ -364,7 +358,6 @@ export function TimelineView() {
   useEffect(() => {
     paint(timeRef.current);
   });
-  // The canvas is measured in CSS pixels, so a window resize has to repaint it.
   const attachCanvas = (el: HTMLCanvasElement | null) => {
     if (canvasRef.current && wheelListener.current) {
       canvasRef.current.removeEventListener("wheel", wheelListener.current);
@@ -456,8 +449,6 @@ export function TimelineView() {
 
   const running = runningIds.size;
 
-  // ponytail: a half-written JSON can briefly fail to parse; the trailing
-  // debounce makes it rare. Retry once on parse error if it shows up.
   useEffect(() => {
     if (!project) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -545,10 +536,6 @@ export function TimelineView() {
     syncMedia(t, playing);
   };
 
-  // Export walks the timeline frame by frame, so the playhead follows it and
-  // the preview shows the frame being written. Both are stepped once per
-  // percent rather than once per frame, which keeps a long export from
-  // re-rendering thousands of times.
   const exportVideo = () => {
     if (!name || !timeline) return;
     const fps = frameFps(timeline);
@@ -673,8 +660,6 @@ export function TimelineView() {
   const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
-  // The video clip under the playhead is the one the frame controls act on:
-  // framing is per clip, so a timeline of several recordings keeps one each.
   const framed = timeline ? activeVideo(timeline, time, hiddenLanes) : null;
   const framedEl = framed ? mediaRefs.current.get(framed.id) : null;
   const framedSize =
@@ -709,9 +694,6 @@ export function TimelineView() {
     e.currentTarget.releasePointerCapture(e.pointerId);
     commitEdit();
   };
-  // A whole scroll (or trackpad pinch, which arrives as a ctrl-wheel) is one
-  // undo entry: the gesture opens on the first event and commits once it has
-  // been quiet for ZOOM_SETTLE_MS.
   onWheel.current = (e: WheelEvent) => {
     if (!framed || exporting) return;
     e.preventDefault();

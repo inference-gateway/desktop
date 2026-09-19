@@ -1,18 +1,3 @@
-// The one renderer. It composes a timeline frame onto a 2D canvas - video,
-// overlay cards, captions - and both paths use it: the preview draws it live
-// into the stage, the export draws it at the frame's full pixel size and hands
-// the pixels to ffmpeg. There is no second implementation to keep in sync,
-// which is the whole point: a look is written once and the export gets it.
-//
-// The frame is `resolution` and the clip is scaled to cover it, so a clip of a
-// different shape is cropped. `drawPreview` shows the whole clip with the part
-// that falls outside the frame blurred and dimmed, so the crop is visible
-// before it is exported.
-//
-// ponytail: Canvas2D, not WebGPU/WebGL2. WKWebView does not reliably expose
-// navigator.gpu, and everything here (drawImage, roundRect, strokeText,
-// ctx.filter) is native. Upgrade path if an effect needs per-pixel work: back
-// drawFrame with a WebGL2 context behind the same signature.
 import {
   captionPreset,
   captionStyle,
@@ -25,30 +10,24 @@ import {
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
-// Pinned so the same JSON draws the same pixels. This is the app's own stack
-// (--font-sans in frontend/index.css), so the export matches what the user was
-// editing against rather than the Arial the old ASS export hard-coded.
 export const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-// Fraction of the frame a caption block may span, and its margin off the edge.
+
 const CAPTION_MAX_W = 0.9;
 const CAPTION_MARGIN = 0.06;
 const LINE_HEIGHT = 1.25;
-// Band padding and corner radius, as fractions of the font size.
+
 const BAND_PAD_X = 0.5;
 const BAND_PAD_Y = 0.2;
 const BAND_RADIUS = 0.15;
-// Width the blurred backdrop is downscaled to before being scaled back up:
-// the upscale is the blur, which costs nothing next to blurring at full size.
+
 const BLUR_W = 96;
 const BLUR_PX = 6;
 const WING_DIM = 0.45;
-// How much of the stage the export frame takes, leaving a margin for whatever
-// the clip pushes outside it to show in.
+
 const STAGE_MARGIN = 0.82;
 
-// What a clip draws from, resolved by the caller (a <video>, usually).
 export type Sources = (clipId: string) => CanvasImageSource | null;
-// Measures `text` at `font`; the caller supplies a canvas, a test a stub.
+
 export type Measure = (text: string, font: string) => number;
 
 function sizeOf(img: CanvasImageSource): { w: number; h: number } | null {
@@ -302,9 +281,6 @@ export function drawPreview(
   const img = base && sources(base.id);
   const size = img && sizeOf(img);
   if (base && img && size) {
-    // The backdrop is the clip itself under the same transform, blurred and
-    // dimmed, so moving or scaling the video moves the blur with it. The
-    // sharp copy goes over the top, clipped to the frame.
     const v = videoRect(base, size, fw, fh);
     const on = {
       x: frame.x + (v.x * frame.w) / fw,

@@ -134,9 +134,6 @@ export type DesktopConfig = {
   vision_annotator_model: string;
 };
 export type Timelines = { dir: string; names: string[] };
-// What the backend's ffmpeg is waiting for: the canvas size, how many frames
-// to push at what rate and where the file lands. One computation, so the
-// canvas and the encoder cannot disagree about any of it.
 export type ExportPlan = { width: number; height: number; fps: number; frames: number; output: string };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {

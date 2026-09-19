@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { activeVideo, containRect, coverRect, fitScale, layoutCaption, overlayRect, videoRect } from "./render";
 import type { Timeline, Track } from "./timeline";
 
-// Every glyph is one unit wide per character, so a layout assertion reads as
-// character counts instead of font metrics.
 const measure = (text: string) => text.length;
 
 const timeline = (tracks: Track[]): Timeline => ({ version: 1, duration: 10, tracks });
@@ -20,8 +18,6 @@ describe("fitting", () => {
   });
 
   test("the frame inscribed in the clip is the region cover exports", () => {
-    // A 9:16 frame over a 16:9 clip shown 1600 wide: the sharp rect is the
-    // inscribed 9:16 box, and everything either side of it is the blurred wing.
     const clip = containRect(16, 9, 1600, 900);
     const frame = containRect(1080, 1920, clip.w, clip.h);
     expect(frame.w).toBeCloseTo(506.25, 5);
@@ -137,8 +133,6 @@ describe("caption layout", () => {
 
   test("it wraps at 90% of the frame and uppercases when the preset says so", () => {
     const long = { ...clip, text: "a ".repeat(40).trim() };
-    // "bold" is upper-case, and measure() counts characters, so 90% of a
-    // 20-wide frame fits 18 characters - nine "a " pairs - per line.
     const l = layoutCaption(track({ style: "bold" }), long, 20, 1080, measure)!;
     expect(l.lines.length).toBeGreaterThan(1);
     expect(l.lines[0].w).toBeLessThanOrEqual(18);
@@ -151,7 +145,6 @@ describe("caption layout", () => {
       { text: "there", start: 1, end: 2 },
     ];
     expect(layoutCaption(track({ style: "karaoke" }), { ...clip, words }, 1920, 1080, measure)!.words).toEqual(words);
-    // A preset that does not do per-word colour ignores the timings.
     expect(layoutCaption(track({ style: "classic" }), { ...clip, words }, 1920, 1080, measure)!.words).toBeUndefined();
   });
 
