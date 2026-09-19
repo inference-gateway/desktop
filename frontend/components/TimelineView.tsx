@@ -311,9 +311,6 @@ export function TimelineView() {
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
   const history = useRef(createHistory<Timeline>());
-  // One history entry per pointer gesture: pointerdown arms it, the first
-  // edit pushes the previous timeline, up/cancel disarms so keyboard edits
-  // push again.
   const pushedRef = useRef(false);
   const dragClipRef = useRef<{ kind: "move" | "start" | "end"; track: string; clip: Clip; x0: number } | null>(null);
   const scrubRef = useRef(false);
