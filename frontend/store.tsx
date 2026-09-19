@@ -174,6 +174,7 @@ function useDesktopStore() {
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
   const [projectBranches, setProjectBranches] = useState<Record<string, string>>(() => ({}));
   const [projectDefaultBranches, setProjectDefaultBranches] = useState<Record<string, string>>(() => ({}));
+  const [projectRemotes, setProjectRemotes] = useState<Record<string, string>>(() => ({}));
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -721,6 +722,7 @@ function useDesktopStore() {
     setDirtyProjects(new Set(status.dirty));
     setProjectBranches(status.branches);
     setProjectDefaultBranches(status.default_branches);
+    setProjectRemotes(status.remotes);
   }, []);
 
   useEffect(() => {
@@ -1755,6 +1757,7 @@ function useDesktopStore() {
     dirtyProjects,
     projectBranches,
     projectDefaultBranches,
+    projectRemotes,
     refreshGitProjects,
     refreshProjects,
     activities,

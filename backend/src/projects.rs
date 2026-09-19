@@ -462,16 +462,18 @@ pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String>
         .map_err(|e| format!("scan task failed: {e}"))
 }
 
-/// Which projects are git checkouts and which of those have uncommitted
+/// Which projects are git checkouts, which of those have uncommitted
 /// changes (staged, modified or untracked non-ignored files - anything
-/// `git status --porcelain` reports); powers the git indicator in the UI.
-/// Derived live from the filesystem, nothing stored.
+/// `git status --porcelain` reports), their branch heads and their GitHub
+/// remotes (`owner/name`, for the "open on GitHub" affordances); powers the
+/// git indicator in the UI. Derived live from the filesystem, nothing stored.
 #[derive(Default, serde::Serialize)]
 pub(crate) struct GitProjectStatus {
     pub(crate) git: Vec<String>,
     pub(crate) dirty: Vec<String>,
     pub(crate) branches: BTreeMap<String, String>,
     pub(crate) default_branches: BTreeMap<String, String>,
+    pub(crate) remotes: BTreeMap<String, String>,
 }
 
 /// The actual git directory for a checkout: `.git` itself, or the directory
@@ -585,6 +587,35 @@ fn watch_git_dirs(
     Ok(watcher)
 }
 
+/// One sweep over the resolved project directories: which are git
+/// checkouts, which are dirty, their branch heads and GitHub remotes,
+/// plus the git dirs to watch. Pure filesystem reads, so tests can drive
+/// it without Tauri.
+fn sweep_git_projects(dirs: &BTreeMap<String, PathBuf>) -> (GitProjectStatus, Vec<PathBuf>) {
+    let mut status = GitProjectStatus::default();
+    let mut git_dirs = Vec::new();
+    for (name, dir) in dirs {
+        let Some(git_dir) = git_dir(dir) else {
+            continue;
+        };
+        git_dirs.push(git_dir);
+        status.git.push(name.clone());
+        if has_uncommitted_changes(dir) {
+            status.dirty.push(name.clone());
+        }
+        if let Some(remote) = git_remote_repo(dir) {
+            status.remotes.insert(name.clone(), remote);
+        }
+        if let Some(branch) = read_head_branch(dir) {
+            status.branches.insert(name.clone(), branch);
+            status
+                .default_branches
+                .insert(name.clone(), read_default_branch(dir));
+        }
+    }
+    (status, git_dirs)
+}
+
 /// ponytail: every HEAD change re-sweeps all projects; emit the project name
 /// and add a single-project command if this is ever slow with many repos.
 #[tauri::command]
@@ -595,25 +626,12 @@ pub(crate) async fn git_project_status(
     let (status, git_dirs) = tokio::task::spawn_blocking(move || {
         let names = project_names();
         let root = PathBuf::from(read_config().projects_root);
-        let mut status = GitProjectStatus::default();
-        let mut git_dirs = Vec::new();
-        for (name, dir) in resolved_dirs(&root, &names, &project_groups(), &project_paths()) {
-            let Some(git_dir) = git_dir(&dir) else {
-                continue;
-            };
-            git_dirs.push(git_dir);
-            status.git.push(name.clone());
-            if has_uncommitted_changes(&dir) {
-                status.dirty.push(name.clone());
-            }
-            if let Some(branch) = read_head_branch(&dir) {
-                status.branches.insert(name.clone(), branch);
-                status
-                    .default_branches
-                    .insert(name, read_default_branch(&dir));
-            }
-        }
-        (status, git_dirs)
+        sweep_git_projects(&resolved_dirs(
+            &root,
+            &names,
+            &project_groups(),
+            &project_paths(),
+        ))
     })
     .await
     .map_err(|e| format!("git status task failed: {e}"))?;
@@ -1670,6 +1688,46 @@ mod tests {
         .unwrap();
         assert_eq!(git_remote_repo(&gl), None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The status sweep reports GitHub remotes only for checkouts whose remote
+    /// points at github.com (https or ssh form); non-git projects and other
+    /// hosts are absent from the map.
+    #[test]
+    fn sweep_collects_github_remotes_only_for_github_checkouts() {
+        let root = std::env::temp_dir().join(format!("igd-remotes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let gh = root.join("gh");
+        fake_checkout(&gh, "owner/repo");
+        let ssh = root.join("ssh");
+        std::fs::create_dir_all(ssh.join(".git")).unwrap();
+        std::fs::write(
+            ssh.join(".git").join("config"),
+            "[remote \"origin\"]\n\turl = git@github.com:owner/other.git\n",
+        )
+        .unwrap();
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let dirs = BTreeMap::from([
+            ("gh".to_string(), gh),
+            ("ssh".to_string(), ssh),
+            ("plain".to_string(), plain),
+        ]);
+        let (status, git_dirs) = sweep_git_projects(&dirs);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(
+            status.remotes.get("gh").map(String::as_str),
+            Some("owner/repo"),
+            "https form"
+        );
+        assert_eq!(
+            status.remotes.get("ssh").map(String::as_str),
+            Some("owner/other"),
+            "ssh form"
+        );
+        assert!(!status.remotes.contains_key("plain"), "non-git project");
+        assert_eq!(status.git, vec!["gh", "ssh"], "plain is not a checkout");
+        assert_eq!(git_dirs.len(), 2);
     }
 
     #[test]
