@@ -315,9 +315,6 @@ export function TimelineView() {
   const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
   const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
 
-  // ponytail: a within-clip speed ramp plays back as a stepped playbackRate
-  // corrected on drift, not a continuous retime; the export seeks every frame
-  // and is exact. Good enough to preview a ramp; exact where it is delivered.
   const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
     for (const tr of timeline.tracks) {
@@ -720,9 +717,6 @@ export function TimelineView() {
     const s = framingAt(c, time).scale;
     return clampScale(s && s > 0 ? s : 1);
   };
-  // Framing a video clip writes a keyframe at the playhead for any property that
-  // is already animated, and the static field otherwise - so the framing row,
-  // the drag-to-pan and the wheel-zoom all key an animated clip in place.
   const applyFraming = (t: Timeline, c: Clip, next: { x?: number; y?: number; scale?: number }): Timeline => {
     const local = time - c.start;
     let out = t;
@@ -1216,9 +1210,6 @@ export function TimelineView() {
                     bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
-                  // A speed change or a scrub reseeks this element to a new
-                  // source time; repaint once that frame lands, or the stage
-                  // keeps showing the frame from before the retime.
                   onSeeked={() => paint(timeRef.current)}
                 />
               ))}
