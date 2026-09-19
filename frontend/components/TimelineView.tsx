@@ -29,6 +29,7 @@ import {
 import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
+import { createHistory } from "@/lib/history";
 import {
   CAPTION_STYLES,
   DEFAULT_RESOLUTION,
@@ -309,6 +310,11 @@ export function TimelineView() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
+  const history = useRef(createHistory<Timeline>());
+  // One history entry per pointer gesture: pointerdown arms it, the first
+  // edit pushes the previous timeline, up/cancel disarms so keyboard edits
+  // push again.
+  const pushedRef = useRef(false);
   const dragClipRef = useRef<{ kind: "move" | "start" | "end"; track: string; clip: Clip; x0: number } | null>(null);
   const scrubRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -402,9 +408,11 @@ export function TimelineView() {
         setName(chosen);
         if (!chosen) {
           setTimeline(null);
+          history.current.reset();
           return;
         }
         setTimeline(parseTimeline(await api.readTimeline(project, chosen)));
+        history.current.reset();
         setLoadError("");
       } catch (e) {
         setLoadError(String(e));
@@ -460,6 +468,26 @@ export function TimelineView() {
   const update = (next: Timeline) => {
     dirtyRef.current = true;
     if (!name) setName(DEFAULT_TIMELINE);
+    if (!pushedRef.current) {
+      pushedRef.current = true;
+      if (timeline) history.current.push(timeline);
+    }
+    setTimeline(next);
+  };
+
+  const undoEdit = () => {
+    if (!timeline) return;
+    const prev = history.current.undo(timeline);
+    if (prev === undefined) return;
+    dirtyRef.current = true;
+    setTimeline(prev);
+  };
+
+  const redoEdit = () => {
+    if (!timeline) return;
+    const next = history.current.redo(timeline);
+    if (next === undefined) return;
+    dirtyRef.current = true;
     setTimeline(next);
   };
 
@@ -513,6 +541,21 @@ export function TimelineView() {
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline, selected]);
+
+  // Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z / Ctrl+Y, like the editors the timeline imitates.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      const redo = (e.shiftKey && key === "z") || (!e.shiftKey && key === "y");
+      const undo = !e.shiftKey && key === "z";
+      if (!(e.ctrlKey || e.metaKey) || (!redo && !undo) || isEditable(e.target) || e.defaultPrevented) return;
+      e.preventDefault();
+      (redo ? redoEdit : undoEdit)();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
 
   const splitAtPlayhead = () => {
     if (!timeline) return;
@@ -738,7 +781,19 @@ export function TimelineView() {
   };
 
   return (
-    <div id="timeline-view" className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background">
+    <div
+      id="timeline-view"
+      onPointerDownCapture={() => {
+        pushedRef.current = false;
+      }}
+      onPointerUpCapture={() => {
+        pushedRef.current = false;
+      }}
+      onPointerCancelCapture={() => {
+        pushedRef.current = false;
+      }}
+      className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
+    >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         {names.length > 1 ? (
           <select
