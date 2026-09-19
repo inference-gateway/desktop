@@ -6,11 +6,11 @@ narration:
   - "The project shows up in the sidebar."
   - "Open the broadcast sheet to init projects."
   - "One project is staged for init."
-  - "Toggle it into the selection."
-  - "Toggle it back out - the selection is two-way."
-  - "Stage it again."
+  - "Toggle it out of the selection - the toggle is two-way."
+  - "Toggle it back in."
   - "Arm the init - a second click confirms, so a stray click cannot fan out."
-  - "Init runs and the project answers (the gateway fallback)."
+  - "Confirm; init runs infer in the project directory."
+  - "The init run completes (the gateway fallback answers)."
 steps:
   - new_chat
   - click: { button: "New project" }
@@ -18,7 +18,6 @@ steps:
   - wait_for: { text: "e2e-init-project", timeout: 15 }
   - click: { button: "Broadcast to projects" }
   - wait_for: { button: "Init 1 project", timeout: 10 }
-  - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Toggle init for project e2e-init-project" }
   - click: { button: "Init 1 project" }
