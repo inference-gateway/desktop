@@ -939,11 +939,7 @@ pub(crate) async fn list_models() -> Result<Vec<String>, String> {
 
 pub(crate) fn fetch_models() -> Result<Vec<String>, String> {
     if mock_mode() {
-        return Ok(vec![
-            "openai/gpt-4o".into(),
-            "anthropic/claude-sonnet-4-5".into(),
-            "openai/gpt-image-2".into(),
-        ]);
+        return mock_models();
     }
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let resp = ureq::get(&url)
@@ -963,6 +959,34 @@ pub(crate) fn fetch_models() -> Result<Vec<String>, String> {
         .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
         .collect();
     Ok(models)
+}
+
+/// Mock mode's one source of truth for the model list: the `models:` block
+/// of the same scenarios file the infer children serve turns from
+/// (`INFER_GATEWAY_MOCK_SCENARIOS`, set by the e2e driver or manual mock
+/// dev). No scenarios file configured means no models to select.
+fn mock_models() -> Result<Vec<String>, String> {
+    let path = std::env::var("INFER_GATEWAY_MOCK_SCENARIOS").map_err(|_| {
+        "mock mode needs INFER_GATEWAY_MOCK_SCENARIOS pointing at a scenarios.yaml".to_string()
+    })?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("reading {path}: {e}"))?;
+    parse_model_ids(&text)
+}
+
+/// The tokenless `models:` block of a scenarios file as bare model ids.
+fn parse_model_ids(yaml: &str) -> Result<Vec<String>, String> {
+    #[derive(serde::Deserialize)]
+    struct ScenarioDefs {
+        #[serde(default)]
+        models: Vec<ModelDef>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ModelDef {
+        id: String,
+    }
+    let defs: ScenarioDefs =
+        serde_norway::from_str(yaml).map_err(|e| format!("parsing scenarios: {e}"))?;
+    Ok(defs.models.into_iter().map(|m| m.id).collect())
 }
 /// Resolve a history file path. Chat history is the canonical `~/.infer/history`
 /// (shared with the CLI; a directory there means some CLI version nests it at
@@ -1866,6 +1890,22 @@ mod tests {
             dir.ends_with("projects/-home-alice-repo/conversations"),
             "{}",
             dir.display()
+        );
+    }
+
+    #[test]
+    fn mock_models_parse_the_scenarios_models_block() {
+        let yaml = "models:\n  - id: openai/gpt-4o\n    object: model\n  - id: anthropic/claude-sonnet-4-5\n    object: model\nfallback:\n  content: Done.\nscenarios: []\n";
+        assert_eq!(
+            parse_model_ids(yaml).unwrap(),
+            vec![
+                "openai/gpt-4o".to_string(),
+                "anthropic/claude-sonnet-4-5".to_string()
+            ]
+        );
+        assert_eq!(
+            parse_model_ids("scenarios: []\n").unwrap(),
+            Vec::<String>::new()
         );
     }
 }
