@@ -293,21 +293,6 @@ struct TrackFile {
     clips: Vec<ClipFile>,
 }
 
-/// One key on a speed channel: value `v` at clip-local time `t`.
-#[derive(serde::Deserialize)]
-struct KfFile {
-    t: f64,
-    v: f64,
-}
-
-/// The only keyframe channel the export reads: the rest (scale, x, y) are the
-/// canvas renderer's business and never reach the audio mix.
-#[derive(serde::Deserialize, Default)]
-struct ClipKeysFile {
-    #[serde(default)]
-    speed: Vec<KfFile>,
-}
-
 /// Only what the audio mix and the SRT need. Placement, sizes, styles and word
 /// timings are the canvas renderer's business now; speed is the exception,
 /// because a retimed clip's own sound has to be stretched to match. Serde
@@ -322,7 +307,7 @@ struct ClipFile {
     #[serde(default)]
     speed: Option<f64>,
     #[serde(default)]
-    keys: Option<ClipKeysFile>,
+    speed_ease: Option<String>,
 }
 
 impl ClipFile {
@@ -330,49 +315,25 @@ impl ClipFile {
         self.src.as_deref().is_some_and(|s| !s.is_empty())
     }
 
-    /// Seconds of source consumed from the clip's start to clip-local `local`:
-    /// the integral of the piecewise-linear speed curve, mirroring the
-    /// frontend's `sourceConsumed` so the kept audio matches the retimed
-    /// picture. Plain `speed * local` without a speed channel.
-    fn source_consumed(&self, local: f64) -> f64 {
-        if local <= 0.0 {
-            return 0.0;
-        }
-        let ch = self
-            .keys
-            .as_ref()
-            .map(|k| k.speed.as_slice())
-            .unwrap_or(&[]);
-        if ch.is_empty() {
-            return self.speed.unwrap_or(1.0) * local;
-        }
-        let mut acc = 0.0;
-        let mut t0 = 0.0;
-        let mut s0 = ch[0].v;
-        for k in ch {
-            if k.t <= t0 {
-                s0 = k.v;
-                continue;
-            }
-            let end = k.t.min(local);
-            let s1 = s0 + (k.v - s0) * ((end - t0) / (k.t - t0));
-            acc += (s0 + s1) / 2.0 * (end - t0);
-            if local <= k.t {
-                return acc;
-            }
-            t0 = k.t;
-            s0 = k.v;
-        }
-        acc + s0 * (local - t0)
+    /// Source-seconds per timeline-second over the whole clip: what the kept
+    /// audio is sped up or slowed by so it still fills the clip's slot. Constant
+    /// is the speed itself; the ease-in-out bell averages to `(speed+1)/2`,
+    /// mirroring the frontend's `avgSpeed`.
+    fn avg_speed(&self, _len: f64) -> f64 {
+        let s = self.speed.unwrap_or(1.0);
+        let avg = if self.speed_ease.as_deref() == Some("easeInOut") {
+            (s + 1.0) / 2.0
+        } else {
+            s
+        };
+        avg.max(0.05)
     }
 
-    /// Source-seconds per timeline-second over the whole clip: what the kept
-    /// audio is sped up or slowed by so it still fills the clip's slot.
-    fn avg_speed(&self, len: f64) -> f64 {
-        if len <= 0.0 {
-            return 1.0;
-        }
-        (self.source_consumed(len) / len).max(0.05)
+    /// Seconds of source a clip of timeline length `len` consumes: the average
+    /// speed over its length. `atrim` takes this whole span and `atempo` stretches
+    /// it back to `len`.
+    fn source_consumed(&self, len: f64) -> f64 {
+        self.avg_speed(len) * len.max(0.0)
     }
 }
 
@@ -600,6 +561,9 @@ fn export_plan(
             args.extend(["-vn", "-i"].map(String::from));
             args.push(src.to_string_lossy().into_owned());
             let ms = (c.start.max(0.0) * 1000.0).round() as u64;
+            // ponytail: one average-speed atempo per clip - exact for a constant
+            // clip, a touch of drift through an ease-in-out bell; per-segment
+            // atempo is the upgrade if mid-ramp kept-audio sync ever matters.
             let (src_len, tempo) = match lens[k] {
                 Some(len) if len > 0.0 => (
                     Some(c.source_consumed(len)),
@@ -1039,12 +1003,13 @@ mod tests {
             "{joined}"
         );
 
-        // A 1->3 ramp over 4s consumes the same 8s of source (average speed 2).
-        let ramp = r#"{"duration":4,"source_audio":"keep","tracks":[
-            {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","keys":{"speed":[{"t":0,"v":1},{"t":4,"v":3}]}}]}]}"#;
-        let joined = export_plan(&dir, "demo", ramp).unwrap().0.join(" ");
+        // An ease-in-out 2x clip over 4s averages (2+1)/2 = 1.5x, so it takes 6s
+        // of source and one atempo=1.5 step stretches it back to the 4s slot.
+        let eased = r#"{"duration":4,"source_audio":"keep","tracks":[
+            {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov","speed":2,"speed_ease":"easeInOut"}]}]}"#;
+        let joined = export_plan(&dir, "demo", eased).unwrap().0.join(" ");
         assert!(
-            joined.contains("atrim=start=0:end=8,asetpts=PTS-STARTPTS,atempo=2,"),
+            joined.contains("atrim=start=0:end=6,asetpts=PTS-STARTPTS,atempo=1.5,"),
             "{joined}"
         );
 

@@ -105,6 +105,7 @@ import {
   videoSource,
   type Clip,
   type SourceAudio,
+  type SpeedEase,
   type Timeline,
   type Track,
   type TrackKind,
@@ -1814,7 +1815,6 @@ const TRANSFORM_ROWS: { prop: TransformProp; label: string; aria: string; unit: 
   { prop: "scale", label: "Scale", aria: "Scale", unit: "%" },
   { prop: "x", label: "Pos X", aria: "Position X", unit: "" },
   { prop: "y", label: "Pos Y", aria: "Position Y", unit: "" },
-  { prop: "speed", label: "Speed", aria: "Speed", unit: "×" },
 ];
 
 // A number field that shows the value sampled at the playhead but leaves what
@@ -1868,10 +1868,12 @@ function NumberField({
   );
 }
 
-// The transform inspector for a video clip: Scale / X / Y / Speed, each showing
-// the value sampled at the playhead, with a keyframe diamond that animates the
-// property. Editing an animated property writes a key at the playhead; a still
-// one writes the static field. The header arrows jump between the clip's keys.
+// The transform inspector for a video clip: Scale / X / Y each show the value
+// sampled at the playhead, with a keyframe diamond that animates the property -
+// editing an animated one writes a key at the playhead, a still one the static
+// field. The header arrows jump between the clip's keys. Speed sits below as a
+// per-clip value plus a constant/ease-in-out choice (it resizes the clip, so it
+// is not a keyframe channel).
 function TransformPanel({
   timeline,
   clip,
@@ -1898,18 +1900,15 @@ function TransformPanel({
     scale: asPercent(clampScale(f.scale && f.scale > 0 ? f.scale : 1)),
     x: Math.round((f.x ?? 0.5) * 1000) / 1000,
     y: Math.round((f.y ?? 0.5) * 1000) / 1000,
-    speed: Math.round(speedAt(clip, local) * 100) / 100,
   };
   const bounds: Record<TransformProp, { min: number; max: number; step: number }> = {
     scale: { min: MIN_FRAME_SCALE * 100, max: MAX_FRAME_SCALE * 100, step: 0.5 },
     x: { min: 0, max: 1, step: 0.001 },
     y: { min: 0, max: 1, step: 0.001 },
-    speed: { min: MIN_SPEED, max: MAX_SPEED, step: 0.05 },
   };
   const edit = (prop: TransformProp, raw: number) => {
     const v = prop === "scale" ? raw / 100 : raw;
     if (hasChannel(clip, prop)) live(setKf(timeline, clip.id, prop, local, v));
-    else if (prop === "speed") live(setSpeed(timeline, clip.id, v));
     else live(frameClip(timeline, clip.id, prop === "scale" ? { scale: v } : prop === "x" ? { x: v } : { y: v }));
   };
   const times = keyTimes(clip).map((t) => clip.start + t);
@@ -1962,7 +1961,7 @@ function TransformPanel({
               min={bounds[prop].min}
               max={bounds[prop].max}
               step={bounds[prop].step}
-              disabled={prop !== "speed" && !inside}
+              disabled={!inside}
               begin={begin}
               change={(v) => edit(prop, v)}
               end={end}
@@ -1996,6 +1995,31 @@ function TransformPanel({
           </div>
         );
       })}
+      <div className="flex items-center gap-2 border-t border-border/60 pt-1.5">
+        <span className="w-12 text-muted-foreground">Speed</span>
+        <NumberField
+          value={Math.round((clip.speed ?? 1) * 100) / 100}
+          aria="Speed"
+          min={MIN_SPEED}
+          max={MAX_SPEED}
+          step={0.05}
+          disabled={false}
+          begin={begin}
+          change={(v) => live(setSpeed(timeline, clip.id, v, clip.speed_ease))}
+          end={end}
+        />
+        <span className="w-3 text-muted-foreground">×</span>
+        <select
+          aria-label="Speed easing"
+          title="Constant speed, or ease in and out to the target"
+          value={clip.speed_ease === "easeInOut" ? "easeInOut" : "constant"}
+          onChange={(e) => commit(setSpeed(timeline, clip.id, clip.speed ?? 1, e.target.value as SpeedEase))}
+          className="ml-auto h-6 rounded border border-input bg-transparent px-1 text-foreground outline-none focus-visible:border-ring"
+        >
+          <option value="constant">Constant</option>
+          <option value="easeInOut">Ease in-out</option>
+        </select>
+      </div>
       {!inside && <span className="text-muted-foreground">Move the playhead over the clip to keyframe it.</span>}
     </div>
   );

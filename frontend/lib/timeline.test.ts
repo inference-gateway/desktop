@@ -33,6 +33,8 @@ import {
   MAX_SPEED,
   sampleKf,
   framingAt,
+  speedAt,
+  avgSpeed,
   sourceConsumed,
   sourceTimeAt,
   setKf,
@@ -484,24 +486,23 @@ describe("keyframes", () => {
     expect(framingAt({ id: "v", start: 0, end: 1, x: 0.4, scale: 2 }, 0.5)).toEqual({ x: 0.4, y: undefined, scale: 2 });
   });
 
-  test("sourceConsumed integrates a speed ramp and is linear without one", () => {
-    const ramp: Clip = {
-      id: "v",
-      start: 0,
-      end: 2,
-      keys: {
-        speed: [
-          { t: 0, v: 1 },
-          { t: 2, v: 3 },
-        ],
-      },
-    };
-    expect(sourceConsumed(ramp, 0)).toBe(0);
-    expect(sourceConsumed(ramp, 1)).toBeCloseTo(1.5, 6); // ∫₀¹(1+u)du
-    expect(sourceConsumed(ramp, 2)).toBeCloseTo(4, 6); // ∫₀²(1+u)du
+  test("sourceConsumed is linear for constant speed", () => {
     expect(sourceConsumed({ id: "v", start: 0, end: 4, speed: 0.5 }, 4)).toBe(2);
     expect(sourceConsumed({ id: "v", start: 0, end: 4 }, 3)).toBe(3);
+    expect(sourceConsumed({ id: "v", start: 0, end: 4, speed: 2 }, 1)).toBe(2);
     expect(sourceTimeAt({ id: "v", start: 5, end: 9, offset: 2, speed: 2 }, 7)).toBe(6); // 2 + 2s*2
+  });
+
+  test("an ease-in-out clip bells 1x at the edges to the target in the middle", () => {
+    const eased: Clip = { id: "v", start: 0, end: 4, speed: 3, speed_ease: "easeInOut" };
+    expect(speedAt(eased, 0)).toBeCloseTo(1, 6); // edge
+    expect(speedAt(eased, 4)).toBeCloseTo(1, 6); // edge
+    expect(speedAt(eased, 2)).toBeCloseTo(3, 6); // midpoint hits the target
+    // the bell integrates to L*(s+1)/2 = 4*2 = 8, and is symmetric about the middle
+    expect(sourceConsumed(eased, 4)).toBeCloseTo(8, 6);
+    expect(sourceConsumed(eased, 2)).toBeCloseTo(4, 6);
+    expect(avgSpeed(eased)).toBeCloseTo(2, 6); // (3+1)/2
+    expect(avgSpeed({ id: "v", start: 0, end: 4, speed: 3 })).toBeCloseTo(3, 6); // constant
   });
 
   test("setKf upserts, toggleKf captures then removes, moveKf retimes a diamond", () => {
@@ -520,31 +521,13 @@ describe("keyframes", () => {
     expect(toggleKf(moved, "v1", "scale", 6).tracks[0].clips[0].keys?.scale).toEqual([{ t: 4, v: 2 }]);
   });
 
-  test("speed keys are clamped and the channel is dropped when the last key goes", () => {
-    const on = setKf(timelineOf({ id: "v1", start: 0, end: 5 }), "v1", "speed", 1, 99);
-    expect(on.tracks[0].clips[0].keys?.speed).toEqual([{ t: 1, v: MAX_SPEED }]);
-    expect(toggleKf(on, "v1", "speed", 1).tracks[0].clips[0].keys).toBeUndefined();
-  });
-
-  test("splitClip advances the second offset by the integral and keeps the ramp on both halves", () => {
-    const base = timelineOf({
-      id: "v1",
-      src: "a.mov",
-      start: 0,
-      end: 4,
-      offset: 0,
-      keys: {
-        speed: [
-          { t: 0, v: 2 },
-          { t: 4, v: 2 },
-        ],
-      },
-    });
+  test("splitClip advances the second offset by the source consumed and carries speed to both halves", () => {
+    const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4, offset: 0, speed: 2, speed_ease: "easeInOut" });
     const clips = splitClip(base, "video", "v1", 2)!.tracks[0].clips;
     expect(clips).toHaveLength(2);
-    expect(clips[1].offset).toBeCloseTo(4, 6); // speed 2 over 2s consumes 4s of source
-    expect(clips[0].keys?.speed?.length).toBeGreaterThan(0);
-    expect(clips[1].keys?.speed?.[0].t).toBe(0);
+    expect(clips[1].offset).toBeCloseTo(3, 6); // ease-in-out 2x over the first half consumes 3s of source
+    expect(clips[0]).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
+    expect(clips[1]).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
   });
 
   test("trimClip head advances the offset by the source consumed at speed", () => {
@@ -554,29 +537,41 @@ describe("keyframes", () => {
     expect(out.tracks[0].clips[0].offset).toBeCloseTo(3, 6);
   });
 
-  test("keyframes survive a parse round-trip, sorted and clamped", () => {
+  test("keyframes and speed survive a parse round-trip, sorted and clamped", () => {
     const json = serializeTimeline(
       timelineOf({
         id: "v1",
         start: 0,
         end: 5,
+        speed: 99, // clamped to MAX_SPEED on load
+        speed_ease: "easeInOut",
         keys: {
-          speed: [
-            { t: 3, v: 99 },
-            { t: 1, v: 0.5 },
+          scale: [
+            { t: 3, v: 2 },
+            { t: 1, v: 1 },
           ],
         },
       }),
     );
-    expect(parseTimeline(json).tracks[0].clips[0].keys?.speed).toEqual([
-      { t: 1, v: 0.5 },
-      { t: 3, v: MAX_SPEED },
+    const clip = parseTimeline(json).tracks[0].clips[0];
+    expect(clip.keys?.scale).toEqual([
+      { t: 1, v: 1 },
+      { t: 3, v: 2 },
     ]);
+    expect(clip.speed).toBe(MAX_SPEED);
+    expect(clip.speed_ease).toBe("easeInOut");
   });
 
   test("setSpeed resizes the clip, holding the source span, and stops at the next clip", () => {
     const base = timelineOf({ id: "v1", src: "a.mov", start: 0, end: 4 });
     expect(setSpeed(base, "v1", 2).tracks[0].clips[0]).toMatchObject({ speed: 2, end: 2 }); // 4 / 2
+    expect(setSpeed(base, "v1", 99).tracks[0].clips[0].speed).toBe(MAX_SPEED); // clamped
+    // ease-in-out 2x averages 1.5x, so the clip lands at 4 / 1.5
+    const eased = setSpeed(base, "v1", 2, "easeInOut").tracks[0].clips[0];
+    expect(eased).toMatchObject({ speed: 2, speed_ease: "easeInOut" });
+    expect(eased.end).toBeCloseTo(4 / 1.5, 6);
+    // changing just the number keeps the easing mode
+    expect(setSpeed(setSpeed(base, "v1", 2, "easeInOut"), "v1", 4).tracks[0].clips[0].speed_ease).toBe("easeInOut");
     // chained edits hold the same source span, so back to 1x restores the length
     expect(setSpeed(setSpeed(base, "v1", 3), "v1", 1).tracks[0].clips[0].end).toBeCloseTo(4, 6);
     const two: Timeline = {

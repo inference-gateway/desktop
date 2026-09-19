@@ -19,8 +19,12 @@ export const SOURCE_AUDIO: { value: SourceAudio; label: string }[] = [
 // (seconds from the clip's start). A channel is sorted by `t`; its value is
 // held flat before the first key and after the last, and linear in between.
 export type Kf = { t: number; v: number };
-export type TransformProp = "scale" | "x" | "y" | "speed";
-export type ClipKeys = { scale?: Kf[]; x?: Kf[]; y?: Kf[]; speed?: Kf[] };
+export type TransformProp = "scale" | "x" | "y";
+export type ClipKeys = { scale?: Kf[]; x?: Kf[]; y?: Kf[] };
+// How a clip's speed is applied across its length: a flat multiplier, or a
+// symmetric ease that starts and ends at 1x and peaks at the target in the
+// middle (a self-contained slow-mo / speed bump). Absent means constant.
+export type SpeedEase = "constant" | "easeInOut";
 
 export type Clip = {
   id: string;
@@ -36,6 +40,7 @@ export type Clip = {
   height?: number;
   scale?: number;
   speed?: number;
+  speed_ease?: SpeedEase;
   keys?: ClipKeys;
 
   html?: string;
@@ -136,12 +141,12 @@ const optNum = (v: unknown): number | undefined => (v === undefined ? undefined 
 const frac = (v: unknown): number | undefined => (v === undefined ? undefined : Math.max(0, Math.min(1, num(v))));
 
 // Rebuild one keyframe channel from loose JSON: coerce every key to numbers,
-// clamp speed into range, sort by time, and drop an empty channel.
-function parseChannel(raw: unknown, prop: TransformProp): Kf[] | undefined {
+// sort by time, and drop an empty channel.
+function parseChannel(raw: unknown): Kf[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   const ch = raw
     .map((k) => k as { t?: unknown; v?: unknown })
-    .map((k) => ({ t: Math.max(0, num(k.t)), v: prop === "speed" ? clampSpeed(num(k.v, 1)) : num(k.v) }))
+    .map((k) => ({ t: Math.max(0, num(k.t)), v: num(k.v) }))
     .sort((a, b) => a.t - b.t);
   return ch.length ? ch : undefined;
 }
@@ -150,10 +155,9 @@ function parseKeys(raw: unknown): ClipKeys | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
   return pruneKeys({
-    scale: parseChannel(r.scale, "scale"),
-    x: parseChannel(r.x, "x"),
-    y: parseChannel(r.y, "y"),
-    speed: parseChannel(r.speed, "speed"),
+    scale: parseChannel(r.scale),
+    x: parseChannel(r.x),
+    y: parseChannel(r.y),
   });
 }
 
@@ -188,6 +192,7 @@ export function parseTimeline(json: string): Timeline {
         height: optNum(c?.height),
         scale: optNum(c?.scale),
         speed: c?.speed === undefined ? undefined : clampSpeed(num(c.speed, 1)),
+        speed_ease: (c?.speed_ease === "easeInOut" ? "easeInOut" : undefined) as SpeedEase | undefined,
         keys: parseKeys(c?.keys),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
@@ -402,35 +407,39 @@ export function framingAt(clip: Clip, now: number): { x?: number; y?: number; sc
   return { x: at(keys.x, clip.x), y: at(keys.y, clip.y), scale: at(keys.scale, clip.scale) };
 }
 
-// A clip's playback speed at clip-local time `local`.
+// A clip's playback speed at clip-local time `local`. Constant is flat; the
+// ease-in-out bell is 1x at the two edges and the target `speed` at the middle
+// (sin^2 over the clip's length).
 export function speedAt(clip: Clip, local: number): number {
-  return sampleKf(clip.keys?.speed, local, clip.speed ?? 1);
+  const s = clip.speed ?? 1;
+  const L = clip.end - clip.start;
+  if (clip.speed_ease !== "easeInOut" || L <= 0) return s;
+  const p = Math.max(0, Math.min(local, L)) / L;
+  return 1 + ((s - 1) * (1 - Math.cos(2 * Math.PI * p))) / 2;
 }
 
 // Seconds of source consumed from the clip's start to clip-local time `local`:
-// the integral of the piecewise-linear speed curve. With no speed keyframes it
-// is just `speed * local`. This is the one place timeline time turns into
-// source time, so the seek, the trims and the audio mix all agree through it.
+// the integral of the speed curve. Constant is `speed * local`; the ease-in-out
+// bell has the closed form below and totals `L*(speed+1)/2` over the clip. This
+// is the one place timeline time turns into source time, so the seek, the trims
+// and the audio mix all agree through it.
 export function sourceConsumed(clip: Clip, local: number): number {
   if (local <= 0) return 0;
-  const ch = clip.keys?.speed;
-  if (!ch || ch.length === 0) return (clip.speed ?? 1) * local;
-  let acc = 0;
-  let t0 = 0;
-  let s0 = ch[0].v;
-  for (const k of ch) {
-    if (k.t <= t0) {
-      s0 = k.v;
-      continue;
-    }
-    const end = Math.min(k.t, local);
-    const s1 = s0 + (k.v - s0) * ((end - t0) / (k.t - t0));
-    acc += ((s0 + s1) / 2) * (end - t0);
-    if (local <= k.t) return acc;
-    t0 = k.t;
-    s0 = k.v;
-  }
-  return acc + s0 * (local - t0);
+  const s = clip.speed ?? 1;
+  const L = clip.end - clip.start;
+  if (clip.speed_ease !== "easeInOut" || L <= 0) return s * local;
+  const t = Math.min(local, L);
+  const eased = t + ((s - 1) / 2) * (t - (L / (2 * Math.PI)) * Math.sin((2 * Math.PI * t) / L));
+  // ponytail: past the clip end the bell has returned to 1x, so extend at 1x.
+  return local > L ? eased + (local - L) : eased;
+}
+
+// A clip's average speed over its length: the factor that resizes it and
+// retimes its kept audio. Constant is the speed itself; the bell averages to
+// the midpoint of 1x and the target, `(speed+1)/2`.
+export function avgSpeed(clip: Clip): number {
+  const L = clip.end - clip.start;
+  return L > 0 ? sourceConsumed(clip, L) / L : (clip.speed ?? 1);
 }
 
 // Where in the source file a clip is showing at timeline time `now`: its
@@ -442,7 +451,6 @@ export function sourceTimeAt(clip: Clip, now: number): number {
 
 // The current value of `prop` at clip-local `local`, to seed a new keyframe.
 function valueAt(clip: Clip, prop: TransformProp, local: number): number {
-  if (prop === "speed") return speedAt(clip, local);
   const ch = clip.keys?.[prop];
   if (ch && ch.length) return sampleKf(ch, local, 0);
   if (prop === "scale") return clip.scale && clip.scale > 0 ? clip.scale : 1;
@@ -464,18 +472,17 @@ export function hasChannel(clip: Clip, prop: TransformProp): boolean {
 export function keyTimes(clip: Clip): number[] {
   const keys = clip.keys;
   if (!keys) return [];
-  const all = [...(keys.scale ?? []), ...(keys.x ?? []), ...(keys.y ?? []), ...(keys.speed ?? [])];
+  const all = [...(keys.scale ?? []), ...(keys.x ?? []), ...(keys.y ?? [])];
   const grid = all.map((k) => Math.round(k.t / KF_EPS) * KF_EPS);
   return [...new Set(grid)].sort((a, b) => a - b);
 }
 
 // Set `prop` to `v` at clip-local `local`, replacing a key already there.
 export function setKf(t: Timeline, clipId: string, prop: TransformProp, local: number, v: number): Timeline {
-  const value = prop === "speed" ? clampSpeed(v) : v;
   return mapClip(t, clipId, (c) => {
     const at = clampLocal(c, local);
     const rest = (c.keys?.[prop] ?? []).filter((k) => Math.abs(k.t - at) > KF_EPS);
-    const ch = [...rest, { t: at, v: value }].sort((a, b) => a.t - b.t);
+    const ch = [...rest, { t: at, v }].sort((a, b) => a.t - b.t);
     return { ...c, keys: { ...c.keys, [prop]: ch } };
   });
 }
@@ -509,19 +516,18 @@ export function moveKf(t: Timeline, clipId: string, local: number, to: number): 
         scale: shift(c.keys.scale),
         x: shift(c.keys.x),
         y: shift(c.keys.y),
-        speed: shift(c.keys.speed),
       }),
     };
   });
 }
 
-// A clip's constant playback speed, when it has no speed keyframes. Changing it
-// resizes the clip on the timeline the way every editor does - same source
-// content, so twice the speed is half the length - by holding the source span
-// (speed * length) fixed. Growth stops at the next clip; a ramped clip (one
-// with speed keyframes) keeps its length and retimes inside it, so there this
-// only sets the fallback speed.
-export function setSpeed(t: Timeline, clipId: string, speed: number): Timeline {
+// Set a clip's speed and easing, resizing it on the timeline the way every
+// editor does - same source content, so twice the average speed is half the
+// length - by holding the source span fixed and dividing by the new average
+// speed (the target for constant, `(speed+1)/2` for the ease-in-out bell).
+// Growth stops at the next clip. `ease` left out keeps the clip's current mode,
+// so changing just the number preserves the easing.
+export function setSpeed(t: Timeline, clipId: string, speed: number, ease?: SpeedEase): Timeline {
   const s = clampSpeed(speed);
   let end = 0;
   const tracks = t.tracks.map((tr) => {
@@ -530,13 +536,14 @@ export function setSpeed(t: Timeline, clipId: string, speed: number): Timeline {
       ...tr,
       clips: tr.clips.map((c) => {
         if (c.id !== clipId) return c;
-        if (c.keys?.speed?.length) return { ...c, speed: s };
-        const span = (c.speed ?? 1) * (c.end - c.start);
+        const span = sourceConsumed(c, c.end - c.start);
         const room =
           tr.clips.filter((o) => o.id !== c.id && o.start > c.start).reduce((m, o) => Math.min(m, o.start), Infinity) -
           c.start;
-        const len = Math.max(MIN_CLIP_S, Math.min(span / s, room));
-        const next = { ...c, speed: s, end: c.start + len };
+        const eased = (ease ?? c.speed_ease) === "easeInOut";
+        const avg = eased ? (s + 1) / 2 : s;
+        const len = Math.max(MIN_CLIP_S, Math.min(span / avg, room));
+        const next: Clip = { ...c, speed: s, speed_ease: eased ? "easeInOut" : undefined, end: c.start + len };
         end = next.end;
         return next;
       }),
@@ -564,7 +571,6 @@ export function removeKf(t: Timeline, clipId: string, local: number): Timeline {
         scale: strip(c.keys.scale),
         x: strip(c.keys.x),
         y: strip(c.keys.y),
-        speed: strip(c.keys.speed),
       }),
     };
   });
@@ -739,10 +745,10 @@ export function trimClip(
   if (!track || !clip) return t;
   const others = track.clips.filter((c) => c.id !== clipId);
   const offset = clip.offset ?? 0;
-  // ponytail: source-end bounds divide by the edge's speed, exact only when the
-  // ramp does not cross that edge; an inverse integral is the upgrade if a
-  // ramped clip's trimmed tail overruns the file. Speed keyframes stay indexed
-  // from the (unchanged for a tail-trim) start; a head-trim is left approximate.
+  // ponytail: source-end bounds divide by the edge's instantaneous speed, exact
+  // for a constant clip; an eased clip is approximate at the edges (the bell is
+  // 1x there) and reshapes over the new length. Fine until a trimmed eased tail
+  // overruns the file, when an inverse integral is the upgrade.
   const headSpeed = speedAt(clip, 0);
   const tailSpeed = speedAt(clip, clip.end - clip.start);
   let next: Clip;
@@ -789,14 +795,15 @@ export function splitClip(t: Timeline, trackId: string, clipId: string, at: numb
   const [scaleA, scaleB] = splitChannel(clip.keys?.scale, sL);
   const [xA, xB] = splitChannel(clip.keys?.x, sL);
   const [yA, yB] = splitChannel(clip.keys?.y, sL);
-  const [speedA, speedB] = splitChannel(clip.keys?.speed, sL);
-  const first: Clip = { ...clip, end: at, keys: pruneKeys({ scale: scaleA, x: xA, y: yA, speed: speedA }) };
+  // ponytail: each half keeps the clip's speed + ease and re-bells over its own
+  // (shorter) length; the source offset below stays continuous at the cut.
+  const first: Clip = { ...clip, end: at, keys: pruneKeys({ scale: scaleA, x: xA, y: yA }) };
   const second: Clip = {
     ...clip,
     id: nextId(track, clip.id[0]),
     start: at,
     status: clip.text === undefined ? clip.status : "draft",
-    keys: pruneKeys({ scale: scaleB, x: xB, y: yB, speed: speedB }),
+    keys: pruneKeys({ scale: scaleB, x: xB, y: yB }),
   };
   if (clip.src) second.offset = (clip.offset ?? 0) + sourceConsumed(clip, sL);
   const clips = [...track.clips.filter((c) => c.id !== clipId), first, second].sort((a, b) => a.start - b.start);

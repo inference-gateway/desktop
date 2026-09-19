@@ -162,12 +162,16 @@ Never choose the voice silently: it is the one thing only the user can judge.
   the rate the export renders at; keep it as is too. Export writes `export/<output>`.
 - A video clip's `scale` (a multiplier on the size that covers the frame) and `x`/`y` (the centre it
   is framed on, fractions of the frame) are how the user has framed the recording - they drag it in
-  the preview and scroll to zoom, or press Fit and Fill. `speed` (default `1`) retimes the clip:
-  below `1` is slow motion, above is fast forward. `keys` animates any of these across the clip with
-  keyframes - `{"scale": [{"t": 0, "v": 1}, {"t": 2, "v": 1.4}], "x": [...], "y": [...], "speed":
-  [...]}`, each a channel of `{"t": <seconds from the clip's start>, "v": <value>}` sorted by `t`,
-  held flat before the first key and after the last and linear between. Leave `scale`, `x`, `y`,
-  `speed` and `keys` exactly as they are.
+  the preview and scroll to zoom, or press Fit and Fill. `keys` animates any of these across the clip
+  with keyframes - `{"scale": [{"t": 0, "v": 1}, {"t": 2, "v": 1.4}], "x": [...], "y": [...]}`, each a
+  channel of `{"t": <seconds from the clip's start>, "v": <value>}` sorted by `t`, held flat before
+  the first key and after the last and linear between.
+- A video clip's `speed` (default `1`, range `0.1`-`8`) retimes it and resizes it on the timeline the
+  way every editor does - same source content, so `2` is fast-forward at half the length and `0.5` is
+  slow motion at double. `speed_ease` is `"constant"` (default) or `"easeInOut"`, a self-contained
+  bump that runs `1x` at the clip's edges and peaks at `speed` in the middle. Build a longer speed
+  ramp by cutting the clip where the change should happen and setting each piece's `speed`. Leave
+  `scale`, `x`, `y`, `keys`, `speed` and `speed_ease` exactly as they are unless the user asks.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.
