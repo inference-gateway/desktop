@@ -64,6 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(timeline::ProjectWatcher(std::sync::Mutex::new(None)))
+        .manage(timeline::Export::default())
         .manage(projects::GitWatcher(std::sync::Mutex::new(None)))
         .manage(AppState {
             processes: Arc::clone(&processes),
@@ -166,7 +167,10 @@ pub fn run() {
             timeline::import_project_file,
             timeline::list_project_media,
             timeline::prepare_content_tools,
-            timeline::export_timeline,
+            timeline::export_begin,
+            timeline::export_frame,
+            timeline::export_end,
+            timeline::export_cancel,
             agent::list_a2a_agents,
             agent::add_a2a_agent,
             agent::remove_a2a_agent,
@@ -229,6 +233,7 @@ pub fn run() {
                 eprintln!("process shutdown during Tauri exit failed: {error}");
             }
             screen_records::stop_on_exit(&state);
+            app_handle.state::<timeline::Export>().cancel();
             state.browser_bridge.stop();
         }
     });

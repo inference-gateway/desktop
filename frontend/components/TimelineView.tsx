@@ -32,6 +32,8 @@ import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
 import { createHistory } from "@/lib/history";
+import { drawPreview, layoutCaption, type Rect } from "@/lib/render";
+import { runExport } from "@/lib/export";
 import {
   CAPTION_STYLES,
   DEFAULT_RESOLUTION,
@@ -40,7 +42,6 @@ import {
   addClip,
   addEmptyClip,
   addTrack,
-  captionPreset,
   captionStyle,
   captionTrack,
   clipSample,
@@ -50,6 +51,7 @@ import {
   emptyTimeline,
   fmtTime,
   frameAspect,
+  frameDims,
   isSpoken,
   laneOrder,
   moveClip,
@@ -188,106 +190,6 @@ function TrackIcon({ kind }: { kind: TrackKind }) {
   return <Icon size={11} className="shrink-0 text-zinc-500" />;
 }
 
-// The active caption drawn over the video, from the same preset table the
-// export reads: the whole line for the plain presets, words popped as spoken
-// for highlight (they stay, like the \k tags the export burns), words filled
-// as spoken for karaoke. Sizes are cqh of the stage, like the ASS style's
-// fraction of PlayResY; the stage is a size container. Dragging the box sets
-// the track's x/y, double-clicking clears them back to `position`.
-function CaptionOverlay({
-  track,
-  clip,
-  now,
-  stage,
-  onMove,
-  onGrab,
-  onDrop,
-}: {
-  track: Track;
-  clip: Clip;
-  now: number;
-  stage: React.RefObject<HTMLDivElement | null>;
-  onMove: (x?: number, y?: number) => void;
-  onGrab: () => void;
-  onDrop: () => void;
-}) {
-  const preset = captionPreset(captionStyle(track.style));
-  const words = preset.words && clip.words?.length ? clip.words : undefined;
-  const tokens = clip.text?.split(/\s+/).filter(Boolean) ?? [];
-  const text = (i: number) => words?.[i]?.text ?? tokens[i] ?? "";
-  const grab = useRef<{ dx: number; dy: number } | null>(null);
-  const ring = preset.outline
-    ? [
-        `${preset.outline}em ${preset.outline}em 0 #000`,
-        `-${preset.outline}em ${preset.outline}em 0 #000`,
-        `${preset.outline}em -${preset.outline}em 0 #000`,
-        `-${preset.outline}em -${preset.outline}em 0 #000`,
-      ].join(", ")
-    : undefined;
-  const placed = track.x !== undefined && track.y !== undefined;
-  const pos = track.position ?? "bottom";
-  const begin = (e: ReactPointerEvent<HTMLSpanElement>) => {
-    const box = e.currentTarget.getBoundingClientRect();
-    grab.current = { dx: e.clientX - (box.left + box.width / 2), dy: e.clientY - (box.top + box.height / 2) };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-    onGrab();
-  };
-  const drag = (e: ReactPointerEvent<HTMLSpanElement>) => {
-    const g = grab.current;
-    const rect = stage.current?.getBoundingClientRect();
-    if (!g || !rect || !rect.width || !rect.height) return;
-    onMove((e.clientX - g.dx - rect.left) / rect.width, (e.clientY - g.dy - rect.top) / rect.height);
-  };
-  const drop = (e: ReactPointerEvent<HTMLSpanElement>) => {
-    grab.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    onDrop();
-  };
-  return (
-    <div
-      className={cn("pointer-events-none absolute flex justify-center", !placed && "inset-x-0")}
-      style={
-        placed
-          ? { left: `${track.x! * 100}%`, top: `${track.y! * 100}%`, transform: "translate(-50%, -50%)" }
-          : pos === "bottom"
-            ? { bottom: "6cqh" }
-            : pos === "top"
-              ? { top: "6cqh" }
-              : { top: "50%", transform: "translateY(-50%)" }
-      }
-    >
-      <span
-        aria-label="Caption"
-        title="Drag to place the captions, double-click to put them back"
-        onPointerDown={begin}
-        onPointerMove={drag}
-        onPointerUp={drop}
-        onPointerCancel={drop}
-        onDoubleClick={() => onMove(undefined, undefined)}
-        className="pointer-events-auto max-w-[90%] cursor-move touch-none whitespace-pre-wrap text-center"
-        style={{
-          fontSize: `${preset.size * 100}cqh`,
-          fontWeight: preset.weight,
-          lineHeight: 1.25,
-          color: words ? (preset.ahead ?? preset.colour) : preset.colour,
-          ...(preset.upper ? { textTransform: "uppercase" } : {}),
-          ...(ring ? { textShadow: ring } : {}),
-          ...(preset.band ? { background: "rgba(0,0,0,0.6)", padding: "0.2em 0.5em", borderRadius: "0.15em" } : {}),
-        }}
-      >
-        {words
-          ? words.map((w, i) => (
-              <span key={i} style={now >= w.start ? { color: preset.colour } : undefined}>
-                {text(i)}{" "}
-              </span>
-            ))
-          : clip.text}
-      </span>
-    </div>
-  );
-}
-
 function sourceAudioInstruction(mode: SourceAudio): string {
   switch (mode) {
     case "transcribe":
@@ -348,19 +250,28 @@ export function TimelineView() {
     setTime(t);
   };
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
-  const stageRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageObserver = useRef<ResizeObserver | null>(null);
+  // The export frame inside the stage, in CSS pixels: where the sharp rect is
+  // drawn, and what a dragged caption's position is a fraction of.
+  const frameRef = useRef<Rect | null>(null);
+  const grabRef = useRef<HTMLSpanElement>(null);
+  const grab = useRef<{ dx: number; dy: number } | null>(null);
   const { setStatus } = useDesktop();
+  const captionTr = timeline ? captionTrack(timeline) : undefined;
+  const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
+  const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
 
   const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
     for (const tr of timeline.tracks) {
+      const lane = !hiddenLanes.has(tr.id);
       for (const c of tr.clips) {
         const el = mediaRefs.current.get(c.id);
         if (!el) continue;
         const offset = (c.offset ?? 0) + (t - c.start);
-        const inside = t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
-        if (tr.kind === "audio") el.volume = Math.max(0, Math.min(1, tr.gain ?? 1));
-        else el.hidden = !inside;
+        const inside = lane && t >= c.start && t < c.end && (!Number.isFinite(el.duration) || offset < el.duration);
+        if (tr.kind === "audio") el.volume = lane ? Math.max(0, Math.min(1, tr.gain ?? 1)) : 0;
         if (inside && Math.abs(el.currentTime - offset) > SYNC_TOLERANCE_S) el.currentTime = offset;
         if (inside && playing) {
           if (el.paused) el.play().catch(() => {});
@@ -371,10 +282,68 @@ export function TimelineView() {
     }
   };
 
-  const latest = useRef({ sync: syncMedia, duration: 0 });
+  // Draw the frame at `t`: the whole clip, with the export frame sharp and
+  // whatever falls outside it blurred, then park the caption's drag handle
+  // over the text the canvas just drew.
+  const paint = (t: number) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    const handle = grabRef.current;
+    if (!canvas || !ctx || !timeline) return;
+    const dpr = window.devicePixelRatio || 1;
+    const box = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(box.width * dpr));
+    const h = Math.max(1, Math.round(box.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const drawn = drawPreview(
+      ctx,
+      timeline,
+      t,
+      (id) => (mediaRefs.current.get(id) ?? null) as CanvasImageSource | null,
+      w,
+      h,
+      hiddenLanes,
+    );
+    const frame = { x: drawn.x / dpr, y: drawn.y / dpr, w: drawn.w / dpr, h: drawn.h / dpr };
+    frameRef.current = frame;
+    if (!handle) return;
+    const [fw, fh] = frameDims(timeline);
+    const laid =
+      captions && activeCaption
+        ? layoutCaption(captions, activeCaption, fw, fh, (text, font) => {
+            ctx.font = font;
+            return ctx.measureText(text).width;
+          })
+        : null;
+    if (!laid) {
+      handle.style.display = "none";
+      return;
+    }
+    handle.style.display = "block";
+    handle.style.left = `${frame.x + (laid.box.x * frame.w) / fw}px`;
+    handle.style.top = `${frame.y + (laid.box.y * frame.h) / fh}px`;
+    handle.style.width = `${(laid.box.w * frame.w) / fw}px`;
+    handle.style.height = `${(laid.box.h * frame.h) / fh}px`;
+  };
+
+  const latest = useRef({ sync: syncMedia, duration: 0, paint });
   useEffect(() => {
-    latest.current = { sync: syncMedia, duration: timeline?.duration ?? 0 };
+    latest.current = { sync: syncMedia, duration: timeline?.duration ?? 0, paint };
   });
+  useEffect(() => {
+    paint(timeRef.current);
+  });
+  // The canvas is measured in CSS pixels, so a window resize has to repaint it.
+  const attachCanvas = (el: HTMLCanvasElement | null) => {
+    stageObserver.current?.disconnect();
+    canvasRef.current = el;
+    if (!el) return;
+    stageObserver.current = new ResizeObserver(() => latest.current.paint(timeRef.current));
+    stageObserver.current.observe(el);
+  };
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -390,6 +359,7 @@ export function TimelineView() {
       }
       setTimeAt(t);
       sync(t, true);
+      latest.current.paint(t);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -542,17 +512,27 @@ export function TimelineView() {
   };
 
   const exportVideo = () => {
-    if (!name) return;
+    if (!name || !timeline) return;
+    setPlaying(false);
     setExporting(true);
     setStatus("Exporting video...");
-    api
-      .exportTimeline(project!, name)
+    runExport(
+      project!,
+      name,
+      timeline,
+      (id) => mediaRefs.current.get(id) ?? null,
+      (frame, frames) => setStatus(`Exporting frame ${frame} of ${frames}...`),
+    )
       .then((out) => {
         setStatus(`Exported ${out}`);
         return api.revealProjectFile(project!, out);
       })
       .catch((e) => setError(String(e)))
-      .finally(() => setExporting(false));
+      .finally(() => {
+        setExporting(false);
+        syncMedia(timeRef.current, false);
+        paint(timeRef.current);
+      });
   };
 
   const togglePlay = useCallback(() => setPlaying((p) => !p), []);
@@ -630,12 +610,9 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
-  const captionTr = timeline ? captionTrack(timeline) : undefined;
-  const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
-  const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
-      .filter((tr) => tr.kind === kind && !hiddenLanes.has(tr.id))
+      .filter((tr) => tr.kind === kind)
       .flatMap((tr) => tr.clips)
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
@@ -643,9 +620,6 @@ export function TimelineView() {
   const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
-  const hasHiddenVideo = (timeline?.tracks ?? []).some(
-    (tr) => tr.kind === "video" && hiddenLanes.has(tr.id) && tr.clips.some((c) => c.src),
-  );
   const duration = shown.duration;
   const track = timeline && selected ? timeline.tracks.find((t) => t.id === selected.track) : undefined;
   const clip = track?.clips.find((c) => c.id === selected?.clip);
@@ -986,20 +960,14 @@ export function TimelineView() {
       <div className="flex flex-col gap-3 p-4">
         {loadError && <p className="text-[0.8rem] text-destructive">{loadError}</p>}
 
-        <div className="flex max-h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
-          {timeline && (clipVideo.length > 0 || hasHiddenVideo) ? (
-            <div
-              ref={stageRef}
-              className="relative"
-              style={{
-                aspectRatio: frameAspect(timeline),
-                width: `min(100%, calc(50vh * ${frameAspect(timeline)}))`,
-                containerType: "size",
-              }}
-            >
+        <div className="relative flex h-[50vh] min-h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-black">
+          {timeline && (clipVideo.length > 0 || clipOverlays.length > 0 || captionTr) ? (
+            <>
+              <canvas ref={attachCanvas} className="absolute inset-0 size-full" />
               {clipVideo.map(({ clip: c, src }) => (
                 <video
                   key={c.id}
+                  crossOrigin="anonymous"
                   src={src}
                   muted={timeline.source_audio !== "keep"}
                   playsInline
@@ -1009,13 +977,17 @@ export function TimelineView() {
                     if (el) mediaRefs.current.set(c.id, el);
                     else mediaRefs.current.delete(c.id);
                   }}
-                  onLoadedMetadata={() => syncMedia(timeRef.current, playing)}
-                  className="pointer-events-none absolute inset-0 size-full object-contain"
+                  onLoadedMetadata={() => {
+                    syncMedia(timeRef.current, playing);
+                    paint(timeRef.current);
+                  }}
+                  onLoadedData={() => paint(timeRef.current)}
                 />
               ))}
               {clipOverlays.map(({ clip: c, src }) => (
                 <video
                   key={c.id}
+                  crossOrigin="anonymous"
                   src={src}
                   muted
                   playsInline
@@ -1025,27 +997,54 @@ export function TimelineView() {
                     if (el) mediaRefs.current.set(c.id, el);
                     else mediaRefs.current.delete(c.id);
                   }}
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: `${(c.x ?? 0) * 100}%`,
-                    top: `${(c.y ?? 0) * 100}%`,
-                    width: c.width === undefined ? (c.height === undefined ? "100%" : "auto") : `${c.width * 100}%`,
-                    height: c.height === undefined ? "auto" : `${c.height * 100}%`,
-                  }}
+                  onLoadedMetadata={() => paint(timeRef.current)}
+                  onLoadedData={() => paint(timeRef.current)}
                 />
               ))}
-              {captions && activeCaption && (
-                <CaptionOverlay
-                  track={captions}
-                  clip={activeCaption}
-                  now={time}
-                  stage={stageRef}
-                  onMove={(x, y) => (x === undefined ? update : preview)(moveCaptions(shown, captions.id, x, y))}
-                  onGrab={beginEdit}
-                  onDrop={commitEdit}
-                />
-              )}
-            </div>
+              <span
+                ref={grabRef}
+                aria-label="Caption"
+                title="Drag to place the captions, double-click to put them back"
+                onPointerDown={(e) => {
+                  const box = e.currentTarget.getBoundingClientRect();
+                  grab.current = {
+                    dx: e.clientX - (box.left + box.width / 2),
+                    dy: e.clientY - (box.top + box.height / 2),
+                  };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  e.preventDefault();
+                  beginEdit();
+                }}
+                onPointerMove={(e) => {
+                  const held = grab.current;
+                  const frame = frameRef.current;
+                  const canvas = canvasRef.current;
+                  if (!held || !frame || !canvas || !captions) return;
+                  const box = canvas.getBoundingClientRect();
+                  preview(
+                    moveCaptions(
+                      shown,
+                      captions.id,
+                      (e.clientX - held.dx - box.left - frame.x) / frame.w,
+                      (e.clientY - held.dy - box.top - frame.y) / frame.h,
+                    ),
+                  );
+                }}
+                onPointerUp={(e) => {
+                  grab.current = null;
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                  commitEdit();
+                }}
+                onPointerCancel={(e) => {
+                  grab.current = null;
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                  commitEdit();
+                }}
+                onDoubleClick={() => captions && update(moveCaptions(shown, captions.id, undefined, undefined))}
+                className="absolute cursor-move touch-none"
+                style={{ display: "none" }}
+              />
+            </>
           ) : timeline && source ? (
             <p className="p-6 text-center text-[0.8rem] text-muted-foreground">
               Preview unavailable for {source} (only files under the default projects root can be previewed).

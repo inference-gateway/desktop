@@ -35,8 +35,9 @@ under `~/.infer`; the only place you write is the working directory.
 - `~/.infer/bin/tools/whisper-cli` with the model `~/.infer/models/whisper/ggml-tiny.bin` (for
   `source_audio: transcribe` and for caption word timing). Use a larger model only if one already
   exists in that directory.
-- Captions are burned in with libass: `ffmpeg -hide_banner -filters | grep -c ' subtitles '` prints
-  `1`. Without it the desktop's Export fails, and the user needs a full ffmpeg (`brew install ffmpeg`).
+- An ffmpeg that can mix audio and encode H.264: `ffmpeg -hide_banner -encoders | grep -c ' libx264 '`
+  prints `1`. Without it the desktop's Export fails, and the user needs a full ffmpeg
+  (`brew install ffmpeg`). Captions no longer need libass - the desktop draws them itself.
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
@@ -82,6 +83,7 @@ Never choose the voice silently: it is the one thing only the user can judge.
   "duration": 42.3,
   "output": "demo.with-voice.mp4",
   "resolution": "1920x1080",
+  "fps": 30,
   "source_audio": "transcribe",
   "tracks": [
     {
@@ -155,7 +157,9 @@ Never choose the voice silently: it is the one thing only the user can judge.
   may hold several clips (a cut-up recording or different files) and the export plays them in
   `start` order.
 - `resolution` (`"WxH"`, default `1920x1080`) is the export frame the user picks on the timeline:
-  the recording is scaled to fit and padded into it. Keep it as is. Export writes `export/<output>`.
+  the recording is scaled to cover it, so a clip of a different shape is cropped rather than padded,
+  and the preview shows what falls outside the frame blurred. Keep it as is. `fps` (default `30`) is
+  the rate the export renders at; keep it as is too. Export writes `export/<output>`.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.
@@ -173,7 +177,7 @@ Never choose the voice silently: it is the one thing only the user can judge.
   user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
   export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
   already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
-- A captions track is on-screen text burned into the export: `kind: "captions"`, a `style` preset
+- A captions track is on-screen text drawn onto the export: `kind: "captions"`, a `style` preset
   and an optional `position` (or `x`/`y`, the centre of the block as fractions of the frame, set by
   dragging it on the preview), with clips of `id`, `start`, `end`, `text` and optional `words`. One
   captions track per timeline; caption clips never carry `src` or `status`. See Captions.
@@ -243,8 +247,8 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
 ## Captions
 
 Add a captions track when the user asks for captions or subtitles, or asks for a clip "to post"
-(short-form video is watched muted). Captions are independent of the voice: the export burns them
-in and also writes a sidecar `.srt`.
+(short-form video is watched muted). Captions are independent of the voice: the export draws them
+onto the frame and also writes a sidecar `.srt`.
 
 1. **Text.** If the timeline already has spoken clips, their `text` is the script: reuse it, no
    transcription. Otherwise, with `source_audio: transcribe`, use `transcript.json` from the Source
