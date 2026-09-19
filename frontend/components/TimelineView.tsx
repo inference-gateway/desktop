@@ -698,6 +698,7 @@ export function TimelineView() {
     framedEl instanceof HTMLVideoElement && framedEl.videoWidth > 0
       ? { w: framedEl.videoWidth, h: framedEl.videoHeight }
       : null;
+  const framedKeyed = !!framed && keyAt(framed, "scale", time - framed.start);
   const scaleOf = (c: Clip) => {
     const s = framingAt(c, time).scale;
     return clampScale(s && s > 0 ? s : 1);
@@ -723,6 +724,20 @@ export function TimelineView() {
   };
   const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
     framed && (live ? preview : update)(applyFraming(shown, framed, next));
+
+  // Snapshot the active clip's framing as one keyframe at the playhead: the
+  // quick "add keyframe" the framing row exposes so a zoom or pan can be set
+  // without opening the inspector. The first starts the animation; scrub and
+  // change the framing for the next.
+  const keyFrame = () => {
+    if (!framed) return;
+    const local = time - framed.start;
+    const f = framingAt(framed, time);
+    let next = setKf(shown, framed.id, "scale", local, clampScale(f.scale && f.scale > 0 ? f.scale : 1));
+    next = setKf(next, framed.id, "x", local, f.x ?? 0.5);
+    next = setKf(next, framed.id, "y", local, f.y ?? 0.5);
+    update(next);
+  };
 
   const startPan = (e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!framed || e.button !== 0 || exporting) return;
@@ -1308,6 +1323,16 @@ export function TimelineView() {
               onClick={() => reframe({ scale: undefined, x: undefined, y: undefined })}
             >
               <Maximize2 size={13} />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Add keyframe"
+              title="Keyframe the framing here - scrub, change the zoom or position, and it animates between keyframes"
+              onClick={keyFrame}
+              className={cn("ml-1", framedKeyed && "text-sky-400")}
+            >
+              <Diamond size={13} fill={framedKeyed ? "currentColor" : "none"} />
             </Button>
             <span className="ml-1 opacity-70">drag the video to move it</span>
           </div>
