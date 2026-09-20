@@ -1,4 +1,4 @@
-import { ArrowUp, Folder, Mic, Plus, Square, Terminal, Wrench, X } from "lucide-react";
+import { ArrowUp, FileText, Film, Folder, Mic, Music, Plus, Square, Terminal, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -35,6 +35,12 @@ const kindOf = (name: string) => {
   if (["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "svg"].includes(ext)) return "image" as const;
   return "file" as const;
 };
+
+/// Chip face for a non-image attachment: an icon plus the file's base name, so the
+/// user sees which file they attached instead of a bare "audio"/"video" label.
+const KIND_ICON = { video: Film, audio: Music, file: FileText } as const;
+
+const baseName = (path: string) => path.split("/").pop() || path;
 
 export function Composer() {
   const {
@@ -418,27 +424,35 @@ export function Composer() {
         )}
         {pending.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border px-3 pt-2 pb-2">
-            {pending.map((item) => (
-              <div
-                key={item.id}
-                className="group relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-secondary"
-              >
-                {item.preview ? (
-                  <img src={item.preview} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center px-1 text-center text-[0.6rem] font-medium uppercase text-muted-foreground">
-                    {kindOf(item.path)}
-                  </span>
-                )}
-                <button
-                  aria-label="Remove attachment"
-                  onClick={() => setPending((prev) => prev.filter((p) => p.id !== item.id))}
-                  className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+            {pending.map((item) => {
+              const kind = kindOf(item.path);
+              const Icon = kind === "image" ? FileText : KIND_ICON[kind];
+              return (
+                <div
+                  key={item.id}
+                  title={item.path}
+                  className="relative flex h-9 max-w-[13rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg border border-border bg-secondary pl-1 pr-7"
                 >
-                  <X size={10} />
-                </button>
-              </div>
-            ))}
+                  {item.preview ? (
+                    <img src={item.preview} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
+                  ) : (
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-background/60">
+                      <Icon size={14} className="text-muted-foreground" />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-[0.72rem] font-medium text-foreground">
+                    {baseName(item.path)}
+                  </span>
+                  <button
+                    aria-label="Remove attachment"
+                    onClick={() => setPending((prev) => prev.filter((p) => p.id !== item.id))}
+                    className="absolute right-1 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
         {filteredTools.length > 0 && (
