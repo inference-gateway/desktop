@@ -1,0 +1,16 @@
+name: activity media delete - a pool removal is reported in the Activity panel, not the agent status
+content_project: e2e-media
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - the timeline editor opens with the chat docked beside it."
+  - "Wait for the media pool. There is no Activity panel yet: it renders nothing until something is logged."
+  - "The row's delete button shows on hover; the first click arms it."
+  - "The second click removes the seeded logo.png."
+  - "The removal shows up in the Activity panel, which only exists once an entry is logged - the status bar's agent slot is left for the agent."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-media" }
+  - wait_for: { button: "Add recording", timeout: 20 }
+  - click: { button: "Delete media/logo.png" }
+  - click: { button: "Delete media/logo.png" }
+  - wait_for: { button: "Toggle activity panel", timeout: 10 }
