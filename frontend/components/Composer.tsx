@@ -22,9 +22,19 @@ import { Button } from "@/components/ui/button";
 type SlashItem = { name: string; description: string; kind: "command" | "skill" };
 
 const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rounded-full";
-const ALLOWED = ["image/png", "image/jpeg", "image/heic", "image/heif", "image/svg+xml", "application/pdf"];
 
-type PendingImage = { id: string; dataUrl: string; file: File };
+type PendingFile = { id: string; path: string; preview?: string };
+
+/// Labels a file by extension for the chip preview and the prompt marker wording
+/// (`[Attached image|video|audio|file: <path>]`). Acceptance itself is owned by
+/// the backend (`projects_allowed_mimes`) - this only labels.
+const kindOf = (name: string) => {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["mp4", "mov", "webm"].includes(ext)) return "video" as const;
+  if (["mp3", "wav", "m4a", "aac"].includes(ext)) return "audio" as const;
+  if (["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "svg"].includes(ext)) return "image" as const;
+  return "file" as const;
+};
 
 export function Composer() {
   const {
@@ -55,8 +65,8 @@ export function Composer() {
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
   const cursorRef = useRef(-1);
   const draftRef = useRef("");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<PendingImage[]>([]);
+  const [pending, setPending] = useState<PendingFile[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [installedSkills, setInstalledSkills] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
@@ -99,30 +109,39 @@ export function Composer() {
       .catch(() => {});
   }, [showSkills]);
 
-  const addImage = (file: File) => {
-    if (!ALLOWED.includes(file.type)) {
-      setError(`Unsupported file type: ${file.type}`);
-      return;
+  /// Drop, paste and picker all land here: the backend saves the file at attach
+  /// time (media pool or uploads, and validates the allowlist), so a rejection
+  /// surfaces immediately instead of at send time.
+  const addFile = async (file: File) => {
+    try {
+      const path = await api.attachBytes(currentProject, file.name, await file.arrayBuffer());
+      setPending((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          path,
+          preview: kindOf(file.name) === "image" ? URL.createObjectURL(file) : undefined,
+        },
+      ]);
+    } catch (e) {
+      setError(`Failed to attach: ${e}`);
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setPending((prev) => [...prev, { id: crypto.randomUUID(), dataUrl, file }]);
-    };
-    reader.readAsDataURL(file);
   };
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const file = e.clipboardData.files?.[0];
     if (!file) return;
     e.preventDefault();
-    addImage(file);
+    addFile(file);
   };
 
-  const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) addImage(file);
-    e.target.value = "";
+  const onAttachPick = async () => {
+    try {
+      const path = await api.attachPick(currentProject);
+      if (path) setPending((prev) => [...prev, { id: crypto.randomUUID(), path }]);
+    } catch (e) {
+      setError(`Failed to attach: ${e}`);
+    }
   };
 
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
@@ -209,7 +228,7 @@ export function Composer() {
 
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
-  const onSend = async () => {
+  const onSend = () => {
     const composer = composerRef.current;
     if (composer && composer.value.trimStart().startsWith("!!")) {
       composer.value = composer.value.replace(/[\u201c\u201d]/g, '"');
@@ -219,20 +238,7 @@ export function Composer() {
       const el = composerRef.current;
       if (!el) return;
       const text = el.value.trim();
-      const paths: string[] = [];
-      for (const img of pending) {
-        try {
-          const base64 = img.dataUrl.split(",")[1];
-          const saved = currentProject
-            ? await api.saveProjectFile(currentProject, img.file.name, img.file.type, base64)
-            : await api.saveUpload(base64, img.file.type);
-          paths.push(saved);
-        } catch (e) {
-          setError(`Failed to save image: ${e}`);
-          return;
-        }
-      }
-      const refs = paths.map((p) => `[Attached image: ${p}]`).join("\n");
+      const refs = pending.map((item) => `[Attached ${kindOf(item.path)}: ${item.path}]`).join("\n");
       el.value = text ? `${refs}\n\n${text}` : refs;
       autoGrow(el);
       setPending([]);
@@ -356,12 +362,30 @@ export function Composer() {
       )}
       <div
         id="composer"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          for (const file of Array.from(e.dataTransfer.files)) addFile(file);
+        }}
         className={cn(
-          "mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20",
+          "relative mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20",
           bashMode && "border-tool focus-within:border-tool focus-within:ring-tool/20",
           toolMode && "border-warn focus-within:border-warn focus-within:ring-warn/20",
+          dragOver && "border-dashed border-primary",
         )}
       >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[1.6rem] border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-primary">
+            Drop to attach
+          </div>
+        )}
         {queuedPrompt && (
           <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[0.8rem] text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">Queued: {queuedPrompt}</span>
@@ -394,15 +418,21 @@ export function Composer() {
         )}
         {pending.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border px-3 pt-2 pb-2">
-            {pending.map((img) => (
+            {pending.map((item) => (
               <div
-                key={img.id}
-                className="group relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border"
+                key={item.id}
+                className="group relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border bg-secondary"
               >
-                <img src={img.dataUrl} alt="" className="h-full w-full object-cover" />
+                {item.preview ? (
+                  <img src={item.preview} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center px-1 text-center text-[0.6rem] font-medium uppercase text-muted-foreground">
+                    {kindOf(item.path)}
+                  </span>
+                )}
                 <button
-                  aria-label="Remove image"
-                  onClick={() => setPending((prev) => prev.filter((p) => p.id !== img.id))}
+                  aria-label="Remove attachment"
+                  onClick={() => setPending((prev) => prev.filter((p) => p.id !== item.id))}
                   className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   <X size={10} />
@@ -521,18 +551,11 @@ export function Composer() {
           </div>
         )}
         <div className="flex items-end gap-[0.35rem] px-[0.4rem] py-[0.35rem]">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif,image/svg+xml,application/pdf"
-            className="hidden"
-            onChange={onFilePick}
-          />
           <button
             aria-label="Attach file"
             title="Attach image or file"
             disabled={!enabled}
-            onClick={() => fileRef.current?.click()}
+            onClick={onAttachPick}
             className={cn(
               ROUND,
               "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35",
