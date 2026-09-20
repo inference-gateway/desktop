@@ -1327,8 +1327,6 @@ mod tests {
         let repo = std::env::temp_dir().join(format!("igd-content-ckpt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         ensure_content_repo(&repo).unwrap();
-        // The new .gitignore is a change, so the first checkpoint commits it
-        // (with no ambient git identity - the fixed identity is injected).
         assert!(checkpoint(&repo, "init").unwrap().is_some());
         assert_eq!(checkpoint(&repo, "again").unwrap(), None);
         std::fs::write(repo.join("a.timeline.json"), "1").unwrap();
@@ -1346,19 +1344,17 @@ mod tests {
         std::fs::write(&file, "v1").unwrap();
         checkpoint(&repo, "A").unwrap();
         let a = head_sha(&repo).unwrap();
-        assert!(!head_has_parent(&repo)); // first commit - nothing to undo
+        assert!(!head_has_parent(&repo));
         std::fs::write(&file, "v2").unwrap();
         let b = checkpoint(&repo, "B").unwrap().unwrap();
         assert!(head_has_parent(&repo));
 
-        // Undo: hard-reset one commit back restores v1 (the undo command's core).
         let popped = head_sha(&repo).unwrap();
         assert_eq!(popped, b);
         git_output(&repo, &["reset", "--hard", "HEAD~1"]).unwrap();
         assert_eq!(head_sha(&repo).unwrap(), a);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "v1");
 
-        // Redo: reset to the popped commit restores v2.
         git_output(&repo, &["reset", "--hard", &popped]).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "v2");
         let _ = std::fs::remove_dir_all(&repo);

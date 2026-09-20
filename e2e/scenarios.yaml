@@ -79,9 +79,6 @@ scenarios:
                 }
       - content: "Captions added."
 
-  # Two writes to one content project so undo/redo has two git checkpoints to
-  # walk: the base timeline, then a captioned rewrite. The distinct video srcs
-  # (base.mov vs final.mov) let the test poll the file to see undo/redo land.
   - name: revert-setup
     match: '(?i)set up the timeline'
     turns:

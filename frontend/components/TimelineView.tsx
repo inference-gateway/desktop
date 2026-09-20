@@ -120,7 +120,6 @@ const SAVE_DEBOUNCE_MS = 600;
 const RELOAD_DEBOUNCE_MS = 200;
 const SYNC_TOLERANCE_S = 0.3;
 
-// Clip audio lives either in ~/.infer/tts (voice) or in the project dir (music).
 function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
@@ -139,19 +138,14 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
 };
 const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers, captions: Type };
 const AUDIO_ICON: Record<SourceAudio, typeof Mic> = { transcribe: Mic, mute: VolumeX, keep: Volume2 };
-// The timeline's frame size, falling back when the file holds a size the toolbar does not offer.
 const frameSize = (t: Timeline) =>
   RESOLUTIONS.some((r) => r.value === t.resolution) ? t.resolution : DEFAULT_RESOLUTION;
-// px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 const SNAP_PX = 8;
 const DRAG_SLOP_PX = 3;
-// Lane height minus the clip inset, the height clip media draws at.
 const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
-// Framing the video in the export frame: how far a scroll scales it, how long
-// a scroll gesture stays open as one undo entry, and the scale bounds.
 const ZOOM_PIXELS = 700;
 const ZOOM_SETTLE_MS = 400;
 const asPercent = (scale: number) => Math.round(scale * 1000) / 10;
@@ -184,10 +178,6 @@ const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
-// The voice picker the lane header (a track's default) and the clip editor
-// share. The blank option means "agent picks"; it only names `value` when the
-// library has no such sample - the recording, or one deleted since - so the
-// pick is never dropped silently, and never listed twice.
 function VoiceSelect({
   label,
   title,
@@ -349,9 +339,6 @@ export function TimelineView() {
     }
   };
 
-  // Draw the frame at `t`: the whole clip, with the export frame sharp and
-  // whatever falls outside it blurred, then park the caption's drag handle
-  // over the text the canvas just drew.
   const paint = (t: number) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -498,9 +485,6 @@ export function TimelineView() {
   }, [project]);
 
   const running = runningIds.size;
-  // An agent run's post-run checkpoint only writes .git (which the timeline
-  // watcher ignores), so refresh the undo state when a run finishes rather than
-  // waiting for the next reload.
   const prevRunning = useRef(running);
   useEffect(() => {
     if (project && running < prevRunning.current) {
@@ -563,10 +547,6 @@ export function TimelineView() {
     setTimeline(next);
   };
 
-  // A gesture brackets its live frames with beginEdit/commitEdit. preview()
-  // updates the timeline every frame (dirty, so a concurrent reload can't
-  // clobber it) but editingRef holds the save off; commitEdit() (the drop)
-  // clears it and bumps gestureSeq so the debounced save fires exactly once.
   const beginEdit = () => {
     editingRef.current = true;
   };
@@ -603,7 +583,6 @@ export function TimelineView() {
       dirtyRef.current = false;
       await load();
     } catch {
-      // A new commit landed since the undo; the redo target is stale, drop it.
       redoStack.current = [];
       setCanRedo(false);
     }
@@ -985,7 +964,6 @@ export function TimelineView() {
     if (fresh) setSelected({ track: tr.id, clip: fresh.id });
   };
 
-  // An agent run creates its own commits, so any pending redo is now stale.
   const dropRedo = () => {
     redoStack.current = [];
     setCanRedo(false);
