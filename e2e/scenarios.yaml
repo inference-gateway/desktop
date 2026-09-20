@@ -131,8 +131,6 @@ scenarios:
                 }
       - content: "Slow zoom added."
 
-  # The timeline points at media/music.mp3, a file the pool does not have, so
-  # the clip shows as missing until the file is written back (media-pool-missing).
   - name: missing-music
     match: '(?i)put the music under the video'
     turns:

@@ -177,8 +177,6 @@ const clipClass = (tr: Track, c: Clip, missing: boolean) =>
 
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
-// Images are video-creation assets like any other: a logo, a background plate, a
-// screenshot to cut to. The renderer draws them from an <img> as readily as a video.
 const IMAGE_EXT = /\.(?:png|jpe?g|webp|gif)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|webp|gif)$/i;
 
@@ -732,9 +730,6 @@ export function TimelineView() {
       .flatMap((tr) => tr.clips)
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
-  // A missing file mounts no element, so a deleted pool file can neither play
-  // from a stale cache nor show in the preview; importing the name again
-  // relinks the clip, since the timeline keeps its src.
   const clipAudio = clipsOf("audio", (src) => (missingSrc(src, pool) ? null : clipSrc(dir, src)));
   const clipVideo = clipsOf("video", (src) =>
     missingSrc(src, pool) ? null : safeProjectMediaSrc(resolveSrc(dir, src)),
@@ -774,11 +769,6 @@ export function TimelineView() {
   const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
     framed && (live ? preview : update)(applyFraming(shown, framed, next));
 
-  // Drop one keyframe snapshotting the clip's framing (scale/x/y) at the
-  // playhead, then select it: this is the quick add the framing row and the
-  // selected clip both expose. The first starts the animation; scrub and change
-  // the framing for the next. Selecting it parks the playhead there so the
-  // inspector edits it and Backspace deletes it.
   const addKey = (trackId: string, c: Clip) => {
     const local = Math.max(0, Math.min(time - c.start, c.end - c.start));
     const f = framingAt(c, c.start + local);
@@ -912,10 +902,6 @@ export function TimelineView() {
     bump();
   };
 
-  // Diamonds on the selected clip: pressing one selects it (Backspace then
-  // deletes it) and parks the playhead on it so the inspector edits it; a drag
-  // retimes it. moveKf runs off the drag-start snapshot so the keys stay found
-  // as they move.
   const beginKfDrag = (e: ReactPointerEvent<HTMLElement>, tr: Track, c: Clip, kfT: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -1270,8 +1256,6 @@ export function TimelineView() {
                   onLoadedMetadata={() => {
                     syncMedia(timeRef.current, playing);
                     paint(timeRef.current);
-                    // The framing row reads the element's intrinsic size, which
-                    // only exists from here on, and nothing else re-renders.
                     bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
