@@ -170,8 +170,13 @@ Never choose the voice silently: it is the one thing only the user can judge.
   way every editor does - same source content, so `2` is fast-forward at half the length and `0.5` is
   slow motion at double. `speed_ease` is `"constant"` (default) or `"easeInOut"`, a self-contained
   bump that runs `1x` at the clip's edges and peaks at `speed` in the middle. Build a longer speed
-  ramp by cutting the clip where the change should happen and setting each piece's `speed`. Leave
-  `scale`, `x`, `y`, `keys`, `speed` and `speed_ease` exactly as they are unless the user asks.
+  ramp by cutting the clip where the change should happen and setting each piece's `speed`. Leave     
+  `scale`, `x`, `y`, `keys`, `speed`, `speed_ease` and `volume` exactly as they are unless the user    
+  asks.                                                                                              
+- An audio clip's `volume` (default `1`, range `0`-`2`) is that clip's own level on top of its      
+  track's `gain`: the preview and the export apply both. It is the user's setting, so set it only   
+  when they ask for a clip quieter or louder (music ducked under a voice, a quiet take lifted), and
+  leave every other clip's as it is.
 - `offset` (optional, seconds) is where a clip starts inside its `src` file; the desktop sets it when
   the user trims a clip's head on the timeline. Keep it as is, except when you cut or trim clips
   yourself (see Cuts and trims): then you set it.
@@ -186,8 +191,8 @@ Never choose the voice silently: it is the one thing only the user can judge.
 - Tracks are `video`, `audio`, `overlay` or `captions` (the older `voice` kind still loads as
   `audio`). On an audio track,
   a clip with `text` is spoken: you synthesize it. A clip with only `src` (music, SFX, a file the
-  user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's
-  export mixes every audio clip with its track `gain`. Put spoken clips on the audio track that
+  user dropped on the lane) is a plain file: never touch, move or regenerate it. The desktop's     
+  export mixes every audio clip with its track `gain` and the clip's own `volume`, if it has one. Put spoken clips on the audio track that 
   already holds speech, or add one with `id: "voice"`; never invent plain-file clips.
 - A captions track is on-screen text drawn onto the export: `kind: "captions"`, a `style` preset
   and an optional `position` (or `x`/`y`, the centre of the block as fractions of the frame, set by
