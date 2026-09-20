@@ -231,6 +231,9 @@ export function screenRecordKeep(): number {
   return Number.isFinite(n) && n >= 1 ? n : DEFAULT_SCREEN_RECORD_KEEP;
 }
 
+const hexEncode = (value: string) =>
+  Array.from(new TextEncoder().encode(value), (b) => b.toString(16).padStart(2, "0")).join("");
+
 export const api = {
   checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false) =>
     invoke<void>("check_and_install_cli", { onEvent, force }),
@@ -335,10 +338,7 @@ export const api = {
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
   importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>
     invoke<string>("import_project_file", bytes, {
-      headers: {
-        "x-project": project,
-        "x-name": Array.from(new TextEncoder().encode(name), (b) => b.toString(16).padStart(2, "0")).join(""),
-      },
+      headers: { "x-project": project, "x-name": hexEncode(name) },
     }),
   prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
   exportBegin: (project: string, name: string, timeline: string) =>
@@ -354,11 +354,13 @@ export const api = {
   writeProjects: (data: string) => invoke<void>("write_projects", { data }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveAudio: (path: string) => invoke<string>("save_audio", { path }),
-  saveUpload: (data: string, mime: string) => invoke<string>("save_upload", { data, mime }),
+  attachPick: (project: string | null) => invoke<string | null>("attach_pick", { project }),
+  attachBytes: (project: string | null, name: string, bytes: ArrayBuffer) =>
+    invoke<string>("attach_bytes", bytes, {
+      headers: { "x-project": project ? hexEncode(project) : "", "x-name": hexEncode(name) },
+    }),
   createProjectDir: (name: string, group?: string) => invoke<string>("create_project_dir", { name, group }),
   moveProject: (name: string, group: string) => invoke<string>("move_project", { name, group }),
-  saveProjectFile: (project: string, filename: string, mime: string, data: string) =>
-    invoke<string>("save_project_file", { project, filename, mime, data }),
   listProjectFiles: (project: string) => invoke<ProjectFile[]>("list_project_files", { project }),
   listProjectMedia: (project: string) => invoke<ProjectFile[]>("list_project_media", { project }),
   scanGitRepos: (root: string) => invoke<GitRepo[]>("scan_git_repos", { root }),
