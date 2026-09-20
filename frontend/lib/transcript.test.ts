@@ -678,6 +678,48 @@ test("TokenUsage keeps the CLI's session totals per conversation and resets on n
   expect(chatReducer(a, { type: "newChat" }).usage).toEqual(initialChatState.usage);
 });
 
+test("tool calls climb live while the run streams; RUN_FINISHED overwrites with the total", () => {
+  const s = run([
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c1", name: "Bash", args: "{}" }],
+      message_id: "m1",
+    }),
+    ev({ kind: "ToolResult", content: "ok", tool_call_id: "c1" }),
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [{ id: "c2", name: "Read", args: "{}" }],
+      message_id: "m1",
+    }),
+  ]);
+  expect(s.usage.total_tool_calls).toBe(2);
+  expect(
+    chatReducer(s, {
+      type: "event",
+      event: {
+        kind: "TokenUsage",
+        input: 10,
+        output: 5,
+        cached_read: 0,
+        total_tool_calls: 7,
+        last_input: 10,
+        context_window: 128000,
+        cost: 0.01,
+      },
+    }).usage.total_tool_calls,
+  ).toBe(7);
+});
+
+test("an uncorrelated tool result counts as a tool call", () => {
+  const result = JSON.stringify({ tool_name: "Read", success: true });
+  const s = run([ev({ kind: "ToolResult", content: result, tool_call_id: "gone" })]);
+  expect(s.usage.total_tool_calls).toBe(1);
+});
+
 test("loadHistory restores session usage from the show document metadata", () => {
   const ndjson = JSON.stringify({
     metadata: {
