@@ -872,3 +872,12 @@ export function fmtTime(s: number): string {
   const whole = Math.floor(s);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
+
+/// File sizes for the media pool and the project's file chips. A 4K screen
+/// recording runs to gigabytes, so the scale tops out at GB, not MB.
+export function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}

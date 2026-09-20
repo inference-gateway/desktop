@@ -23,6 +23,7 @@ import {
   clipLayout,
   emptyTimeline,
   draftCount,
+  fmtBytes,
   frameAspect,
   laneOrder,
   overlayCount,
@@ -47,6 +48,14 @@ import {
   type Clip,
   type Timeline,
 } from "./timeline";
+
+describe("fmtBytes", () => {
+  test("a screen recording past a gigabyte reads in GB", () => {
+    expect(fmtBytes(36967)).toBe("36 KB");
+    expect(fmtBytes(2.4 * 1024 ** 3)).toBe("2.4 GB");
+    expect(fmtBytes(512)).toBe("512 B");
+  });
+});
 
 const SAMPLE = JSON.stringify({
   version: 1,

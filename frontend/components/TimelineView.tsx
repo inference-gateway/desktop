@@ -68,6 +68,7 @@ import {
   clipLayout,
   draftCount,
   emptyTimeline,
+  fmtBytes,
   fmtTime,
   frameAspect,
   frameClip,
@@ -179,14 +180,6 @@ const IMAGE_EXT = /\.(?:png|jpe?g|webp|gif)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|webp|gif)$/i;
 
 const DEFAULT_TIMELINE = "main.timeline.json";
-const fmtBytes = (n: number) =>
-  n < 1024
-    ? `${n} B`
-    : n < 1024 * 1024
-      ? `${Math.round(n / 1024)} KB`
-      : n < 1024 * 1024 * 1024
-        ? `${(n / (1024 * 1024)).toFixed(1)} MB`
-        : `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 
 function VoiceSelect({
   label,
