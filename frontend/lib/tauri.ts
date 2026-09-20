@@ -135,6 +135,7 @@ export type DesktopConfig = {
   vision_annotator_model: string;
 };
 export type Timelines = { dir: string; names: string[] };
+export type UndoResult = { popped: string; base: string; canUndo: boolean };
 export type ExportPlan = { width: number; height: number; fps: number; frames: number; output: string };
 export type GithubAuthStatus = { installed: boolean; authenticated: boolean };
 export type DesktopUiData = {
@@ -323,6 +324,12 @@ export const api = {
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
   writeTimeline: (project: string, name: string, data: string) =>
     invoke<void>("write_timeline", { project, name, data }),
+  checkpointContentProject: (project: string, message: string) =>
+    invoke<boolean>("checkpoint_content_project", { name: project, message }),
+  undoContentProject: (project: string) => invoke<UndoResult>("undo_content_project", { name: project }),
+  redoContentProject: (project: string, sha: string, base: string) =>
+    invoke<boolean>("redo_content_project", { name: project, sha, base }),
+  contentCanUndo: (project: string) => invoke<boolean>("content_can_undo", { name: project }),
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
   importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>

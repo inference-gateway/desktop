@@ -37,7 +37,6 @@ import {
 import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
-import { createHistory } from "@/lib/history";
 import {
   MAX_FRAME_SCALE,
   MIN_FRAME_SCALE,
@@ -94,6 +93,7 @@ import {
   toggleKf,
   trimClip,
   spokenCount,
+  describeTimelineChange,
   parseTimeline,
   removeClip,
   resolveSrc,
@@ -259,8 +259,18 @@ export function TimelineView() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
-  const history = useRef(createHistory<Timeline>());
-  const liveRef = useRef<Timeline | null>(null);
+  // A gesture (drag/trim/keyframe/caption drag) is in progress: preview() marks
+  // the timeline dirty for reload-suppression, but the save is held off until
+  // commitEdit() (the drop) so one drag is one commit, not one per frame.
+  const editingRef = useRef(false);
+  const [gestureSeq, setGestureSeq] = useState(0);
+  // Undo/redo is git-backed (see lib/tauri git commands): every saved change is
+  // a commit, undo hard-resets one commit back, redo restores it. The redo stack
+  // holds undone commits with the base HEAD each expects, so a redo after a new
+  // commit is refused rather than clobbering it.
+  const redoStack = useRef<{ redoTo: string; base: string }[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const savedRef = useRef({ name: "", data: "" });
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const dragClipRef = useRef<{
@@ -456,14 +466,17 @@ export function TimelineView() {
         setName(chosen);
         if (!chosen) {
           setTimeline(null);
-          history.current.reset();
+          setCanUndo(false);
           return;
         }
         const raw = await api.readTimeline(project, chosen);
         if (chosen === savedRef.current.name && raw === savedRef.current.data) return;
         savedRef.current = { name: chosen, data: raw };
         setTimeline(parseTimeline(raw));
-        history.current.reset();
+        api
+          .contentCanUndo(project)
+          .then(setCanUndo)
+          .catch(() => {});
         setLoadError("");
       } catch (e) {
         setLoadError(String(e));
@@ -474,6 +487,8 @@ export function TimelineView() {
 
   useEffect(() => {
     savedRef.current = { name: "", data: "" };
+    redoStack.current = [];
+    setCanRedo(false);
     load();
     api
       .listVoiceSamples()
@@ -483,6 +498,19 @@ export function TimelineView() {
   }, [project]);
 
   const running = runningIds.size;
+  // An agent run's post-run checkpoint only writes .git (which the timeline
+  // watcher ignores), so refresh the undo state when a run finishes rather than
+  // waiting for the next reload.
+  const prevRunning = useRef(running);
+  useEffect(() => {
+    if (project && running < prevRunning.current) {
+      api
+        .contentCanUndo(project)
+        .then(setCanUndo)
+        .catch(() => {});
+    }
+    prevRunning.current = running;
+  }, [running, project]);
 
   useEffect(() => {
     if (!project) return;
@@ -503,60 +531,83 @@ export function TimelineView() {
   }, [project]);
 
   useEffect(() => {
-    if (!dirtyRef.current || !timeline || !project || !name) return;
+    if (!dirtyRef.current || editingRef.current || !timeline || !project || !name) return;
     const t = setTimeout(() => {
       const data = serializeTimeline(timeline);
+      if (savedRef.current.name === name && data === savedRef.current.data) {
+        dirtyRef.current = false;
+        return;
+      }
+      const prevData = savedRef.current.name === name ? savedRef.current.data : "";
       savedRef.current = { name, data };
+      const message = describeTimelineChange(prevData, data, name);
       api
         .writeTimeline(project, name, data)
         .then(() => {
           dirtyRef.current = false;
+          return api.checkpointContentProject(project, message);
+        })
+        .then((undoable) => {
+          redoStack.current = [];
+          setCanRedo(false);
+          setCanUndo(undoable);
         })
         .catch((e) => setError(String(e)));
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [timeline, project, name, setError]);
+  }, [timeline, project, name, setError, gestureSeq]);
 
   const update = (next: Timeline) => {
     dirtyRef.current = true;
     if (!name) setName(DEFAULT_TIMELINE);
-    if (timeline) {
-      history.current.commit(timeline);
-      history.current.push(timeline);
-    }
     setTimeline(next);
   };
 
-  const commitEdit = () => {
-    if (liveRef.current && history.current.commit(liveRef.current)) bump();
-  };
+  // A gesture brackets its live frames with beginEdit/commitEdit. preview()
+  // updates the timeline every frame (dirty, so a concurrent reload can't
+  // clobber it) but editingRef holds the save off; commitEdit() (the drop)
+  // clears it and bumps gestureSeq so the debounced save fires exactly once.
   const beginEdit = () => {
-    if (!timeline) return;
-    commitEdit();
-    liveRef.current = timeline;
-    history.current.begin(timeline);
+    editingRef.current = true;
+  };
+  const commitEdit = () => {
+    editingRef.current = false;
+    setGestureSeq((n) => n + 1);
   };
   const preview = (next: Timeline) => {
     dirtyRef.current = true;
-    liveRef.current = next;
     setTimeline(next);
   };
 
-  const undoEdit = () => {
-    if (!timeline) return;
-    const prev = history.current.undo(timeline);
-    if (prev === undefined) return;
-    dirtyRef.current = true;
-    setTimeline(prev);
-  };
+  const doUndo = useCallback(async () => {
+    if (!project) return;
+    try {
+      const res = await api.undoContentProject(project);
+      redoStack.current.push({ redoTo: res.popped, base: res.base });
+      setCanRedo(true);
+      setCanUndo(res.canUndo);
+      dirtyRef.current = false;
+      await load();
+    } catch {
+      /* nothing to undo */
+    }
+  }, [project, load]);
 
-  const redoEdit = () => {
-    if (!timeline) return;
-    const next = history.current.redo(timeline);
-    if (next === undefined) return;
-    dirtyRef.current = true;
-    setTimeline(next);
-  };
+  const doRedo = useCallback(async () => {
+    if (!project) return;
+    const entry = redoStack.current.pop();
+    setCanRedo(redoStack.current.length > 0);
+    if (!entry) return;
+    try {
+      setCanUndo(await api.redoContentProject(project, entry.redoTo, entry.base));
+      dirtyRef.current = false;
+      await load();
+    } catch {
+      // A new commit landed since the undo; the redo target is stale, drop it.
+      redoStack.current = [];
+      setCanRedo(false);
+    }
+  }, [project, load]);
 
   const toggleLane = (id: string) =>
     setHiddenLanes((h) => {
@@ -651,7 +702,7 @@ export function TimelineView() {
       const undo = !e.shiftKey && key === "z";
       if (!(e.ctrlKey || e.metaKey) || (!redo && !undo) || isEditable(e.target) || e.defaultPrevented) return;
       e.preventDefault();
-      (redo ? redoEdit : undoEdit)();
+      void (redo ? doRedo : doUndo)();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -934,9 +985,16 @@ export function TimelineView() {
     if (fresh) setSelected({ track: tr.id, clip: fresh.id });
   };
 
+  // An agent run creates its own commits, so any pending redo is now stale.
+  const dropRedo = () => {
+    redoStack.current = [];
+    setCanRedo(false);
+  };
+
   const captionize = () => {
     const style = captionStyle(captionTrack(shown)?.style);
     const prompt = `Add captions to ${name || DEFAULT_TIMELINE} in the "${style}" style: write a captions track following the captions rules in the skill, and leave every other track alone.`;
+    dropRedo();
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -946,7 +1004,7 @@ export function TimelineView() {
     const sample = track && clipSample(track, c);
     const voice = sample ? `and the voice sample ${sample}` : "and ask me which voice sample to use first";
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
-    history.current.push(timeline);
+    dropRedo();
     dirtyRef.current = false;
     setTimeline(next);
     api
@@ -1117,8 +1175,8 @@ export function TimelineView() {
                 size="icon-sm"
                 aria-label="Undo"
                 title="Undo (Ctrl/Cmd+Z)"
-                disabled={!history.current.canUndo()}
-                onClick={undoEdit}
+                disabled={!canUndo}
+                onClick={() => void doUndo()}
               >
                 <Undo2 size={14} />
               </Button>
@@ -1127,8 +1185,8 @@ export function TimelineView() {
                 size="icon-sm"
                 aria-label="Redo"
                 title="Redo (Ctrl/Cmd+Shift+Z)"
-                disabled={!history.current.canRedo()}
-                onClick={redoEdit}
+                disabled={!canRedo}
+                onClick={() => void doRedo()}
               >
                 <Redo2 size={14} />
               </Button>

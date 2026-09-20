@@ -79,6 +79,44 @@ scenarios:
                 }
       - content: "Captions added."
 
+  # Two writes to one content project so undo/redo has two git checkpoints to
+  # walk: the base timeline, then a captioned rewrite. The distinct video srcs
+  # (base.mov vs final.mov) let the test poll the file to see undo/redo land.
+  - name: revert-setup
+    match: '(?i)set up the timeline'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "revert.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 12,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/base.mov", "start": 0, "end": 12 }] }
+                  ]
+                }
+      - content: "Timeline set up."
+
+  - name: revert-captions
+    match: '(?i)write the captions track'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "revert.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 12,
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/final.mov", "start": 0, "end": 12 }] },
+                    { "id": "captions", "kind": "captions", "style": "classic", "clips": [{ "id": "c1", "start": 0, "end": 4.5, "text": "First we open the settings panel." }] }
+                  ]
+                }
+      - content: "Captions added."
+
   - name: keyframe-zoom
     match: '(?i)add a slow zoom'
     turns:

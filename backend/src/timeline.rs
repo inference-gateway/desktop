@@ -112,6 +112,18 @@ pub(crate) fn list_timelines(app: tauri::AppHandle, project: String) -> Result<T
 /// so replacing it drops (and unwatches) the previous project.
 pub(crate) struct ProjectWatcher(pub(crate) Mutex<Option<notify::RecommendedWatcher>>);
 
+/// Whether every path in a filesystem event lies inside a `.git` directory.
+/// Content projects are git repos, so the recursive watcher would otherwise fire
+/// on every checkpoint commit; ignoring pure-`.git` events stops a commit (and
+/// an undo/redo reset) from triggering a redundant timeline reload burst.
+fn all_under_git(event: &notify::Event) -> bool {
+    !event.paths.is_empty()
+        && event
+            .paths
+            .iter()
+            .all(|p| p.components().any(|c| c.as_os_str() == ".git"))
+}
+
 /// Watch the project directory and emit `project-changed` with the project
 /// name on every change, so the timeline view reloads while the agent writes.
 #[tauri::command]
@@ -124,7 +136,10 @@ pub(crate) fn watch_project(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let name = project.clone();
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-        if event.is_ok() {
+        if let Ok(event) = event {
+            if all_under_git(&event) {
+                return;
+            }
             let _ = app.emit("project-changed", &name);
         }
     })
@@ -853,6 +868,27 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_under_git_only_for_pure_git_events() {
+        let ev = |paths: &[&str]| {
+            let mut e = notify::Event::new(notify::EventKind::Any);
+            for p in paths {
+                e = e.add_path(PathBuf::from(p));
+            }
+            e
+        };
+        assert!(all_under_git(&ev(&[
+            "/p/.git/index",
+            "/p/.git/refs/heads/main"
+        ])));
+        assert!(!all_under_git(&ev(&["/p/main.timeline.json"])));
+        assert!(!all_under_git(&ev(&[
+            "/p/.git/index",
+            "/p/main.timeline.json"
+        ])));
+        assert!(!all_under_git(&ev(&[])));
+    }
 
     #[test]
     fn media_listing_prefixes_the_media_folder_and_keeps_root_files() {

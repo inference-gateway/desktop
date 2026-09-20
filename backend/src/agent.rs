@@ -478,6 +478,26 @@ fn is_bash_command(prompt: &str) -> bool {
     prompt.starts_with('!') && !prompt.starts_with("!!")
 }
 
+/// A one-sentence conventional-commit subject for an agent run's checkpoint,
+/// built from the prompt's first non-empty line (capped) so a content project's
+/// git log reads as what was asked rather than a bare "agent run".
+fn agent_commit_message(prompt: &str) -> String {
+    let summary = prompt
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    if summary.is_empty() {
+        return "chore(timeline): agent run".to_string();
+    }
+    let summary = if summary.chars().count() > 68 {
+        format!("{}...", summary.chars().take(65).collect::<String>())
+    } else {
+        summary.to_string()
+    };
+    format!("chore(timeline): {summary}")
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_message(
@@ -518,6 +538,16 @@ pub(crate) async fn send_message(
         .and_then(crate::projects::project_dir)
         .filter(|dir| std::fs::create_dir_all(dir).is_ok())
         .unwrap_or_else(agent_cwd);
+    // Content projects are local git repos so agent edits are revertable. Take a
+    // checkpoint of the pre-run state (best-effort - never block a run on git).
+    let content_dir = project
+        .as_deref()
+        .filter(|name| crate::projects::project_is_content(name))
+        .and_then(crate::projects::project_dir);
+    if let Some(dir) = &content_dir {
+        let _ = crate::projects::ensure_content_repo(dir);
+        let _ = crate::projects::checkpoint(dir, "chore(timeline): checkpoint before agent run");
+    }
     let extras = compose_extras(extra_instructions.as_deref(), &cwd);
     for path in attached_image_paths(&prompt) {
         cmd.arg("-f").arg(path);
@@ -618,6 +648,12 @@ pub(crate) async fn send_message(
         None => None,
     };
     let stderr_text = stderr_handle.join().unwrap_or_default();
+
+    // Commit the agent's file writes as one undo step (covers a stopped run too,
+    // so a SIGKILL mid-turn leaves a revertable commit rather than a dirty tree).
+    if let Some(dir) = &content_dir {
+        let _ = crate::projects::checkpoint(dir, &agent_commit_message(&prompt));
+    }
 
     let had_error_val = *had_error.lock().unwrap();
     if status.is_none() {
@@ -1282,6 +1318,23 @@ mod tests {
         assert!(is_bash_command("!ls -la"));
         assert!(!is_bash_command("!!Read(file_path=\"x\")"));
         assert!(!is_bash_command("list files"));
+    }
+
+    #[test]
+    fn agent_commit_message_uses_the_prompt_first_line_capped() {
+        assert_eq!(
+            agent_commit_message("add captions to this recording"),
+            "chore(timeline): add captions to this recording"
+        );
+        assert_eq!(
+            agent_commit_message("\n  write the captions track  \nand nothing else"),
+            "chore(timeline): write the captions track"
+        );
+        assert_eq!(agent_commit_message("   "), "chore(timeline): agent run");
+        let long = "x".repeat(200);
+        let msg = agent_commit_message(&long);
+        assert!(msg.ends_with("..."));
+        assert!(msg.len() < 90);
     }
 
     #[test]
