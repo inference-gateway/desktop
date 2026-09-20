@@ -239,7 +239,7 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
+  const { currentProject: project, promptProject, runningIds, setError, logActivity } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");
@@ -308,7 +308,6 @@ export function TimelineView() {
   const [progress, setProgress] = useState<{ pct: number; frame: number; frames: number } | null>(null);
   const shownPct = useRef(-1);
   const abort = useRef<AbortController | null>(null);
-  const { setStatus } = useDesktop();
   const captionTr = timeline ? captionTrack(timeline) : undefined;
   const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
   const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
@@ -606,7 +605,7 @@ export function TimelineView() {
     setExporting(true);
     shownPct.current = -1;
     setProgress({ pct: 0, frame: 0, frames: 0 });
-    setStatus("Exporting video...");
+    logActivity(project, "Export video", "running");
     abort.current = new AbortController();
     runExport(
       project!,
@@ -623,12 +622,17 @@ export function TimelineView() {
       abort.current.signal,
     )
       .then((out) => {
-        setStatus(`Exported ${out}`);
+        logActivity(project, "Export video", "done", out);
         return api.revealProjectFile(project!, out);
       })
-      .catch((e) =>
-        e instanceof Error && e.name === "AbortError" ? setStatus("Export cancelled") : setError(String(e)),
-      )
+      .catch((e) => {
+        if (e instanceof Error && e.name === "AbortError") {
+          logActivity(project, "Export video", "skipped", "cancelled");
+          return;
+        }
+        logActivity(project, "Export video", "failed", String(e));
+        setError(String(e));
+      })
       .finally(() => {
         abort.current = null;
         setExporting(false);
@@ -993,7 +997,7 @@ export function TimelineView() {
   const speakCaption = (trackId: string, c: Clip) => {
     if (!timeline) return;
     update(speakClip(timeline, trackId, c.id));
-    setStatus('Draft voice clip added: use "Redo drafts" to voice it');
+    logActivity(project, "Draft voice clip", "done", 'use "Redo drafts" to voice it');
   };
 
   const importFiles = async (files: FileList) => {
@@ -1009,12 +1013,13 @@ export function TimelineView() {
     setImporting(true);
     try {
       for (const f of media) {
-        setStatus(`Importing ${f.name}...`);
+        logActivity(project, "Import media", "running", f.name);
         await api.importProjectFile(project, f.name, await f.arrayBuffer());
       }
-      setStatus(`Imported ${media.length} file${media.length === 1 ? "" : "s"}`);
+      logActivity(project, "Import media", "done", `${media.length} file${media.length === 1 ? "" : "s"}`);
       await load();
     } catch (e) {
+      logActivity(project, "Import media", "failed", String(e));
       setError(String(e));
     } finally {
       setImporting(false);
@@ -1036,9 +1041,12 @@ export function TimelineView() {
       .then(() => {
         setMedia((prev) => prev.filter((f) => f.name !== file));
         setSelectedFile((cur) => (cur === file ? null : cur));
-        setStatus(`Deleted ${file}`);
+        logActivity(project, "Delete media", "done", file);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        logActivity(project, "Delete media", "failed", String(e));
+        setError(String(e));
+      });
   };
 
   const addVoiceTo = (video: string) => {

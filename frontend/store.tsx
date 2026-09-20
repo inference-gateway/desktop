@@ -1761,6 +1761,7 @@ function useDesktopStore() {
     refreshGitProjects,
     refreshProjects,
     activities,
+    logActivity,
     clearActivities,
     seenActivityId,
     markActivitiesSeen,
