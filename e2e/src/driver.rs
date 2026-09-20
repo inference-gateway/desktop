@@ -114,11 +114,20 @@ fn wipe_webkit_store(bundle: bool) {
 /// Write a content project into a fresh HOME before the app reads it. Only
 /// `types:` needs seeding - a code project is creatable through the UI - and
 /// `paths:` pins the directory so the project dir never depends on the
-/// platform Documents lookup.
-fn seed_content_project(home: &Path, name: &str) -> Result<()> {
+/// platform Documents lookup. A real image goes into the project's media
+/// folder with it: the AX driver cannot drag a file out of Finder, so an
+/// image asset has to start on disk the way `import_project_file` lands one.
+fn seed_content_project(home: &Path, name: &str, repo_root: &Path) -> Result<()> {
     let dir = home.join("projects").join(name);
     std::fs::create_dir_all(&dir)?;
     std::fs::create_dir_all(home.join(".infer"))?;
+    let media = dir.join("media");
+    std::fs::create_dir_all(&media)?;
+    std::fs::copy(
+        repo_root.join("frontend/public/logo.png"),
+        media.join("logo.png"),
+    )
+    .context("seeding the project's media folder")?;
     std::fs::write(
         home.join(".infer").join("projects.yaml"),
         format!(
@@ -165,7 +174,7 @@ impl AppDriver {
             std::fs::create_dir_all(&home)?;
             wipe_webkit_store(app_bundle.is_some());
             if let Some(name) = content_project {
-                seed_content_project(&home, name)?;
+                seed_content_project(&home, name, repo_root)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

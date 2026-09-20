@@ -1,0 +1,14 @@
+name: media pool image - a png in a content project's media folder lists in the pool
+content_project: e2e-media
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
+  - "The pool header's Add recording button is a compact icon button, next to the pool's file count."
+  - "The pool lists logo.png: the harness seeds the project's media folder with it, the way a drop would."
+  - "The row carries the image's own size - no bogus duration, since an image has no duration to probe."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-media" }
+  - wait_for: { button: "Add recording", timeout: 20 }
+  - wait_for: { text: "logo.png", timeout: 10 }
+  - wait_for: { text: "36 KB", timeout: 10 }
