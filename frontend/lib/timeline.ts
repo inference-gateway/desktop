@@ -331,6 +331,17 @@ export function resolveSrc(dir: string, src: string): string {
   return src.startsWith("/") ? src : `${dir.replace(/\/$/, "")}/${src}`;
 }
 
+/// A dead reference: `src` names a file the media pool no longer lists, so the
+/// clip is shown as missing, plays nothing and relinks the moment the file is
+/// back. Pool keys are `media/<name>` for the media folder and bare names for
+/// root files - the forms clips carry - so only an absolute path folds back.
+/// ponytail: an absolute src outside the media folder is flagged missing; the
+/// skill and the pool drop both write `media/<name>`, so nothing does today.
+export function missingSrc(src: string | undefined, pool: ReadonlySet<string>): boolean {
+  if (!src) return false;
+  return !pool.has(src.replace(/^(?:.*\/)?media\//, "media/"));
+}
+
 function nextId(track: Track, prefix: string): string {
   const used = new Set(track.clips.map((c) => c.id));
   let n = track.clips.length + 1;

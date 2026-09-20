@@ -1,0 +1,27 @@
+name: media pool missing - a clip whose file is gone reads as missing and relinks when the file returns
+content_project: e2e-missing
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its media folder holds only logo.png."
+  - "Ask for music; the agent writes a timeline whose clip points at media/music.mp3, a file that is not there."
+  - "The Write pauses for approval - approving is the precondition for the file landing."
+  - "Approve it."
+  - "The clip lands on the audio lane labelled music.mp3 (missing): red, no waveform, nothing to play."
+  - "Ask to restore the file; the agent writes media/music.mp3 back into the pool."
+  - "The Write pauses for approval again."
+  - "Approve it."
+  - "The agent confirms; the pool lists music.mp3 with its size."
+  - "The clip relinks with the source: the (missing) mark is gone, no re-import dance needed."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-missing" }
+  - wait_for: { button: "Add recording", timeout: 20 }
+  - send: "put the music under the video"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "music.mp3 (missing)", timeout: 20 }
+  - send: "restore the music file"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Music restored.", timeout: 15 }
+  - wait_for: { text: "9 B", timeout: 10 }

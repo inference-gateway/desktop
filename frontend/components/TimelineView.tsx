@@ -82,6 +82,7 @@ import {
   laneOrder,
   moveClip,
   moveKf,
+  missingSrc,
   overlayCount,
   removeKf,
   rulerStep,
@@ -159,18 +160,20 @@ const isEditable = (t: EventTarget | null) =>
     t instanceof HTMLInputElement ||
     t instanceof HTMLTextAreaElement ||
     t instanceof HTMLSelectElement);
-const clipClass = (tr: Track, c: Clip) =>
-  tr.kind === "video"
-    ? "border-sky-400/60 bg-sky-700/80"
-    : tr.kind === "overlay"
-      ? "border-fuchsia-400/60 bg-fuchsia-700/80"
-      : tr.kind === "captions"
-        ? "border-zinc-300/50 bg-zinc-600/85"
-        : !isSpoken(c)
-          ? "border-emerald-400/60 bg-emerald-700/80"
-          : c.status === "draft"
-            ? "border-amber-300/70 bg-amber-600/85"
-            : "border-violet-400/60 bg-violet-700/85";
+const clipClass = (tr: Track, c: Clip, missing: boolean) =>
+  missing
+    ? "border-red-400/70 bg-red-900/80"
+    : tr.kind === "video"
+      ? "border-sky-400/60 bg-sky-700/80"
+      : tr.kind === "overlay"
+        ? "border-fuchsia-400/60 bg-fuchsia-700/80"
+        : tr.kind === "captions"
+          ? "border-zinc-300/50 bg-zinc-600/85"
+          : !isSpoken(c)
+            ? "border-emerald-400/60 bg-emerald-700/80"
+            : c.status === "draft"
+              ? "border-amber-300/70 bg-amber-600/85"
+              : "border-violet-400/60 bg-violet-700/85";
 
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
@@ -722,15 +725,23 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
+  const pool = new Set(media.map((f) => f.name));
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
       .filter((tr) => tr.kind === kind)
       .flatMap((tr) => tr.clips)
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
-  const clipAudio = clipsOf("audio", (src) => clipSrc(dir, src));
-  const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
-  const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
+  // A missing file mounts no element, so a deleted pool file can neither play
+  // from a stale cache nor show in the preview; importing the name again
+  // relinks the clip, since the timeline keeps its src.
+  const clipAudio = clipsOf("audio", (src) => (missingSrc(src, pool) ? null : clipSrc(dir, src)));
+  const clipVideo = clipsOf("video", (src) =>
+    missingSrc(src, pool) ? null : safeProjectMediaSrc(resolveSrc(dir, src)),
+  );
+  const clipOverlays = clipsOf("overlay", (src) =>
+    missingSrc(src, pool) ? null : safeProjectMediaSrc(resolveSrc(dir, src)),
+  );
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
   const framed = timeline ? activeVideo(timeline, time, hiddenLanes) : null;
   const framedEl = framed ? mediaRefs.current.get(framed.id) : null;
@@ -1603,16 +1614,24 @@ export function TimelineView() {
                   {tr.clips.map((c) => {
                     const isSel = selected?.track === tr.id && selected.clip === c.id;
                     const layout = clipLayout(c, pps);
-                    const mediaSrc = c.src
-                      ? tr.kind === "audio"
-                        ? clipSrc(dir, c.src)
-                        : safeProjectMediaSrc(resolveSrc(dir, c.src))
-                      : null;
+                    const missing = missingSrc(c.src, pool);
+                    const mediaSrc =
+                      c.src && !missing
+                        ? tr.kind === "audio"
+                          ? clipSrc(dir, c.src)
+                          : safeProjectMediaSrc(resolveSrc(dir, c.src))
+                        : null;
                     const sample = clipSample(tr, c);
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
                         <button
-                          title={[c.text || c.src || c.id, sample && `Voice: ${sample}`].filter(Boolean).join("\n")}
+                          title={[
+                            c.text || c.src || c.id,
+                            missing && "Missing from the media pool - import the file again to relink it",
+                            sample && `Voice: ${sample}`,
+                          ]
+                            .filter(Boolean)
+                            .join("\n")}
                           aria-pressed={isSel}
                           onPointerDown={(e) => beginDrag(e, "move", tr, c)}
                           onPointerMove={(e) => dragTo(e, c)}
@@ -1620,7 +1639,7 @@ export function TimelineView() {
                           onPointerCancel={endDrag}
                           className={cn(
                             "absolute inset-0 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none cursor-grab active:cursor-grabbing",
-                            clipClass(tr, c),
+                            clipClass(tr, c, missing),
                             isSel && "ring-2 ring-white",
                           )}
                         >
@@ -1643,7 +1662,7 @@ export function TimelineView() {
                               />
                             ))}
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
-                            {c.text || c.src?.replace(/^media\//, "") || c.id}
+                            {(c.text || c.src?.replace(/^media\//, "") || c.id) + (missing ? " (missing)" : "")}
                           </span>
                           {sample && (
                             <span
