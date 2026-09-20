@@ -12,7 +12,11 @@ use tauri::ipc::Channel;
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-const VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "mov", "m4v", "webm"];
+/// Every extension the media pool accepts, mirroring the frontend's `MEDIA_EXT`.
+const MEDIA_EXTENSIONS: [&str; 15] = [
+    "mp4", "mov", "m4v", "webm", "mp3", "wav", "m4a", "aac", "ogg", "flac", "png", "jpg", "jpeg",
+    "webp", "gif",
+];
 
 const SUFFIX: &str = ".timeline.json";
 
@@ -227,8 +231,9 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
     .map_err(|e| e.to_string())?
 }
 
-/// Pick a video with the native file dialog and copy it into the project
-/// directory under its base name. Returns `None` when the user cancels.
+/// Pick a media file (video, audio or image) with the native file dialog and
+/// copy it into the project directory under its base name. Returns `None`
+/// when the user cancels.
 /// A plain copy: no base64 round trip through the webview for large files.
 #[tauri::command]
 pub(crate) async fn add_project_video(
@@ -239,7 +244,7 @@ pub(crate) async fn add_project_video(
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("Video", &VIDEO_EXTENSIONS)
+            .add_filter("Media", &MEDIA_EXTENSIONS)
             .blocking_pick_file()
     })
     .await
