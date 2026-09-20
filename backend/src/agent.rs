@@ -1440,6 +1440,11 @@ mod tests {
             vec!["/u/.infer/tmp/uploads/a.jpg", "/u/x.PNG"]
         );
         assert!(attached_image_paths("no images").is_empty());
+        assert!(
+            attached_image_paths("[Attached video: /u/.infer/tmp/uploads/c.mp4]\n[Attached audio: /u/.infer/tmp/uploads/d.mp3]")
+                    .is_empty(),
+            "video/audio markers must never become image parts"
+        );
     }
 
     #[test]

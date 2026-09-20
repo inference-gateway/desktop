@@ -283,7 +283,10 @@ pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<St
     Ok(format!("{MEDIA_DIR}/{name}"))
 }
 
-fn hex_decode(hex: &str) -> Result<String, String> {
+/// Hex-decode a header value (the raw-IPC commands encode non-ASCII names so
+/// header values stay ASCII). Shared by the media pool import and the composer
+/// attach commands.
+pub(crate) fn hex_decode(hex: &str) -> Result<String, String> {
     if !hex.len().is_multiple_of(2) {
         return Err("odd hex length".into());
     }

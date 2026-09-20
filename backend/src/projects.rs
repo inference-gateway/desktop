@@ -4,6 +4,7 @@ use notify::{RecursiveMode, Watcher};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
+use tauri_plugin_dialog::DialogExt;
 
 /// Subfolder of the platform Documents directory holding per-project dirs.
 const APP_PROJECTS_DIR: &str = "Inference Gateway Desktop";
@@ -1074,11 +1075,29 @@ fn mime_for_ext(ext: &str) -> Option<&'static str> {
         "webp" => Some("image/webp"),
         "mp4" => Some("video/mp4"),
         "mov" => Some("video/quicktime"),
+        "webm" => Some("video/webm"),
+        "mp3" => Some("audio/mpeg"),
+        "wav" => Some("audio/wav"),
+        "m4a" => Some("audio/mp4"),
+        "aac" => Some("audio/aac"),
         "txt" => Some("text/plain"),
         "md" => Some("text/markdown"),
         "csv" => Some("text/csv"),
         _ => None,
     }
+}
+
+/// Which project subdirectory an uploaded file belongs in: a content project
+/// keeps media-typed files (video, audio, image) in its media pool so a
+/// timeline can reference them as `media/<file>` without a manual move;
+/// documents and every code project stay at the project root, as do files with
+/// an unknown extension. Pure so the routing is testable without HOME.
+fn media_rel_dir(content: bool, fname: &str) -> Option<&'static str> {
+    let ext = Path::new(fname).extension()?.to_str()?.to_ascii_lowercase();
+    let mime = mime_for_ext(&ext)?;
+    let media =
+        mime.starts_with("image/") || mime.starts_with("video/") || mime.starts_with("audio/");
+    (content && media).then_some("media")
 }
 
 /// Check a decoded upload against the configured max size and extension/MIME
@@ -1134,48 +1153,150 @@ fn validate_upload(
     Ok(())
 }
 
-/// Store an uploaded file in the project's files directory (local backend) or
-/// the projects GitHub repository (github backend), after enforcing the
-/// configured size and MIME limits backend-side.
-#[tauri::command]
-pub(crate) async fn save_project_file(
-    project: String,
-    filename: String,
-    mime: String,
-    data: String,
+/// Store an attachment with the projects backend (local filesystem or the
+/// projects GitHub repository), after enforcing the configured size and
+/// extension limits backend-side.
+fn dispatch_attachment(
+    cfg: &DesktopConfig,
+    project: &str,
+    fname: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    match cfg.projects_backend.as_str() {
+        "github" => save_to_github(cfg, project, fname, bytes),
+        _ => save_to_local(project, fname, bytes),
+    }
+}
+
+/// Validate and store one attachment. With a project it goes through the
+/// projects backend (media pool or root per `media_rel_dir`); without one it
+/// is written to ~/.infer/tmp/uploads under its own name.
+fn finish_attachment(
+    project: Option<&str>,
+    fname: String,
+    bytes: Vec<u8>,
 ) -> Result<String, String> {
     let cfg = read_config();
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data)
-        .map_err(|e| format!("Invalid upload data: {e}"))?;
     validate_upload(
         bytes.len(),
-        &filename,
-        &mime,
+        &fname,
+        "",
         &cfg.projects_max_file_size_mb,
         &cfg.projects_allowed_mimes,
     )?;
-    let fname = Path::new(&filename)
-        .file_name()
-        .and_then(|f| f.to_str())
-        .map(str::trim)
-        .filter(|f| !f.is_empty())
-        .ok_or("Invalid filename")?
-        .to_string();
+    match project {
+        Some(project) => dispatch_attachment(&cfg, project, fname, bytes),
+        None => write_to_uploads(fname, &bytes),
+    }
+}
 
-    tokio::task::spawn_blocking(move || match cfg.projects_backend.as_str() {
-        "github" => save_to_github(&cfg, &project, fname, bytes),
-        _ => save_to_local(&project, fname, bytes),
+/// Copy an attached file into ~/.infer/tmp/uploads under its own name; a name
+/// already present gets a -2 style suffix, so re-attaching never overwrites
+/// the file an earlier message points at.
+fn write_to_uploads(fname: String, bytes: &[u8]) -> Result<String, String> {
+    let dir = crate::env::uploads_dir();
+    let path = Path::new(&fname);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("upload");
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{e}"))
+        .unwrap_or_default();
+    let mut dest = dir.join(&fname);
+    let mut n = 2;
+    while dest.exists() {
+        dest = dir.join(format!("{stem}-{n}{ext}"));
+        n += 1;
+    }
+    std::fs::write(&dest, bytes).map_err(|e| format!("Failed to save upload: {e}"))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// The composer's attach button: pick a file with the native dialog (filtered
+/// to the configured allowlist) and copy it to its destination. The picked
+/// path is real, so no file bytes cross the webview - a multi-hundred-MB video
+/// never becomes a base64 string. Returns `None` when the user cancels.
+#[tauri::command]
+pub(crate) async fn attach_pick(
+    app: tauri::AppHandle,
+    project: Option<String>,
+) -> Result<Option<String>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let cfg = read_config();
+        let exts: Vec<&str> = cfg
+            .projects_allowed_mimes
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        app.dialog()
+            .file()
+            .add_filter("Allowed", &exts)
+            .blocking_pick_file()
     })
     .await
-    .map_err(|e| format!("upload task failed: {e}"))?
+    .map_err(|e| format!("file dialog failed: {e}"))?;
+    let Some(tauri_plugin_dialog::FilePath::Path(src)) = picked else {
+        return Ok(None);
+    };
+    let saved = tokio::task::spawn_blocking(move || {
+        let fname = src
+            .file_name()
+            .and_then(|f| f.to_str())
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+            .ok_or_else(|| format!("invalid file name: {}", src.display()))?
+            .to_string();
+        let bytes = std::fs::read(&src).map_err(|e| e.to_string())?;
+        finish_attachment(project.as_deref(), fname, bytes)
+    })
+    .await
+    .map_err(|e| format!("attach task failed: {e}"))??;
+    Ok(Some(saved))
+}
+
+/// A file dropped or pasted onto the composer: raw bytes in the request body,
+/// with the project and file name in hex-encoded headers (header values are
+/// ASCII only). ponytail: the whole file streams through the webview because
+/// with Tauri's native drag-drop off a drop yields a File object, not a path;
+/// this is the non-base64 route, and the + button's native picker
+/// (attach_pick) avoids the round trip entirely.
+#[tauri::command]
+pub(crate) fn attach_bytes(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let header = |key: &str| -> Result<String, String> {
+        request
+            .headers()
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| format!("missing {key} header"))
+    };
+    let project = match header("x-project")? {
+        hex if hex.is_empty() => None,
+        hex => Some(crate::timeline::hex_decode(&hex)?),
+    };
+    let fname = crate::timeline::hex_decode(&header("x-name")?)?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw file bytes".into());
+    };
+    finish_attachment(project.as_deref(), fname, bytes.to_vec())
 }
 
 fn save_to_local(project: &str, fname: String, bytes: Vec<u8>) -> Result<String, String> {
     let dir = project_dir(project).ok_or("project directory not resolved")?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create project directory: {e}"))?;
-    let dest = dir.join(&fname);
+    let dest = match media_rel_dir(project_is_content(project), &fname) {
+        Some(rel) => {
+            std::fs::create_dir_all(dir.join(rel))
+                .map_err(|e| format!("Failed to create {rel} directory: {e}"))?;
+            dir.join(rel).join(&fname)
+        }
+        None => dir.join(&fname),
+    };
     std::fs::write(&dest, bytes).map_err(|e| format!("Failed to save file: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -1235,7 +1356,10 @@ fn save_to_github(
 ) -> Result<String, String> {
     let full = github_full_repo(cfg)?;
     ensure_github_repo(&full)?;
-    let path = format!("{}/{fname}", sanitize_name(project));
+    let path = match media_rel_dir(project_is_content(project), &fname) {
+        Some(rel) => format!("{}/{rel}/{fname}", sanitize_name(project)),
+        None => format!("{}/{fname}", sanitize_name(project)),
+    };
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let body = serde_json::json!({ "message": format!("Add {path}"), "content": b64 }).to_string();
     gh_stdin(
@@ -1635,7 +1759,9 @@ mod tests {
 
     #[test]
     fn every_default_allowlisted_extension_maps_to_a_mime() {
-        for ext in "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv".split(',') {
+        for ext in
+            "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,webm,mp3,wav,m4a,aac,txt,md,csv".split(',')
+        {
             assert!(mime_for_ext(ext).is_some(), "{ext}");
         }
     }
