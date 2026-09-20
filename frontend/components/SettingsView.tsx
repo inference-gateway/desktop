@@ -372,8 +372,6 @@ const DEFAULT_CONFIG: DesktopConfig = {
   projects_backend: "local",
   projects_github_repository: ".projects",
   projects_max_file_size_mb: "500",
-  // Empty means unset: the shipped extension allowlist is owned by the backend
-  // (config.rs) and never duplicated here, so a release can extend it.
   projects_allowed_mimes: "",
   text_to_speech_enabled: false,
   status_bar_enabled: true,
