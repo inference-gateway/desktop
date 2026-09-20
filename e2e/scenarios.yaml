@@ -131,6 +131,30 @@ scenarios:
                 }
       - content: "Slow zoom added."
 
+  - name: missing-music
+    match: '(?i)put the music under the video'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "main.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 10,
+                  "tracks": [
+                    { "id": "audio", "kind": "audio", "clips": [{ "id": "a1", "src": "media/music.mp3", "start": 0, "end": 10 }] }
+                  ]
+                }
+      - content: "Music added."
+
+  - name: missing-music-restore
+    match: '(?i)restore the music file'
+    turns:
+      - tool_calls:
+          - { name: Write, args: { file_path: "media/music.mp3", content: "e2e music" } }
+      - content: "Music restored."
+
   - name: multi-tool
     match: '(?i)inspect the project and write a summary'
     turns:

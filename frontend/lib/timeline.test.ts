@@ -3,6 +3,7 @@ import {
   CAPTION_STYLES,
   addClip,
   moveClip,
+  missingSrc,
   rulerStep,
   snapPoints,
   snapTime,
@@ -23,6 +24,7 @@ import {
   clipLayout,
   emptyTimeline,
   draftCount,
+  fmtBytes,
   frameAspect,
   laneOrder,
   overlayCount,
@@ -47,6 +49,26 @@ import {
   type Clip,
   type Timeline,
 } from "./timeline";
+
+describe("fmtBytes", () => {
+  test("a screen recording past a gigabyte reads in GB", () => {
+    expect(fmtBytes(36967)).toBe("36 KB");
+    expect(fmtBytes(2.4 * 1024 ** 3)).toBe("2.4 GB");
+    expect(fmtBytes(512)).toBe("512 B");
+  });
+});
+
+describe("missingSrc", () => {
+  test("a clip whose src names no pool file is a dead reference, in every src shape", () => {
+    const pool = new Set(["media/music.mp3", "old.mov"]);
+    expect(missingSrc("media/music.mp3", pool)).toBe(false);
+    expect(missingSrc("/Users/me/projects/p/media/music.mp3", pool)).toBe(false);
+    expect(missingSrc("old.mov", pool)).toBe(false);
+    expect(missingSrc("media/gone.mp3", pool)).toBe(true);
+    expect(missingSrc("music.mp3", pool)).toBe(true);
+    expect(missingSrc(undefined, pool)).toBe(false);
+  });
+});
 
 const SAMPLE = JSON.stringify({
   version: 1,

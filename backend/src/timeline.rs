@@ -12,7 +12,11 @@ use tauri::ipc::Channel;
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-const VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "mov", "m4v", "webm"];
+/// Every extension the media pool accepts, mirroring the frontend's `MEDIA_EXT`.
+const MEDIA_EXTENSIONS: [&str; 15] = [
+    "mp4", "mov", "m4v", "webm", "mp3", "wav", "m4a", "aac", "ogg", "flac", "png", "jpg", "jpeg",
+    "webp", "gif",
+];
 
 const SUFFIX: &str = ".timeline.json";
 
@@ -227,8 +231,9 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
     .map_err(|e| e.to_string())?
 }
 
-/// Pick a video with the native file dialog and copy it into the project
-/// directory under its base name. Returns `None` when the user cancels.
+/// Pick a media file (video, audio or image) with the native file dialog and
+/// copy it into the project directory under its base name. Returns `None`
+/// when the user cancels.
 /// A plain copy: no base64 round trip through the webview for large files.
 #[tauri::command]
 pub(crate) async fn add_project_video(
@@ -239,7 +244,7 @@ pub(crate) async fn add_project_video(
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("Video", &VIDEO_EXTENSIONS)
+            .add_filter("Media", &MEDIA_EXTENSIONS)
             .blocking_pick_file()
     })
     .await
@@ -835,17 +840,23 @@ pub(crate) async fn export_cancel(state: tauri::State<'_, Export>) -> Result<(),
     Ok(())
 }
 
+/// The path of a media pool file: `media/<name>`, `export/<name>` or a bare
+/// root-level file. Bare names only, so nothing escapes the project directory.
+fn project_file_path(dir: &Path, name: &str) -> Result<PathBuf, String> {
+    match name.split_once('/') {
+        Some((sub, file)) if sub == MEDIA_DIR || sub == EXPORT_DIR => {
+            bare_name(&dir.join(sub), file)
+        }
+        Some(_) => Err(format!("not a project file: {name}")),
+        None => bare_name(dir, name),
+    }
+}
+
 /// Reveal a project file in the platform file manager (Finder on macOS).
 #[tauri::command]
 pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), String> {
     let dir = dir_for(&project)?;
-    let path = match name.split_once('/') {
-        Some((sub, file)) if sub == MEDIA_DIR || sub == EXPORT_DIR => {
-            bare_name(&dir.join(sub), file)?
-        }
-        Some(_) => return Err(format!("not a project file: {name}")),
-        None => bare_name(&dir, &name)?,
-    };
+    let path = project_file_path(&dir, &name)?;
     if !path.is_file() {
         return Err(format!("{} does not exist yet", path.display()));
     }
@@ -863,6 +874,14 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
         Ok(s) => Err(format!("file manager exited with {s}")),
         Err(e) => Err(format!("launching file manager: {e}")),
     }
+}
+
+/// Remove a media pool file: `media/<name>` or a bare root-level file.
+#[tauri::command]
+pub(crate) fn delete_project_file(project: String, name: String) -> Result<(), String> {
+    let dir = dir_for(&project)?;
+    let path = project_file_path(&dir, &name)?;
+    std::fs::remove_file(&path).map_err(|e| format!("deleting {}: {e}", path.display()))
 }
 
 #[cfg(test)]
@@ -1084,6 +1103,37 @@ mod tests {
         let none = r#"{"duration":6,"tracks":[{"kind":"video","clips":[{"start":0,"end":6,"src":"demo.mov"}]}]}"#;
         assert!(export_plan(&dir, "demo", none).unwrap().2.is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn project_file_paths_confine_to_the_project_directory() {
+        let dir = Path::new("/tmp/project");
+        assert_eq!(
+            project_file_path(dir, "media/a.mp4").unwrap(),
+            dir.join("media/a.mp4")
+        );
+        assert_eq!(
+            project_file_path(dir, "export/a.mp4").unwrap(),
+            dir.join("export/a.mp4")
+        );
+        assert_eq!(
+            project_file_path(dir, "old.mov").unwrap(),
+            dir.join("old.mov")
+        );
+        for bad in [
+            "",
+            ".hidden",
+            "../x.mp4",
+            "media/../x.mp4",
+            "media/sub/a.mp4",
+            "sub/a.mp4",
+            "a\\b.mp4",
+        ] {
+            assert!(
+                project_file_path(dir, bad).is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
     }
 
     #[test]

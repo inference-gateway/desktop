@@ -331,6 +331,7 @@ export const api = {
     invoke<boolean>("redo_content_project", { name: project, sha, base }),
   contentCanUndo: (project: string) => invoke<boolean>("content_can_undo", { name: project }),
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
+  deleteProjectFile: (project: string, name: string) => invoke<void>("delete_project_file", { project, name }),
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
   importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>
     invoke<string>("import_project_file", bytes, {

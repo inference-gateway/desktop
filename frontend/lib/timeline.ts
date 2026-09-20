@@ -331,6 +331,17 @@ export function resolveSrc(dir: string, src: string): string {
   return src.startsWith("/") ? src : `${dir.replace(/\/$/, "")}/${src}`;
 }
 
+/// A dead reference: `src` names a file the media pool no longer lists, so the
+/// clip is shown as missing, plays nothing and relinks the moment the file is
+/// back. Pool keys are `media/<name>` for the media folder and bare names for
+/// root files - the forms clips carry - so only an absolute path folds back.
+/// ponytail: an absolute src outside the media folder is flagged missing; the
+/// skill and the pool drop both write `media/<name>`, so nothing does today.
+export function missingSrc(src: string | undefined, pool: ReadonlySet<string>): boolean {
+  if (!src) return false;
+  return !pool.has(src.replace(/^(?:.*\/)?media\//, "media/"));
+}
+
 function nextId(track: Track, prefix: string): string {
   const used = new Set(track.clips.map((c) => c.id));
   let n = track.clips.length + 1;
@@ -871,4 +882,13 @@ export function fmtTime(s: number): string {
   if (!Number.isFinite(s) || s < 0) return "0:00";
   const whole = Math.floor(s);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/// File sizes for the media pool and the project's file chips. A 4K screen
+/// recording runs to gigabytes, so the scale tops out at GB, not MB.
+export function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }

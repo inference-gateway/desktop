@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { fmtBytes } from "@/lib/timeline";
 import {
   api,
   DEFAULT_SCREEN_RECORD_KEEP,
@@ -1583,8 +1584,6 @@ function ProjectFiles({ project }: { project: string }) {
       .catch(() => setFiles([]));
   }, [project]);
   if (!files?.length) return null;
-  const fmt = (n: number) =>
-    n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
   return (
     <div className="flex flex-wrap gap-1.5">
       {files.map((f) => (
@@ -1594,7 +1593,7 @@ function ProjectFiles({ project }: { project: string }) {
         >
           <Paperclip size={11} className="shrink-0" />
           <span className="min-w-0 truncate">{f.name}</span>
-          <span className="shrink-0 tabular-nums">{fmt(f.size)}</span>
+          <span className="shrink-0 tabular-nums">{fmtBytes(f.size)}</span>
         </span>
       ))}
     </div>

@@ -9,6 +9,7 @@ import {
   EyeOff,
   FilePlus,
   Film,
+  Image as ImageIcon,
   Layers,
   Loader2,
   Maximize2,
@@ -67,6 +68,7 @@ import {
   clipLayout,
   draftCount,
   emptyTimeline,
+  fmtBytes,
   fmtTime,
   frameAspect,
   frameClip,
@@ -80,6 +82,7 @@ import {
   laneOrder,
   moveClip,
   moveKf,
+  missingSrc,
   overlayCount,
   removeKf,
   rulerStep,
@@ -157,26 +160,27 @@ const isEditable = (t: EventTarget | null) =>
     t instanceof HTMLInputElement ||
     t instanceof HTMLTextAreaElement ||
     t instanceof HTMLSelectElement);
-const clipClass = (tr: Track, c: Clip) =>
-  tr.kind === "video"
-    ? "border-sky-400/60 bg-sky-700/80"
-    : tr.kind === "overlay"
-      ? "border-fuchsia-400/60 bg-fuchsia-700/80"
-      : tr.kind === "captions"
-        ? "border-zinc-300/50 bg-zinc-600/85"
-        : !isSpoken(c)
-          ? "border-emerald-400/60 bg-emerald-700/80"
-          : c.status === "draft"
-            ? "border-amber-300/70 bg-amber-600/85"
-            : "border-violet-400/60 bg-violet-700/85";
+const clipClass = (tr: Track, c: Clip, missing: boolean) =>
+  missing
+    ? "border-red-400/70 bg-red-900/80"
+    : tr.kind === "video"
+      ? "border-sky-400/60 bg-sky-700/80"
+      : tr.kind === "overlay"
+        ? "border-fuchsia-400/60 bg-fuchsia-700/80"
+        : tr.kind === "captions"
+          ? "border-zinc-300/50 bg-zinc-600/85"
+          : !isSpoken(c)
+            ? "border-emerald-400/60 bg-emerald-700/80"
+            : c.status === "draft"
+              ? "border-amber-300/70 bg-amber-600/85"
+              : "border-violet-400/60 bg-violet-700/85";
 
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
-const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
+const IMAGE_EXT = /\.(?:png|jpe?g|webp|gif)$/i;
+const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|webp|gif)$/i;
 
 const DEFAULT_TIMELINE = "main.timeline.json";
-const fmtBytes = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
 function VoiceSelect({
   label,
@@ -230,8 +234,8 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 
 // Editable view of <stem>.timeline.json for the current content project:
 // video stage, one lane per track with clips positioned by time, a media
-// pool of the project's video and audio files, and an inspector for the
-// selected voice clip. With no timeline yet it shows empty video and audio
+// pool of the project's video, audio and image files, and an inspector for
+// the selected voice clip. With no timeline yet it shows empty video and audio
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
@@ -285,6 +289,7 @@ export function TimelineView() {
   const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(new Set());
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const timeRef = useRef(0);
   const setTimeAt = (t: number) => {
     timeRef.current = t;
@@ -718,15 +723,20 @@ export function TimelineView() {
 
   const shown = timeline ?? emptyTimeline();
   const source = timeline ? videoSource(timeline) : undefined;
+  const pool = new Set(media.map((f) => f.name));
   const clipsOf = (kind: TrackKind, resolve: (src: string) => string | null) =>
     (timeline?.tracks ?? [])
       .filter((tr) => tr.kind === kind)
       .flatMap((tr) => tr.clips)
       .flatMap((c) => (c.src ? [{ clip: c, src: resolve(c.src) }] : []))
       .filter((c): c is { clip: Clip; src: string } => !!c.src);
-  const clipAudio = clipsOf("audio", (src) => clipSrc(dir, src));
-  const clipVideo = clipsOf("video", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
-  const clipOverlays = clipsOf("overlay", (src) => safeProjectMediaSrc(resolveSrc(dir, src)));
+  const clipAudio = clipsOf("audio", (src) => (missingSrc(src, pool) ? null : clipSrc(dir, src)));
+  const clipVideo = clipsOf("video", (src) =>
+    missingSrc(src, pool) ? null : safeProjectMediaSrc(resolveSrc(dir, src)),
+  );
+  const clipOverlays = clipsOf("overlay", (src) =>
+    missingSrc(src, pool) ? null : safeProjectMediaSrc(resolveSrc(dir, src)),
+  );
   const playable = clipVideo.length > 0 || clipAudio.length > 0;
   const framed = timeline ? activeVideo(timeline, time, hiddenLanes) : null;
   const framedEl = framed ? mediaRefs.current.get(framed.id) : null;
@@ -759,11 +769,6 @@ export function TimelineView() {
   const reframe = (next: { x?: number; y?: number; scale?: number }, live = false) =>
     framed && (live ? preview : update)(applyFraming(shown, framed, next));
 
-  // Drop one keyframe snapshotting the clip's framing (scale/x/y) at the
-  // playhead, then select it: this is the quick add the framing row and the
-  // selected clip both expose. The first starts the animation; scrub and change
-  // the framing for the next. Selecting it parks the playhead there so the
-  // inspector edits it and Backspace deletes it.
   const addKey = (trackId: string, c: Clip) => {
     const local = Math.max(0, Math.min(time - c.start, c.end - c.start));
     const f = framingAt(c, c.start + local);
@@ -897,10 +902,6 @@ export function TimelineView() {
     bump();
   };
 
-  // Diamonds on the selected clip: pressing one selects it (Backspace then
-  // deletes it) and parks the playhead on it so the inspector edits it; a drag
-  // retimes it. moveKf runs off the drag-start snapshot so the keys stay found
-  // as they move.
   const beginKfDrag = (e: ReactPointerEvent<HTMLElement>, tr: Track, c: Clip, kfT: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -996,7 +997,14 @@ export function TimelineView() {
   };
 
   const importFiles = async (files: FileList) => {
-    const media = Array.from(files).filter((f) => MEDIA_EXT.test(f.name));
+    const dropped = Array.from(files);
+    const media = dropped.filter((f) => MEDIA_EXT.test(f.name));
+    const rejected = dropped.filter((f) => !MEDIA_EXT.test(f.name));
+    if (rejected.length > 0) {
+      setError(
+        `Cannot use ${rejected.map((f) => f.name).join(", ")}: the media pool takes video, audio and image files`,
+      );
+    }
     if (media.length === 0) return;
     setImporting(true);
     try {
@@ -1022,6 +1030,17 @@ export function TimelineView() {
       .catch((e) => setError(String(e)));
   };
 
+  const removeMedia = (file: string) => {
+    api
+      .deleteProjectFile(project, file)
+      .then(() => {
+        setMedia((prev) => prev.filter((f) => f.name !== file));
+        setSelectedFile((cur) => (cur === file ? null : cur));
+        setStatus(`Deleted ${file}`);
+      })
+      .catch((e) => setError(String(e)));
+  };
+
   const addVoiceTo = (video: string) => {
     const target =
       timeline && source === video && name
@@ -1031,8 +1050,11 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  const laneAccepts = (tr: Track, file: string | null) =>
-    !!file && tr.kind !== "captions" && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
+  const laneAccepts = (tr: Track, file: string | null) => {
+    if (!file || tr.kind === "captions") return false;
+    const picture = VIDEO_EXT.test(file) || IMAGE_EXT.test(file);
+    return picture ? tr.kind !== "audio" : tr.kind === "audio";
+  };
 
   const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
     const file = dragRef.current;
@@ -1234,8 +1256,6 @@ export function TimelineView() {
                   onLoadedMetadata={() => {
                     syncMedia(timeRef.current, playing);
                     paint(timeRef.current);
-                    // The framing row reads the element's intrinsic size, which
-                    // only exists from here on, and nothing else re-renders.
                     bump();
                   }}
                   onLoadedData={() => paint(timeRef.current)}
@@ -1578,16 +1598,24 @@ export function TimelineView() {
                   {tr.clips.map((c) => {
                     const isSel = selected?.track === tr.id && selected.clip === c.id;
                     const layout = clipLayout(c, pps);
-                    const mediaSrc = c.src
-                      ? tr.kind === "audio"
-                        ? clipSrc(dir, c.src)
-                        : safeProjectMediaSrc(resolveSrc(dir, c.src))
-                      : null;
+                    const missing = missingSrc(c.src, pool);
+                    const mediaSrc =
+                      c.src && !missing
+                        ? tr.kind === "audio"
+                          ? clipSrc(dir, c.src)
+                          : safeProjectMediaSrc(resolveSrc(dir, c.src))
+                        : null;
                     const sample = clipSample(tr, c);
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
                         <button
-                          title={[c.text || c.src || c.id, sample && `Voice: ${sample}`].filter(Boolean).join("\n")}
+                          title={[
+                            c.text || c.src || c.id,
+                            missing && "Missing from the media pool - import the file again to relink it",
+                            sample && `Voice: ${sample}`,
+                          ]
+                            .filter(Boolean)
+                            .join("\n")}
                           aria-pressed={isSel}
                           onPointerDown={(e) => beginDrag(e, "move", tr, c)}
                           onPointerMove={(e) => dragTo(e, c)}
@@ -1595,7 +1623,7 @@ export function TimelineView() {
                           onPointerCancel={endDrag}
                           className={cn(
                             "absolute inset-0 touch-none overflow-hidden rounded-[3px] border text-left text-[0.68rem] text-white/95 outline-none select-none cursor-grab active:cursor-grabbing",
-                            clipClass(tr, c),
+                            clipClass(tr, c, missing),
                             isSel && "ring-2 ring-white",
                           )}
                         >
@@ -1618,7 +1646,7 @@ export function TimelineView() {
                               />
                             ))}
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
-                            {c.text || c.src?.replace(/^media\//, "") || c.id}
+                            {(c.text || c.src?.replace(/^media\//, "") || c.id) + (missing ? " (missing)" : "")}
                           </span>
                           {sample && (
                             <span
@@ -1731,22 +1759,30 @@ export function TimelineView() {
             <span className="text-[0.72rem] text-muted-foreground">
               {media.length} file{media.length === 1 ? "" : "s"}
             </span>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
-              <FilePlus size={14} /> Add recording
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="ml-auto"
+              aria-label="Add recording"
+              title="Add a recording to the pool"
+              onClick={addRecording}
+            >
+              <FilePlus size={14} />
             </Button>
           </div>
           {importing && <p className="text-[0.78rem] text-muted-foreground">Importing...</p>}
           {media.length === 0 && !importing && (
             <p className="text-[0.78rem] text-muted-foreground">
-              No media yet. Drop video or audio files here, or add a recording. Files live in the project's media
+              No media yet. Drop video, audio or image files here, or add a recording. Files live in the project's media
               folder.
             </p>
           )}
           {media.map((f) => {
+            const image = IMAGE_EXT.test(f.name);
             const video = VIDEO_EXT.test(f.name);
             const src = safeProjectMediaSrc(resolveSrc(dir, f.name));
             return (
-              <div key={f.name} className="flex flex-col gap-1">
+              <div key={f.name} className="group flex flex-col gap-1">
                 <div className="flex items-center gap-2 text-[0.8rem]">
                   <button
                     title="Drag onto a lane, or click to select"
@@ -1766,7 +1802,9 @@ export function TimelineView() {
                       selectedFile === f.name && "bg-primary/15",
                     )}
                   >
-                    {video ? (
+                    {image ? (
+                      <ImageIcon size={13} className="shrink-0 text-amber-500" />
+                    ) : video ? (
                       <Film size={13} className="shrink-0 text-primary" />
                     ) : (
                       <Music size={13} className="shrink-0 text-emerald-500" />
@@ -1777,19 +1815,43 @@ export function TimelineView() {
                       {fmtBytes(f.size)}
                     </span>
                   </button>
-                  {src && (
-                    <video
-                      src={src}
-                      preload="metadata"
-                      className="hidden"
-                      onLoadedMetadata={(e) => {
-                        const d = e.currentTarget.duration;
-                        setDurations((prev) => ({ ...prev, [f.name]: d }));
-                      }}
-                    />
-                  )}
+                  {src &&
+                    (image ? (
+                      <img src={src} alt="" className="size-6 shrink-0 rounded object-cover" />
+                    ) : (
+                      <video
+                        src={src}
+                        preload="metadata"
+                        className="hidden"
+                        onLoadedMetadata={(e) => {
+                          const d = e.currentTarget.duration;
+                          setDurations((prev) => ({ ...prev, [f.name]: d }));
+                        }}
+                      />
+                    ))}
+                  <button
+                    aria-label={`Delete ${f.name}`}
+                    title={confirmDelete === f.name ? "Click again to delete" : "Remove this file from the project"}
+                    onClick={() => {
+                      if (confirmDelete !== f.name) {
+                        setConfirmDelete(f.name);
+                        return;
+                      }
+                      setConfirmDelete(null);
+                      removeMedia(f.name);
+                    }}
+                    onMouseLeave={() => setConfirmDelete((cur) => (cur === f.name ? null : cur))}
+                    className={cn(
+                      "shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      confirmDelete === f.name
+                        ? "bg-destructive text-white opacity-100"
+                        : "text-muted-foreground hover:text-destructive",
+                    )}
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
-                {!video && src && selectedFile === f.name && (
+                {!video && !image && src && selectedFile === f.name && (
                   <AudioPlayer src={src} ariaLabel={f.name} path={resolveSrc(dir, f.name)} />
                 )}
               </div>
