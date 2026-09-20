@@ -1,0 +1,36 @@
+name: revert - undo and redo walk a content project's git checkpoints
+content_project: e2e-revert
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - the timeline editor, with the chat docked beside it."
+  - "Ask the agent to set up a base timeline; it returns a Write of revert.timeline.json."
+  - "The Write pauses for approval."
+  - "Approve it."
+  - "The base timeline lands on disk - the first git checkpoint."
+  - "Ask it to write a captions track; it rewrites the same timeline."
+  - "That Write waits for approval too."
+  - "Approve it."
+  - "The captioned timeline lands - a second checkpoint."
+  - "The captions lane appears above the video."
+  - "The agent confirms, so the run and its checkpoint are done."
+  - "Press Undo: git resets one commit back."
+  - "The timeline reloads to the base version - the captions edit is gone."
+  - "Press Redo: git restores the captioned commit."
+  - "The captioned timeline is back on disk, captions lane and all."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-revert" }
+  - send: "set up the timeline for this recording"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: "e2e/artifacts/home/projects/e2e-revert/revert.timeline.json", contains: "base.mov", timeout: 20 }
+  - send: "write the captions track"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: "e2e/artifacts/home/projects/e2e-revert/revert.timeline.json", contains: "final.mov", timeout: 20 }
+  - wait_for: { button: "Hide captions lane captions", timeout: 20 }
+  - wait_for: { text: "Captions added.", timeout: 15 }
+  - click: { button: "Undo" }
+  - wait_for: { file: "e2e/artifacts/home/projects/e2e-revert/revert.timeline.json", contains: "base.mov", timeout: 20 }
+  - click: { button: "Redo" }
+  - wait_for: { file: "e2e/artifacts/home/projects/e2e-revert/revert.timeline.json", contains: "final.mov", timeout: 20 }

@@ -37,7 +37,6 @@ import {
 import { api, type ProjectFile, type VoiceSample } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { safeAudioSrc, safeProjectMediaSrc } from "@/lib/tools";
-import { createHistory } from "@/lib/history";
 import {
   MAX_FRAME_SCALE,
   MIN_FRAME_SCALE,
@@ -94,6 +93,7 @@ import {
   toggleKf,
   trimClip,
   spokenCount,
+  describeTimelineChange,
   parseTimeline,
   removeClip,
   resolveSrc,
@@ -120,7 +120,6 @@ const SAVE_DEBOUNCE_MS = 600;
 const RELOAD_DEBOUNCE_MS = 200;
 const SYNC_TOLERANCE_S = 0.3;
 
-// Clip audio lives either in ~/.infer/tts (voice) or in the project dir (music).
 function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
   return safeAudioSrc(path) ?? safeProjectMediaSrc(path);
@@ -139,19 +138,14 @@ const TRACK_SWATCH: Record<Track["kind"], string> = {
 };
 const TRACK_ICON: Record<Track["kind"], typeof Film> = { video: Film, audio: Music, overlay: Layers, captions: Type };
 const AUDIO_ICON: Record<SourceAudio, typeof Mic> = { transcribe: Mic, mute: VolumeX, keep: Volume2 };
-// The timeline's frame size, falling back when the file holds a size the toolbar does not offer.
 const frameSize = (t: Timeline) =>
   RESOLUTIONS.some((r) => r.value === t.resolution) ? t.resolution : DEFAULT_RESOLUTION;
-// px per second bounds for the zoom; snapping grabs within SNAP_PX of an edge.
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 const SNAP_PX = 8;
 const DRAG_SLOP_PX = 3;
-// Lane height minus the clip inset, the height clip media draws at.
 const CLIP_H = 48;
 const ZOOM_STEP = 1.5;
-// Framing the video in the export frame: how far a scroll scales it, how long
-// a scroll gesture stays open as one undo entry, and the scale bounds.
 const ZOOM_PIXELS = 700;
 const ZOOM_SETTLE_MS = 400;
 const asPercent = (scale: number) => Math.round(scale * 1000) / 10;
@@ -184,10 +178,6 @@ const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
-// The voice picker the lane header (a track's default) and the clip editor
-// share. The blank option means "agent picks"; it only names `value` when the
-// library has no such sample - the recording, or one deleted since - so the
-// pick is never dropped silently, and never listed twice.
 function VoiceSelect({
   label,
   title,
@@ -259,8 +249,11 @@ export function TimelineView() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
-  const history = useRef(createHistory<Timeline>());
-  const liveRef = useRef<Timeline | null>(null);
+  const editingRef = useRef(false);
+  const [gestureSeq, setGestureSeq] = useState(0);
+  const redoStack = useRef<{ redoTo: string; base: string }[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const savedRef = useRef({ name: "", data: "" });
   const [, bump] = useReducer((n: number) => n + 1, 0);
   const dragClipRef = useRef<{
@@ -339,9 +332,6 @@ export function TimelineView() {
     }
   };
 
-  // Draw the frame at `t`: the whole clip, with the export frame sharp and
-  // whatever falls outside it blurred, then park the caption's drag handle
-  // over the text the canvas just drew.
   const paint = (t: number) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -456,14 +446,17 @@ export function TimelineView() {
         setName(chosen);
         if (!chosen) {
           setTimeline(null);
-          history.current.reset();
+          setCanUndo(false);
           return;
         }
         const raw = await api.readTimeline(project, chosen);
         if (chosen === savedRef.current.name && raw === savedRef.current.data) return;
         savedRef.current = { name: chosen, data: raw };
         setTimeline(parseTimeline(raw));
-        history.current.reset();
+        api
+          .contentCanUndo(project)
+          .then(setCanUndo)
+          .catch(() => {});
         setLoadError("");
       } catch (e) {
         setLoadError(String(e));
@@ -474,6 +467,8 @@ export function TimelineView() {
 
   useEffect(() => {
     savedRef.current = { name: "", data: "" };
+    redoStack.current = [];
+    setCanRedo(false);
     load();
     api
       .listVoiceSamples()
@@ -483,6 +478,16 @@ export function TimelineView() {
   }, [project]);
 
   const running = runningIds.size;
+  const prevRunning = useRef(running);
+  useEffect(() => {
+    if (project && running < prevRunning.current) {
+      api
+        .contentCanUndo(project)
+        .then(setCanUndo)
+        .catch(() => {});
+    }
+    prevRunning.current = running;
+  }, [running, project]);
 
   useEffect(() => {
     if (!project) return;
@@ -503,60 +508,78 @@ export function TimelineView() {
   }, [project]);
 
   useEffect(() => {
-    if (!dirtyRef.current || !timeline || !project || !name) return;
+    if (!dirtyRef.current || editingRef.current || !timeline || !project || !name) return;
     const t = setTimeout(() => {
       const data = serializeTimeline(timeline);
+      if (savedRef.current.name === name && data === savedRef.current.data) {
+        dirtyRef.current = false;
+        return;
+      }
+      const prevData = savedRef.current.name === name ? savedRef.current.data : "";
       savedRef.current = { name, data };
+      const message = describeTimelineChange(prevData, data, name);
       api
         .writeTimeline(project, name, data)
         .then(() => {
           dirtyRef.current = false;
+          return api.checkpointContentProject(project, message);
+        })
+        .then((undoable) => {
+          redoStack.current = [];
+          setCanRedo(false);
+          setCanUndo(undoable);
         })
         .catch((e) => setError(String(e)));
     }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [timeline, project, name, setError]);
+  }, [timeline, project, name, setError, gestureSeq]);
 
   const update = (next: Timeline) => {
     dirtyRef.current = true;
     if (!name) setName(DEFAULT_TIMELINE);
-    if (timeline) {
-      history.current.commit(timeline);
-      history.current.push(timeline);
-    }
     setTimeline(next);
   };
 
-  const commitEdit = () => {
-    if (liveRef.current && history.current.commit(liveRef.current)) bump();
-  };
   const beginEdit = () => {
-    if (!timeline) return;
-    commitEdit();
-    liveRef.current = timeline;
-    history.current.begin(timeline);
+    editingRef.current = true;
+  };
+  const commitEdit = () => {
+    editingRef.current = false;
+    setGestureSeq((n) => n + 1);
   };
   const preview = (next: Timeline) => {
     dirtyRef.current = true;
-    liveRef.current = next;
     setTimeline(next);
   };
 
-  const undoEdit = () => {
-    if (!timeline) return;
-    const prev = history.current.undo(timeline);
-    if (prev === undefined) return;
-    dirtyRef.current = true;
-    setTimeline(prev);
-  };
+  const doUndo = useCallback(async () => {
+    if (!project) return;
+    try {
+      const res = await api.undoContentProject(project);
+      redoStack.current.push({ redoTo: res.popped, base: res.base });
+      setCanRedo(true);
+      setCanUndo(res.canUndo);
+      dirtyRef.current = false;
+      await load();
+    } catch {
+      /* nothing to undo */
+    }
+  }, [project, load]);
 
-  const redoEdit = () => {
-    if (!timeline) return;
-    const next = history.current.redo(timeline);
-    if (next === undefined) return;
-    dirtyRef.current = true;
-    setTimeline(next);
-  };
+  const doRedo = useCallback(async () => {
+    if (!project) return;
+    const entry = redoStack.current.pop();
+    setCanRedo(redoStack.current.length > 0);
+    if (!entry) return;
+    try {
+      setCanUndo(await api.redoContentProject(project, entry.redoTo, entry.base));
+      dirtyRef.current = false;
+      await load();
+    } catch {
+      redoStack.current = [];
+      setCanRedo(false);
+    }
+  }, [project, load]);
 
   const toggleLane = (id: string) =>
     setHiddenLanes((h) => {
@@ -651,7 +674,7 @@ export function TimelineView() {
       const undo = !e.shiftKey && key === "z";
       if (!(e.ctrlKey || e.metaKey) || (!redo && !undo) || isEditable(e.target) || e.defaultPrevented) return;
       e.preventDefault();
-      (redo ? redoEdit : undoEdit)();
+      void (redo ? doRedo : doUndo)();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -934,9 +957,15 @@ export function TimelineView() {
     if (fresh) setSelected({ track: tr.id, clip: fresh.id });
   };
 
+  const dropRedo = () => {
+    redoStack.current = [];
+    setCanRedo(false);
+  };
+
   const captionize = () => {
     const style = captionStyle(captionTrack(shown)?.style);
     const prompt = `Add captions to ${name || DEFAULT_TIMELINE} in the "${style}" style: write a captions track following the captions rules in the skill, and leave every other track alone.`;
+    dropRedo();
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
@@ -946,7 +975,7 @@ export function TimelineView() {
     const sample = track && clipSample(track, c);
     const voice = sample ? `and the voice sample ${sample}` : "and ask me which voice sample to use first";
     const next = setClipText(timeline, trackId, c.id, c.text ?? "");
-    history.current.push(timeline);
+    dropRedo();
     dirtyRef.current = false;
     setTimeline(next);
     api
@@ -1117,8 +1146,8 @@ export function TimelineView() {
                 size="icon-sm"
                 aria-label="Undo"
                 title="Undo (Ctrl/Cmd+Z)"
-                disabled={!history.current.canUndo()}
-                onClick={undoEdit}
+                disabled={!canUndo}
+                onClick={() => void doUndo()}
               >
                 <Undo2 size={14} />
               </Button>
@@ -1127,8 +1156,8 @@ export function TimelineView() {
                 size="icon-sm"
                 aria-label="Redo"
                 title="Redo (Ctrl/Cmd+Shift+Z)"
-                disabled={!history.current.canRedo()}
-                onClick={redoEdit}
+                disabled={!canRedo}
+                onClick={() => void doRedo()}
               >
                 <Redo2 size={14} />
               </Button>
