@@ -158,6 +158,17 @@ fn default_true() -> bool {
     true
 }
 
+/// Extension allowlists shipped as a default by earlier releases and since
+/// written into config files by `merge_config`. A stored value identical to one
+/// of them was never edited by hand, so it reads as unset and the current
+/// default applies - otherwise every install that ever saved Settings stays
+/// pinned to the list that was current then, and an extended default never
+/// reaches it (an mp3 is rejected even though the code allows audio). New
+/// entries are only needed for defaults written before the writer stopped
+/// persisting them.
+const SUPERSEDED_ALLOWED_MIMES: &[&str] =
+    &["pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv"];
+
 pub(crate) fn default_config() -> DesktopConfig {
     DesktopConfig {
         storage_backend: "jsonl".into(),
@@ -284,6 +295,7 @@ pub(crate) fn config_from_value(
             .map(|p| p.to_string())
             .unwrap_or(d.projects_max_file_size_mb),
         projects_allowed_mimes: str_at(&["projects", "allowed_mimes"])
+            .filter(|v| !SUPERSEDED_ALLOWED_MIMES.contains(&v.as_str()))
             .unwrap_or(d.projects_allowed_mimes),
         scheduler_github_repository: str_at(&["scheduler", "github", "repository"])
             .unwrap_or(d.scheduler_github_repository),
@@ -421,7 +433,9 @@ fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
 /// text, returning serialized YAML. The default model (`agent.model`) is owned
 /// by `merge_default_model` (written from the composer), so it is deliberately
 /// not touched here - otherwise a stale Settings form would clobber a newer
-/// model chosen from the composer.
+/// model chosen from the composer. The file allowlist is written only when it
+/// differs from the shipped default, so the default is never baked into the
+/// file and a later release can extend it (see `SUPERSEDED_ALLOWED_MIMES`).
 pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
     let mut yaml = config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
@@ -588,10 +602,16 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
             "max_file_size_mb".into(),
             parse_int_or(&cfg.projects_max_file_size_mb, 10).into(),
         );
-        pmap.insert(
-            "allowed_mimes".into(),
-            cfg.projects_allowed_mimes.clone().into(),
-        );
+        if cfg.projects_allowed_mimes.is_empty()
+            || cfg.projects_allowed_mimes == default_config().projects_allowed_mimes
+        {
+            pmap.remove("allowed_mimes");
+        } else {
+            pmap.insert(
+                "allowed_mimes".into(),
+                cfg.projects_allowed_mimes.clone().into(),
+            );
+        }
         set_section(
             pmap,
             "github",
@@ -1091,6 +1111,32 @@ mod tests {
         assert_eq!(config_from_value(&val, &home).default_model, "new");
         let legacy = parse_yaml("default_model: old\n");
         assert_eq!(config_from_value(&legacy, &home).default_model, "old");
+    }
+
+    /// A stored allowlist that is only an earlier release's default is read as
+    /// unset, so an install that saved Settings before the video/audio formats
+    /// existed still accepts them; a hand-edited list is kept as written.
+    #[test]
+    fn superseded_default_allowlist_reads_as_the_current_default() {
+        let home = Path::new("/home/tester");
+        let stale = parse_yaml(
+            "projects:\n  allowed_mimes: pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv\n",
+        );
+        let upgraded = config_from_value(&stale, home).projects_allowed_mimes;
+        assert_eq!(upgraded, default_config().projects_allowed_mimes);
+        assert!(upgraded.contains("mp3"), "{upgraded}");
+        assert!(
+            config_from_value(&parse_yaml("projects:\n  allowed_mimes: pdf,txt\n"), home)
+                .projects_allowed_mimes
+                == "pdf,txt",
+            "a hand-edited allowlist is not touched"
+        );
+        assert!(
+            !merge_config(None, &default_config())
+                .unwrap()
+                .contains("allowed_mimes"),
+            "the shipped default is never written into the config file"
+        );
     }
 
     #[test]

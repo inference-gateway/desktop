@@ -372,7 +372,9 @@ const DEFAULT_CONFIG: DesktopConfig = {
   projects_backend: "local",
   projects_github_repository: ".projects",
   projects_max_file_size_mb: "500",
-  projects_allowed_mimes: "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv",
+  // Empty means unset: the shipped extension allowlist is owned by the backend
+  // (config.rs) and never duplicated here, so a release can extend it.
+  projects_allowed_mimes: "",
   text_to_speech_enabled: false,
   status_bar_enabled: true,
   vision_annotator_model: "",
@@ -1825,7 +1827,6 @@ function ProjectsTab() {
           <Input
             id="projects-allowed-mimes"
             value={config.projects_allowed_mimes}
-            placeholder="pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv"
             onChange={(e) => set("projects_allowed_mimes", e.target.value)}
           />
         </div>
