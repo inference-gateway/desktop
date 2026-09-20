@@ -129,6 +129,30 @@ fn message_id_of(val: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Maps a usage stats object onto a TokenUsage event. The `RUN_FINISHED`
+/// terminal result and the per-step `token_usage` CUSTOM value carry the same
+/// camelCase fields; missing fields read as zero.
+fn usage_from_stats(stats: Option<&serde_json::Value>) -> AgentEvent {
+    let num = |key: &str| {
+        stats
+            .and_then(|s| s.get(key))
+            .map(json_val_i64)
+            .unwrap_or(0)
+    };
+    AgentEvent::TokenUsage {
+        input: num("inputTokens"),
+        output: num("outputTokens"),
+        cached_read: num("cacheReadTokens"),
+        total_tool_calls: num("totalToolCalls"),
+        last_input: num("lastInputTokens"),
+        context_window: num("contextWindow"),
+        cost: stats
+            .and_then(|s| s.get("cost"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+    }
+}
+
 impl AgentParser {
     fn new(session_id: Option<String>) -> Self {
         Self {
@@ -332,6 +356,11 @@ impl AgentParser {
                             .unwrap_or_default();
                         return Some(AgentEvent::BackgroundTasks { running, jobs });
                     }
+                    Some("token_usage") => {
+                        if let Some(value) = val.get("value").filter(|v| v.is_object()) {
+                            return Some(usage_from_stats(Some(value)));
+                        }
+                    }
                     _ => {}
                 }
                 if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
@@ -381,44 +410,9 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
-                let stats = val.get("result").or_else(|| val.get("stats"));
-                let input = stats
-                    .and_then(|s| s.get("inputTokens"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let output = stats
-                    .and_then(|s| s.get("outputTokens"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let cached = stats
-                    .and_then(|s| s.get("cacheReadTokens"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let tools = stats
-                    .and_then(|s| s.get("totalToolCalls"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let last_input = stats
-                    .and_then(|s| s.get("lastInputTokens"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let context_window = stats
-                    .and_then(|s| s.get("contextWindow"))
-                    .map(json_val_i64)
-                    .unwrap_or(0);
-                let cost = stats
-                    .and_then(|s| s.get("cost"))
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                Some(AgentEvent::TokenUsage {
-                    input,
-                    output,
-                    cached_read: cached,
-                    total_tool_calls: tools,
-                    last_input,
-                    context_window,
-                    cost,
-                })
+                Some(usage_from_stats(
+                    val.get("result").or_else(|| val.get("stats")),
+                ))
             }
             "RUN_ERROR" => {
                 self.flush_message();
@@ -1748,6 +1742,46 @@ mod tests {
         assert!(
             matches!(&events[2], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
         );
+    }
+
+    #[test]
+    fn test_parse_custom_token_usage_streams_usage_mid_run() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"token_usage","value":{"inputTokens":1200,"outputTokens":80,"cacheReadTokens":300,"totalToolCalls":2,"lastInputTokens":640,"contextWindow":128000,"cost":0.012}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TokenUsage {
+                input,
+                output,
+                cached_read,
+                total_tool_calls,
+                last_input,
+                context_window,
+                cost,
+            } => {
+                assert_eq!(
+                    (
+                        *input,
+                        *output,
+                        *cached_read,
+                        *total_tool_calls,
+                        *last_input,
+                        *context_window
+                    ),
+                    (1200, 80, 300, 2, 640, 128000)
+                );
+                assert!((cost - 0.012).abs() < f64::EPSILON);
+            }
+            _ => panic!("expected TokenUsage"),
+        }
+    }
+
+    #[test]
+    fn test_parse_custom_token_usage_without_value_is_raw() {
+        let (events, _) = parse_all(&[r#"{"type":"CUSTOM","name":"token_usage"}"#]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], AgentEvent::RawLine { .. }));
     }
 
     #[test]

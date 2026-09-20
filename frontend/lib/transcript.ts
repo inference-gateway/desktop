@@ -378,6 +378,8 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
   }
 }
 
+// Tool calls stream in one call at a time (TOOL_CALL_END); the CLI's
+// RUN_FINISHED stats later overwrite the running count with session totals.
 function applyAssistant(state: ChatState, event: Extract<AgentEvent, { kind: "AssistantMessage" }>): ChatState {
   let seq = state.seq;
   let items = state.items;
@@ -385,6 +387,7 @@ function applyAssistant(state: ChatState, event: Extract<AgentEvent, { kind: "As
   let currentAssistantMessageId = state.currentAssistantMessageId;
   let currentReasoningId = state.currentReasoningId;
   let currentReasoningMessageId = state.currentReasoningMessageId;
+  let usage = state.usage;
 
   if (event.reasoning_content) {
     const text = event.reasoning_content;
@@ -425,6 +428,7 @@ function applyAssistant(state: ChatState, event: Extract<AgentEvent, { kind: "As
   }
 
   if (event.tool_calls.length) {
+    usage = { ...usage, total_tool_calls: usage.total_tool_calls + event.tool_calls.length };
     const added: TranscriptItem[] = event.tool_calls.map((tc) => ({
       kind: "tool",
       id: String(seq++),
@@ -450,6 +454,7 @@ function applyAssistant(state: ChatState, event: Extract<AgentEvent, { kind: "As
     currentAssistantMessageId,
     currentReasoningId,
     currentReasoningMessageId,
+    usage,
   };
 }
 
@@ -530,7 +535,11 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     }
   }
 
-  return { ...state, items, seq, seenImages };
+  let usage = state.usage;
+  if (idx < 0) {
+    usage = { ...usage, total_tool_calls: usage.total_tool_calls + 1 };
+  }
+  return { ...state, items, seq, seenImages, usage };
 }
 
 function finalizeTools(state: ChatState): ChatState {
