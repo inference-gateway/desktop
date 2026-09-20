@@ -249,15 +249,8 @@ export function TimelineView() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [durations, setDurations] = useState<Record<string, number>>({});
   const dirtyRef = useRef(false);
-  // A gesture (drag/trim/keyframe/caption drag) is in progress: preview() marks
-  // the timeline dirty for reload-suppression, but the save is held off until
-  // commitEdit() (the drop) so one drag is one commit, not one per frame.
   const editingRef = useRef(false);
   const [gestureSeq, setGestureSeq] = useState(0);
-  // Undo/redo is git-backed (see lib/tauri git commands): every saved change is
-  // a commit, undo hard-resets one commit back, redo restores it. The redo stack
-  // holds undone commits with the base HEAD each expects, so a redo after a new
-  // commit is refused rather than clobbering it.
   const redoStack = useRef<{ redoTo: string; base: string }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
