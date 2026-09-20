@@ -1,0 +1,15 @@
+name: media pool delete - a pool file is removed after a two-click confirm
+content_project: e2e-media
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - the pool lists its seeded logo.png."
+  - "The row's delete button shows on hover; the first click arms it."
+  - "The second click removes the file: the pool counts zero and offers the drop hint again."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-media" }
+  - wait_for: { button: "Add recording", timeout: 20 }
+  - wait_for: { text: "logo.png", timeout: 10 }
+  - click: { button: "Delete media/logo.png" }
+  - click: { button: "Delete media/logo.png" }
+  - wait_for: { text: "No media yet", timeout: 10 }

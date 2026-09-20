@@ -288,6 +288,7 @@ export function TimelineView() {
   const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(new Set());
   const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const timeRef = useRef(0);
   const setTimeAt = (t: number) => {
     timeRef.current = t;
@@ -1032,6 +1033,17 @@ export function TimelineView() {
       .catch((e) => setError(String(e)));
   };
 
+  const removeMedia = (file: string) => {
+    api
+      .deleteProjectFile(project, file)
+      .then(() => {
+        setMedia((prev) => prev.filter((f) => f.name !== file));
+        setSelectedFile((cur) => (cur === file ? null : cur));
+        setStatus(`Deleted ${file}`);
+      })
+      .catch((e) => setError(String(e)));
+  };
+
   const addVoiceTo = (video: string) => {
     const target =
       timeline && source === video && name
@@ -1767,7 +1779,7 @@ export function TimelineView() {
             const video = VIDEO_EXT.test(f.name);
             const src = safeProjectMediaSrc(resolveSrc(dir, f.name));
             return (
-              <div key={f.name} className="flex flex-col gap-1">
+              <div key={f.name} className="group flex flex-col gap-1">
                 <div className="flex items-center gap-2 text-[0.8rem]">
                   <button
                     title="Drag onto a lane, or click to select"
@@ -1814,6 +1826,27 @@ export function TimelineView() {
                         }}
                       />
                     ))}
+                  <button
+                    aria-label={`Delete ${f.name}`}
+                    title={confirmDelete === f.name ? "Click again to delete" : "Remove this file from the project"}
+                    onClick={() => {
+                      if (confirmDelete !== f.name) {
+                        setConfirmDelete(f.name);
+                        return;
+                      }
+                      setConfirmDelete(null);
+                      removeMedia(f.name);
+                    }}
+                    onMouseLeave={() => setConfirmDelete((cur) => (cur === f.name ? null : cur))}
+                    className={cn(
+                      "shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+                      confirmDelete === f.name
+                        ? "bg-destructive text-white opacity-100"
+                        : "text-muted-foreground hover:text-destructive",
+                    )}
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
                 {!video && !image && src && selectedFile === f.name && (
                   <AudioPlayer src={src} ariaLabel={f.name} path={resolveSrc(dir, f.name)} />

@@ -163,6 +163,7 @@ pub fn run() {
             timeline::read_timeline,
             timeline::write_timeline,
             timeline::reveal_project_file,
+            timeline::delete_project_file,
             timeline::add_project_video,
             timeline::import_project_file,
             timeline::list_project_media,
