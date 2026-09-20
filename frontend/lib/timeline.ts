@@ -222,6 +222,39 @@ export function serializeTimeline(t: Timeline): string {
   return JSON.stringify(t, null, 2) + "\n";
 }
 
+/// A one-sentence conventional-commit subject for a manual timeline edit, from
+/// the diff between the previously saved JSON and the new JSON, so a checkpoint
+/// commit says what the edit did rather than a bare "edit".
+export function describeTimelineChange(prev: string, next: string, name: string): string {
+  const file = name || "timeline";
+  const tracksOf = (s: string): Track[] | null => {
+    try {
+      const t = JSON.parse(s) as { tracks?: Track[] };
+      return Array.isArray(t.tracks) ? t.tracks : null;
+    } catch {
+      return null;
+    }
+  };
+  const n = tracksOf(next);
+  if (!n) return `chore(timeline): edit ${file}`;
+  const p = prev ? tracksOf(prev) : null;
+  if (!p) return `feat(timeline): create ${file}`;
+  if (n.length > p.length) {
+    const added = n.find((t) => !p.some((x) => x.id === t.id));
+    return `feat(timeline): add ${added?.kind ?? "a"} track to ${file}`;
+  }
+  if (n.length < p.length) {
+    const removed = p.find((t) => !n.some((x) => x.id === t.id));
+    return `refactor(timeline): remove ${removed?.kind ?? "a"} track from ${file}`;
+  }
+  const clipCount = (ts: Track[]) => ts.reduce((sum, t) => sum + (t.clips?.length ?? 0), 0);
+  const nc = clipCount(n);
+  const pc = clipCount(p);
+  if (nc > pc) return `feat(timeline): add a clip to ${file}`;
+  if (nc < pc) return `refactor(timeline): remove a clip from ${file}`;
+  return `chore(timeline): edit ${file}`;
+}
+
 export function videoSource(t: Timeline): string | undefined {
   return t.tracks.find((tr) => tr.kind === "video")?.clips[0]?.src;
 }

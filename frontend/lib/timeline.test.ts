@@ -8,6 +8,7 @@ import {
   snapTime,
   splitClip,
   serializeTimeline,
+  describeTimelineChange,
   trimClip,
   spokenCount,
   spokenTrack,
@@ -596,5 +597,40 @@ describe("keyframes", () => {
     expect(clearKeys(t, "v1", "scale").tracks[0].clips[0].keys).toEqual({ x: [{ t: 2, v: 0.3 }] });
     expect(clearKeys(t, "v1").tracks[0].clips[0].keys).toBeUndefined();
     expect(removeKf(t, "v1", 2).tracks[0].clips[0].keys).toBeUndefined();
+  });
+});
+
+describe("describeTimelineChange", () => {
+  const tl = (tracks: unknown) => JSON.stringify({ version: 1, tracks });
+  const video = { id: "video", kind: "video", clips: [{ id: "v1", src: "a.mov", start: 0, end: 4 }] };
+  const captions = { id: "captions", kind: "captions", clips: [{ id: "c1", start: 0, end: 2, text: "hi" }] };
+
+  test("no previous state reads as create", () => {
+    expect(describeTimelineChange("", tl([video]), "main.timeline.json")).toBe(
+      "feat(timeline): create main.timeline.json",
+    );
+  });
+
+  test("an added track names its kind", () => {
+    expect(describeTimelineChange(tl([video]), tl([video, captions]), "main.timeline.json")).toBe(
+      "feat(timeline): add captions track to main.timeline.json",
+    );
+  });
+
+  test("a removed track and a removed clip", () => {
+    expect(describeTimelineChange(tl([video, captions]), tl([video]), "x.timeline.json")).toBe(
+      "refactor(timeline): remove captions track from x.timeline.json",
+    );
+    const twoClips = { ...video, clips: [...video.clips, { id: "v2", src: "b.mov", start: 5, end: 8 }] };
+    expect(describeTimelineChange(tl([twoClips]), tl([video]), "x.timeline.json")).toBe(
+      "refactor(timeline): remove a clip from x.timeline.json",
+    );
+  });
+
+  test("an unchanged track/clip count reads as a plain edit", () => {
+    const moved = { ...video, clips: [{ id: "v1", src: "a.mov", start: 2, end: 6 }] };
+    expect(describeTimelineChange(tl([video]), tl([moved]), "x.timeline.json")).toBe(
+      "chore(timeline): edit x.timeline.json",
+    );
   });
 });
