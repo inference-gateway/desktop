@@ -60,6 +60,8 @@ import {
   addTrack,
   MAX_SPEED,
   MIN_SPEED,
+  MAX_VOLUME,
+  MIN_VOLUME,
   captionStyle,
   captionTrack,
   clearKeys,
@@ -104,6 +106,7 @@ import {
   serializeTimeline,
   setClipSample,
   setClipText,
+  setClipVolume,
   speakClip,
   videoSource,
   type Clip,
@@ -321,7 +324,11 @@ export function TimelineView() {
         if (!el) continue;
         const src = sourceTimeAt(c, t);
         const inside = lane && t >= c.start && t < c.end && (!Number.isFinite(el.duration) || src < el.duration);
-        if (tr.kind === "audio") el.volume = lane ? Math.max(0, Math.min(1, tr.gain ?? 1)) : 0;
+        // ponytail: the element's `volume` caps at 1, so a boost above 100% is
+        // export-only until the preview routes clips through a Web Audio GainNode.
+        if (tr.kind === "audio") {
+          el.volume = lane ? Math.max(0, Math.min(1, (tr.gain ?? 1) * (c.volume ?? 1))) : 0;
+        }
         if (tr.kind === "video") {
           const rate = speedAt(c, t - c.start);
           if (el.playbackRate !== rate) el.playbackRate = rate;
@@ -2212,6 +2219,26 @@ function ClipEditor({
           onChange={(e) => onType(setClipText(timeline, track.id, clip.id, e.target.value))}
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
+      )}
+      {track.kind === "audio" && (
+        <div className="flex items-center gap-2">
+          <span className="w-12 shrink-0">Volume</span>
+          <input
+            type="range"
+            aria-label={`Volume for ${clip.id}`}
+            title="This clip's own volume on top of the track's gain - above 100% lands in the export only"
+            min={MIN_VOLUME * 100}
+            max={MAX_VOLUME * 100}
+            step={1}
+            value={Math.round((clip.volume ?? 1) * 100)}
+            onFocus={onTypeStart}
+            onBlur={onTypeEnd}
+            onPointerUp={onTypeEnd}
+            onChange={(e) => onType(setClipVolume(timeline, track.id, clip.id, Number(e.target.value) / 100))}
+            className="h-1 flex-1 accent-sky-400"
+          />
+          <span className="w-14 text-right tabular-nums">{Math.round((clip.volume ?? 1) * 100)}%</span>
+        </div>
       )}
       {audio && <AudioPlayer src={audio} ariaLabel={`Audio for ${clip.id}`} path={resolveSrc(dir, clip.src!)} />}
       {clip.src && !audio && track.kind !== "video" && (
