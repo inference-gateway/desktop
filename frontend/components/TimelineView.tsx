@@ -9,6 +9,7 @@ import {
   EyeOff,
   FilePlus,
   Film,
+  Image as ImageIcon,
   Layers,
   Loader2,
   Maximize2,
@@ -172,11 +173,20 @@ const clipClass = (tr: Track, c: Clip) =>
 
 const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
-const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac)$/i;
+// Images are video-creation assets like any other: a logo, a background plate, a
+// screenshot to cut to. The renderer draws them from an <img> as readily as a video.
+const IMAGE_EXT = /\.(?:png|jpe?g|webp|gif)$/i;
+const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|webp|gif)$/i;
 
 const DEFAULT_TIMELINE = "main.timeline.json";
 const fmtBytes = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  n < 1024
+    ? `${n} B`
+    : n < 1024 * 1024
+      ? `${Math.round(n / 1024)} KB`
+      : n < 1024 * 1024 * 1024
+        ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+        : `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 
 function VoiceSelect({
   label,
@@ -230,8 +240,8 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 
 // Editable view of <stem>.timeline.json for the current content project:
 // video stage, one lane per track with clips positioned by time, a media
-// pool of the project's video and audio files, and an inspector for the
-// selected voice clip. With no timeline yet it shows empty video and audio
+// pool of the project's video, audio and image files, and an inspector for
+// the selected voice clip. With no timeline yet it shows empty video and audio
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
@@ -996,7 +1006,14 @@ export function TimelineView() {
   };
 
   const importFiles = async (files: FileList) => {
-    const media = Array.from(files).filter((f) => MEDIA_EXT.test(f.name));
+    const dropped = Array.from(files);
+    const media = dropped.filter((f) => MEDIA_EXT.test(f.name));
+    const rejected = dropped.filter((f) => !MEDIA_EXT.test(f.name));
+    if (rejected.length > 0) {
+      setError(
+        `Cannot use ${rejected.map((f) => f.name).join(", ")}: the media pool takes video, audio and image files`,
+      );
+    }
     if (media.length === 0) return;
     setImporting(true);
     try {
@@ -1031,8 +1048,11 @@ export function TimelineView() {
     promptProject(project, prompt).catch((e) => setError(String(e)));
   };
 
-  const laneAccepts = (tr: Track, file: string | null) =>
-    !!file && tr.kind !== "captions" && (VIDEO_EXT.test(file) ? tr.kind !== "audio" : tr.kind === "audio");
+  const laneAccepts = (tr: Track, file: string | null) => {
+    if (!file || tr.kind === "captions") return false;
+    const picture = VIDEO_EXT.test(file) || IMAGE_EXT.test(file);
+    return picture ? tr.kind !== "audio" : tr.kind === "audio";
+  };
 
   const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
     const file = dragRef.current;
@@ -1731,18 +1751,26 @@ export function TimelineView() {
             <span className="text-[0.72rem] text-muted-foreground">
               {media.length} file{media.length === 1 ? "" : "s"}
             </span>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={addRecording}>
-              <FilePlus size={14} /> Add recording
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="ml-auto"
+              aria-label="Add recording"
+              title="Add a recording to the pool"
+              onClick={addRecording}
+            >
+              <FilePlus size={14} />
             </Button>
           </div>
           {importing && <p className="text-[0.78rem] text-muted-foreground">Importing...</p>}
           {media.length === 0 && !importing && (
             <p className="text-[0.78rem] text-muted-foreground">
-              No media yet. Drop video or audio files here, or add a recording. Files live in the project's media
+              No media yet. Drop video, audio or image files here, or add a recording. Files live in the project's media
               folder.
             </p>
           )}
           {media.map((f) => {
+            const image = IMAGE_EXT.test(f.name);
             const video = VIDEO_EXT.test(f.name);
             const src = safeProjectMediaSrc(resolveSrc(dir, f.name));
             return (
@@ -1766,7 +1794,9 @@ export function TimelineView() {
                       selectedFile === f.name && "bg-primary/15",
                     )}
                   >
-                    {video ? (
+                    {image ? (
+                      <ImageIcon size={13} className="shrink-0 text-amber-500" />
+                    ) : video ? (
                       <Film size={13} className="shrink-0 text-primary" />
                     ) : (
                       <Music size={13} className="shrink-0 text-emerald-500" />
@@ -1777,19 +1807,22 @@ export function TimelineView() {
                       {fmtBytes(f.size)}
                     </span>
                   </button>
-                  {src && (
-                    <video
-                      src={src}
-                      preload="metadata"
-                      className="hidden"
-                      onLoadedMetadata={(e) => {
-                        const d = e.currentTarget.duration;
-                        setDurations((prev) => ({ ...prev, [f.name]: d }));
-                      }}
-                    />
-                  )}
+                  {src &&
+                    (image ? (
+                      <img src={src} alt="" className="size-6 shrink-0 rounded object-cover" />
+                    ) : (
+                      <video
+                        src={src}
+                        preload="metadata"
+                        className="hidden"
+                        onLoadedMetadata={(e) => {
+                          const d = e.currentTarget.duration;
+                          setDurations((prev) => ({ ...prev, [f.name]: d }));
+                        }}
+                      />
+                    ))}
                 </div>
-                {!video && src && selectedFile === f.name && (
+                {!video && !image && src && selectedFile === f.name && (
                   <AudioPlayer src={src} ariaLabel={f.name} path={resolveSrc(dir, f.name)} />
                 )}
               </div>
