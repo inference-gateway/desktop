@@ -133,7 +133,6 @@ export const clampSpeed = (v: number) => (Number.isFinite(v) ? Math.min(MAX_SPEE
 export const MIN_VOLUME = 0;
 export const MAX_VOLUME = 2;
 export const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(MAX_VOLUME, Math.max(MIN_VOLUME, v)) : 1);
-// Keyframes closer together in time than this are the same keyframe.
 const KF_EPS = 1e-3;
 
 function num(v: unknown, fallback = 0): number {
