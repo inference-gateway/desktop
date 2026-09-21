@@ -614,7 +614,7 @@ fn export_plan(
             args.extend(["-vn", "-i"].map(String::from));
             args.push(src.to_string_lossy().into_owned());
             let ms = (c.start.max(0.0) * 1000.0).round() as u64;
-            let volume = tr.gain.unwrap_or(1.0) * c.volume.unwrap_or(1.0);
+            let volume = tr.gain.unwrap_or(1.0) * c.volume.unwrap_or(1.0).clamp(0.0, 2.0);
             let volume = if (volume - 1.0).abs() > f64::EPSILON {
                 format!(",volume={volume}")
             } else {
@@ -969,7 +969,7 @@ mod tests {
         let json = r#"{"duration":10,"source_audio":"keep","tracks":[
             {"kind":"video","clips":[{"start":0,"src":"demo.mov"},{"start":6,"end":10,"offset":2,"src":"b.mov"}]},
             {"kind":"audio","clips":[{"start":1.5,"end":4.5,"offset":2,"src":"s1.wav","volume":0.25},{"start":9,"text":"draft"}]},
-            {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3","volume":0.5}]}]}"#;
+            {"kind":"audio","gain":0.2,"clips":[{"start":0,"src":"music.mp3","volume":5}]}]}"#;
         let (args, plan, _) = export_plan(&dir, "demo", json).unwrap();
         let joined = args.join(" ");
         assert_eq!(plan.output, "export/demo.with-voice.mp4");
@@ -985,7 +985,7 @@ mod tests {
         );
         assert!(
             joined.contains(
-                "[1:a]atrim=start=0:end=6,asetpts=PTS-STARTPTS,adelay=0|0[a1];[2:a]atrim=start=2:end=6,asetpts=PTS-STARTPTS,adelay=6000|6000[a2];[3:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500,volume=0.25[a3];[4:a]adelay=0|0,volume=0.1[a4];[a1][a2][a3][a4]amix=inputs=4:normalize=0[mix];[mix]apad[a]"
+                "[1:a]atrim=start=0:end=6,asetpts=PTS-STARTPTS,adelay=0|0[a1];[2:a]atrim=start=2:end=6,asetpts=PTS-STARTPTS,adelay=6000|6000[a2];[3:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500,volume=0.25[a3];[4:a]adelay=0|0,volume=0.4[a4];[a1][a2][a3][a4]amix=inputs=4:normalize=0[mix];[mix]apad[a]"
             ),
             "{joined}"
         );
@@ -1008,7 +1008,7 @@ mod tests {
         let (args, _, _) = export_plan(&dir, "demo", &muted).unwrap();
         let joined = args.join(" ");
         assert!(!joined.contains("demo.mov"), "{joined}");
-        assert!(joined.contains("[1:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500,volume=0.25[a1];[2:a]adelay=0|0,volume=0.1[a2];[a1][a2]amix=inputs=2"), "{joined}");
+        assert!(joined.contains("[1:a]atrim=start=2:end=5,asetpts=PTS-STARTPTS,adelay=1500|1500,volume=0.25[a1];[2:a]adelay=0|0,volume=0.4[a2];[a1][a2]amix=inputs=2"), "{joined}");
 
         let silent = r#"{"duration":4,"tracks":[{"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov"}]}]}"#;
         let (args, plan, sidecar) = export_plan(&dir, "demo", silent).unwrap();
