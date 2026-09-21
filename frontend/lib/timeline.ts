@@ -130,9 +130,6 @@ const NEW_CLIP_SECONDS = 5;
 export const MIN_SPEED = 0.1;
 export const MAX_SPEED = 8;
 export const clampSpeed = (v: number) => (Number.isFinite(v) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, v)) : 1);
-// A clip's own volume on top of its track's `gain`: 0 mutes it, 1 is as loud as
-// the file, 2 is a boost. The export applies the whole range; the preview plays
-// through an HTMLMediaElement, whose `volume` caps at 1.
 export const MIN_VOLUME = 0;
 export const MAX_VOLUME = 2;
 export const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(MAX_VOLUME, Math.max(MIN_VOLUME, v)) : 1);
