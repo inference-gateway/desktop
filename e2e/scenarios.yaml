@@ -148,6 +148,23 @@ scenarios:
                 }
       - content: "Music added."
 
+  - name: clip-volume
+    match: '(?i)duck the music bed'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "main.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 10,
+                  "tracks": [
+                    { "id": "audio", "kind": "audio", "clips": [{ "id": "a1", "src": "media/bed.mp3", "start": 0, "end": 10, "volume": 0.5 }] }
+                  ]
+                }
+      - content: "Music ducked."
+
   - name: missing-music-restore
     match: '(?i)restore the music file'
     turns:
