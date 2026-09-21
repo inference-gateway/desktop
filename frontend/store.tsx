@@ -223,13 +223,10 @@ function useDesktopStore() {
       logActivity(name, action, "running");
       return run().then(
         (message) => logActivity(name, action, "done", message),
-        (e) => {
-          logActivity(name, action, "failed", String(e));
-          setError(String(e));
-        },
+        (e) => logActivity(name, action, "failed", String(e)),
       );
     },
-    [logActivity, setError],
+    [logActivity],
   );
 
   // Todo panel drafts are keyed by session so switching sessions never
