@@ -34,6 +34,9 @@ import {
   speakClip,
   videoSource,
   MAX_SPEED,
+  MAX_VOLUME,
+  MIN_VOLUME,
+  setClipVolume,
   sampleKf,
   framingAt,
   speedAt,
@@ -612,6 +615,27 @@ describe("keyframes", () => {
       ],
     };
     expect(setSpeed(two, "v1", 0.5).tracks[0].clips[0].end).toBeCloseTo(5, 6);
+  });
+
+  test("setClipVolume clamps to 0-2, ignores other ids and survives a parse round-trip", () => {
+    const base = timelineOf({ id: "s1", src: "a.mp3", start: 0, end: 4 });
+    expect(setClipVolume(base, "video", "s1", 0.5).tracks[0].clips[0].volume).toBe(0.5);
+    expect(setClipVolume(base, "video", "s1", 9).tracks[0].clips[0].volume).toBe(MAX_VOLUME);
+    expect(setClipVolume(base, "video", "s1", -1).tracks[0].clips[0].volume).toBe(MIN_VOLUME);
+    expect(setClipVolume(base, "other", "s1", 0.5).tracks[0].clips[0].volume).toBeUndefined();
+    expect(setClipVolume(base, "video", "zz", 0.5).tracks[0].clips[0].volume).toBeUndefined();
+
+    const picked = setClipVolume(base, "video", "s1", 1.4);
+    expect(parseTimeline(serializeTimeline(picked)).tracks[0].clips[0].volume).toBe(1.4);
+  });
+
+  test("a timeline without volumes loads as none, and splitClip keeps the volume on both halves", () => {
+    const plain = timelineOf({ id: "s1", src: "a.mp3", start: 0, end: 4 });
+    expect(parseTimeline(serializeTimeline(plain)).tracks[0].clips[0].volume).toBeUndefined();
+
+    const loud = timelineOf({ id: "s1", src: "a.mp3", start: 0, end: 4, volume: 0.4 });
+    const halves = splitClip(loud, "video", "s1", 2)!.tracks[0].clips;
+    expect(halves.map((c) => c.volume)).toEqual([0.4, 0.4]);
   });
 
   test("clearKeys removes one property or all, removeKf deletes a diamond", () => {

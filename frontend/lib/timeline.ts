@@ -41,6 +41,7 @@ export type Clip = {
   scale?: number;
   speed?: number;
   speed_ease?: SpeedEase;
+  volume?: number;
   keys?: ClipKeys;
 
   html?: string;
@@ -129,7 +130,9 @@ const NEW_CLIP_SECONDS = 5;
 export const MIN_SPEED = 0.1;
 export const MAX_SPEED = 8;
 export const clampSpeed = (v: number) => (Number.isFinite(v) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, v)) : 1);
-// Keyframes closer together in time than this are the same keyframe.
+export const MIN_VOLUME = 0;
+export const MAX_VOLUME = 2;
+export const clampVolume = (v: number) => (Number.isFinite(v) ? Math.min(MAX_VOLUME, Math.max(MIN_VOLUME, v)) : 1);
 const KF_EPS = 1e-3;
 
 function num(v: unknown, fallback = 0): number {
@@ -193,6 +196,7 @@ export function parseTimeline(json: string): Timeline {
         scale: optNum(c?.scale),
         speed: c?.speed === undefined ? undefined : clampSpeed(num(c.speed, 1)),
         speed_ease: (c?.speed_ease === "easeInOut" ? "easeInOut" : undefined) as SpeedEase | undefined,
+        volume: c?.volume === undefined ? undefined : clampVolume(num(c.volume, 1)),
         keys: parseKeys(c?.keys),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
@@ -593,6 +597,20 @@ export function setSpeed(t: Timeline, clipId: string, speed: number, ease?: Spee
     };
   });
   return { ...t, duration: Math.max(t.duration, end), tracks };
+}
+
+// A clip's own volume, on top of whatever its track's `gain` sets: a music clip
+// ducked under a voice clip, or a quiet recording lifted. Only the export can
+// boost past 100% - see `clampVolume`.
+export function setClipVolume(t: Timeline, trackId: string, clipId: string, volume: number): Timeline {
+  return {
+    ...t,
+    tracks: t.tracks.map((tr) =>
+      tr.id !== trackId
+        ? tr
+        : { ...tr, clips: tr.clips.map((c) => (c.id === clipId ? { ...c, volume: clampVolume(volume) } : c)) },
+    ),
+  };
 }
 
 // Remove a clip's keyframes: one property's channel, or every channel at once.

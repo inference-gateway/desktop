@@ -19,7 +19,17 @@ function fmt(t: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function AudioPlayer({ src, ariaLabel, path }: { src: string; ariaLabel: string; path?: string }) {
+export function AudioPlayer({
+  src,
+  ariaLabel,
+  path,
+  volume = 1,
+}: {
+  src: string;
+  ariaLabel: string;
+  path?: string;
+  volume?: number;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -49,6 +59,10 @@ export function AudioPlayer({ src, ariaLabel, path }: { src: string; ariaLabel: 
       alive = false;
     };
   }, [src]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = Math.max(0, Math.min(1, volume));
+  }, [volume]);
 
   useEffect(() => {
     if (saveStatus !== "saved" && saveStatus !== "error") return;
