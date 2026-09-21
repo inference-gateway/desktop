@@ -299,6 +299,8 @@ export function TimelineView() {
     setTime(t);
   };
   const mediaRefs = useRef(new Map<string, HTMLMediaElement>());
+  const audioCtx = useRef<AudioContext | null>(null);
+  const gains = useRef(new WeakMap<HTMLMediaElement, GainNode>());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageObserver = useRef<ResizeObserver | null>(null);
   const frameRef = useRef<Rect | null>(null);
@@ -315,8 +317,22 @@ export function TimelineView() {
   const captions = captionTr && !hiddenLanes.has(captionTr.id) ? captionTr : undefined;
   const activeCaption = captions?.clips.find((c) => time >= c.start && time < c.end);
 
+  const attachGain = (el: HTMLMediaElement) => {
+    if (gains.current.has(el)) return;
+    try {
+      audioCtx.current ??= new AudioContext();
+      const gain = audioCtx.current.createGain();
+      audioCtx.current.createMediaElementSource(el).connect(gain).connect(audioCtx.current.destination);
+      gains.current.set(el, gain);
+      el.volume = 1;
+    } catch {
+      return;
+    }
+  };
+
   const syncMedia = (t: number, playing: boolean) => {
     if (!timeline) return;
+    if (playing && audioCtx.current?.state === "suspended") void audioCtx.current.resume();
     for (const tr of timeline.tracks) {
       const lane = !hiddenLanes.has(tr.id);
       for (const c of tr.clips) {
@@ -324,10 +340,12 @@ export function TimelineView() {
         if (!el) continue;
         const src = sourceTimeAt(c, t);
         const inside = lane && t >= c.start && t < c.end && (!Number.isFinite(el.duration) || src < el.duration);
-        // ponytail: the element's `volume` caps at 1, so a boost above 100% is
-        // export-only until the preview routes clips through a Web Audio GainNode.
         if (tr.kind === "audio") {
-          el.volume = lane ? Math.max(0, Math.min(1, (tr.gain ?? 1) * (c.volume ?? 1))) : 0;
+          const level = lane ? Math.max(0, (tr.gain ?? 1) * (c.volume ?? 1)) : 0;
+          if (level > 1) attachGain(el);
+          const gain = gains.current.get(el);
+          if (gain) gain.gain.value = level;
+          else el.volume = Math.min(1, level);
         }
         if (tr.kind === "video") {
           const rate = speedAt(c, t - c.start);
@@ -432,7 +450,7 @@ export function TimelineView() {
     };
   }, [playing]);
   useEffect(() => {
-    syncMedia(timeRef.current, false);
+    syncMedia(timeRef.current, playing);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline]);
   useEffect(() => {
@@ -1423,6 +1441,7 @@ export function TimelineView() {
         {clipAudio.map(({ clip: c, src }) => (
           <audio
             key={c.id}
+            crossOrigin="anonymous"
             src={src}
             preload="auto"
             ref={(el) => {
@@ -1632,6 +1651,7 @@ export function TimelineView() {
                             .filter(Boolean)
                             .join("\n")}
                           aria-pressed={isSel}
+                          onClick={() => setSelected({ track: tr.id, clip: c.id })}
                           onPointerDown={(e) => beginDrag(e, "move", tr, c)}
                           onPointerMove={(e) => dragTo(e, c)}
                           onPointerUp={endDrag}
@@ -1746,6 +1766,34 @@ export function TimelineView() {
             </div>
           </div>
         </div>
+
+        {timeline && track && clip && track.kind === "video" && (
+          <TransformPanel
+            timeline={timeline}
+            clip={clip}
+            now={time}
+            begin={beginEdit}
+            live={preview}
+            commit={update}
+            end={commitEdit}
+            seek={seek}
+          />
+        )}
+        {timeline && track && clip && (
+          <ClipEditor
+            track={track}
+            clip={clip}
+            dir={dir}
+            timeline={timeline}
+            samples={samples}
+            onChange={update}
+            onType={preview}
+            onTypeStart={beginEdit}
+            onTypeEnd={commitEdit}
+            onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
+            onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
+          />
+        )}
 
         <div
           aria-label="Media pool"
@@ -1873,34 +1921,6 @@ export function TimelineView() {
             );
           })}
         </div>
-
-        {timeline && track && clip && track.kind === "video" && (
-          <TransformPanel
-            timeline={timeline}
-            clip={clip}
-            now={time}
-            begin={beginEdit}
-            live={preview}
-            commit={update}
-            end={commitEdit}
-            seek={seek}
-          />
-        )}
-        {timeline && track && clip && (
-          <ClipEditor
-            track={track}
-            clip={clip}
-            dir={dir}
-            timeline={timeline}
-            samples={samples}
-            onChange={update}
-            onType={preview}
-            onTypeStart={beginEdit}
-            onTypeEnd={commitEdit}
-            onRedo={running > 0 ? undefined : () => redoClip(track.id, clip)}
-            onSpeak={running > 0 ? undefined : () => speakCaption(track.id, clip)}
-          />
-        )}
       </div>
     </div>
   );
@@ -2203,6 +2223,26 @@ function ClipEditor({
           <Trash2 size={14} />
         </button>
       </div>
+      {track.kind === "audio" && (
+        <div className="flex items-center gap-2">
+          <span className="w-12 shrink-0">Volume</span>
+          <input
+            type="range"
+            aria-label={`Volume for ${clip.id}`}
+            title="This clip's own volume on top of the track's gain"
+            min={MIN_VOLUME * 100}
+            max={MAX_VOLUME * 100}
+            step={1}
+            value={Math.round((clip.volume ?? 1) * 100)}
+            onFocus={onTypeStart}
+            onBlur={onTypeEnd}
+            onPointerUp={onTypeEnd}
+            onChange={(e) => onType(setClipVolume(timeline, track.id, clip.id, Number(e.target.value) / 100))}
+            className="h-1 flex-1 accent-sky-400"
+          />
+          <span className="w-14 text-right tabular-nums">{Math.round((clip.volume ?? 1) * 100)}%</span>
+        </div>
+      )}
       {(spoken || caption) && (
         <textarea
           id={`clip-text-${clip.id}`}
@@ -2220,27 +2260,14 @@ function ClipEditor({
           className="w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       )}
-      {track.kind === "audio" && (
-        <div className="flex items-center gap-2">
-          <span className="w-12 shrink-0">Volume</span>
-          <input
-            type="range"
-            aria-label={`Volume for ${clip.id}`}
-            title="This clip's own volume on top of the track's gain - above 100% lands in the export only"
-            min={MIN_VOLUME * 100}
-            max={MAX_VOLUME * 100}
-            step={1}
-            value={Math.round((clip.volume ?? 1) * 100)}
-            onFocus={onTypeStart}
-            onBlur={onTypeEnd}
-            onPointerUp={onTypeEnd}
-            onChange={(e) => onType(setClipVolume(timeline, track.id, clip.id, Number(e.target.value) / 100))}
-            className="h-1 flex-1 accent-sky-400"
-          />
-          <span className="w-14 text-right tabular-nums">{Math.round((clip.volume ?? 1) * 100)}%</span>
-        </div>
+      {audio && (
+        <AudioPlayer
+          src={audio}
+          ariaLabel={`Audio for ${clip.id}`}
+          path={resolveSrc(dir, clip.src!)}
+          volume={clip.volume}
+        />
       )}
-      {audio && <AudioPlayer src={audio} ariaLabel={`Audio for ${clip.id}`} path={resolveSrc(dir, clip.src!)} />}
       {clip.src && !audio && track.kind !== "video" && (
         <p className="text-[0.75rem] text-muted-foreground">{clip.src}</p>
       )}
