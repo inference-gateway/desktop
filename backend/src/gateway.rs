@@ -165,7 +165,8 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
         .env("IMAGES_ENABLED", "true")
-        .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "120s")
+        .env("CLIENT_RESPONSE_HEADER_TIMEOUT", "200s")
+        .env("SERVER_WRITE_TIMEOUT", "200s")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -177,8 +178,11 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 /// without re-downloading, so a newly saved API key gets injected into its env
 /// (keys are read only at spawn via `auth_env()`). Images are enabled here via `IMAGES_ENABLED=true`
 /// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
-/// and the upstream response-header timeout is raised from its 10s default so
-/// non-streaming image generation (which OpenAI answers in 20-60s) doesn't 502.
+/// and the upstream response-header and server write timeouts are raised from
+/// their 10s/30s defaults to 200s (the CLI's own `gateway.timeout`), so
+/// non-streaming calls - image generation, or a reasoning model answering
+/// `infer insights` - aren't cut off with a 502 or an EOF. Streaming replies
+/// never hit them; the gateway pushes the write deadline back on every chunk.
 /// The audio endpoint (/v1/audio/speech) is enabled the same way when the
 /// Settings text-to-speech toggle is on (see `audio_env`).
 #[tauri::command]
