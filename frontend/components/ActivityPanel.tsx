@@ -82,11 +82,12 @@ export function ActivityPanel() {
               className="flex items-center gap-2 border-b border-border px-2 py-1 text-[0.78rem] last:border-b-0"
             >
               <span className={cn("h-[0.4rem] w-[0.4rem] shrink-0 rounded-full", DOT[a.status])} />
-              <span className="truncate text-foreground">{a.project ? `${a.project} - ${a.action}` : a.action}</span>
+              <span className="shrink-0 text-foreground">{a.project ? `${a.project} - ${a.action}` : a.action}</span>
               {a.message && (
                 <span
+                  title={a.message}
                   className={cn(
-                    "ml-auto shrink-0 pl-2 text-[0.7rem]",
+                    "ml-auto min-w-0 truncate pl-2 text-[0.7rem]",
                     a.status === "failed" ? "text-err" : "text-muted-foreground",
                   )}
                 >

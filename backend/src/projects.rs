@@ -554,6 +554,12 @@ fn has_uncommitted_changes(dir: &Path) -> bool {
     dirty
 }
 
+/// Whether the checkout has any remote to pull from; content repos made by
+/// `ensure_content_repo` are local-only.
+fn has_remote(dir: &Path) -> bool {
+    git_output(dir, &["remote"]).is_ok_and(|r| !r.is_empty())
+}
+
 /// One live watcher over every git project's git dir, rebuilt on each status
 /// sweep so it always tracks the current project set.
 pub(crate) struct GitWatcher(pub(crate) std::sync::Mutex<Option<notify::RecommendedWatcher>>);
@@ -683,6 +689,9 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
         if has_uncommitted_changes(&dir) {
             return Err("uncommitted changes - commit or stash first".to_string());
         }
+        if !has_remote(&dir) {
+            return Err("no remote - local-only repo".to_string());
+        }
         let default = origin_default_branch(&dir);
         if read_head_branch(&dir).as_deref() != Some(default.as_str()) {
             git_output(&dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
@@ -694,9 +703,9 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
     .map_err(|e| format!("sync task failed: {e}"))?
 }
 
-/// Check out the default branch, fast-forward pull, delete every other local
-/// branch and prune stale remote-tracking refs. Refuses over uncommitted
-/// changes. Returns a short summary.
+/// Remove every linked worktree, check out the default branch, fast-forward
+/// pull, delete every other local branch and prune stale remote-tracking refs.
+/// Refuses over uncommitted changes. Returns a short summary.
 #[tauri::command]
 pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
@@ -712,7 +721,40 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     .map_err(|e| format!("cleanup task failed: {e}"))?
 }
 
+/// Leaves a repo without a remote untouched: there is nothing to pull or
+/// prune, and its other branches exist nowhere else, so `branch -D` would
+/// destroy them for good. Linked worktrees go first - they pin their branches
+/// (and maybe the default one) - and a dirty one aborts before anything is
+/// removed. Locked worktrees are unlocked and removed too; `unlock` fails on
+/// an unlocked one, which is fine, and plain `remove` keeps git's own
+/// clean-tree check as a second guard.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
+    if !has_remote(dir) {
+        return Ok("no remote - skipped".to_string());
+    }
+    git_output(dir, &["worktree", "prune"]).map_err(|e| format!("prune worktrees: {e}"))?;
+    let here = std::fs::canonicalize(dir).map_err(|e| format!("resolve {}: {e}", dir.display()))?;
+    let list = git_output(dir, &["worktree", "list", "--porcelain"])
+        .map_err(|e| format!("list worktrees: {e}"))?;
+    let worktrees: Vec<&str> = list
+        .lines()
+        .filter_map(|l| l.strip_prefix("worktree "))
+        .skip(1)
+        .filter(|p| Path::new(p) != here)
+        .collect();
+    if let Some(dirty) = worktrees
+        .iter()
+        .find(|p| has_uncommitted_changes(Path::new(p)))
+    {
+        return Err(format!(
+            "uncommitted changes in worktree {dirty} - commit or stash first"
+        ));
+    }
+    for path in &worktrees {
+        let _ = git_output(dir, &["worktree", "unlock", path]);
+        git_output(dir, &["worktree", "remove", path])
+            .map_err(|e| format!("remove worktree: {e}"))?;
+    }
     let default = origin_default_branch(dir);
     if read_head_branch(dir).as_deref() != Some(default.as_str()) {
         git_output(dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
@@ -729,7 +771,11 @@ fn cleanup_repo(dir: &Path) -> Result<String, String> {
             .map_err(|e| format!("delete branches: {e}"))?;
     }
     git_output(dir, &["fetch", "--prune"]).map_err(|e| format!("fetch: {e}"))?;
-    Ok(format!("{default} - deleted {} branches", stale.len()))
+    Ok(format!(
+        "{default} - deleted {} branches, {} worktrees",
+        stale.len(),
+        worktrees.len()
+    ))
 }
 
 /// Whether the project's resolved directory exists on disk; gates the Init
@@ -1962,8 +2008,27 @@ mod tests {
         git(&repo, &["branch", "feat-a"]);
         git(&repo, &["switch", "-q", "-c", "feat-b"]);
         git(&repo, &["commit", "-q", "--allow-empty", "-m", "unmerged"]);
+        git(&repo, &["worktree", "add", "-q", "../wt-main", "main"]);
+        git(&repo, &["worktree", "add", "-q", "-b", "feat-c", "../wt-c"]);
+        git(&repo, &["worktree", "lock", "--reason", "keep", "../wt-c"]);
 
-        assert_eq!(cleanup_repo(&repo).unwrap(), "main - deleted 2 branches");
+        std::fs::write(root.join("wt-c").join("draft.md"), "wip").unwrap();
+        assert!(
+            cleanup_repo(&repo)
+                .unwrap_err()
+                .starts_with("uncommitted changes in worktree")
+        );
+        assert!(
+            root.join("wt-main").is_dir(),
+            "a dirty worktree aborts before any removal"
+        );
+        std::fs::remove_file(root.join("wt-c").join("draft.md")).unwrap();
+
+        assert_eq!(
+            cleanup_repo(&repo).unwrap(),
+            "main - deleted 3 branches, 2 worktrees"
+        );
+        assert!(!root.join("wt-main").exists() && !root.join("wt-c").exists());
         assert_eq!(read_head_branch(&repo).as_deref(), Some("main"));
         assert_eq!(
             git_output(
@@ -1974,6 +2039,33 @@ mod tests {
             "main"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cleanup_skips_repo_without_remote() {
+        let repo = std::env::temp_dir().join(format!("igd-cleanup-local-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
+                    .args(args)
+                    .status()
+                    .expect("git is available in the test environment")
+                    .success(),
+                "git {args:?} failed"
+            );
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&["branch", "feat-a"]);
+
+        assert_eq!(cleanup_repo(&repo).unwrap(), "no remote - skipped");
+        assert!(git_output(&repo, &["rev-parse", "--verify", "feat-a"]).is_ok());
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
