@@ -725,7 +725,9 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
 /// prune, and its other branches exist nowhere else, so `branch -D` would
 /// destroy them for good. Linked worktrees go first - they pin their branches
 /// (and maybe the default one) - and a dirty one aborts before anything is
-/// removed.
+/// removed. Locked worktrees are unlocked and removed too; `unlock` fails on
+/// an unlocked one, which is fine, and plain `remove` keeps git's own
+/// clean-tree check as a second guard.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
     if !has_remote(dir) {
         return Ok("no remote - skipped".to_string());
@@ -749,6 +751,7 @@ fn cleanup_repo(dir: &Path) -> Result<String, String> {
         ));
     }
     for path in &worktrees {
+        let _ = git_output(dir, &["worktree", "unlock", path]);
         git_output(dir, &["worktree", "remove", path])
             .map_err(|e| format!("remove worktree: {e}"))?;
     }
@@ -2007,6 +2010,7 @@ mod tests {
         git(&repo, &["commit", "-q", "--allow-empty", "-m", "unmerged"]);
         git(&repo, &["worktree", "add", "-q", "../wt-main", "main"]);
         git(&repo, &["worktree", "add", "-q", "-b", "feat-c", "../wt-c"]);
+        git(&repo, &["worktree", "lock", "--reason", "keep", "../wt-c"]);
 
         std::fs::write(root.join("wt-c").join("draft.md"), "wip").unwrap();
         assert!(
