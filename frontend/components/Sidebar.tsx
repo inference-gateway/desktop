@@ -44,6 +44,7 @@ export function Sidebar() {
         </Button>
         <Button
           size="icon"
+          variant="outline"
           aria-label="Broadcast to projects"
           aria-pressed={initSelecting}
           title={initSelecting ? "Cancel project selection" : "Broadcast to projects"}
