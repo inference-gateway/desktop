@@ -173,8 +173,6 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
         .map_err(|e| format!("Failed to start gateway: {e}"))
 }
 
-/// Start (or restart) the gateway. `force` re-downloads the binary first, so an
-/// update lands on the next spawn. `restart` respawns an already-running gateway
 /// and the upstream response-header and server write timeouts are raised from
 /// their 10s/30s defaults to 200s (the CLI's own `gateway.timeout`), so
 /// non-streaming calls - image generation, or a reasoning model answering
