@@ -183,7 +183,6 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 /// non-streaming calls - image generation, or a reasoning model answering
 /// `infer insights` - aren't cut off with a 502 or an EOF. Streaming replies
 /// never hit them; the gateway pushes the write deadline back on every chunk.
-/// The audio endpoint (/v1/audio/speech) is enabled the same way when the
 #[tauri::command]
 pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
