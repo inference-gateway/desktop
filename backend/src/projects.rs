@@ -721,11 +721,12 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     .map_err(|e| format!("cleanup task failed: {e}"))?
 }
 
-/// Refuses a repo without a remote: its other branches exist nowhere else,
-/// so `branch -D` would destroy them for good.
+/// Leaves a repo without a remote untouched: there is nothing to pull or
+/// prune, and its other branches exist nowhere else, so `branch -D` would
+/// destroy them for good.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
     if !has_remote(dir) {
-        return Err("no remote - local-only repo".to_string());
+        return Ok("no remote - skipped".to_string());
     }
     let default = origin_default_branch(dir);
     if read_head_branch(dir).as_deref() != Some(default.as_str()) {
@@ -1991,7 +1992,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_refuses_repo_without_remote() {
+    fn cleanup_skips_repo_without_remote() {
         let repo = std::env::temp_dir().join(format!("igd-cleanup-local-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).unwrap();
@@ -2012,10 +2013,7 @@ mod tests {
         git(&["commit", "-q", "--allow-empty", "-m", "base"]);
         git(&["branch", "feat-a"]);
 
-        assert_eq!(
-            cleanup_repo(&repo).unwrap_err(),
-            "no remote - local-only repo"
-        );
+        assert_eq!(cleanup_repo(&repo).unwrap(), "no remote - skipped");
         assert!(git_output(&repo, &["rev-parse", "--verify", "feat-a"]).is_ok());
         let _ = std::fs::remove_dir_all(&repo);
     }
