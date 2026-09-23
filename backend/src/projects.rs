@@ -554,6 +554,12 @@ fn has_uncommitted_changes(dir: &Path) -> bool {
     dirty
 }
 
+/// Whether the checkout has any remote to pull from; content repos made by
+/// `ensure_content_repo` are local-only.
+fn has_remote(dir: &Path) -> bool {
+    git_output(dir, &["remote"]).is_ok_and(|r| !r.is_empty())
+}
+
 /// One live watcher over every git project's git dir, rebuilt on each status
 /// sweep so it always tracks the current project set.
 pub(crate) struct GitWatcher(pub(crate) std::sync::Mutex<Option<notify::RecommendedWatcher>>);
@@ -683,6 +689,9 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
         if has_uncommitted_changes(&dir) {
             return Err("uncommitted changes - commit or stash first".to_string());
         }
+        if !has_remote(&dir) {
+            return Err("no remote - local-only repo".to_string());
+        }
         let default = origin_default_branch(&dir);
         if read_head_branch(&dir).as_deref() != Some(default.as_str()) {
             git_output(&dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
@@ -712,7 +721,12 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     .map_err(|e| format!("cleanup task failed: {e}"))?
 }
 
+/// Refuses a repo without a remote: its other branches exist nowhere else,
+/// so `branch -D` would destroy them for good.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
+    if !has_remote(dir) {
+        return Err("no remote - local-only repo".to_string());
+    }
     let default = origin_default_branch(dir);
     if read_head_branch(dir).as_deref() != Some(default.as_str()) {
         git_output(dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
@@ -1974,6 +1988,36 @@ mod tests {
             "main"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cleanup_refuses_repo_without_remote() {
+        let repo = std::env::temp_dir().join(format!("igd-cleanup-local-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
+                    .args(args)
+                    .status()
+                    .expect("git is available in the test environment")
+                    .success(),
+                "git {args:?} failed"
+            );
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "base"]);
+        git(&["branch", "feat-a"]);
+
+        assert_eq!(
+            cleanup_repo(&repo).unwrap_err(),
+            "no remote - local-only repo"
+        );
+        assert!(git_output(&repo, &["rev-parse", "--verify", "feat-a"]).is_ok());
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
