@@ -20,7 +20,6 @@ export function Sidebar() {
   const [width, setWidth] = useState(() => loadSidebarWidth(window.innerWidth));
   const [dragging, setDragging] = useState(false);
   const [filter, setFilter] = useState<ProjectType | null>(null);
-  // Filter is only useful when both project types exist; hide it otherwise.
   const mixedTypes = new Set(projectNames.map((n) => projectTypes[n] ?? "code")).size > 1;
   useEffect(() => {
     if (!mixedTypes) setFilter(null);
