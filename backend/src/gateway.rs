@@ -175,9 +175,6 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
 
 /// Start (or restart) the gateway. `force` re-downloads the binary first, so an
 /// update lands on the next spawn. `restart` respawns an already-running gateway
-/// without re-downloading, so a newly saved API key gets injected into its env
-/// (keys are read only at spawn via `auth_env()`). Images are enabled here via `IMAGES_ENABLED=true`
-/// (the gateway defaults them off, which otherwise 404s the `/v1/images` endpoints),
 /// and the upstream response-header and server write timeouts are raised from
 /// their 10s/30s defaults to 200s (the CLI's own `gateway.timeout`), so
 /// non-streaming calls - image generation, or a reasoning model answering
