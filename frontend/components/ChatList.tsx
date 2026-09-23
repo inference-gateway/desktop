@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
-import { useDesktop } from "@/store";
+import { useDesktop, type ProjectType } from "@/store";
 import { Button } from "@/components/ui/button";
 
 function CheckboxGlyph({ checked }: { checked: boolean }) {
@@ -539,7 +539,7 @@ function ProjectGroup({
   );
 }
 
-export function ChatList() {
+export function ChatList({ filter }: { filter: ProjectType | null }) {
   const {
     conversations,
     selected,
@@ -674,11 +674,18 @@ export function ChatList() {
   const projectClusters = useMemo(() => {
     const clusters = new Map<string, [string, number[]][]>();
     for (const entry of groups.projects) {
+      if (filter && (projectTypes[entry[0]] ?? "code") !== filter) continue;
       const label = projectGroups[entry[0]] ?? "";
       (clusters.get(label) ?? clusters.set(label, []).get(label)!).push(entry);
     }
     return Array.from(clusters.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [groups.projects, projectGroups]);
+  }, [groups.projects, projectGroups, projectTypes, filter]);
+
+  // Projects the current filter shows; select-all in broadcasting only stages these.
+  const visibleProjectNames = useMemo(
+    () => (filter ? projectNames.filter((n) => (projectTypes[n] ?? "code") === filter) : projectNames),
+    [filter, projectNames, projectTypes],
+  );
 
   const orchestratorRows = (
     <>
@@ -867,7 +874,7 @@ export function ChatList() {
       {initSelecting && (
         <InitBar
           count={initSelection.size}
-          total={projectNames.length}
+          total={visibleProjectNames.length}
           onInit={() => {
             initAllProjects(Array.from(initSelection));
             cancelInitSelection();
@@ -877,7 +884,7 @@ export function ChatList() {
             cancelInitSelection();
           }}
           onCancel={cancelInitSelection}
-          onSelectAll={selectAllProjects}
+          onSelectAll={() => selectAllProjects(visibleProjectNames)}
           onClear={clearProjectSelection}
         />
       )}

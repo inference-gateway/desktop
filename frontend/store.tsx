@@ -1490,7 +1490,10 @@ function useDesktopStore() {
     });
   }, []);
 
-  const selectAllProjects = useCallback(() => setInitSelection(new Set(projectNames)), [projectNames]);
+  const selectAllProjects = useCallback(
+    (names?: string[]) => setInitSelection(new Set(names ?? projectNames)),
+    [projectNames],
+  );
 
   const clearProjectSelection = useCallback(() => setInitSelection(new Set()), []);
 
