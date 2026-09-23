@@ -169,6 +169,11 @@ function useDesktopStore() {
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
   const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
+  const [projectFilter, setProjectFilter] = useState<ProjectType | null>(null);
+  const visibleProjectNames = useMemo(
+    () => (projectFilter ? projectNames.filter((n) => (projectTypes[n] ?? "code") === projectFilter) : projectNames),
+    [projectFilter, projectNames, projectTypes],
+  );
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
@@ -1473,8 +1478,19 @@ function useDesktopStore() {
 
   const startInitSelection = useCallback(() => {
     setInitSelecting(true);
-    setInitSelection((prev) => (prev.size === 0 ? new Set(projectNames) : prev));
-  }, [projectNames]);
+    setInitSelection((prev) => {
+      const kept = visibleProjectNames.filter((n) => prev.has(n));
+      return new Set(kept.length > 0 ? kept : visibleProjectNames);
+    });
+  }, [visibleProjectNames]);
+
+  useEffect(() => {
+    if (!initSelecting) return;
+    setInitSelection((prev) => {
+      const kept = visibleProjectNames.filter((n) => prev.has(n));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [initSelecting, visibleProjectNames]);
 
   const cancelInitSelection = useCallback(() => {
     setInitSelecting(false);
@@ -1490,10 +1506,7 @@ function useDesktopStore() {
     });
   }, []);
 
-  const selectAllProjects = useCallback(
-    (names?: string[]) => setInitSelection(new Set(names ?? projectNames)),
-    [projectNames],
-  );
+  const selectAllProjects = useCallback(() => setInitSelection(new Set(visibleProjectNames)), [visibleProjectNames]);
 
   const clearProjectSelection = useCallback(() => setInitSelection(new Set()), []);
 
@@ -1501,7 +1514,7 @@ function useDesktopStore() {
     (group: string) => {
       setInitSelection((prev) => {
         const next = new Set(prev);
-        const inGroup = projectNames.filter((n) => projectGroups[n] === group);
+        const inGroup = visibleProjectNames.filter((n) => projectGroups[n] === group);
         const allIn = inGroup.length > 0 && inGroup.every((n) => next.has(n));
         for (const n of inGroup) {
           if (allIn) next.delete(n);
@@ -1510,7 +1523,7 @@ function useDesktopStore() {
         return next;
       });
     },
-    [projectNames, projectGroups],
+    [visibleProjectNames, projectGroups],
   );
 
   const initAllProjects = useCallback(
@@ -1782,6 +1795,9 @@ function useDesktopStore() {
     cancelInitSelection,
     toggleInitSelection,
     selectAllProjects,
+    projectFilter,
+    setProjectFilter,
+    visibleProjectNames,
     clearProjectSelection,
     selectProjectsInGroup,
   };

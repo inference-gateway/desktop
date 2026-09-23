@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
-import { useDesktop, type ProjectType } from "@/store";
+import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
 
 function CheckboxGlyph({ checked }: { checked: boolean }) {
@@ -539,7 +539,7 @@ function ProjectGroup({
   );
 }
 
-export function ChatList({ filter }: { filter: ProjectType | null }) {
+export function ChatList() {
   const {
     conversations,
     selected,
@@ -581,6 +581,8 @@ export function ChatList({ filter }: { filter: ProjectType | null }) {
     syncDefaultBranch,
     projectGroups,
     projectTypes,
+    projectFilter: filter,
+    visibleProjectNames,
     setError,
   } = useDesktop();
 
@@ -680,12 +682,6 @@ export function ChatList({ filter }: { filter: ProjectType | null }) {
     }
     return Array.from(clusters.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [groups.projects, projectGroups, projectTypes, filter]);
-
-  // Projects the current filter shows; select-all in broadcasting only stages these.
-  const visibleProjectNames = useMemo(
-    () => (filter ? projectNames.filter((n) => (projectTypes[n] ?? "code") === filter) : projectNames),
-    [filter, projectNames, projectTypes],
-  );
 
   const orchestratorRows = (
     <>
@@ -884,7 +880,7 @@ export function ChatList({ filter }: { filter: ProjectType | null }) {
             cancelInitSelection();
           }}
           onCancel={cancelInitSelection}
-          onSelectAll={() => selectAllProjects(visibleProjectNames)}
+          onSelectAll={selectAllProjects}
           onClear={clearProjectSelection}
         />
       )}
