@@ -173,11 +173,6 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
         .map_err(|e| format!("Failed to start gateway: {e}"))
 }
 
-/// and the upstream response-header and server write timeouts are raised from
-/// their 10s/30s defaults to 200s (the CLI's own `gateway.timeout`), so
-/// non-streaming calls - image generation, or a reasoning model answering
-/// `infer insights` - aren't cut off with a 502 or an EOF. Streaming replies
-/// never hit them; the gateway pushes the write deadline back on every chunk.
 #[tauri::command]
 pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
