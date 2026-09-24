@@ -581,6 +581,8 @@ export function ChatList() {
     syncDefaultBranch,
     projectGroups,
     projectTypes,
+    projectFilter: filter,
+    visibleProjectNames,
     setError,
   } = useDesktop();
 
@@ -674,11 +676,12 @@ export function ChatList() {
   const projectClusters = useMemo(() => {
     const clusters = new Map<string, [string, number[]][]>();
     for (const entry of groups.projects) {
+      if (filter && (projectTypes[entry[0]] ?? "code") !== filter) continue;
       const label = projectGroups[entry[0]] ?? "";
       (clusters.get(label) ?? clusters.set(label, []).get(label)!).push(entry);
     }
     return Array.from(clusters.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [groups.projects, projectGroups]);
+  }, [groups.projects, projectGroups, projectTypes, filter]);
 
   const orchestratorRows = (
     <>
@@ -867,7 +870,7 @@ export function ChatList() {
       {initSelecting && (
         <InitBar
           count={initSelection.size}
-          total={projectNames.length}
+          total={visibleProjectNames.length}
           onInit={() => {
             initAllProjects(Array.from(initSelection));
             cancelInitSelection();

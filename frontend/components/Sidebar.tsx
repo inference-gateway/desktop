@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { MessageSquarePlus, Radio } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Clapperboard, Code, MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,23 @@ import { ResizeHandle } from "./ResizeHandle";
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
 export function Sidebar() {
-  const { newChat, projectNames, initSelecting, startInitSelection, cancelInitSelection, initAllRunning } =
-    useDesktop();
+  const {
+    newChat,
+    projectNames,
+    projectTypes,
+    projectFilter: filter,
+    setProjectFilter: setFilter,
+    initSelecting,
+    startInitSelection,
+    cancelInitSelection,
+    initAllRunning,
+  } = useDesktop();
   const [width, setWidth] = useState(() => loadSidebarWidth(window.innerWidth));
   const [dragging, setDragging] = useState(false);
+  const mixedTypes = new Set(projectNames.map((n) => projectTypes[n] ?? "code")).size > 1;
+  useEffect(() => {
+    if (!mixedTypes) setFilter(null);
+  }, [mixedTypes, setFilter]);
   const resetWidth = () => {
     setWidth(DEFAULT_SIDEBAR_WIDTH);
     saveSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
@@ -31,6 +44,7 @@ export function Sidebar() {
         </Button>
         <Button
           size="icon"
+          variant="outline"
           aria-label="Broadcast to projects"
           aria-pressed={initSelecting}
           title={initSelecting ? "Cancel project selection" : "Broadcast to projects"}
@@ -40,6 +54,21 @@ export function Sidebar() {
         >
           <Radio />
         </Button>
+        {mixedTypes &&
+          (["code", "content"] as const).map((t) => (
+            <Button
+              key={t}
+              size="icon"
+              variant="outline"
+              aria-label={`Filter ${t} projects`}
+              aria-pressed={filter === t}
+              title={filter === t ? "Show all projects" : `Show only ${t} projects`}
+              onClick={() => setFilter(filter === t ? null : t)}
+              className={cn(filter === t && "ring-2 ring-primary")}
+            >
+              {t === "code" ? <Code /> : <Clapperboard />}
+            </Button>
+          ))}
       </div>
       <ChatList />
       <ResizeHandle
