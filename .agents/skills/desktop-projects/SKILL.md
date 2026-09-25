@@ -93,6 +93,10 @@ the `Computer` tool (target `app:Inference Gateway Desktop`):
   content can be missing from the very first read.
 - Fall back to a coordinate `click` only inside the window's bbox from that tree, and take a screenshot
   afterwards to confirm the project is open before telling the user it is.
+- Opening a content project hides the sidebar on purpose, to make room for its timeline, and switching to a
+  code project shows it again. That is not a failure, so don't reopen the sidebar to check your work.
+  Confirm the switch from the composer's project chip (the project name next to `Leave project context`)
+  or a screenshot. Press `Toggle sidebar` only if the user wants the sidebar back.
 
 ## Project types
 
