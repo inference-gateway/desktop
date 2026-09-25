@@ -1,6 +1,6 @@
 ---
 name: desktop-projects
-description: Organise the Inference Gateway Desktop sidebar - its projects, groups, project directories and which chats belong to which project - by editing ~/.infer/projects.yaml and the projects.root key in ~/.infer/config.yaml. Use whenever the user wants to organise/organize, group, regroup, rename, move or import projects, change where projects live (the projects root, a folder like ~/Repositories), assign or tidy chats/conversations into projects, or switch a project between code and content, even if they do not say "project" explicitly.
+description: Organise the Inference Gateway Desktop sidebar - its projects, groups, project directories and which chats belong to which project - by editing ~/.infer/projects.yaml and the projects.root key in ~/.infer/config.yaml. Use whenever the user wants to organise/organize, group, regroup, rename, move or import projects, change where projects live (the projects root, a folder like ~/Repositories), assign or tidy chats/conversations into projects, switch a project between code and content, or open a project in the sidebar (e.g. while recording a demo), even if they do not say "project" explicitly.
 license: Apache-2.0
 ---
 
@@ -18,7 +18,9 @@ source code for this.
 ## Tools you may use
 
 `Bash` for `infer conversations list --all-projects --format json`, `ls`, `mv`, `mkdir -p`, `git status --porcelain`,
-`git remote get-url origin` and `cat`; `Read` and `Write` (or `Edit`) for the two files above. `projects.yaml` is
+`git remote get-url origin` and `cat`; `Read` and `Write` (or `Edit`) for the two files above, by absolute path:
+the file tools do not expand `~`, so `~/.infer/projects.yaml` is refused - use `/Users/<you>/.infer/projects.yaml`
+(`echo $HOME` if unsure); `Computer` only to open a project in the sidebar (below). `projects.yaml` is
 carved out of the file sandbox so you can edit it directly; `config.yaml` is not, so the desktop may ask the
 user to approve that write: that is expected, do not work around it. Do not use `find` over the whole home directory, package managers,
 `WebFetch` or `WebSearch`.
@@ -61,6 +63,7 @@ types:
 paths:
   desktop: /Users/me/Repositories/desktop
 selected: []
+active: desktop
 ```
 
 - `names` - every project. A project only referenced from `assignments` is added to the list on load.
@@ -72,9 +75,24 @@ selected: []
 - `types` - only the literal `"content"`; a missing entry means a code project.
 - `paths` - absolute per-project directory overrides.
 - `selected` - internal to the "Init all projects" UI; leave it as you found it.
+- `active` - the project open in the sidebar, restored on restart. Setting it to a name from `names` opens
+  that project when your run finishes (the sidebar reloads the file then); remove it for no project.
 
-The desktop rewrites the file with exactly these seven keys, so anything else you add is dropped. Read the
+The desktop rewrites the file with exactly these eight keys, so anything else you add is dropped. Read the
 file first, change only the entries the task needs, keep everything else byte-for-byte, and write valid YAML.
+
+## Opening a project in the sidebar
+
+To open a project while the user watches (for example during a screen recording), drive the sidebar with
+the `Computer` tool (target `app:Inference Gateway Desktop`):
+
+- `press` matches the exact accessible label: `Select project <name>` opens a project, `Expand <name>` /
+  `Collapse <name>` toggle a project's or group's chat list, `New chat` starts a chat. Never press
+  `Delete project <name>`.
+- If `press` finds nothing, read the tree once with the `accessibility` action and retry: the app's web
+  content can be missing from the very first read.
+- Fall back to a coordinate `click` only inside the window's bbox from that tree, and take a screenshot
+  afterwards to confirm the project is open before telling the user it is.
 
 ## Project types
 

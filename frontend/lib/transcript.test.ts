@@ -3,6 +3,7 @@ import {
   backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
+  followsBottom,
   initialChatState,
   pendingInput,
   subagentParentId,
@@ -821,4 +822,12 @@ test("an agent recording collects its area and input until it stops or the proce
   s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
   expect(s.recording).toBeUndefined();
   expect(chatReducer(s, ev({ kind: "RecordingInput", input: click })).recording).toBeUndefined();
+});
+
+test("the transcript keeps following the bottom until the user scrolls up", () => {
+  expect(followsBottom(true, false, false)).toBe(true);
+  expect(followsBottom(true, true, false)).toBe(false);
+  expect(followsBottom(false, false, false)).toBe(false);
+  expect(followsBottom(false, false, true)).toBe(true);
+  expect(followsBottom(false, true, true)).toBe(true);
 });
