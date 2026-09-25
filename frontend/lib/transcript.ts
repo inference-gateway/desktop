@@ -1,7 +1,15 @@
 // Pure transcript state machine. Maps agent stream events (and loaded history)
 // to a flat list of render items. A faithful port of the imperative DOM logic
 // in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
-import type { AgentEvent, BackgroundJob, HistoryLine, UserQuestion, UserQuestionAnswer } from "./tauri";
+import type {
+  AgentEvent,
+  BackgroundJob,
+  HistoryLine,
+  InputEvent,
+  RecordedArea,
+  UserQuestion,
+  UserQuestionAnswer,
+} from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc, toolResultFrom } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
@@ -67,7 +75,12 @@ export type ChatState = {
   paused?: boolean;
   backgroundJobs: BackgroundJob[];
   agentStartup: Record<string, { message: string; done: number; total: number }>;
+  recording?: AgentRecording;
 };
+
+/** The agent recording this session's process owns, from RecordStart until
+ * it stops or the process exits. */
+export type AgentRecording = { area?: RecordedArea; path?: string; inputs: InputEvent[] };
 
 /** The run is blocked on the user: a pending approval or question card. */
 export function pendingInput(items: TranscriptItem[]): "approval" | "question" | null {
@@ -77,7 +90,7 @@ export function pendingInput(items: TranscriptItem[]): "approval" | "question" |
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
-export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" | "shell" };
+export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" | "shell" | "recording" };
 
 // Subagent sessions are persisted by the CLI as "subagent-<parentId>-<childId>".
 // ponytail: correlation parsed from the id convention - replace with a real
@@ -105,7 +118,7 @@ export function delegationsFrom(items: TranscriptItem[], jobs: BackgroundJob[] =
     out.push({
       id: `job:${j.id}`,
       label: delegationLabel(j.description) ?? delegationLabel(j.label) ?? delegationLabel(j.detail) ?? j.id,
-      kind: j.kind === "a2a" ? "a2a" : j.kind === "shell" ? "shell" : "subagent",
+      kind: j.kind === "a2a" || j.kind === "shell" || j.kind === "recording" ? j.kind : "subagent",
     });
   }
   for (const it of items) {
@@ -332,7 +345,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
           ? 'Turn limit reached. Send a message (e.g. "continue") to keep going.'
           : event.message;
       const items = [...state.items, { kind: "error", id: String(seq++), text } as TranscriptItem];
-      return { ...state, items, seq, typing: false };
+      return { ...state, items, seq, typing: false, recording: undefined };
     }
     case "ComputerUsePaused":
       return { ...state, paused: true };
@@ -352,6 +365,16 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     }
     case "BackgroundTasks":
       return { ...state, backgroundJobs: Array.isArray(event.jobs) ? event.jobs : [] };
+    case "RecordingStarted":
+      return { ...state, recording: { inputs: [] } };
+    case "RecordingArea":
+      return { ...state, recording: { inputs: [], ...state.recording, area: event.area, path: event.path } };
+    case "RecordingInput":
+      return state.recording
+        ? { ...state, recording: { ...state.recording, inputs: [...state.recording.inputs, event.input] } }
+        : state;
+    case "RecordingStopped":
+      return { ...state, recording: undefined };
     case "Done":
       return {
         ...finalizeTools(state),
@@ -363,6 +386,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         paused: false,
         backgroundJobs: [],
         agentStartup: {},
+        recording: undefined,
       };
     case "TokenUsage": {
       const { kind: _kind, ...usage } = event;
@@ -382,6 +406,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
         currentReasoningId: null,
         currentReasoningMessageId: null,
         paused: false,
+        recording: undefined,
       };
     }
   }

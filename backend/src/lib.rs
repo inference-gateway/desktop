@@ -10,6 +10,7 @@ mod download;
 mod env;
 mod export;
 mod gateway;
+mod input_capture;
 mod observability;
 mod permissions;
 mod process_manager;

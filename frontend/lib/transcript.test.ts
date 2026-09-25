@@ -809,6 +809,21 @@ test("agent_status tracks agents still starting and drops them once ready", () =
   expect(ready.agentStartup).toEqual({});
 });
 
+test("an agent recording collects its area and input until it stops or the process exits", () => {
+  const area = { x: 100, y: 100, width: 400, height: 300, frame_width: 1024, frame_height: 640 };
+  const click = { kind: "click" as const, t: 0.5, button: "left", x: 640, y: 380 };
+  let s = run([
+    ev({ kind: "RecordingStarted" }),
+    ev({ kind: "RecordingInput", input: click }),
+    ev({ kind: "RecordingArea", path: "/tmp/r.mp4", area }),
+  ]);
+  expect(s.recording).toEqual({ area, path: "/tmp/r.mp4", inputs: [click] });
+  expect(chatReducer(s, ev({ kind: "RecordingStopped" })).recording).toBeUndefined();
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.recording).toBeUndefined();
+  expect(chatReducer(s, ev({ kind: "RecordingInput", input: click })).recording).toBeUndefined();
+});
+
 test("the transcript keeps following the bottom until the user scrolls up", () => {
   expect(followsBottom(true, false, false)).toBe(true);
   expect(followsBottom(true, true, false)).toBe(false);

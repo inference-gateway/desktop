@@ -606,6 +606,12 @@ function useDesktopStore() {
 
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
+  // The CLI lets one process record at a time, so at most one session owns it.
+  const recordingOwner = useMemo(
+    () => Object.keys(transcripts).find((id) => transcripts[id]?.recording) ?? null,
+    [transcripts],
+  );
+
   const isAwaitingApproval = useCallback(
     (id: string) => pendingInput(transcripts[id]?.items ?? []) != null,
     [transcripts],
@@ -1667,6 +1673,7 @@ function useDesktopStore() {
 
   return {
     items: active.items,
+    recording: active.recording,
     typing: active.typing,
     statusText,
     statusError,
@@ -1685,6 +1692,7 @@ function useDesktopStore() {
     sessionId: activeId,
     isRunning,
     isAwaitingApproval,
+    recordingOwner,
     runLabel,
     delegations,
     runningTasks,

@@ -1,0 +1,21 @@
+name: Agent screen recording - approved, framed, input listed live, cleared on stop
+narration:
+  - "Open a fresh chat."
+  - "Ask the agent to record a region of the screen; the model issues RecordStart."
+  - "RecordStart always asks first: the card shows Approve."
+  - "Approve the recording."
+  - "The recording session names the recorded area; a red frame outlines it on screen."
+  - "Key presses and clicks list live with their time since the recording started."
+  - "The session keeps running while it records, waiting on the recording task."
+  - "Ask it to stop; the follow-up reaches the same process."
+  - "RecordStop finalizes the MP4, the frame clears, and the agent confirms."
+steps:
+  - new_chat
+  - send: "record the demo region"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "400×300 at (100, 100)", timeout: 30 }
+  - wait_for: { text: "00:00.5 click left (640, 380)", timeout: 10 }
+  - wait_for: { text: "Waiting on tasks (1)", timeout: 30 }
+  - send: "stop the recording"
+  - wait_for: { text: "Recording saved.", timeout: 30 }

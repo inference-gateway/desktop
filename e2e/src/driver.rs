@@ -215,6 +215,7 @@ impl AppDriver {
             if mock {
                 cmd.env("DESKTOP_MOCK", "true")
                     .env("INFER_COMPUTER_USE_ENABLED", "true")
+                    .env("INFER_COMPUTER_USE_RECORDING_ENABLED", "true")
                     .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
                     .env("HOME", &home);
             }

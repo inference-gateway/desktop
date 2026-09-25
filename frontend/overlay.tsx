@@ -4,9 +4,11 @@
 // a ring ripples on a Computer click, and a key-cast pill at the bottom shows what
 // the agent is typing or which non-pointer tool (screenshot, WebSearch, ...) it
 // is waiting on, so an unfocused user still sees activity. Fed by the backend's global "agent-event" broadcast;
-// all animation is CSS inside this webview, so no per-frame IPC. The same
-// frame turns red while a workflow recording is running ("screen-recording"
-// event from the top bar).
+// all animation is CSS inside this webview, so no per-frame IPC. One Frame
+// draws three variants: blue at the screen edges for computer use, red at the
+// screen edges during workflow capture ("screen-recording" event from the top
+// bar), and red just outside the recorded area of an agent recording
+// (RecordStart; RecordingArea until RecordingStopped or the process ends).
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -18,6 +20,7 @@ import {
 } from "@tauri-apps/api/window";
 import type { AgentEvent, ToolCallInfo } from "@/lib/tauri";
 import { overlayAction } from "@/lib/pointer";
+import { type OverlayRect, type OverlayScreen, recordingFrame } from "@/lib/recording";
 import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
@@ -25,20 +28,28 @@ const ACCENT = "99, 102, 241";
 const RECORD = "239, 68, 68";
 const API_WIDTH = 1024;
 const API_HEIGHT = 768;
+const FRAME_BORDER = 3;
 
 const STYLE = `
-#frame {
+.frame {
   position: fixed;
   inset: 4px;
-  border: 3px solid rgba(${ACCENT}, 0.75);
+  box-sizing: border-box;
+  border: ${FRAME_BORDER}px solid rgba(${ACCENT}, 0.75);
   border-radius: 14px;
   box-shadow: 0 0 18px rgba(${ACCENT}, 0.5), inset 0 0 24px rgba(${ACCENT}, 0.25);
   animation: breathe 3s ease-in-out infinite;
   pointer-events: none;
 }
-#frame.recording {
+.frame.workflow-capture {
   border-color: rgba(${RECORD}, 0.75);
   box-shadow: 0 0 18px rgba(${RECORD}, 0.5), inset 0 0 24px rgba(${RECORD}, 0.25);
+}
+.frame.agent-recording {
+  inset: auto;
+  border-color: rgba(${RECORD}, 0.85);
+  border-radius: 4px;
+  box-shadow: 0 0 18px rgba(${RECORD}, 0.5);
 }
 @keyframes breathe {
   50% { opacity: 0.45; }
@@ -93,6 +104,12 @@ const STYLE = `
 
 type Ripple = { x: number; y: number; seq: number };
 type Keycast = { text: string; seq: number };
+type FrameVariant = "computer-use" | "workflow-capture" | "agent-recording";
+
+/** A glowing border: at the screen edges without `rect`, around `rect` with it. */
+function Frame({ variant, rect }: { variant: FrameVariant; rect?: OverlayRect }) {
+  return <div className={`frame ${variant}`} style={rect} />;
+}
 
 function busyLabel(tc: ToolCallInfo): string {
   try {
@@ -110,19 +127,20 @@ export default function Overlay() {
   const [busy, setBusy] = useState<string | null>(null);
   const [active, setActive] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [agentFrame, setAgentFrame] = useState<OverlayRect | null>(null);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const activeSessions = useRef<Set<string>>(new Set());
   const seqRef = useRef(0);
   const hideTimer = useRef<number | undefined>(undefined);
   const sizedRef = useRef(false);
   const mapRef = useRef({ sx: 1, sy: 1, dx: 0, dy: 0 });
+  const screenRef = useRef<OverlayScreen | null>(null);
 
   useEffect(() => {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
     const win = getCurrentWindow();
     win.setIgnoreCursorEvents(true).catch(() => {});
-    win.setFocusable(false).catch(() => {});
 
     const fitToScreen = async () => {
       if (sizedRef.current) return;
@@ -133,7 +151,13 @@ export default function Overlay() {
       await win.setPosition(new PhysicalPosition(mon.position.x, top));
       const f = mon.scaleFactor || 1;
       const s = Math.max(mon.size.width / f / API_WIDTH, mon.size.height / f / API_HEIGHT, 1);
-      mapRef.current = { sx: s, sy: s, dx: 0, dy: (top - mon.position.y) / f };
+      const dy = (top - mon.position.y) / f;
+      mapRef.current = { sx: s, sy: s, dx: 0, dy };
+      screenRef.current = {
+        width: mon.size.width / f,
+        height: (mon.position.y + mon.size.height - top) / f,
+        dy,
+      };
       sizedRef.current = true;
     };
     fitToScreen().catch(() => {});
@@ -151,7 +175,18 @@ export default function Overlay() {
     };
 
     let recordingNow = false;
+    let agentRecordingOwner: string | null = null;
+    const hideIfIdle = () => {
+      if (activeSessions.current.size === 0 && !recordingNow && !agentRecordingOwner) win.hide().catch(() => {});
+    };
+    const endAgentRecording = (sessionId: string) => {
+      if (agentRecordingOwner !== sessionId) return;
+      agentRecordingOwner = null;
+      setAgentFrame(null);
+      hideIfIdle();
+    };
     const endSession = (sessionId: string) => {
+      endAgentRecording(sessionId);
       if (!activeSessions.current.delete(sessionId)) return;
       if (activeSessions.current.size > 0) return;
       setActive(false);
@@ -160,23 +195,36 @@ export default function Overlay() {
       setBusy(null);
       setRipple(null);
       cursorRef.current = null;
-      if (!recordingNow) win.hide().catch(() => {});
+      hideIfIdle();
     };
 
     const unlistenRecording = listen<{ recording: boolean }>("screen-recording", (e) => {
       recordingNow = e.payload.recording;
       setRecording(recordingNow);
-      if (recordingNow) {
-        wake();
-      } else if (activeSessions.current.size === 0) {
-        win.hide().catch(() => {});
-      }
+      if (recordingNow) wake();
+      else hideIfIdle();
     });
 
     const unlisten = listen<{ sessionId: string; event: AgentEvent }>("agent-event", (e) => {
       const ev = e.payload.event;
       if (ev.kind === "Done" || ev.kind === "Cancelled" || ev.kind === "AgentError") {
         endSession(e.payload.sessionId);
+        return;
+      }
+      if (ev.kind === "RecordingStopped") {
+        endAgentRecording(e.payload.sessionId);
+        return;
+      }
+      if (ev.kind === "RecordingArea") {
+        const sessionId = e.payload.sessionId;
+        agentRecordingOwner = sessionId;
+        fitToScreen()
+          .then(() => {
+            if (agentRecordingOwner !== sessionId || !screenRef.current) return;
+            setAgentFrame(recordingFrame(ev.area, screenRef.current, FRAME_BORDER));
+            wake();
+          })
+          .catch(() => {});
         return;
       }
       if (ev.kind === "ToolResult" && activeSessions.current.has(e.payload.sessionId)) {
@@ -225,7 +273,8 @@ export default function Overlay() {
   return (
     <>
       <style>{STYLE}</style>
-      {(active || recording) && <div id="frame" className={recording ? "recording" : undefined} />}
+      {(active || recording) && <Frame variant={recording ? "workflow-capture" : "computer-use"} />}
+      {agentFrame && <Frame variant="agent-recording" rect={agentFrame} />}
       {cursor && <div id="cursor" style={{ left: cursor.x, top: cursor.y }} />}
       {ripple && <div key={ripple.seq} className="ripple" style={{ left: ripple.x, top: ripple.y }} />}
       {keycast ? (
