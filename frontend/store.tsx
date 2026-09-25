@@ -1050,6 +1050,7 @@ function useDesktopStore() {
             assignProject(p.sessionId, activeProject);
             project = activeProject;
           }
+          recordHistory(p.text);
           await sendPrompt(p.sessionId, p.text, project);
           break;
         }
