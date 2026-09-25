@@ -796,20 +796,33 @@ pub(crate) fn project_is_content(name: &str) -> bool {
 /// Media (large, append-only) and the derived export/ dir stay untracked, so
 /// git history is tiny and revert never touches the media pool. The extension
 /// globs are belt-and-suspenders in case a media file lands outside media/.
+/// tmp/ holds the video-editing skill's scratch files (frames, transcripts).
 const CONTENT_GITIGNORE: &str =
-    "media/\n*.mp4\n*.mov\n*.m4v\n*.webm\n*.wav\n*.mp3\n*.m4a\nexport/\n";
+    "media/\n*.mp4\n*.mov\n*.m4v\n*.webm\n*.wav\n*.mp3\n*.m4a\nexport/\ntmp/\n";
 
 /// Initialize the content project's local git repo if absent and lay down the
-/// media .gitignore. Idempotent: an existing repo or .gitignore is left alone.
+/// media .gitignore. Idempotent: an existing repo is left alone, and an existing
+/// .gitignore only gains the template lines it lacks.
 pub(crate) fn ensure_content_repo(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     if !dir.join(".git").exists() {
         git_output(dir, &["init", "-b", "main"])?;
     }
     let gitignore = dir.join(".gitignore");
-    if !gitignore.exists() {
-        std::fs::write(&gitignore, CONTENT_GITIGNORE)
-            .map_err(|e| format!("writing .gitignore: {e}"))?;
+    let mut current = std::fs::read_to_string(&gitignore).unwrap_or_default();
+    let missing: Vec<&str> = CONTENT_GITIGNORE
+        .lines()
+        .filter(|line| !current.lines().any(|have| have.trim() == *line))
+        .collect();
+    if !missing.is_empty() {
+        if !current.is_empty() && !current.ends_with('\n') {
+            current.push('\n');
+        }
+        for line in missing {
+            current.push_str(line);
+            current.push('\n');
+        }
+        std::fs::write(&gitignore, current).map_err(|e| format!("writing .gitignore: {e}"))?;
     }
     Ok(())
 }
@@ -1487,8 +1500,14 @@ mod tests {
         ensure_content_repo(&repo).unwrap();
         assert!(repo.join(".git").is_dir());
         let gitignore = std::fs::read_to_string(repo.join(".gitignore")).unwrap();
-        assert!(gitignore.contains("media/"));
-        assert!(gitignore.contains("*.mp4"));
+        assert_eq!(gitignore, CONTENT_GITIGNORE);
+        std::fs::write(repo.join(".gitignore"), "media/\nnotes.txt").unwrap();
+        ensure_content_repo(&repo).unwrap();
+        ensure_content_repo(&repo).unwrap();
+        let gitignore = std::fs::read_to_string(repo.join(".gitignore")).unwrap();
+        assert!(gitignore.starts_with("media/\nnotes.txt\n*.mp4\n"));
+        assert!(gitignore.ends_with("export/\ntmp/\n"));
+        assert_eq!(gitignore.matches("media/").count(), 1);
         let _ = std::fs::remove_dir_all(&repo);
     }
 

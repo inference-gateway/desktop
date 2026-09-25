@@ -52,8 +52,9 @@ enabled in Settings > General; voice samples are recorded in Settings > Voice sa
 Media lives in `media/` inside the working directory: the recordings and music the user added
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
 `src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
-Scratch files (`frames/`, `audio.wav`, `transcript.json`, `words*.json`, and `voice.wav` only when
-the voice is cut from the recording, since `TextToSpeech` resolves bare names there) stay at the root.
+Scratch files (`frames/`, `audio.wav`, `transcript.json`, word timings) live in `tmp/` (`mkdir -p tmp`),
+which the desktop keeps out of git and the media pool. The one exception is `voice.wav` cut from the
+recording: `TextToSpeech` only takes a bare name, so it stays at the root.
 
 ## Picking the voice
 
@@ -213,12 +214,12 @@ Never choose the voice silently: it is the one thing only the user can judge.
 2. **Keyframes.** Prefer scene changes; fall back to fixed sampling on static screens:
 
    ```sh
-   mkdir -p frames
-   ffmpeg -hide_banner -i <video> -vf "select='gt(scene,0.3)',showinfo,scale=640:-1" -fps_mode vfr frames/%03d.jpg 2> frames/showinfo.log
-   grep -o 'pts_time:[0-9.]*' frames/showinfo.log
+   mkdir -p tmp/frames
+   ffmpeg -hide_banner -i <video> -vf "select='gt(scene,0.3)',showinfo,scale=640:-1" -fps_mode vfr tmp/frames/%03d.jpg 2> tmp/frames/showinfo.log
+   grep -o 'pts_time:[0-9.]*' tmp/frames/showinfo.log
    ```
 
-   The n-th `pts_time` is the timestamp of `frames/<n>.jpg`. Cap at about 40 frames: raise the
+   The n-th `pts_time` is the timestamp of `tmp/frames/<n>.jpg`. Cap at about 40 frames: raise the
    threshold (0.4, 0.5) if there are more, or if there are fewer than 4 use
    `-vf "fps=1/5,scale=640:-1"` (one frame every 5 s) instead.
 
@@ -251,9 +252,9 @@ Never choose the voice silently: it is the one thing only the user can judge.
 
 When `source_audio` is `transcribe`, or it is unset and the probe showed an `Audio:` stream:
 
-1. Extract: `ffmpeg -y -i <video> -vn -ac 1 -ar 16000 audio.wav`.
-2. Transcribe with timestamps: `~/.infer/bin/tools/whisper-cli -m ~/.infer/models/whisper/ggml-tiny.bin -f audio.wav -oj -of transcript`
-   writes `transcript.json` with `transcription[].timestamps` / `offsets` (ms) and `text`. Use the
+1. Extract: `ffmpeg -y -i <video> -vn -ac 1 -ar 16000 tmp/audio.wav`.
+2. Transcribe with timestamps: `~/.infer/bin/tools/whisper-cli -m ~/.infer/models/whisper/ggml-tiny.bin -f tmp/audio.wav -oj -of tmp/transcript`
+   writes `tmp/transcript.json` with `transcription[].timestamps` / `offsets` (ms) and `text`. Use the
    largest ggml model present. If the transcript is empty or only noise, fall back to `mute` and
    say so; do not try to boost, filter or split the audio and transcribe again.
 3. Segments: merge transcript lines into clips of one thought each (roughly 4-12 s), `start`/`end`
@@ -261,7 +262,7 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
    starts and repetitions, fix grammar, keep the meaning, the order and the timing budget
    (2.5 words per second). Do not add facts the user did not say.
 4. Voice sample: when Picking the voice landed on the recording, cut the cleanest 15-25 s stretch
-   of continuous speech: `ffmpeg -y -i audio.wav -ss <start> -t <len> voice.wav`.
+   of continuous speech: `ffmpeg -y -i tmp/audio.wav -ss <start> -t <len> voice.wav`.
 5. Continue with Synthesize, then stop; the export replaces the original track.
 
 ## Captions
@@ -271,7 +272,7 @@ Add a captions track when the user asks for captions or subtitles, or asks for a
 onto the frame and also writes a sidecar `.srt`.
 
 1. **Text.** If the timeline already has spoken clips, their `text` is the script: reuse it, no
-   transcription. Otherwise, with `source_audio: transcribe`, use `transcript.json` from the Source
+   transcription. Otherwise, with `source_audio: transcribe`, use `tmp/transcript.json` from the Source
    audio step. With neither, there is nothing to caption: say so instead of inventing lines.
 2. **Chunk.** One caption per breath: about 5 s, at most ~12 words and two lines. Break at sentence
    ends and pauses, never mid-word and never mid-number. `start`/`end` come from the spoken clip or
@@ -284,9 +285,9 @@ onto the frame and also writes a sidecar `.srt`.
    `center` or `top`; leave `x`/`y` alone, the user sets them by dragging the captions on the
    preview and they win over `position`.
 4. **Words.** `highlight` and `karaoke` need per-word timing; the other two ignore it. Only for
-   those two, run a second pass for word-level splits over the wav the text came from - `audio.wav`
+   those two, run a second pass for word-level splits over the wav the text came from - `tmp/audio.wav`
    for a transcript, `media/<stem>-<id>.wav` for a synthesized clip:
-   `~/.infer/bin/tools/whisper-cli -m <model> -f <wav> -ml 1 -oj -of words`. Write `words` as
+   `~/.infer/bin/tools/whisper-cli -m <model> -f <wav> -ml 1 -oj -of tmp/words-<id>`. Write `words` as
    absolute seconds on the timeline (`{ "text", "start", "end" }`, offset by the clip's `start` when
    the wav is a single clip), inside each caption's own range. Without `words` both presets fall
    back to the whole line, so skipping the pass is safe but loses the effect.
@@ -371,7 +372,6 @@ prints `1`. If a render fails because HyperFrames or its browser is missing, tel
 ## Notes
 
 - Never use `open` or play audio yourself; the desktop renders media inline.
-- Remove `frames/` with `rm -r frames` at the end unless the user wants the stills, and the word
-  timings with `rm -f words*.json` once their `words` are in the timeline; leave the other scratch
-  files in place.
+- Remove `tmp/frames/` with `rm -r tmp/frames` at the end unless the user wants the stills; leave the
+  other scratch files in place.
 - Voice quality depends on the sample: one speaker, no background noise, no music.
