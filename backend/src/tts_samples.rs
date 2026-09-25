@@ -1,8 +1,8 @@
 // Voice-sample library for TTS voice cloning, stored flat in
 // ~/.infer/models/tts/samples/ (next to the CLI's TTS model cache
 // ~/.infer/models/tts/). Upload is a native file picker + std::fs::copy; the
-// CLI's TextToSpeech tool resolves `voice_sample` names here (once its
-// samples-library fallback ships - see cli internal/agent/tools/text_to_speech.go).
+// CLI's TextToSpeech tool resolves bare `voice_sample` names here after the
+// working directory (cli internal/agent/tools/text_to_speech.go).
 use crate::env::home_dir;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;

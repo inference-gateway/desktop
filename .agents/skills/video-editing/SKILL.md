@@ -41,8 +41,9 @@ under `~/.infer`; the only place you write is the working directory.
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
-  `~/.infer/models/tts/samples/`. `TextToSpeech` only accepts a bare file name inside the working
-  directory, so copy the chosen sample to `./voice.wav` once. See Picking the voice for which one.
+  `~/.infer/models/tts/samples/`. `TextToSpeech` takes a bare file name and looks it up in the
+  working directory, then in that library, so pass the sample's name as is (e.g. `eden.wav`) and
+  never copy it into the project. See Picking the voice for which one.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
 installed by switching the project to Content in Settings > Projects; the two agent tools are
@@ -51,7 +52,8 @@ enabled in Settings > General; voice samples are recorded in Settings > Voice sa
 Media lives in `media/` inside the working directory: the recordings and music the user added
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
 `src` paths point there (`media/<file>`); a bare `src` at the root is only for old projects.
-Scratch files (`frames/`, `audio.wav`, `voice.wav`, `transcript.json`) stay at the root.
+Scratch files (`frames/`, `audio.wav`, `transcript.json`, `words*.json`, and `voice.wav` only when
+the voice is cut from the recording, since `TextToSpeech` resolves bare names there) stay at the root.
 
 ## Picking the voice
 
@@ -233,7 +235,8 @@ Never choose the voice silently: it is the one thing only the user can judge.
    6 s slot gets at most 15 words. Merge any existing draft clips from the user by their time range.
    Write `<stem>.timeline.json` with all voice clips `status: "draft"`.
 5. **Synthesize.** Settle the voice first (see Picking the voice), then for every draft clip:
-   `TextToSpeech { text, voice_sample: "voice.wav", output_path: "<stem>-<id>.wav" }`.
+   `TextToSpeech { text, voice_sample: "<sample name>", output_path: "<stem>-<id>.wav" }`, where
+   `<sample name>` is the library sample's bare name, or `voice.wav` for the recording.
    The tool reports the wav path (under `~/.infer/tts/`) and its duration. If the duration exceeds
    `end - start`, shorten the text and synthesize once more. Copy the wav into the project:
    `mkdir -p media && cp "<reported path>" "media/<stem>-<id>.wav"`, set `src` to
@@ -368,6 +371,7 @@ prints `1`. If a render fails because HyperFrames or its browser is missing, tel
 ## Notes
 
 - Never use `open` or play audio yourself; the desktop renders media inline.
-- Remove `frames/` with `rm -r frames` at the end unless the user wants the stills; leave the other
-  scratch files in place.
+- Remove `frames/` with `rm -r frames` at the end unless the user wants the stills, and the word
+  timings with `rm -f words*.json` once their `words` are in the timeline; leave the other scratch
+  files in place.
 - Voice quality depends on the sample: one speaker, no background noise, no music.
