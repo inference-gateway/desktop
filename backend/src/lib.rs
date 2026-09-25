@@ -36,9 +36,12 @@ pub(crate) struct AppState {
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
-// window-level API, so set NSStatusWindowLevel (25) directly.
+// window-level API, so set NSStatusWindowLevel (25) directly. The overlay is
+// also kept out of the accessibility tree: an ignored window hands its children
+// to the application, so without empty children its full-screen web area and
+// key-cast text lead every tree an agent reads for this app.
 #[cfg(target_os = "macos")]
-fn raise_overlay_above_dock(app: &tauri::App) {
+fn configure_overlay_window(app: &tauri::App) {
     let Some(overlay) = app.get_webview_window("overlay") else {
         return;
     };
@@ -49,6 +52,8 @@ fn raise_overlay_above_dock(app: &tauri::App) {
         let win = ns_window as *mut objc2::runtime::AnyObject;
         let _: () = objc2::msg_send![win, setLevel: 25isize];
         let _: () = objc2::msg_send![win, setAccessibilityElement: false];
+        let empty: *mut objc2::runtime::AnyObject = objc2::msg_send![objc2::class!(NSArray), array];
+        let _: () = objc2::msg_send![win, setAccessibilityChildren: empty];
     }
 }
 
@@ -76,7 +81,7 @@ pub fn run() {
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
-            raise_overlay_above_dock(app);
+            configure_overlay_window(app);
             skills::install_bundled_skills();
             browser_bridge::start_if_enabled(&app.state::<AppState>(), app.handle().clone());
             {
