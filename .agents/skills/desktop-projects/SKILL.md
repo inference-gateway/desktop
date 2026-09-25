@@ -61,6 +61,7 @@ types:
 paths:
   desktop: /Users/me/Repositories/desktop
 selected: []
+active: desktop
 ```
 
 - `names` - every project. A project only referenced from `assignments` is added to the list on load.
@@ -72,8 +73,10 @@ selected: []
 - `types` - only the literal `"content"`; a missing entry means a code project.
 - `paths` - absolute per-project directory overrides.
 - `selected` - internal to the "Init all projects" UI; leave it as you found it.
+- `active` - the project open in the sidebar, restored on restart. Setting it to a name from `names` opens
+  that project when your run finishes (the sidebar reloads the file then); remove it for no project.
 
-The desktop rewrites the file with exactly these seven keys, so anything else you add is dropped. Read the
+The desktop rewrites the file with exactly these eight keys, so anything else you add is dropped. Read the
 file first, change only the entries the task needs, keep everything else byte-for-byte, and write valid YAML.
 
 ## Project types

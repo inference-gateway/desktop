@@ -454,6 +454,7 @@ function useDesktopStore() {
       setProjectGroups(groups);
       setProjectTypes(types);
       setInitSelection(selected);
+      setActiveProject(typeof parsed?.active === "string" && names.has(parsed.active) ? parsed.active : null);
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
@@ -743,6 +744,7 @@ function useDesktopStore() {
           groups: projectGroups,
           types: projectTypes,
           selected: Array.from(initSelection),
+          active: activeProject ?? undefined,
         }),
       )
       .then(() => (gitChanged ? fetchGitProjects() : undefined))
@@ -756,6 +758,7 @@ function useDesktopStore() {
     projectGroups,
     projectTypes,
     initSelection,
+    activeProject,
     fetchGitProjects,
   ]);
 
