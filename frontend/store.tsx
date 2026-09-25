@@ -824,11 +824,12 @@ function useDesktopStore() {
 
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
-      if (runningIds.has(runId)) return;
+      if (runningIds.has(runId) || runningIdsRef.current.has(runId)) return;
       if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
         return;
       }
+      runningIdsRef.current = new Set(runningIdsRef.current).add(runId);
       const isInit = /^\/init(\s|$)/.test(text);
       setStatusErr(false);
       dispatchTo(runId, { type: "userSend", text });
@@ -1020,14 +1021,17 @@ function useDesktopStore() {
   }, [sendPrompt, projects]);
 
   // Commands from the opentask extension's side panel, relayed by the browser bridge.
+  // Subscribed once and dispatched to the latest handler: re-subscribing on every
+  // dependency change let one panel message reach several handlers, each starting
+  // (and orphan-killing) its own run of the same session.
+  const panelCommandRef = useRef<(p: BrowserPanelCommand) => Promise<void>>(async () => {});
   useEffect(() => {
     const activate = (id: string) => {
       setActiveId(id);
       activeIdRef.current = id;
       if (projects[id]) setActiveProject(projects[id]);
     };
-    const unlisten = listen<BrowserPanelCommand>("browser-panel", async (e) => {
-      const p = e.payload;
+    panelCommandRef.current = async (p) => {
       switch (p.kind) {
         case "open":
           await openConversation(p.id);
@@ -1046,6 +1050,7 @@ function useDesktopStore() {
             assignProject(p.sessionId, activeProject);
             project = activeProject;
           }
+          recordHistory(p.text);
           await sendPrompt(p.sessionId, p.text, project);
           break;
         }
@@ -1057,11 +1062,14 @@ function useDesktopStore() {
           setAutoMode(p.auto);
           break;
       }
-    });
+    };
+  });
+  useEffect(() => {
+    const unlisten = listen<BrowserPanelCommand>("browser-panel", (e) => void panelCommandRef.current(e.payload));
     return () => {
       unlisten.then((f) => f());
     };
-  }, [sendPrompt, openConversation, setAutoMode, projects, conversations, activeProject, assignProject]);
+  }, []);
 
   // `!!ToolName(arg="value")` from the composer: parse, execute through the
   // CLI's own tool registry (`infer tools execute`) and render the result
