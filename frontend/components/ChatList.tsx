@@ -31,14 +31,23 @@ function CheckboxGlyph({ checked }: { checked: boolean }) {
 }
 
 function ChatItem({ index }: { index: number }) {
-  const { conversations, selected, sessionId, onChatClick, deleteConversation, isRunning, isAwaitingApproval } =
-    useDesktop();
+  const {
+    conversations,
+    selected,
+    sessionId,
+    onChatClick,
+    deleteConversation,
+    isRunning,
+    isAwaitingApproval,
+    recordingOwner,
+  } = useDesktop();
   const conv = conversations[index];
   const [confirm, setConfirm] = useState(false);
   const isSelected = selected.has(conv.id);
   const isActive = conv.id === sessionId;
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
+  const recording = recordingOwner === conv.id;
   const parentId = subagentParentId(conv.id);
   const parentTitle = parentId ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5) : null;
 
@@ -67,9 +76,12 @@ function ChatItem({ index }: { index: number }) {
     >
       {running && (
         <span
-          aria-label={awaiting ? "Awaiting input" : "Running"}
-          title={awaiting ? "Awaiting input" : "Running"}
-          className={cn("h-2 w-2 shrink-0 rounded-full", awaiting ? "bg-amber-500" : "animate-pulse bg-emerald-500")}
+          aria-label={awaiting ? "Awaiting input" : recording ? "Recording" : "Running"}
+          title={awaiting ? "Awaiting input" : recording ? "Recording the screen" : "Running"}
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            awaiting ? "bg-amber-500" : recording ? "animate-pulse bg-red-500" : "animate-pulse bg-emerald-500",
+          )}
         />
       )}
       <span className="min-w-0 flex-1 truncate">{conv.title || "(untitled)"}</span>

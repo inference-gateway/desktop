@@ -54,7 +54,28 @@ export type AgentEvent =
   | { kind: "ComputerUseResumed" }
   | { kind: "AgentStatus"; name: string; state: string; message: string; done: number; total: number }
   | { kind: "BackgroundNote"; content: string }
-  | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] };
+  | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] }
+  | { kind: "RecordingStarted" }
+  | { kind: "RecordingArea"; path: string; area: RecordedArea }
+  | { kind: "RecordingInput"; input: InputEvent }
+  | { kind: "RecordingStopped" };
+
+/** An agent recording's capture rectangle in the CLI's Computer frame space,
+ * plus the frame size of the whole primary screen. */
+export type RecordedArea = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  frame_width: number;
+  frame_height: number;
+};
+
+/** A key press or mouse click during an agent recording; `t` is seconds since
+ * the recording started, click `x`/`y` are screen points. */
+export type InputEvent =
+  | { kind: "key"; t: number; keys: string; text: string }
+  | { kind: "click"; t: number; button: string; x: number; y: number };
 
 export type BackgroundJob = {
   id: string;

@@ -4,8 +4,9 @@ use crate::env::{
     agent_cwd, compose_extras, home_dir, infer_bin_path, infer_env, mock_mode, prompt_env,
     uploads_dir,
 };
+use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
-use std::io::{BufRead, Read};
+use std::io::{BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -77,6 +78,100 @@ pub(crate) enum AgentEvent {
         running: u64,
         jobs: Vec<BackgroundJob>,
     },
+    RecordingStarted,
+    RecordingArea {
+        path: String,
+        area: RecordedArea,
+    },
+    RecordingInput {
+        input: InputEvent,
+    },
+    RecordingStopped,
+}
+
+/// What an agent recording captures, in the CLI's Computer screenshot frame
+/// space: the rectangle plus the frame size of the whole primary screen, so a
+/// window can scale it to its own pixels.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub(crate) struct RecordedArea {
+    x: i64,
+    y: i64,
+    width: i64,
+    height: i64,
+    frame_width: i64,
+    frame_height: i64,
+}
+
+/// Translates a successful `RecordStart` result (`data.region` with the CLI's
+/// capitalised `X`/`Y`/`Width`/`Height`) into the MP4 path and recorded area.
+fn record_start_area(content: &str) -> Option<(String, RecordedArea)> {
+    let val: serde_json::Value = serde_json::from_str(content).ok()?;
+    if val.get("tool_name")?.as_str()? != "RecordStart"
+        || val.get("success")?.as_bool() != Some(true)
+    {
+        return None;
+    }
+    let data = val.get("data")?;
+    let region = data.get("region")?;
+    let int = |v: &serde_json::Value, k: &str| v.get(k).and_then(|n| n.as_i64());
+    Some((
+        data.get("path")?.as_str()?.to_string(),
+        RecordedArea {
+            x: int(region, "X")?,
+            y: int(region, "Y")?,
+            width: int(region, "Width")?,
+            height: int(region, "Height")?,
+            frame_width: int(data, "frame_width")?,
+            frame_height: int(data, "frame_height")?,
+        },
+    ))
+}
+
+/// The agent recording a session's process owns: input captured since
+/// `RecordingStarted`, saved as `<recording>.events.jsonl` next to the MP4
+/// when it stops, so every event lines up with the video.
+struct AgentRecording {
+    capture: InputCapture,
+    inputs: Arc<Mutex<Vec<InputEvent>>>,
+    path: Option<String>,
+}
+
+impl AgentRecording {
+    fn start(sink: Arc<EventSink>) -> Self {
+        let inputs = Arc::new(Mutex::new(Vec::new()));
+        let capture = InputCapture::start({
+            let inputs = Arc::clone(&inputs);
+            move |input: InputEvent| {
+                inputs
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .push(input.clone());
+                sink.send(AgentEvent::RecordingInput { input });
+            }
+        });
+        AgentRecording {
+            capture,
+            inputs,
+            path: None,
+        }
+    }
+
+    fn stop(self) {
+        self.capture.stop();
+        let Some(path) = self.path else { return };
+        let log = Path::new(&path).with_extension("events.jsonl");
+        let inputs = self.inputs.lock().unwrap_or_else(|p| p.into_inner());
+        let write = std::fs::File::create(&log).and_then(|file| {
+            let mut out = std::io::BufWriter::new(file);
+            for input in inputs.iter() {
+                write_event(&mut out, input)?;
+            }
+            out.flush()
+        });
+        if let Err(e) = write {
+            eprintln!("agent recording: writing {}: {e}", log.display());
+        }
+    }
 }
 
 /// One supervised CLI job from the `background_tasks` AG-UI snapshot.
@@ -111,6 +206,10 @@ pub(crate) struct AgentParser {
     tc_id: String,
     tc_name: String,
     tc_args: String,
+    /// A `screen_recording` is active. `RUN_FINISHED` then reports it stopped:
+    /// the CLI finalizes it on exit with no `active: false` after the terminal
+    /// event, and the run's stats already arrived through `token_usage`.
+    recording: bool,
 }
 
 /// Reads the text delta of a streaming message event, tolerating producers that
@@ -162,6 +261,7 @@ impl AgentParser {
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
+            recording: false,
         }
     }
 
@@ -313,6 +413,18 @@ impl AgentParser {
                 match val.get("name").and_then(|v| v.as_str()) {
                     Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
                     Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
+                    Some("screen_recording") => {
+                        self.recording = val
+                            .get("value")
+                            .and_then(|v| v.get("active"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        return Some(if self.recording {
+                            AgentEvent::RecordingStarted
+                        } else {
+                            AgentEvent::RecordingStopped
+                        });
+                    }
                     Some("agent_status") => {
                         let v = val.get("value");
                         let field = |k: &str| {
@@ -410,6 +522,9 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
+                if std::mem::take(&mut self.recording) {
+                    return Some(AgentEvent::RecordingStopped);
+                }
                 Some(usage_from_stats(
                     val.get("result").or_else(|| val.get("stats")),
                 ))
@@ -587,6 +702,7 @@ pub(crate) async fn send_message(
     let stdout_handle: std::thread::JoinHandle<()> = std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stdout);
         let mut p = parser_clone.lock().unwrap();
+        let mut recording: Option<AgentRecording> = None;
         for line in reader.lines() {
             let line = match line {
                 Ok(l) => l,
@@ -613,8 +729,31 @@ pub(crate) async fn send_message(
                         tool_args,
                     );
                 }
+                let area = match &event {
+                    AgentEvent::ToolResult { content, .. } => record_start_area(content),
+                    _ => None,
+                };
+                let starts = matches!(event, AgentEvent::RecordingStarted);
+                let ends = starts
+                    || matches!(
+                        event,
+                        AgentEvent::RecordingStopped | AgentEvent::AgentError { .. }
+                    );
                 sink_clone.send(event);
+                if ends && let Some(r) = recording.take() {
+                    r.stop();
+                }
+                if starts {
+                    recording = Some(AgentRecording::start(Arc::clone(&sink_clone)));
+                }
+                if let (Some(r), Some((path, area))) = (recording.as_mut(), area) {
+                    r.path = Some(path.clone());
+                    sink_clone.send(AgentEvent::RecordingArea { path, area });
+                }
             }
+        }
+        if let Some(r) = recording.take() {
+            r.stop();
         }
     });
 
@@ -1770,6 +1909,49 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(&events[0], AgentEvent::ComputerUsePaused));
         assert!(matches!(&events[1], AgentEvent::ComputerUseResumed));
+    }
+
+    #[test]
+    fn test_parse_screen_recording_start_stop_and_run_finished() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":true}}"#,
+            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":false}}"#,
+            r#"{"type":"RUN_FINISHED","result":{"inputTokens":1}}"#,
+            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":true}}"#,
+            r#"{"type":"RUN_FINISHED","result":{"inputTokens":1}}"#,
+        ]);
+        assert!(matches!(&events[0], AgentEvent::RecordingStarted));
+        assert!(matches!(&events[1], AgentEvent::RecordingStopped));
+        assert!(matches!(
+            &events[2],
+            AgentEvent::TokenUsage { input: 1, .. }
+        ));
+        assert!(matches!(&events[3], AgentEvent::RecordingStarted));
+        assert!(matches!(&events[4], AgentEvent::RecordingStopped));
+    }
+
+    #[test]
+    fn test_record_start_area_reads_capitalised_region() {
+        let ok = r#"{"tool_name":"RecordStart","success":true,"data":{"path":"/tmp/r/2026.mp4","region":{"X":100,"Y":80,"Width":400,"Height":300},"frame_width":1024,"frame_height":640,"message":"recording"}}"#;
+        assert_eq!(
+            record_start_area(ok),
+            Some((
+                "/tmp/r/2026.mp4".to_string(),
+                RecordedArea {
+                    x: 100,
+                    y: 80,
+                    width: 400,
+                    height: 300,
+                    frame_width: 1024,
+                    frame_height: 640,
+                }
+            ))
+        );
+        let failed = r#"{"tool_name":"RecordStart","success":false,"error":"another infer process (pid 42) is already recording"}"#;
+        assert_eq!(record_start_area(failed), None);
+        let other = ok.replace("RecordStart", "RecordStop");
+        assert_eq!(record_start_area(&other), None);
+        assert_eq!(record_start_area("not json"), None);
     }
 
     #[test]

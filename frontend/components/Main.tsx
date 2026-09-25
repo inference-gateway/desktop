@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Transcript } from "./Transcript";
+import { RecordingPanel } from "./RecordingPanel";
 import { TodoPanel } from "./TodoPanel";
 import { ActivityPanel } from "./ActivityPanel";
 import { Composer } from "./Composer";
@@ -55,6 +56,7 @@ export function Main() {
         <div id="content" className="flex min-w-0 flex-1 flex-col">
           <ActivityPanel />
           <Transcript />
+          <RecordingPanel />
           <TodoPanel />
           <Composer />
         </div>
@@ -81,6 +83,7 @@ function ChatDock() {
       />
       <ActivityPanel />
       <Transcript />
+      <RecordingPanel />
       <TodoPanel />
       <Composer />
     </div>

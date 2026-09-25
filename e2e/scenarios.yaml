@@ -233,6 +233,23 @@ scenarios:
           - { name: Computer, args: { action: click, x: 640, y: 360 } }
       - content: "Clicked."
 
+  # RecordStart holds the headless run open (a background job), so the stop
+  # request reaches the same process as a user_message (used by
+  # agent-recording).
+  - name: agent-recording
+    match: '(?i)record the demo region'
+    turns:
+      - tool_calls:
+          - { name: RecordStart, args: { mode: region, region: { x: 100, y: 100, width: 400, height: 300 } } }
+      - content: "Recording the demo region."
+
+  - name: agent-recording-stop
+    match: '(?i)stop the recording'
+    turns:
+      - tool_calls:
+          - { name: RecordStop, args: {} }
+      - content: "Recording saved."
+
   - name: reasoning-demo
     match: '(?i)think out loud'
     turns:

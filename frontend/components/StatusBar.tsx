@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import type { Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
@@ -13,7 +14,7 @@ const DOT: Record<string, string> = {
   idle: "bg-muted-foreground",
 };
 
-const BADGE: Record<"a2a" | "subagent" | "shell", string> = { a2a: "A2A", subagent: "agent", shell: "shell" };
+const BADGE: Record<Delegation["kind"], string> = { a2a: "A2A", subagent: "agent", shell: "shell", recording: "rec" };
 
 const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1 ? 3 : 2)}`;
 

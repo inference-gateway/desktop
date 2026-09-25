@@ -102,8 +102,19 @@ function TaskResultCard({ item }: { item: Extract<TranscriptItem, { kind: "task_
   );
 }
 
+/** Title of the session that holds the agent recording a failed RecordStart
+ * ran into, when that session is another chat in this app. */
+function useRecordingOwnerTitle(item: Extract<TranscriptItem, { kind: "tool" }>): string | null {
+  const { recordingOwner, sessionId, conversations } = useDesktop();
+  if (item.name !== "RecordStart" || item.state !== "failed" || !recordingOwner || recordingOwner === sessionId) {
+    return null;
+  }
+  return conversations.find((c) => c.id === recordingOwner)?.title || recordingOwner.slice(0, 5);
+}
+
 function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> }) {
   const failed = item.state === "failed";
+  const recordingOwnerTitle = useRecordingOwnerTitle(item);
   const pre = [prettyJson(item.args), item.output ?? ""].filter(Boolean).join("\n\n");
   return (
     <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
@@ -128,6 +139,9 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
           {pre}
         </pre>
       </details>
+      {recordingOwnerTitle && (
+        <span className="text-[0.78rem] text-err">Recording in progress in &ldquo;{recordingOwnerTitle}&rdquo;</span>
+      )}
       <CopyButton text={pre} />
     </div>
   );
