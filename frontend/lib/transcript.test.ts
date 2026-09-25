@@ -3,6 +3,7 @@ import {
   backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
+  followsBottom,
   initialChatState,
   pendingInput,
   subagentParentId,
@@ -806,4 +807,12 @@ test("agent_status tracks agents still starting and drops them once ready", () =
     ev({ kind: "AgentStatus", name: "browser-agent", state: "Ready", message: "Ready", done: 0, total: 0 }),
   );
   expect(ready.agentStartup).toEqual({});
+});
+
+test("the transcript keeps following the bottom until the user scrolls up", () => {
+  expect(followsBottom(true, false, false)).toBe(true);
+  expect(followsBottom(true, true, false)).toBe(false);
+  expect(followsBottom(false, false, false)).toBe(false);
+  expect(followsBottom(false, false, true)).toBe(true);
+  expect(followsBottom(false, true, true)).toBe(true);
 });

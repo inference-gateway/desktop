@@ -182,6 +182,15 @@ export function backgroundNoteHeader(text: string): { kind: string; failed: bool
 }
 
 // Panel edits are dirty when they differ from the agent's last written list.
+/** Whether the transcript keeps following its bottom after a scroll event.
+ * Reaching the bottom turns it on and only scrolling up turns it off: the
+ * scroll event of a programmatic pin can land after content grew under it (a
+ * screenshot that finished loading) and must not stop the follow. The image's
+ * own `load` then re-pins. */
+export function followsBottom(following: boolean, scrolledUp: boolean, atBottom: boolean): boolean {
+  return atBottom || (following && !scrolledUp);
+}
+
 export function todosDiffer(a: TodoItem[], b: TodoItem[]): boolean {
   return a.length !== b.length || a.some((t, i) => t.content !== b[i].content || t.status !== b[i].status);
 }

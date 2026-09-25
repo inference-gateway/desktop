@@ -10,7 +10,7 @@ import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
 import { isBashCommand, prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
-import { COMPUTER_USE_TOOLS, backgroundNoteHeader, type TranscriptItem } from "@/lib/transcript";
+import { COMPUTER_USE_TOOLS, backgroundNoteHeader, followsBottom, type TranscriptItem } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
@@ -499,6 +499,7 @@ export function Transcript() {
   const { items, typing, approve, answerQuestions, runLabel, sessionId, composerRef } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const pendingApproval = [...items]
     .reverse()
@@ -540,8 +541,10 @@ export function Transcript() {
     const el = ref.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
-    isAtBottomRef.current = atBottom;
-    setShowScrollButton(!atBottom);
+    const following = followsBottom(isAtBottomRef.current, el.scrollTop < lastScrollTopRef.current, atBottom);
+    lastScrollTopRef.current = el.scrollTop;
+    isAtBottomRef.current = following;
+    setShowScrollButton(!following);
   }, []);
 
   // Layout effect, not passive: pin synchronously per commit so scrollTop
@@ -565,12 +568,17 @@ export function Transcript() {
         setShowScrollButton(true);
       }
     };
+    const onMediaLoad = () => {
+      if (isAtBottomRef.current) el.scrollTop = el.scrollHeight;
+    };
     el.addEventListener("scroll", checkAtBottom, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("load", onMediaLoad, true);
     checkAtBottom();
     return () => {
       el.removeEventListener("scroll", checkAtBottom);
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("load", onMediaLoad, true);
     };
   }, [checkAtBottom]);
 
