@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": null,
-    "beforeDevCommand": "bun run build",
+    "beforeDevCommand": { "script": "bun run build", "wait": true },
     "beforeBuildCommand": "bun run build"
   },
   "app": {
