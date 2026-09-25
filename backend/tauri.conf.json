@@ -34,6 +34,7 @@
         "resizable": false,
         "skipTaskbar": true,
         "focus": false,
+        "focusable": false,
         "contentProtected": true,
         "dragDropEnabled": false
       },

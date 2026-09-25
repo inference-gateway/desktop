@@ -122,7 +122,6 @@ export default function Overlay() {
     document.body.style.background = "transparent";
     const win = getCurrentWindow();
     win.setIgnoreCursorEvents(true).catch(() => {});
-    win.setFocusable(false).catch(() => {});
 
     const fitToScreen = async () => {
       if (sizedRef.current) return;
