@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, add captions or subtitles to a video, or add a card, title or overlay to a video.
+description: Add the user's own cloned voice to a screen recording - probe the video and pull scene keyframes with ffmpeg, describe them with ImageDecode (or write down what the user says in the recording with whisper-cli and clean it up), write a <stem>.timeline.json plan, and make the audio for each clip with TextToSpeech (voice_sample cloning) - and place animated cards (title, lower third, callout, step, chart) rendered with HyperFrames on the timeline's overlay track - and lip-synced talking clips of the user's avatar rendered with TextToVideo. The desktop renders the export; the agent never muxes. Use when the user asks to add a voiceover, add their voice, explain a video, redo the voice on a recording, redo clips of an existing timeline, cut, split or trim video or audio clips on the timeline, add captions or subtitles to a video, add a card, title or overlay to a video, or add a talking avatar, presenter or talking head.
 license: Apache-2.0
 ---
 
@@ -8,8 +8,8 @@ license: Apache-2.0
 
 Use this skill when the user gives you a video (usually a macOS screen recording in the working
 directory, silent or with the user talking over it) and wants their voice added, asks to redo clips of
-an existing `<stem>.timeline.json`, or wants a card (title, lower third, callout, step counter, chart)
-layered over the video (see Overlay cards).
+an existing `<stem>.timeline.json`, wants a card (title, lower third, callout, step counter, chart)
+layered over the video (see Overlay cards), or wants a talking avatar of themselves (see Avatars).
 
 The desktop app renders `<stem>.timeline.json` as an editable timeline, so the file is the contract:
 always read it first if it exists, always write it back after every step that changes it.
@@ -18,8 +18,8 @@ always read it first if it exists, always write it back after every step that ch
 
 Only these, nothing else: `Bash` for `ffmpeg`, `whisper-cli`, `cp`, `mkdir`, `ls`, `grep` and `rm` (scratch
 files only) inside the working directory, plus `node --version` and `npx hyperframes render` for cards;
-`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`;
-`AskUserQuestion` to pick the voice sample. Do not
+`Read` and `Write` for the timeline JSON and card HTML; `ImageDecode`; `TextToSpeech`; `TextToVideo`
+for avatar clips; `AskUserQuestion` to pick the voice sample and the avatar. Do not
 use `WebFetch`, `WebSearch`, `find`, package managers, or any other binary, and do not look for
 this skill, other skills or tools on disk: everything you need is listed below at fixed paths.
 
@@ -44,10 +44,14 @@ under `~/.infer`; the only place you write is the working directory.
   `~/.infer/models/tts/samples/`. `TextToSpeech` takes a bare file name and looks it up in the
   working directory, then in that library, so pass the sample's name as is (e.g. `eden.wav`) and
   never copy it into the project. See Picking the voice for which one.
+- For avatar clips only: the `TextToVideo` tool (`text_to_video.enabled`) and an avatar, a folder of
+  portraits of one person in `~/.infer/avatars/<name>/`. `TextToVideo` takes the folder's bare name
+  (e.g. `presenter`); never copy the portraits into the project.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
-installed by switching the project to Content in Settings > Projects; the two agent tools are
-enabled in Settings > General; voice samples are recorded in Settings > Voice samples.
+installed by switching the project to Content in Settings > Projects; the agent tools are
+enabled in Settings > General; voice samples are recorded in Settings > Voice samples; avatars are
+created in Settings > Avatars.
 
 Media lives in `media/` inside the working directory: the recordings and music the user added
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline
@@ -187,8 +191,14 @@ Never choose the voice silently: it is the one thing only the user can judge.
   used every time you synthesize the clip, and leave other clips' as they are - the timeline colours
   each clip by it, so the user can see which voice every clip carries. The track's `voice_sample` is
   the user's pick for clips that have none of their own.
-- `status: "draft"` means the clip needs (re)synthesis. Only touch draft clips; never regenerate a
-  `done` clip the user did not ask about. Keep clip `id`s stable.
+- A video clip with `avatar` is a talking clip: that avatar lip-synced to the spoken clip over the
+  same range, with `id` `<spoken id>-avatar`, the spoken clip's `start` and `end`, and `src` the
+  rendered `media/<stem>-<spoken id>-avatar.mp4`. Its `voice_sample` is the sample of the audio it was
+  rendered from. The voice stays on the spoken clip - the export mixes that wav, not the mp4's own
+  sound - so never set `source_audio: "keep"` on a timeline with avatar clips: the voice would play
+  twice. See Avatars.
+- `status: "draft"` means the clip needs (re)synthesis, or for an avatar clip a (re)render. Only
+  touch draft clips; never regenerate a `done` clip the user did not ask about. Keep clip `id`s stable.
 - A draft clip with non-empty `text` was written by the user: keep the text verbatim. Empty text
   means "suggest something for this range".
 - Tracks are `video`, `audio`, `overlay` or `captions` (the older `voice` kind still loads as
@@ -265,6 +275,34 @@ When `source_audio` is `transcribe`, or it is unset and the probe showed an `Aud
    of continuous speech: `ffmpeg -y -i tmp/audio.wav -ss <start> -t <len> voice.wav`.
 5. Continue with Synthesize, then stop; the export replaces the original track.
 
+## Avatars (talking clips)
+
+When the user asks for a talking avatar, a presenter or a talking head, make the voice as usual and
+place a lip-synced clip of their avatar over it.
+
+1. **Pick the avatar.** A clip's own `avatar` is the user's pick: use it and do not ask. Otherwise
+   `ls ~/.infer/avatars/` and, when there are several, ask once with `AskUserQuestion` (one option per
+   avatar, asked together with the voice question). One avatar: use it. None: stop and say so,
+   avatars are created in Settings > Avatars.
+2. **Script and voice.** Plan and synthesize the spoken clips as in steps 4 and 5 of Steps (and
+   Picking the voice): the script and the voice live on the audio track as for any voiceover.
+3. **Place.** For every spoken clip that should talk, add a video-track clip
+   `{ "id": "<id>-avatar", "start", "end", "avatar": "<name>", "status": "draft" }` with the spoken
+   clip's `start` and `end`. Clips on the video track must not overlap: without a recording the avatar
+   clips fill the track; with one, put them where the user asked (an intro or outro in a gap) and cut
+   the recording as in Cuts and trims only when they asked for the avatar over it.
+4. **Render.** For every `draft` avatar clip:
+   `TextToVideo { avatar: "<name>", audio: "<stem>-<id>.wav", output_path: "<stem>-<id>-avatar.mp4" }`,
+   where `<stem>-<id>.wav` is the spoken clip's wav. `audio` takes a bare name, which resolves in the
+   `TextToSpeech` output directory right after synthesis; for a wav that is only in `media/`, run
+   `cp media/<stem>-<id>.wav .` first and `rm` that copy afterwards. Copy the reported mp4 into
+   `media/<stem>-<id>-avatar.mp4`, set `src` to it, `avatar` and `voice_sample` to what you used and
+   `status: "done"`, and write the JSON after each clip. A failed render comes back as a one-line
+   error: stop and tell the user, never retry with another avatar or model.
+5. **Keep them in step.** Re-synthesizing a spoken clip makes the avatar clip over the same range
+   stale: set it to `draft` and render it again. Only `draft` avatar clips are rendered.
+6. **Stop** as in step 6 of Steps.
+
 ## Captions
 
 Add a captions track when the user asks for captions or subtitles, or asks for a clip "to post"
@@ -302,7 +340,8 @@ with text is theirs and stays verbatim.
 ## Redo drafts
 
 When asked to redo or regenerate: ask which voice to use (see Picking the voice), read the JSON,
-run step 5 for `draft` clips only, then stop as in step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
+run step 5 for `draft` clips only, render `draft` avatar clips (including the ones step 5 made
+stale) as in Avatars, then stop as in step 6. Never touch `done` clips the user did not edit. When asked for one clip by id, the desktop
 has already marked that clip `draft` with the user's edited text: synthesize exactly that clip with
 that text, keep its `id`, `start` and `end`, and leave everything else alone.
 
