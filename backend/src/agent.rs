@@ -954,6 +954,17 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
         .map_err(|e| format!("infer task failed: {}", e))?
 }
 
+/// An `infer` command with the desktop's environment, run from `dir`.
+pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(infer_bin_path());
+    command
+        .env("HOME", home_dir().to_str().unwrap_or(""))
+        .envs(infer_env())
+        .env("PWD", dir)
+        .current_dir(dir);
+    command
+}
+
 /// Synchronous form of `run_infer_in` for paths without a runtime, such as
 /// the Tauri exit handler.
 pub(crate) fn run_infer_blocking(cwd: Option<String>, args: &[String]) -> Result<String, String> {
@@ -961,12 +972,8 @@ pub(crate) fn run_infer_blocking(cwd: Option<String>, args: &[String]) -> Result
         .map(std::path::PathBuf::from)
         .filter(|dir| std::fs::create_dir_all(dir).is_ok())
         .unwrap_or_else(agent_cwd);
-    let output = std::process::Command::new(infer_bin_path())
+    let output = infer_command(&dir)
         .args(args)
-        .env("HOME", home_dir().to_str().unwrap_or(""))
-        .envs(infer_env())
-        .env("PWD", &dir)
-        .current_dir(&dir)
         .output()
         .map_err(|e| format!("Failed to run infer: {}", e))?;
     if !output.status.success() {
