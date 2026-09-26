@@ -126,13 +126,8 @@ fn merge_enabled(existing: Option<&str>, enabled: bool, seed: &str) -> Result<St
 }
 
 fn write_enabled(path: &Path, enabled: bool) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let existing = std::fs::read_to_string(path).ok();
     let seed = hex::encode(rand::random::<[u8; 16]>());
-    let merged = merge_enabled(existing.as_deref(), enabled, &seed)?;
-    std::fs::write(path, merged).map_err(|e| e.to_string())
+    crate::config::update_file(path, |existing| merge_enabled(existing, enabled, &seed))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

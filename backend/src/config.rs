@@ -640,18 +640,26 @@ pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
+/// Read `path`, apply `f` to its text (`None` when missing), and write the
+/// result back, creating the parent dir as needed.
+pub(crate) fn update_file(
+    path: &Path,
+    f: impl FnOnce(Option<&str>) -> Result<String, String>,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let existing = std::fs::read_to_string(path).ok();
+    let text = f(existing.as_deref())?;
+    std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
 /// Read ~/.infer/config.yaml, apply `f` to its text, and write the result back,
 /// creating the parent dir as needed.
 pub(crate) fn update_config_file(
     f: impl FnOnce(Option<&str>) -> Result<String, String>,
 ) -> Result<(), String> {
-    let path = config_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let existing = std::fs::read_to_string(&path).ok();
-    let text = f(existing.as_deref())?;
-    std::fs::write(&path, text).map_err(|e| e.to_string())
+    update_file(&config_path(), f)
 }
 
 #[tauri::command]
