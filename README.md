@@ -48,6 +48,8 @@ Settings > General > **Export / Import** moves the complete desktop state betwee
 | Windows amd64 | `infer-windows-amd64` |
 | Windows arm64 | `infer-windows-arm64` |
 
+The app itself ships for every platform above (macOS builds are universal). Its prebuilt content and voice tools (ffmpeg, whisper-cli) come from the [binaries release](https://github.com/inference-gateway/binaries) and are published for Apple Silicon macOS, Linux amd64/arm64 and Windows amd64 only - the Intel Mac (macOS x86_64) assets were dropped in binaries v0.5.0 and the app skips those downloads there instead of failing. On an Intel Mac, install the tools yourself and the app picks them up from PATH: voice input needs a whisper.cpp CLI (`brew install whisper-cpp`, or point `WHISPER_BIN` at the binary), and content projects need a full ffmpeg with H.264 encoding (`brew install ffmpeg`) for keyframes and export.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, local setup, and building.

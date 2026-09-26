@@ -314,7 +314,7 @@ pub(crate) async fn stt_status() -> Result<SttStatus, String> {
     let binary = whisper_bin_path().is_some();
     let downloadable = stt_bin_asset().is_some();
     let hint = if !binary && !downloadable {
-        "Voice input isn't available on this platform".into()
+        "No prebuilt voice tools for this platform - install whisper-cli or whisper-cpp on PATH (or set WHISPER_BIN) to enable voice input".into()
     } else {
         String::new()
     };
