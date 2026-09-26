@@ -33,6 +33,26 @@ Releases are not signed with an Apple Developer or Windows code-signing certific
 
 Settings > General > **Browser Use** lets the agent drive your everyday browser through the [opentask](https://github.com/inference-gateway/opentask) extension - navigate, click, type, read, screenshot and list tabs - which is usually cheaper and more reliable than Computer Use. Enabling it writes `~/.infer/browser_use.yaml` (`enabled: true`, `backend: extension`, and a generated `extension.token` if none is set) and starts a persistent bridge on `127.0.0.1:52789` (or `extension.port`); paste the port and token shown in Settings into the extension options and the globe icon in the status bar (next to the auto-approve bolt) turns green once it connects. Each agent turn relays the CLI's `browser_*` tools through that bridge, so the extension stays connected between turns. The extension's side panel mirrors the desktop: it lists the desktop's conversations, resumes or starts them, streams the running turn, answers approvals, and shares the chosen model and auto mode. Its tool requests (such as the GitHub calls behind the Tasks tab) run through `infer tools execute` on the desktop, asking for approval in the side panel unless auto mode is on. While the desktop is running it holds the port, so a standalone `infer` session configured with `backend: extension` cannot bind it - disable Browser Use in the desktop first.
 
+### Avatars (talking clips)
+
+Settings > **Avatars** keeps named portraits of you that the agent turns into lip-synced talking clips in Content projects. Import a front-facing photo or take one with the camera. The app runs `infer avatars create <name> --from <photo>`, which keeps the photo and generates two three-quarter views of it through the gateway's image edit API. Then turn on **Text to video** in Settings > General (off by default) and ask for a talking avatar, presenter or talking head in a Content project. The bundled `video-editing` skill does the rest:
+
+- It writes the script and voice as spoken clips with `TextToSpeech`.
+- It renders each clip with the CLI's `TextToVideo` tool, passing `avatar` and `audio`.
+- It places each rendered clip on the video track over its spoken clip, marked with `avatar`. On the timeline the clip is ordinary footage labelled with the avatar's name, and Export needs nothing extra.
+
+Each avatar is a folder of portraits of one person, and the CLI owns the library (`infer avatars list` / `delete`):
+
+```text
+~/.infer/avatars/
+  presenter/
+    01-front.jpeg              # the first image in sort order is the one that talks
+    02-three-quarter-left.png
+    03-three-quarter-right.png
+```
+
+Use only your own likeness or one you have rights to. The photo is sent to the image edit provider (`tools.image_edit.model`, OpenAI by default) when the extra views are generated. The portrait and the voice clip are sent to the video provider on every render. Nothing is stored as an avatar at the provider. Renders go through the gateway's Videos API with ElevenLabs `creatify-aurora`, so add an ElevenLabs key under Settings > API Keys. Saving the toggle restarts the gateway with `VIDEOS_ENABLED=true`.
+
 ### Moving to a new machine
 
 Settings > General > **Export / Import** moves the complete desktop state between machines: all Settings fields, sidebar projects, A2A agents, scheduled jobs, snippets, the skills registry URL and installed skills. Export writes one portable file (JSON, YAML or TOML) in a native save dialog, or pushes it to a private GitHub repo you name (created on demand; public repos are refused) - Import reads it back from either place and auto-detects the format. Credentials (database passwords, tokens, `auth.yaml` keys) are never exported, and machine-specific paths are stored `~/`-relative so they resolve against the new machine's home. Projects that are GitHub checkouts travel as their `owner/name` rather than a full copy: Import re-clones them under the projects root and re-reads their `AGENTS.md`, keeping the file small (edited project instructions are still carried in full).
