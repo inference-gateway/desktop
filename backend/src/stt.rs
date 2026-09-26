@@ -17,7 +17,7 @@ pub(crate) const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
 /// Prebuilt static ffmpeg / whisper-cli / llama-tts release shared with the CLI.
 pub(crate) const BINARIES_BASE: &str =
-    "https://github.com/inference-gateway/binaries/releases/download/v0.3.0";
+    "https://github.com/inference-gateway/binaries/releases/download/v0.5.0";
 /// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/bin/tools, apart
 /// from the CLI's and gateway's own downloads directly in ~/.infer/bin.
 pub(crate) fn tools_dir() -> PathBuf {
@@ -42,6 +42,9 @@ pub(crate) fn bin_asset(name: &str) -> Option<String> {
     bin_asset_for(name, std::env::consts::OS, std::env::consts::ARCH)
 }
 
+/// Asset name for a platform, or `None` where the release publishes none
+/// (v0.5.0 dropped the darwin-amd64 assets; Intel Macs resolve nothing and
+/// callers fall back to PATH).
 pub(crate) fn bin_asset_for(name: &str, os: &str, arch: &str) -> Option<String> {
     let arch = match arch {
         "x86_64" => "amd64",
@@ -50,7 +53,7 @@ pub(crate) fn bin_asset_for(name: &str, os: &str, arch: &str) -> Option<String> 
     };
     match os {
         "linux" => Some(format!("{name}-linux-{arch}")),
-        "macos" => Some(format!("{name}-darwin-{arch}")),
+        "macos" if arch == "arm64" => Some(format!("{name}-darwin-{arch}")),
         "windows" if arch == "amd64" => Some(format!("{name}-windows-amd64.exe")),
         _ => None,
     }
@@ -441,10 +444,7 @@ mod tests {
             bin_asset_for("whisper-cli", "macos", "aarch64").as_deref(),
             Some("whisper-cli-darwin-arm64")
         );
-        assert_eq!(
-            bin_asset_for("whisper-cli", "macos", "x86_64").as_deref(),
-            Some("whisper-cli-darwin-amd64")
-        );
+        assert_eq!(bin_asset_for("whisper-cli", "macos", "x86_64"), None);
         assert_eq!(
             bin_asset_for("whisper-cli", "windows", "x86_64").as_deref(),
             Some("whisper-cli-windows-amd64.exe")
