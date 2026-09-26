@@ -4,6 +4,7 @@
 //! takes the lifecycle locks in gateway-then-scheduler order, marks the manager as
 //! stopping before it waits, and drains every owned handle exactly once.
 
+use crate::gateway::GatewayStart;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -80,7 +81,7 @@ impl ProcessManager {
         }
     }
 
-    pub(crate) fn start_gateway(&self, force: bool, restart: bool) -> Result<(), String> {
+    pub(crate) fn start_gateway(&self, mode: GatewayStart) -> Result<(), String> {
         if !self.gateway_enabled {
             return Ok(());
         }
@@ -95,7 +96,7 @@ impl ProcessManager {
                 .try_wait()
                 .map_err(|e| format!("failed to inspect gateway process: {e}"))?
                 .is_none();
-            if child_running && !force && !restart && crate::gateway::gateway_reachable() {
+            if child_running && mode == GatewayStart::Reuse && crate::gateway::gateway_reachable() {
                 self.store_gateway(child)?;
                 return Ok(());
             }
@@ -114,14 +115,13 @@ impl ProcessManager {
 
         if crate::gateway::reuse_running_gateway(
             crate::gateway::gateway_reachable(),
-            force,
-            restart,
+            mode,
             &crate::agent::gateway_url(),
         )? {
             return Ok(());
         }
 
-        let bin = crate::gateway::ensure_gateway_binary(force)?;
+        let bin = crate::gateway::ensure_gateway_binary(mode)?;
         self.ensure_running()?;
         let mut child = crate::gateway::spawn_gateway(&bin)?;
 
