@@ -1,4 +1,4 @@
-schema-version = "1.15.0"
+schema-version = "1.17.0"
 
 [install]
 go-task.pkg-path = "go-task"
