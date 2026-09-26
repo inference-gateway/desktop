@@ -17,9 +17,11 @@ export type ParsedToolResult = {
 
 // infer's ImageGeneration result carries the saved absolute path; WKWebView
 // can't load a bare file path, so only paths under ~/.infer/artifacts/<session-id>
-// or ~/.infer/tmp (including nested dirs like tmp/screenshots/session-<id>/)
-// are served through Tauri's asset protocol.
-const SAFE_IMAGE_PATH = /\.infer\/(?:tmp|artifacts)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.(?:png|gif|webp|avif|jpe?g)$/i;
+// or ~/.infer/tmp (including nested dirs like tmp/screenshots/session-<id>/),
+// plus the avatar library ~/.infer/avatars/<name>/, are served through Tauri's
+// asset protocol.
+const SAFE_IMAGE_PATH =
+  /\.infer\/(?:tmp|artifacts|avatars)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.(?:png|gif|webp|avif|jpe?g)$/i;
 
 // infer's TextToSpeech writes WAVs to its default output dir ~/.infer/tts and
 // voice samples live in ~/.infer/models/tts/samples; both are in the asset

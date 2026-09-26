@@ -173,13 +173,19 @@ pub(crate) fn audio_env(tts_enabled: bool) -> Vec<(&'static str, &'static str)> 
     }
 }
 
+/// Env var that serves the gateway's Videos API for the CLI's TextToVideo
+/// tool; the gateway defaults it off. Read at spawn, like `audio_env`.
+fn video_env(ttv_enabled: bool) -> Option<(&'static str, &'static str)> {
+    ttv_enabled.then_some(("VIDEOS_ENABLED", "true"))
+}
+
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
+    let cfg = crate::config::read_config();
     std::process::Command::new(bin)
         .envs(auth_env())
         .envs(collector_env())
-        .envs(audio_env(
-            crate::config::read_config().text_to_speech_enabled,
-        ))
+        .envs(audio_env(cfg.text_to_speech_enabled))
+        .envs(video_env(cfg.text_to_video_enabled))
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
         .env("IMAGES_ENABLED", "true")

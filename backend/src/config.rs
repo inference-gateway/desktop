@@ -144,6 +144,11 @@ pub(crate) struct DesktopConfig {
     /// config); the desktop never synthesizes audio itself.
     #[serde(default)]
     pub(crate) text_to_speech_enabled: bool,
+    /// Enable the CLI's TextToVideo tool (text_to_video.enabled in the CLI
+    /// config). Off by default: every render sends a portrait and a voice clip
+    /// to a third-party video provider.
+    #[serde(default)]
+    pub(crate) text_to_video_enabled: bool,
     /// Vision model (`provider/model`) for the CLI's ImageDecode annotator
     /// (vision.annotator in the CLI config); empty disables the annotator.
     #[serde(default)]
@@ -212,6 +217,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_allowed_mimes:
             "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,webm,mp3,wav,m4a,aac,txt,md,csv".into(),
         text_to_speech_enabled: false,
+        text_to_video_enabled: false,
         status_bar_enabled: true,
         vision_annotator_model: String::new(),
     }
@@ -354,6 +360,7 @@ pub(crate) fn config_from_value(
         ])
         .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
+        text_to_video_enabled: bool_at(&["text_to_video", "enabled"]).unwrap_or(false),
         status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
         vision_annotator_model: if bool_at(&["vision", "annotator", "enabled"]).unwrap_or(false) {
             str_at(&["vision", "annotator", "model"]).unwrap_or_default()
@@ -515,6 +522,11 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         map,
         "text_to_speech",
         vec![("enabled", cfg.text_to_speech_enabled.into())],
+    );
+    set_section(
+        map,
+        "text_to_video",
+        vec![("enabled", cfg.text_to_video_enabled.into())],
     );
 
     let chat = map
@@ -823,6 +835,7 @@ mod tests {
         assert_eq!(cfg.projects_github_repository, ".projects");
         assert!(cfg.projects_root.ends_with("Inference Gateway Desktop"));
         assert!(!cfg.text_to_speech_enabled);
+        assert!(!cfg.text_to_video_enabled);
         assert_eq!(cfg.vision_annotator_model, "");
     }
 
@@ -914,6 +927,20 @@ mod tests {
 
         let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
         assert!(cfg2.text_to_speech_enabled);
+    }
+
+    #[test]
+    fn merge_config_round_trips_text_to_video_and_keeps_its_other_keys() {
+        let existing = "text_to_video:\n  avatar_model: elevenlabs/creatify-aurora\n";
+        let mut cfg = default_config();
+        cfg.text_to_video_enabled = true;
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["text_to_video", "avatar_model"]),
+            Some("elevenlabs/creatify-aurora")
+        );
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert!(cfg2.text_to_video_enabled);
     }
 
     #[test]

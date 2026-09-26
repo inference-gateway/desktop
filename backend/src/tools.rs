@@ -21,6 +21,7 @@ const TOOLS: &[(&str, &str)] = &[
     ("/tools/image_edit/enabled", "ImageEdit"),
     ("/tools/image_variation/enabled", "ImageVariation"),
     ("/text_to_speech/enabled", "TextToSpeech"),
+    ("/text_to_video/enabled", "TextToVideo"),
     ("/tools/computer/enabled", "Computer"),
 ];
 
@@ -210,9 +211,13 @@ mod tests {
     fn enabled_tools_reads_top_level_media_sections() {
         let dump = r#"{
             "tools": {"enabled": true, "read": {"enabled": true}},
-            "text_to_speech": {"enabled": true}
+            "text_to_speech": {"enabled": true},
+            "text_to_video": {"enabled": true}
         }"#;
-        assert_eq!(enabled_tools_in(dump), vec!["Read", "TextToSpeech"]);
+        assert_eq!(
+            enabled_tools_in(dump),
+            vec!["Read", "TextToSpeech", "TextToVideo"]
+        );
     }
 
     #[test]

@@ -48,13 +48,14 @@ test("safeImageSrc rejects uploads paths, non-image extensions, and traversal", 
   expect(safeImageSrc("/Users/x/.infer/tmp/../uploads/a.png")).toBeNull();
 });
 
-test("safeImageSrc allows nested computer-use screenshot paths", () => {
+test("safeImageSrc allows nested computer-use screenshot and avatar paths", () => {
   (globalThis as Record<string, unknown>).window = {
     __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
   };
   try {
     expect(safeImageSrc("/Users/x/.infer/tmp/screenshots/session-b9fb/frame_001.png")).not.toBeNull();
     expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/nested/a.png")).not.toBeNull();
+    expect(safeImageSrc("/Users/x/.infer/avatars/presenter/01-front.jpeg")).not.toBeNull();
   } finally {
     delete (globalThis as Record<string, unknown>).window;
   }
