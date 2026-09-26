@@ -1,5 +1,5 @@
 use crate::download::{ProgressEvent, download, find_checksum, sha256_digest, try_gh_download};
-use crate::env::{asset_name, binary_name, config_path, home_dir, infer_bin_path};
+use crate::env::{asset_name, bin_dir, binary_name, config_path, home_dir, infer_bin_path};
 use std::io::Read;
 use tauri::ipc::Channel;
 
@@ -41,7 +41,7 @@ pub(crate) async fn check_and_install_cli(
 
     let release_url = "https://github.com/inference-gateway/cli/releases/latest/download";
 
-    let bin_dir = home_dir().join(".infer").join("bin");
+    let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
 
     let temp_path = bin_dir.join(format!("{}.tmp", binary_name()));

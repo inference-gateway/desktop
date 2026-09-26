@@ -45,7 +45,7 @@ pub(crate) fn home_dir() -> PathBuf {
 pub(crate) fn infer_bin_path() -> PathBuf {
     match std::env::var("INFER_BIN") {
         Ok(p) if !p.is_empty() => PathBuf::from(p),
-        _ => home_dir().join(".infer").join("bin").join(binary_name()),
+        _ => bin_dir().join(binary_name()),
     }
 }
 
@@ -166,6 +166,11 @@ pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> St
 
 pub(crate) fn config_path() -> PathBuf {
     home_dir().join(".infer").join("config.yaml")
+}
+
+/// Install directory for the CLI, the gateway binary and desktop tools (`~/.infer/bin`).
+pub(crate) fn bin_dir() -> PathBuf {
+    home_dir().join(".infer").join("bin")
 }
 
 /// Pure core of `agent_cwd`, split out so the fallback is testable.
