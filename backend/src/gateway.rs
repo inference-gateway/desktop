@@ -1,7 +1,7 @@
 use crate::AppState;
 use crate::agent::gateway_url;
 use crate::config::auth_env;
-use crate::env::{collector_env, home_dir};
+use crate::env::{bin_dir, collector_env};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +17,7 @@ pub(crate) fn gateway_bin_path() -> PathBuf {
     } else {
         "inference-gateway"
     };
-    home_dir().join(".infer").join("bin").join(name)
+    bin_dir().join(name)
 }
 
 /// Release asset name for the gateway binary, matching goreleaser's naming.
@@ -97,7 +97,7 @@ pub(crate) fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
             std::env::consts::ARCH
         )
     })?;
-    let bin_dir = home_dir().join(".infer").join("bin");
+    let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
 
     let url = format!(

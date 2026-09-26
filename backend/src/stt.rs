@@ -1,6 +1,6 @@
 use crate::download::ProgressEvent;
 use crate::download::{download, find_checksum, sha256_digest};
-use crate::env::{home_dir, mock_mode};
+use crate::env::{bin_dir, home_dir, mock_mode};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
@@ -21,7 +21,7 @@ pub(crate) const BINARIES_BASE: &str =
 /// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/bin/tools, apart
 /// from the CLI's and gateway's own downloads directly in ~/.infer/bin.
 pub(crate) fn tools_dir() -> PathBuf {
-    home_dir().join(".infer").join("bin").join("tools")
+    bin_dir().join("tools")
 }
 
 pub(crate) fn whisper_model_path() -> PathBuf {
