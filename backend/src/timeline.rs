@@ -3,7 +3,7 @@
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::download::ProgressEvent;
 use crate::projects::{ProjectFile, list_local_files, project_dir};
-use crate::stt::{download_binary, ensure_whisper_model, find_on_path, owned_bin};
+use crate::stt::{bin_asset, download_binary, ensure_whisper_model, find_on_path, owned_bin};
 use notify::{RecursiveMode, Watcher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -190,16 +190,16 @@ const EXPORT_ENCODERS: [&str; 2] = [" libx264 ", " aac "];
 
 /// The ffmpeg used for keyframes and the export: the desktop-owned copy when
 /// it can mix audio and encode H.264, else a full build on PATH.
-/// ponytail: the pinned release builds ffmpeg with no video encoder (no libx264),
-/// so the export needs a PATH ffmpeg; drop the fallback if the binaries release
-/// ever adds a video encoder.
+/// ponytail: installs holding a pre-v0.5.0 audio-only ffmpeg keep it (no forced
+/// re-download) and Intel Macs get no prebuilt at all, so the PATH fallback
+/// stays; drop it if owned tools are ever version-stamped and re-downloaded.
 fn video_ffmpeg() -> Result<PathBuf, String> {
     [owned_bin("ffmpeg"), find_on_path("ffmpeg")]
         .into_iter()
         .flatten()
         .find(|p| lists(p, "-filters", &EXPORT_FILTERS) && lists(p, "-encoders", &EXPORT_ENCODERS))
         .ok_or_else(|| {
-            "no ffmpeg that can mix audio and encode H.264 found: the bundled build has no H.264 encoder; install a full ffmpeg (brew install ffmpeg)".to_string()
+            "no ffmpeg that can mix audio and encode H.264 found: the bundled build is outdated or missing; install a full ffmpeg (brew install ffmpeg)".to_string()
         })
 }
 
@@ -216,7 +216,7 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
         let _ = on_event.send(ProgressEvent::Checking);
         crate::skills::install_bundled_skills();
         for name in ["ffmpeg", "whisper-cli"] {
-            if owned_bin(name).is_none() {
+            if owned_bin(name).is_none() && bin_asset(name).is_some() {
                 let _ = on_event.send(ProgressEvent::Installing);
                 download_binary(name, &on_event)?;
             }
