@@ -249,7 +249,7 @@ pub(crate) async fn add_project_video(
     })
     .await
     .map_err(|e| format!("file dialog failed: {e}"))?;
-    let Some(tauri_plugin_dialog::FilePath::Path(src)) = picked else {
+    let Some(src) = picked.and_then(|fp| fp.into_path().ok()) else {
         return Ok(None);
     };
     let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
