@@ -645,13 +645,6 @@ async fn collect_export(home: &Path) -> (DesktopExport, Vec<String>) {
 
 /// Native dialogs via tauri-plugin-dialog's Rust-side blocking API, run off
 /// the main thread; no capability entries needed (the JS side never calls it).
-fn file_path_buf(fp: tauri_plugin_dialog::FilePath) -> Option<PathBuf> {
-    match fp {
-        tauri_plugin_dialog::FilePath::Path(p) => Some(p),
-        _ => None,
-    }
-}
-
 async fn native_save_path(
     app: tauri::AppHandle,
     format: ExportFormat,
@@ -665,7 +658,7 @@ async fn native_save_path(
     })
     .await
     .map_err(|e| format!("save dialog failed: {e}"))
-    .map(|fp| fp.and_then(file_path_buf))
+    .map(|fp| fp.and_then(|fp| fp.into_path().ok()))
 }
 
 async fn native_open_path(app: tauri::AppHandle) -> Result<Option<PathBuf>, String> {
@@ -677,7 +670,7 @@ async fn native_open_path(app: tauri::AppHandle) -> Result<Option<PathBuf>, Stri
     })
     .await
     .map_err(|e| format!("open dialog failed: {e}"))
-    .map(|fp| fp.and_then(file_path_buf))
+    .map(|fp| fp.and_then(|fp| fp.into_path().ok()))
 }
 
 /// Write the export to the filesystem. Without `path`, the native save dialog

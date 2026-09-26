@@ -80,18 +80,10 @@ pub(crate) async fn add_voice_sample(app: tauri::AppHandle) -> Result<Option<Voi
     })
     .await
     .map_err(|e| format!("file dialog failed: {e}"))?;
-    let Some(src) = picked.and_then(file_path_buf) else {
+    let Some(src) = picked.and_then(|fp| fp.into_path().ok()) else {
         return Ok(None);
     };
     copy_sample(&src, &samples_dir())
-}
-
-/// Same FilePath conversion as export.rs (dialog may return a URL variant).
-fn file_path_buf(fp: tauri_plugin_dialog::FilePath) -> Option<PathBuf> {
-    match fp {
-        tauri_plugin_dialog::FilePath::Path(p) => Some(p),
-        _ => None,
-    }
 }
 
 /// Validate + copy one picked file into `dir` under its base name.
