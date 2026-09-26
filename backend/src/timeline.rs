@@ -190,15 +190,16 @@ const EXPORT_ENCODERS: [&str; 2] = [" libx264 ", " aac "];
 
 /// The ffmpeg used for keyframes and the export: the desktop-owned copy when
 /// it can mix audio and encode H.264, else a full build on PATH.
-/// ponytail: the binaries release is audio-only until inference-gateway/binaries#26 ships;
-/// drop the PATH fallback once the pinned release carries the encoders.
+/// ponytail: the pinned release builds ffmpeg with no video encoder (no libx264),
+/// so the export needs a PATH ffmpeg; drop the fallback if the binaries release
+/// ever adds a video encoder.
 fn video_ffmpeg() -> Result<PathBuf, String> {
     [owned_bin("ffmpeg"), find_on_path("ffmpeg")]
         .into_iter()
         .flatten()
         .find(|p| lists(p, "-filters", &EXPORT_FILTERS) && lists(p, "-encoders", &EXPORT_ENCODERS))
         .ok_or_else(|| {
-            "no ffmpeg that can mix audio and encode H.264 found: the bundled build is audio-only; install a full ffmpeg (brew install ffmpeg) until a newer inference-gateway/binaries release ships".to_string()
+            "no ffmpeg that can mix audio and encode H.264 found: the bundled build has no H.264 encoder; install a full ffmpeg (brew install ffmpeg)".to_string()
         })
 }
 

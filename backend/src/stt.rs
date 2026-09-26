@@ -17,7 +17,7 @@ pub(crate) const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
 /// Prebuilt static ffmpeg / whisper-cli / llama-tts release shared with the CLI.
 pub(crate) const BINARIES_BASE: &str =
-    "https://github.com/inference-gateway/binaries/releases/download/v0.3.0";
+    "https://github.com/inference-gateway/binaries/releases/download/v0.4.0";
 /// Desktop-owned tools (ffmpeg, whisper-cli) live in ~/.infer/bin/tools, apart
 /// from the CLI's and gateway's own downloads directly in ~/.infer/bin.
 pub(crate) fn tools_dir() -> PathBuf {
