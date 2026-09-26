@@ -363,14 +363,9 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
         cfg.scheduler_github_app_private_key_secret =
             local.scheduler_github_app_private_key_secret.clone();
     }
-    let config_path = home.join(".infer").join("config.yaml");
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let existing = std::fs::read_to_string(&config_path).ok();
-    let text = merge_config(existing.as_deref(), &cfg)?;
-    let text = merge_default_model(Some(&text), &cfg.default_model)?;
-    std::fs::write(&config_path, text).map_err(|e| e.to_string())?;
+    crate::config::update_file(&home.join(".infer").join("config.yaml"), |existing| {
+        merge_default_model(Some(&merge_config(existing, &cfg)?), &cfg.default_model)
+    })?;
     imported.push("Settings (config.yaml)".into());
 
     let mut projects = crate::projects::read_projects_in(home);
