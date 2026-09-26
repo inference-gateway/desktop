@@ -45,7 +45,7 @@ pub(crate) fn spawn_daemon(state: &AppState) -> Result<(), String> {
 }
 
 fn restart_daemon(
-    processes: &crate::process_manager::ProcessManager,
+    processes: &crate::processes::ProcessSupervisor,
     log: Arc<Mutex<VecDeque<String>>>,
 ) -> Result<(), String> {
     if mock_mode() {
