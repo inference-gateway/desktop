@@ -210,19 +210,19 @@ mod tests {
     use super::*;
 
     #[test]
-fn from_flags_maps_flag_pairs_to_start_modes() {
-    for (force, restart, mode) in [
-        (false, false, GatewayStart::Reuse),
-        (false, true, GatewayStart::Restart),
-        (true, false, GatewayStart::Reinstall),
-        (true, true, GatewayStart::Reinstall),
-    ] {
-        assert_eq!(GatewayStart::from_flags(force, restart), mode);
+    fn from_flags_maps_flag_pairs_to_start_modes() {
+        for (force, restart, mode) in [
+            (false, false, GatewayStart::Reuse),
+            (false, true, GatewayStart::Restart),
+            (true, false, GatewayStart::Reinstall),
+            (true, true, GatewayStart::Reinstall),
+        ] {
+            assert_eq!(GatewayStart::from_flags(force, restart), mode);
+        }
     }
-}
 
     #[test]
-fn reuse_running_gateway_adopts_a_foreign_gateway_only_in_reuse_mode() {
+    fn reuse_running_gateway_adopts_a_foreign_gateway_only_in_reuse_mode() {
         for (mode, reachable, reuse) in [
             (GatewayStart::Reuse, false, false),
             (GatewayStart::Restart, false, false),
