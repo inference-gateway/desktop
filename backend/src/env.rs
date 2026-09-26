@@ -50,9 +50,10 @@ pub(crate) fn infer_bin_path() -> PathBuf {
 }
 
 /// Token-free e2e testing: DESKTOP_MOCK=true skips the desktop-owned gateway,
-/// serves a canned model list, and spawns infer children with
-/// INFER_GATEWAY_MOCK=true - the CLI's own mock mode, where infer serves its
-/// embedded scenario gateway (see cli/internal/mockgateway).
+/// takes the model list from the scenarios file named by
+/// INFER_GATEWAY_MOCK_SCENARIOS (see agent::mock_models), and spawns infer
+/// children with INFER_GATEWAY_MOCK=true - the CLI's own mock mode, where
+/// infer serves its embedded scenario gateway (see cli/internal/mockgateway).
 pub(crate) fn mock_mode() -> bool {
     std::env::var("DESKTOP_MOCK").is_ok_and(|v| v == "true" || v == "1")
 }
