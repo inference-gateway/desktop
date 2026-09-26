@@ -79,6 +79,25 @@ scenarios:
                 }
       - content: "Captions added."
 
+  - name: avatar-clip
+    match: '(?i)talking avatar'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "intro.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 5,
+                  "source_audio": "mute",
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "s1-avatar", "src": "media/logo.png", "start": 0, "end": 5, "avatar": "presenter", "voice_sample": "eden.wav", "status": "done" }] },
+                    { "id": "voice", "kind": "audio", "voice_sample": "eden.wav", "clips": [{ "id": "s1", "start": 0, "end": 5, "text": "Hi, welcome to the demo.", "voice_sample": "eden.wav", "status": "draft" }] }
+                  ]
+                }
+      - content: "Avatar clip placed."
+
   - name: revert-setup
     match: '(?i)set up the timeline'
     turns:
