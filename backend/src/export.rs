@@ -670,7 +670,7 @@ async fn native_open_path(app: tauri::AppHandle) -> Result<Option<PathBuf>, Stri
     })
     .await
     .map_err(|e| format!("open dialog failed: {e}"))
-    .map(|fp| fp.and_then(|fp| fp.into_path().ok()))
+        .map(|picked| picked.and_then(|fp| fp.into_path().ok()))
 }
 
 /// Write the export to the filesystem. Without `path`, the native save dialog
