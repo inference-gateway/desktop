@@ -1208,6 +1208,6 @@ mod tests {
         assert!(err.contains(r#""id":"c2""#) && err.contains("no browser extension"));
 
         bridge.stop();
-        assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+        assert!(bridge.host().is_none());
     }
 }
