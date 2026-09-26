@@ -1,9 +1,10 @@
 //! Central ownership and shutdown for every long-lived child process.
 //!
 //! Gateway startup is serialized independently from scheduler operations. Shutdown
-//! takes the lifecycle locks in gateway-then-scheduler order, marks the manager as
+//! takes the lifecycle locks in gateway-then-scheduler order, marks the supervisor as
 //! stopping before it waits, and drains every owned handle exactly once.
 
+use crate::gateway::GatewayStart;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -36,7 +37,7 @@ struct ProcessState {
     agent_stdins: HashMap<String, Arc<Mutex<ChildStdin>>>,
 }
 
-pub(crate) struct ProcessManager {
+pub(crate) struct ProcessSupervisor {
     state: Mutex<ProcessState>,
     gateway_lifecycle: Mutex<()>,
     scheduler_lifecycle: Mutex<()>,
@@ -48,7 +49,7 @@ pub(crate) struct ProcessManager {
     shutdown_timeout: Duration,
 }
 
-impl ProcessManager {
+impl ProcessSupervisor {
     pub(crate) fn new() -> Self {
         Self::with_options(
             !crate::env::mock_mode(),
@@ -80,7 +81,7 @@ impl ProcessManager {
         }
     }
 
-    pub(crate) fn start_gateway(&self, force: bool, restart: bool) -> Result<(), String> {
+    pub(crate) fn start_gateway(&self, mode: GatewayStart) -> Result<(), String> {
         if !self.gateway_enabled {
             return Ok(());
         }
@@ -95,7 +96,7 @@ impl ProcessManager {
                 .try_wait()
                 .map_err(|e| format!("failed to inspect gateway process: {e}"))?
                 .is_none();
-            if child_running && !force && !restart && crate::gateway::gateway_reachable() {
+            if child_running && mode == GatewayStart::Reuse && crate::gateway::gateway_reachable() {
                 self.store_gateway(child)?;
                 return Ok(());
             }
@@ -114,14 +115,13 @@ impl ProcessManager {
 
         if crate::gateway::reuse_running_gateway(
             crate::gateway::gateway_reachable(),
-            force,
-            restart,
+            mode,
             &crate::agent::gateway_url(),
         )? {
             return Ok(());
         }
 
-        let bin = crate::gateway::ensure_gateway_binary(force)?;
+        let bin = crate::gateway::ensure_gateway_binary(mode)?;
         self.ensure_running()?;
         let mut child = crate::gateway::spawn_gateway(&bin)?;
 
@@ -840,13 +840,13 @@ mod tests {
 
     static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn test_manager(name: &str) -> ProcessManager {
+    fn test_supervisor(name: &str) -> ProcessSupervisor {
         let path = std::env::temp_dir().join(format!(
-            "desktop-process-manager-{name}-{}-{}.json",
+            "desktop-process-supervisor-{name}-{}-{}.json",
             std::process::id(),
             TEST_PATH_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
-        ProcessManager::with_options(
+        ProcessSupervisor::with_options(
             true,
             path,
             Duration::from_secs(1),
@@ -879,56 +879,58 @@ mod tests {
 
     #[test]
     fn ownership_metadata_round_trips() {
-        let manager = test_manager("round-trip");
+        let supervisor = test_supervisor("round-trip");
         let ownership = GatewayOwnership {
             pid: 42,
             executable: PathBuf::from("/tmp/gateway"),
         };
 
-        manager
+        supervisor
             .write_ownership(&ownership)
             .expect("ownership should be written");
 
         assert_eq!(
-            manager.read_ownership().expect("ownership should be read"),
+            supervisor
+                .read_ownership()
+                .expect("ownership should be read"),
             Some(ownership)
         );
-        manager
+        supervisor
             .remove_ownership()
             .expect("ownership should be removed");
     }
 
     #[test]
     fn invalid_ownership_metadata_is_removed() {
-        let manager = test_manager("invalid");
-        let parent = manager
+        let supervisor = test_supervisor("invalid");
+        let parent = supervisor
             .ownership_path
             .parent()
             .expect("test path should have a parent");
         std::fs::create_dir_all(parent).expect("test directory should be created");
-        std::fs::write(&manager.ownership_path, b"not-json")
+        std::fs::write(&supervisor.ownership_path, b"not-json")
             .expect("invalid ownership should be written");
 
         assert_eq!(
-            manager
+            supervisor
                 .read_ownership()
                 .expect("invalid metadata is handled"),
             None
         );
-        assert!(!manager.ownership_path.exists());
+        assert!(!supervisor.ownership_path.exists());
     }
 
     #[test]
     fn gateway_lifecycle_is_serialized() {
-        let manager = Arc::new(test_manager("serialized"));
+        let supervisor = Arc::new(test_supervisor("serialized"));
         let barrier = Arc::new(Barrier::new(2));
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
 
-        let first_manager = Arc::clone(&manager);
+        let first_supervisor = Arc::clone(&supervisor);
         let first_barrier = Arc::clone(&barrier);
         let first = std::thread::spawn(move || {
-            let _guard = first_manager
+            let _guard = first_supervisor
                 .gateway_lifecycle
                 .lock()
                 .expect("gateway lifecycle should lock");
@@ -939,9 +941,9 @@ mod tests {
         });
         barrier.wait();
 
-        let second_manager = Arc::clone(&manager);
+        let second_supervisor = Arc::clone(&supervisor);
         let second = std::thread::spawn(move || {
-            let _guard = second_manager
+            let _guard = second_supervisor
                 .gateway_lifecycle
                 .lock()
                 .expect("gateway lifecycle should lock after first");
@@ -964,17 +966,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn recovered_gateway_gets_sigterm_and_metadata_is_removed() {
-        let manager = Arc::new(test_manager("recover"));
+        let supervisor = Arc::new(test_supervisor("recover"));
         let mut child = spawn_signal_child("exit 0");
         let ownership = ownership_for_child(&child).expect("child identity should be available");
         let executable = ownership.executable.clone();
-        manager
+        supervisor
             .write_ownership(&ownership)
             .expect("ownership should be written");
 
-        let recovery_manager = Arc::clone(&manager);
+        let recovery_supervisor = Arc::clone(&supervisor);
         let recovery =
-            std::thread::spawn(move || recovery_manager.recover_owned_gateway(&executable));
+            std::thread::spawn(move || recovery_supervisor.recover_owned_gateway(&executable));
         let status = child.wait().expect("recovered child should be reaped");
 
         assert!(status.success());
@@ -982,7 +984,7 @@ mod tests {
             .join()
             .expect("recovery thread should finish")
             .expect("recovery should succeed");
-        assert!(!manager.ownership_path.exists());
+        assert!(!supervisor.ownership_path.exists());
     }
 
     #[cfg(unix)]
@@ -1012,19 +1014,21 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shutdown_is_idempotent() {
-        let manager = test_manager("idempotent");
+        let supervisor = test_supervisor("idempotent");
         let child = spawn_signal_child("exit 0");
         let ownership = ownership_for_child(&child).expect("child identity should be available");
         let pid = ownership.pid;
-        manager
+        supervisor
             .write_ownership(&ownership)
             .expect("ownership should be written");
-        manager
+        supervisor
             .store_gateway(child)
             .expect("gateway child should be stored");
 
-        manager.shutdown().expect("first shutdown should succeed");
-        manager
+        supervisor
+            .shutdown()
+            .expect("first shutdown should succeed");
+        supervisor
             .shutdown()
             .expect("second shutdown should be a no-op");
 
@@ -1033,14 +1037,14 @@ mod tests {
                 .expect("process lookup should succeed")
                 .is_none()
         );
-        assert!(!manager.ownership_path.exists());
+        assert!(!supervisor.ownership_path.exists());
     }
 
     #[cfg(unix)]
     #[test]
     fn agent_insert_is_rejected_during_shutdown() {
-        let manager = test_manager("insert-during-shutdown");
-        manager.shutdown().expect("shutdown should succeed");
+        let supervisor = test_supervisor("insert-during-shutdown");
+        supervisor.shutdown().expect("shutdown should succeed");
         let mut child = Command::new("sh")
             .args(["-c", "while :; do sleep 0.01; done"])
             .stdin(Stdio::piped())
@@ -1052,7 +1056,7 @@ mod tests {
             .take()
             .expect("test child stdin should be piped");
 
-        let error = manager
+        let error = supervisor
             .insert_agent("session".into(), child, stdin)
             .expect_err("agent insert should be rejected during shutdown");
 
@@ -1081,26 +1085,26 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn inserting_a_running_session_replaces_the_orphan() {
-        let manager = test_manager("replace-orphan");
+        let supervisor = test_supervisor("replace-orphan");
         let (first, first_stdin) = spawn_agent_child();
         let (second, second_stdin) = spawn_agent_child();
         let (first_pid, second_pid) = (first.id(), second.id());
 
-        manager
+        supervisor
             .insert_agent("session".into(), first, first_stdin)
             .expect("first insert should succeed");
-        manager
+        supervisor
             .insert_agent("session".into(), second, second_stdin)
             .expect("second insert should replace the orphan");
 
         assert!(!process_exists(first_pid).expect("process lookup should succeed"));
         assert!(
-            manager
+            supervisor
                 .remove_agent("session", first_pid)
                 .expect("stale removal should succeed")
                 .is_none()
         );
-        let mut replacement = manager
+        let mut replacement = supervisor
             .remove_agent("session", second_pid)
             .expect("current removal should succeed")
             .expect("replacement should still be tracked");

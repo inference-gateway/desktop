@@ -13,7 +13,7 @@ mod gateway;
 mod input_capture;
 mod observability;
 mod permissions;
-mod process_manager;
+mod processes;
 mod projects;
 mod scheduler;
 mod screen_records;
@@ -28,7 +28,7 @@ mod updates;
 use observability::{StoredMetric, StoredSpan, start_collector};
 
 pub(crate) struct AppState {
-    processes: Arc<process_manager::ProcessManager>,
+    processes: Arc<processes::ProcessSupervisor>,
     scheduler_log: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
@@ -62,7 +62,7 @@ pub fn run() {
     let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stored_metrics: Arc<Mutex<VecDeque<StoredMetric>>> = Arc::new(Mutex::new(VecDeque::new()));
     let _collector = start_collector(Arc::clone(&stored_traces), Arc::clone(&stored_metrics));
-    let processes = Arc::new(process_manager::ProcessManager::new());
+    let processes = Arc::new(processes::ProcessSupervisor::new());
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())

@@ -293,7 +293,7 @@ struct Host {
     pending_tools: Mutex<HashMap<String, mpsc::Sender<bool>>>,
     stop: AtomicBool,
     app: Option<tauri::AppHandle>,
-    processes: Option<Arc<crate::process_manager::ProcessManager>>,
+    processes: Option<Arc<crate::processes::ProcessSupervisor>>,
 }
 
 struct Running {
@@ -812,7 +812,7 @@ impl Bridge {
         &self,
         settings: Settings,
         app: Option<tauri::AppHandle>,
-        processes: Option<Arc<crate::process_manager::ProcessManager>>,
+        processes: Option<Arc<crate::processes::ProcessSupervisor>>,
     ) -> Result<u16, String> {
         if settings.token.is_empty() {
             return Err("browser_use.extension.token is empty".into());

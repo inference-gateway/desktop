@@ -11,6 +11,28 @@ use std::time::Duration;
 // stays served. Once it's up, `infer agent` detects it (its own isBinaryRunning
 // health check) and won't start a competing gateway.
 
+/// How the desktop wants the gateway brought up: keep whatever is already
+/// serving the URL, respawn the owned process with fresh env (API keys,
+/// AUDIO_ENABLED), or replace the binary first. The IPC `force` flag maps to
+/// `Reinstall` because a fresh binary needs a restart, so the redundant
+/// `(force, restart)` pair cannot be expressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GatewayStart {
+    Reuse,
+    Restart,
+    Reinstall,
+}
+
+impl GatewayStart {
+    fn from_flags(force: bool, restart: bool) -> Self {
+        match (force, restart) {
+            (false, false) => Self::Reuse,
+            (false, true) => Self::Restart,
+            (true, _) => Self::Reinstall,
+        }
+    }
+}
+
 pub(crate) fn gateway_bin_path() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
         "inference-gateway.exe"
@@ -53,24 +75,20 @@ pub(crate) fn gateway_reachable() -> bool {
         .is_ok()
 }
 
-/// Whether a gateway already serving `url` can be reused, decided once
-/// everything the desktop owns has been stopped - so whatever answers now is a
-/// gateway the desktop does not own. A plain start reuses it, which is how an
-/// externally run gateway is supported. `force` and `restart` exist to respawn
-/// with fresh env (API keys, AUDIO_ENABLED), and a spawn cannot take a port
-/// that is already held: the new gateway would come up serving nothing while
-/// the old one keeps answering with the old env. That is an error the user can
-/// act on, not a silent no-op.
+/// Whether a gateway already serving `url` can be reused. Decided once
+/// everything the desktop owns has stopped, so whatever answers is foreign.
+/// `Reuse` adopts it - that is how an externally run gateway is supported -
+/// while `Restart` and `Reinstall` respawn with fresh env and cannot take a
+/// held port, so a foreign gateway is an error the user can act on.
 pub(crate) fn reuse_running_gateway(
     reachable: bool,
-    force: bool,
-    restart: bool,
+    mode: GatewayStart,
     url: &str,
 ) -> Result<bool, String> {
     if !reachable {
         return Ok(false);
     }
-    if force || restart {
+    if mode != GatewayStart::Reuse {
         return Err(format!(
             "{url} is already served by a gateway the desktop does not own, so it cannot be restarted with the current settings; stop that process and try again"
         ));
@@ -79,11 +97,11 @@ pub(crate) fn reuse_running_gateway(
 }
 
 /// Download and extract the gateway binary if it isn't already present.
-/// `force` re-downloads over an existing binary; the caller must have stopped it
-/// first, otherwise the extraction hits ETXTBSY.
-pub(crate) fn ensure_gateway_binary(force: bool) -> Result<PathBuf, String> {
+/// `Reinstall` re-downloads over an existing binary; the caller must have
+/// stopped it first, otherwise the extraction hits ETXTBSY.
+pub(crate) fn ensure_gateway_binary(mode: GatewayStart) -> Result<PathBuf, String> {
     let bin = gateway_bin_path();
-    if bin.exists() && !force {
+    if bin.exists() && mode != GatewayStart::Reinstall {
         return Ok(bin);
     }
     if cfg!(target_os = "windows") {
@@ -180,9 +198,11 @@ pub(crate) async fn start_gateway(
     restart: bool,
 ) -> Result<(), String> {
     let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.start_gateway(force, restart))
-        .await
-        .map_err(|error| format!("gateway startup task failed: {error}"))?
+    tokio::task::spawn_blocking(move || {
+        processes.start_gateway(GatewayStart::from_flags(force, restart))
+    })
+    .await
+    .map_err(|error| format!("gateway startup task failed: {error}"))?
 }
 
 #[cfg(test)]
@@ -190,12 +210,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reuse_running_gateway_refuses_a_foreign_gateway_on_restart() {
-        assert_eq!(reuse_running_gateway(false, false, false, "u"), Ok(false));
-        assert_eq!(reuse_running_gateway(false, true, true, "u"), Ok(false));
-        assert_eq!(reuse_running_gateway(true, false, false, "u"), Ok(true));
-        for (force, restart) in [(true, false), (false, true), (true, true)] {
-            let err = reuse_running_gateway(true, force, restart, "http://localhost:8080")
+    fn from_flags_maps_flag_pairs_to_start_modes() {
+        for (force, restart, mode) in [
+            (false, false, GatewayStart::Reuse),
+            (false, true, GatewayStart::Restart),
+            (true, false, GatewayStart::Reinstall),
+            (true, true, GatewayStart::Reinstall),
+        ] {
+            assert_eq!(GatewayStart::from_flags(force, restart), mode);
+        }
+    }
+
+    #[test]
+    fn reuse_running_gateway_adopts_a_foreign_gateway_only_in_reuse_mode() {
+        for (mode, reachable, reuse) in [
+            (GatewayStart::Reuse, false, false),
+            (GatewayStart::Restart, false, false),
+            (GatewayStart::Reinstall, false, false),
+            (GatewayStart::Reuse, true, true),
+        ] {
+            assert_eq!(reuse_running_gateway(reachable, mode, "u"), Ok(reuse));
+        }
+        for mode in [GatewayStart::Restart, GatewayStart::Reinstall] {
+            let err = reuse_running_gateway(true, mode, "http://localhost:8080")
                 .expect_err("a foreign gateway cannot be restarted");
             assert!(err.contains("http://localhost:8080"), "{err}");
         }
