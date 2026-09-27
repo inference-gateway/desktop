@@ -6,7 +6,7 @@ narration:
   - "Ask for a slow zoom; the model returns a Write of keyframe-zoom.timeline.json."
   - "The Write pauses for approval - approving is the precondition for the file landing."
   - "Approve it."
-  - "The timeline loads the clip, whose scale channel zooms it in over the first six seconds."
+  - "The timeline loads the clip, whose scale channel zooms it in over the first six seconds - no demo.mov is seeded, so it reads as missing."
   - "The agent confirms."
 steps:
   - new_chat
@@ -14,5 +14,5 @@ steps:
   - send: "add a slow zoom to this recording"
   - wait_for: { button: "Approve", timeout: 30 }
   - click: { button: "Approve" }
-  - wait_for: { button: "demo.mov", timeout: 20 }
+  - wait_for: { button: "demo.mov (missing)", timeout: 20 }
   - wait_for: { text: "Slow zoom added.", timeout: 15 }

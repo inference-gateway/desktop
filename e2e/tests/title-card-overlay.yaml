@@ -7,7 +7,7 @@ narration:
   - "The Write pauses for approval - approving is the precondition for the file landing."
   - "Approve it."
   - "The timeline picks the new file up and stacks an Overlay lane above the video."
-  - "The title card itself is a clip on that lane."
+  - "The title card itself is a clip on that lane - its render is not seeded, so it reads as missing."
   - "The agent confirms."
 steps:
   - new_chat
@@ -16,5 +16,5 @@ steps:
   - wait_for: { button: "Approve", timeout: 30 }
   - click: { button: "Approve" }
   - wait_for: { button: "Hide overlay lane cards", timeout: 20 }
-  - wait_for: { button: "o1-title.mov", timeout: 10 }
+  - wait_for: { button: "o1-title.mov (missing)", timeout: 10 }
   - wait_for: { text: "Title card added.", timeout: 15 }
