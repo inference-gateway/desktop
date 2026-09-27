@@ -198,14 +198,16 @@ fn run_test(
 }
 
 /// A `record: true` run is wrapped in `screencapture -v`, which finalizes
-/// artifacts/<slug>.mov when its process is stopped - drop does that, covering
-/// the failure paths.
+/// artifacts/<slug>.mov only on SIGINT - SIGKILL (`Child::kill`) leaves no
+/// file. Drop sends it, covering the failure paths.
 struct Recording(Option<Child>);
 
 impl Drop for Recording {
     fn drop(&mut self) {
         if let Some(child) = self.0.as_mut() {
-            let _ = child.kill();
+            let _ = Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status();
             let _ = child.wait();
         }
     }
