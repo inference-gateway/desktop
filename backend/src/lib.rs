@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 mod agent;
+mod binaries;
 mod browser_bridge;
 mod cli_install;
 mod config;

@@ -1,9 +1,10 @@
 // Timeline files (<stem>.timeline.json) inside a project directory: the
 // contract between the video-editing skill and the desktop timeline view.
 // The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
+use crate::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
 use crate::projects::{ProjectFile, list_local_files, project_dir};
-use crate::stt::{bin_asset, download_binary, ensure_whisper_model, find_on_path, owned_bin};
+use crate::stt::{ensure_whisper_model, find_on_path};
 use notify::{RecursiveMode, Watcher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -188,11 +189,9 @@ fn lists(ffmpeg: &Path, query: &str, wanted: &[&str]) -> bool {
 const EXPORT_FILTERS: [&str; 3] = [" adelay ", " amix ", " apad "];
 const EXPORT_ENCODERS: [&str; 2] = [" libx264 ", " aac "];
 
-/// The ffmpeg used for keyframes and the export: the desktop-owned copy when
-/// it can mix audio and encode H.264, else a full build on PATH.
-/// ponytail: installs holding a pre-v0.5.0 audio-only ffmpeg keep it (no forced
-/// re-download) and Intel Macs get no prebuilt at all, so the PATH fallback
-/// stays; drop it if owned tools are ever version-stamped and re-downloaded.
+/// The ffmpeg used for keyframes and the export: the CLI-managed copy when it
+/// can mix audio and encode H.264, else a full build on PATH. Intel Macs get no
+/// prebuilt, and an offline machine keeps a stale copy, so the PATH fallback stays.
 fn video_ffmpeg() -> Result<PathBuf, String> {
     [owned_bin("ffmpeg"), find_on_path("ffmpeg")]
         .into_iter()
@@ -215,12 +214,7 @@ pub(crate) async fn prepare_content_tools(on_event: Channel<ProgressEvent>) -> R
     tokio::task::spawn_blocking(move || {
         let _ = on_event.send(ProgressEvent::Checking);
         crate::skills::install_bundled_skills();
-        for name in ["ffmpeg", "whisper-cli"] {
-            if owned_bin(name).is_none() && bin_asset(name).is_some() {
-                let _ = on_event.send(ProgressEvent::Installing);
-                download_binary(name, &on_event)?;
-            }
-        }
+        binaries::ensure(&["ffmpeg", "whisper-cli"], &on_event)?;
         video_ffmpeg()?;
         ensure_whisper_model(|received, total| {
             let _ = on_event.send(ProgressEvent::Downloading { received, total });
