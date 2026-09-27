@@ -74,7 +74,22 @@ jobs:
       - name: Build frontend
         run: bun install --frozen-lockfile && bun run build
 
-      - uses: inference-gateway/infer-action@v0.51.10
+      - name: Resolve demo recording
+        id: demo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)"
+          case "$permission" in
+            admin|write) enabled=true ;;
+            *) enabled=false ;;
+          esac
+          echo "Demo recording for ${ACTOR} (permission: ${permission}): $enabled"
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
+      - uses: inference-gateway/infer-action@v0.55.0
         with:
           debug: true
           review-inline: "true"
@@ -85,7 +100,9 @@ jobs:
           direct-prompt: ${{ inputs.prompt }}
           system-prompt-direct: ${{ inputs.system_prompt }}
           languages: rust
-          apt: libwebkit2gtk-4.1-dev
+          apt: libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdotool
+          record-demo: ${{ steps.demo.outputs.enabled }}
+          computer-use: ${{ steps.demo.outputs.enabled }}
           enable-git-operations: "${{ inputs.enable_git || 'true' }}"
           bash-allow-append: "gh project list( .*)?,gh project field-list( .*)?,gh project item-add( .*)?,gh project item-edit( .*)?,gh issue create( .*)?,gh issue edit( .*)?,gh issue comment( .*)?,gh pr comment( .*)?,cargo( .*)?,rustfmt( .*)?,rustc( .*)?,rustup( .*)?,bun( .*)?,bunx( .*)?"
           custom-instructions: |
