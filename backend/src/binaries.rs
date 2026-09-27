@@ -1,8 +1,3 @@
-// Prebuilt binaries (ffmpeg, whisper-cli) from the inference-gateway/binaries
-// release. The CLI owns them in ~/.infer/bin/tools: it installs and upgrades
-// them through `infer binaries install` and reports them through the read-only
-// `infer binaries status`. The desktop only asks; this module is the boundary
-// that turns the CLI's status table into a `BinaryState`.
 use crate::download::ProgressEvent;
 use crate::env::{bin_dir, home_dir, infer_bin_path, infer_env};
 use crate::stt::{find_on_path, is_executable_file};
