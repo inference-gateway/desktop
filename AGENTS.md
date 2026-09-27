@@ -20,6 +20,7 @@ Activate the pre-commit hook before making changes - it is inert until you do. T
 | `task web` | Build the frontend into `dist/` (`tsc && vite build`) |
 | `task build` / `test` / `clippy` / `check` | The cargo step in `backend/`, building `dist/` first |
 | `task e2e -- tests/<name>.yaml` | Run the macOS e2e suite, optionally filtered to one test |
+| `task e2e:record` | Run all e2e tests while recording (`artifacts/<slug>.mov` per test) |
 | `bun test` | Frontend unit tests (`frontend/lib/*.test.ts`) |
 | `cargo tauri build` | Release bundle; needs `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING) |
 
@@ -43,7 +44,7 @@ Every model turn is tokenless: the runner launches the app with `DESKTOP_MOCK=tr
 DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml task dev
 ```
 
-Test-file extras: `record: true` wraps the run in `screencapture -v` and writes `artifacts/<slug>.mov` (no editing, no captions - that is what the app's own timeline tooling is for); missing `narration:` entries fall back to the mechanical step label, and `cargo test -p desktop-e2e` rejects duplicate test names and narration lists longer than the step list. The remaining `DESKTOP_MOCK` fakes (permissions, stt, timeline, screen records, scheduler) are OS/tool shims, not LLM shims.
+Test-file extras: `record: true` wraps the run in `screencapture -v` and writes `artifacts/<slug>.mov` (no editing, no captions - that is what the app's own timeline tooling is for); the runner's `--record` flag (`task e2e:record`) forces recording on every test, ignoring the per-file flag, so all e2e tests run while recording; missing `narration:` entries fall back to the mechanical step label, and `cargo test -p desktop-e2e` rejects duplicate test names and narration lists longer than the step list. The remaining `DESKTOP_MOCK` fakes (permissions, stt, timeline, screen records, scheduler) are OS/tool shims, not LLM shims.
 
 Demo recordings (`@infer /demo` or `@opentask /demo`, Linux CI): the `demo` skill records the Xvfb display `:99` (1280x720, no window manager). Run the build in the `demo` tmux session - a cold build takes about 2.5 minutes, longer than the 120 s Bash timeout - and use the binary, since `cargo-tauri` is not installed there. The app needs 20-30 s to show its window on the runner (GTK waits for an accessibility bus that is not there) and longer while recording, so rehearse and start the take only once the window is up. The 760px-tall main window overflows the display: wait for it to be visible, resize it, and repeat the resize once the UI has rendered, because `center: true` can move it back. Send only prompts that a `scenarios.yaml` scenario answers:
 
