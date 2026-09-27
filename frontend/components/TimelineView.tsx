@@ -1130,7 +1130,7 @@ export function TimelineView() {
               title="Play / pause (Space)"
               disabled={!playable}
               onClick={togglePlay}
-              className="inline-flex size-7 items-center justify-center rounded-md border border-input text-foreground hover:bg-primary/10 disabled:opacity-40"
+              className="inline-flex size-7 items-center justify-center rounded-md text-foreground hover:bg-muted disabled:opacity-40"
             >
               {playing ? <Pause size={13} /> : <Play size={13} />}
             </button>
@@ -1158,11 +1158,11 @@ export function TimelineView() {
                     <Button
                       key={o.value}
                       size="icon-sm"
-                      variant={on ? "secondary" : "ghost"}
+                      variant="ghost"
                       aria-pressed={on}
                       aria-label={o.label}
                       title={`Frame ${o.label}`}
-                      className={on ? undefined : "text-muted-foreground"}
+                      className={on ? "ring-2 ring-primary" : "text-muted-foreground"}
                       onClick={() => update({ ...timeline, resolution: o.value })}
                     >
                       <Icon size={14} />
@@ -1183,11 +1183,11 @@ export function TimelineView() {
                     <Button
                       key={o.value}
                       size="icon-sm"
-                      variant={on ? "secondary" : "ghost"}
+                      variant="ghost"
                       aria-pressed={on}
                       aria-label={o.label}
                       title={`Recording audio: ${o.label}`}
-                      className={on ? undefined : "text-muted-foreground"}
+                      className={on ? "ring-2 ring-primary" : "text-muted-foreground"}
                       onClick={() => update({ ...timeline, source_audio: o.value })}
                     >
                       <Icon size={14} />
@@ -1197,7 +1197,7 @@ export function TimelineView() {
               </div>
               <span className="mx-0.5 h-5 w-px bg-border" />
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 aria-label="Undo"
                 title="Undo (Ctrl/Cmd+Z)"
@@ -1207,7 +1207,7 @@ export function TimelineView() {
                 <Undo2 size={14} />
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 aria-label="Redo"
                 title="Redo (Ctrl/Cmd+Shift+Z)"
@@ -1217,7 +1217,7 @@ export function TimelineView() {
                 <Redo2 size={14} />
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 aria-label="Split"
                 title="Split the clips under the playhead in two (S or Ctrl+B)"
@@ -1226,7 +1226,7 @@ export function TimelineView() {
                 <Scissors size={14} />
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 aria-label="Add captions"
                 title="Ask for captions from the voice clips or the recording's transcript"
@@ -1236,6 +1236,7 @@ export function TimelineView() {
                 <Type size={14} />
               </Button>
               <Button
+                variant="ghost"
                 size="icon-sm"
                 aria-label={hasVoice ? "Redo drafts" : "Add voice"}
                 title={hasVoice ? "Redo drafts" : "Add voice"}
@@ -1245,7 +1246,7 @@ export function TimelineView() {
                 <Sparkles size={14} />
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 aria-label="Export"
                 title={exporting ? "Exporting..." : "Render the timeline to an MP4 with ffmpeg"}
