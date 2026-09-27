@@ -45,6 +45,15 @@ DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml task dev
 
 Test-file extras: `record: true` wraps the run in `screencapture -v` and writes `artifacts/<slug>.mov` (no editing, no captions - that is what the app's own timeline tooling is for); missing `narration:` entries fall back to the mechanical step label, and `cargo test -p desktop-e2e` rejects duplicate test names and narration lists longer than the step list. The remaining `DESKTOP_MOCK` fakes (permissions, stt, timeline, screen records, scheduler) are OS/tool shims, not LLM shims.
 
+Demo recordings (`@infer /demo` or `@opentask /demo`, Linux CI): the `demo` skill records the Xvfb display `:99` (1280x720, no window manager). Run the build in the `demo` tmux session - a cold build outlasts the 120 s Bash timeout - and use the binary, since `cargo-tauri` is not installed there. The 760px-tall main window overflows the display, so resize it before recording, and send only prompts that a `scenarios.yaml` scenario answers:
+
+```bash
+bun run build
+cargo build -p inference-gateway-desktop
+DISPLAY=:99 WEBKIT_DISABLE_DMABUF_RENDERER=1 DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=$PWD/e2e/scenarios.yaml ./target/debug/inference-gateway-desktop &
+DISPLAY=:99 xdotool search --sync --name '^Inference Gateway Desktop$' windowmove 0 0 windowsize 1280 720
+```
+
 ## DOM contract (load-bearing)
 
 The e2e harness drives the real UI through the accessibility tree. When editing `frontend/components/`, preserve:
