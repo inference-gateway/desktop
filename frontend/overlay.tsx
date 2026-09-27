@@ -120,6 +120,16 @@ function busyLabel(tc: ToolCallInfo): string {
   }
 }
 
+// Tauri on Linux panics when ignore-cursor-events targets a window that was
+// never shown: tao unwraps the GDK window of the still-unrealized GTK window.
+// The overlay is created hidden, so apply click-through right after show()
+// instead of on mount.
+function applyClickThrough(): void {
+  getCurrentWindow()
+    .setIgnoreCursorEvents(true)
+    .catch(() => {});
+}
+
 export default function Overlay() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [ripple, setRipple] = useState<Ripple | null>(null);
@@ -140,7 +150,6 @@ export default function Overlay() {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
     const win = getCurrentWindow();
-    win.setIgnoreCursorEvents(true).catch(() => {});
 
     const fitToScreen = async () => {
       if (sizedRef.current) return;
@@ -166,6 +175,7 @@ export default function Overlay() {
       fitToScreen()
         .then(() => win.isVisible())
         .then((visible) => (visible ? undefined : win.show()))
+        .then(applyClickThrough)
         .catch(() => {});
       window.clearTimeout(hideTimer.current);
       hideTimer.current = window.setTimeout(() => {
