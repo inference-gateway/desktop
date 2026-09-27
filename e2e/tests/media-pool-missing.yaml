@@ -3,6 +3,7 @@ content_project: e2e-missing
 narration:
   - "Open a fresh chat."
   - "Pick the content project - its media folder holds only logo.png."
+  - "The pool header shows up once the workspace has loaded."
   - "Ask for music; the agent writes a timeline whose clip points at media/music.mp3, a file that is not there."
   - "The Write pauses for approval - approving is the precondition for the file landing."
   - "Approve it."
