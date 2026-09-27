@@ -84,3 +84,14 @@ tasks:
         msg: 'e2e harness is macOS-only (drives the app via the accessibility tree)'
     cmds:
       - cargo run -- {{.CLI_ARGS}}
+
+  e2e:record:
+    desc: 'Run all e2e tests while recording (artifacts/<slug>.mov per test)'
+    dir: e2e
+    deps:
+      - web
+    preconditions:
+      - sh: '[ "$(uname)" = "Darwin" ]'
+        msg: 'e2e harness is macOS-only (drives the app via the accessibility tree)'
+    cmds:
+      - cargo run -- --record {{.CLI_ARGS}}

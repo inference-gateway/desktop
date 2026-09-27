@@ -76,6 +76,8 @@ jobs:
     with:
       language: "bun"
       extra-bash-commands: "cargo,rustup,rustc"
+      apt: "libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdotool"
+      computer-use: true
       plugins: |
         DietrichGebert/ponytail
       browser: ${{ inputs.browser || false }}

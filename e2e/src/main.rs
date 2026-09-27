@@ -1,7 +1,7 @@
 //! YAML-driven e2e runner for the desktop app. See tests/*.yaml for the
 //! spec format and AGENTS.md ("Verifying the UI") for the AX foundations.
 //!
-//! Usage: e2e [--no-build] [--no-mock] [files...]
+//! Usage: e2e [--no-build] [--no-mock] [--record] [files...]
 
 mod driver;
 mod spec;
@@ -49,11 +49,13 @@ fn run() -> Result<bool> {
 
     let mut build = true;
     let mut mock = true;
+    let mut record_all = false;
     let mut files: Vec<PathBuf> = Vec::new();
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--no-build" => build = false,
             "--no-mock" => mock = false,
+            "--record" => record_all = true,
             _ if arg.starts_with("--") => bail!("unknown flag {arg}"),
             _ => files.push(PathBuf::from(arg)),
         }
@@ -92,6 +94,7 @@ fn run() -> Result<bool> {
             mock,
             &scenarios,
             infer_bin.as_deref(),
+            record_all || test.record,
         ) {
             Ok(()) => println!("PASS {}", test.name),
             Err(e) => {
@@ -163,6 +166,7 @@ fn run_test(
     mock: bool,
     scenarios: &Path,
     infer_bin: Option<&Path>,
+    record: bool,
 ) -> Result<()> {
     let slug: String = test
         .name
@@ -170,7 +174,7 @@ fn run_test(
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
-    let _recording = start_recording(test.record, artifacts, &slug)?;
+    let _recording = start_recording(record, artifacts, &slug)?;
     let app = AppDriver::launch(
         repo_root,
         artifacts,
@@ -194,14 +198,16 @@ fn run_test(
 }
 
 /// A `record: true` run is wrapped in `screencapture -v`, which finalizes
-/// artifacts/<slug>.mov when its process is stopped - drop does that, covering
-/// the failure paths.
+/// artifacts/<slug>.mov only on SIGINT - SIGKILL (`Child::kill`) leaves no
+/// file. Drop sends it, covering the failure paths.
 struct Recording(Option<Child>);
 
 impl Drop for Recording {
     fn drop(&mut self) {
         if let Some(child) = self.0.as_mut() {
-            let _ = child.kill();
+            let _ = Command::new("kill")
+                .args(["-INT", &child.id().to_string()])
+                .status();
             let _ = child.wait();
         }
     }
