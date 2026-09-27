@@ -39,12 +39,15 @@ on findButton(el, btnName, depth)
 end findButton
 "#;
 
+/// Recursive text finder. WebKit folds a button's text into the button's name
+/// and exposes no AXStaticText child, so text inside a button (a media pool
+/// row, a timeline clip) is matched on the button-like roles' names too.
 const FIND_TEXT_FN: &str = r#"
 on findText(el, needle, depth)
 	tell application "System Events"
 		if depth > 10 then return false
 		try
-			if role of el is "AXStaticText" then
+			if role of el is "AXStaticText" or role of el is "AXButton" or role of el is "AXCheckBox" or role of el is "AXRadioButton" then
 				if (name of el as text) contains needle then return true
 			end if
 		end try
