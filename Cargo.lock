@@ -1946,6 +1946,7 @@ dependencies = [
  "base64 0.23.1",
  "ctrlc",
  "dirs 7.0.0",
+ "gtk",
  "hex",
  "nix",
  "notify",
