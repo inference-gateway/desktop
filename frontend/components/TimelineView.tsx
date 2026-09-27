@@ -1236,6 +1236,7 @@ export function TimelineView() {
                 <Type size={14} />
               </Button>
               <Button
+                variant="ghost"
                 size="icon-sm"
                 aria-label={hasVoice ? "Redo drafts" : "Add voice"}
                 title={hasVoice ? "Redo drafts" : "Add voice"}
