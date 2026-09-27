@@ -58,6 +58,22 @@ fn configure_overlay_window(app: &tauri::App) {
     }
 }
 
+/// Realizes the hidden overlay and monitor windows on Linux: tao's
+/// set_ignore_cursor_events unwraps the GdkWindow, which a GTK window only
+/// gets once realized, so calling it before the first show panics.
+#[cfg(target_os = "linux")]
+fn realize_hidden_windows(app: &tauri::App) {
+    use gtk::prelude::WidgetExt;
+    for label in ["overlay", "monitor"] {
+        if let Some(window) = app
+            .get_webview_window(label)
+            .and_then(|w| w.gtk_window().ok())
+        {
+            window.realize();
+        }
+    }
+}
+
 pub fn run() {
     let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stored_metrics: Arc<Mutex<VecDeque<StoredMetric>>> = Arc::new(Mutex::new(VecDeque::new()));
@@ -83,6 +99,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             configure_overlay_window(app);
+            #[cfg(target_os = "linux")]
+            realize_hidden_windows(app);
             skills::install_bundled_skills();
             browser_bridge::start_if_enabled(&app.state::<AppState>(), app.handle().clone());
             {
