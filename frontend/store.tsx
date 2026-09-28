@@ -21,6 +21,7 @@ import {
   initialChatState,
   pendingInput,
   COMPUTER_USE_TOOLS,
+  autoApproves,
   historyUsage,
   type ChatAction,
   type ChatState,
@@ -842,7 +843,7 @@ function useDesktopStore() {
           dispatchTo(runId, { type: "event", event });
           switch (event.kind) {
             case "ApprovalRequest":
-              if (autoModesRef.current[runId]) {
+              if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
                 resolveApproval(runId, event.tool_call_id, true);
                 break;
               }

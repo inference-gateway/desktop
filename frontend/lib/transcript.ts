@@ -90,6 +90,13 @@ export function pendingInput(items: TranscriptItem[]): "approval" | "question" |
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
+export const SANDBOX_ACCESS_TOOL = "SandboxAccess";
+
+/** Auto mode answers approvals for the user, except a path outside the sandbox, which the user decides. */
+export function autoApproves(toolName: string): boolean {
+  return toolName !== SANDBOX_ACCESS_TOOL;
+}
+
 export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" | "shell" | "recording" };
 
 // Subagent sessions are persisted by the CLI as "subagent-<parentId>-<childId>".
