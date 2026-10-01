@@ -4,7 +4,7 @@
 //! one thread running `pump`, which polls with a short read timeout and
 //! drains an mpsc queue of outbound frames, so no lock spans socket I/O.
 
-use crate::agent::{AgentEvent, AgentParser};
+use crate::agent::{AgentEvent, AgentParser, run_outcome};
 use crate::daemon::{Binding, ExtensionStatus, PROTOCOL_VERSION, lock};
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -233,11 +233,7 @@ impl Thread {
         }
         match kind {
             "RUN_FINISHED" => {
-                let outcome = frame
-                    .get("outcome")
-                    .and_then(|o| o.get("type"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("success");
+                let outcome = run_outcome(&frame).unwrap_or("success");
                 match outcome {
                     "interrupt" => {
                         let ids = frame
@@ -611,7 +607,7 @@ mod tests {
         )
         .unwrap();
         thread.run(Some("hello".into())).unwrap();
-        wait_for(&events, 8);
+        wait_for(&events, 7);
         let seen = events.lock().unwrap();
         assert!(
             matches!(&seen[1], AgentEvent::AssistantMessage { tool_calls, .. } if tool_calls[0].name == "Bash")
@@ -620,11 +616,17 @@ mod tests {
             matches!(&seen[2], AgentEvent::ApprovalRequest { tool_call_id, tool_name, tool_args }
             if tool_call_id == "c1" && tool_name == "Bash" && tool_args == "{\"command\":\"ls\"}")
         );
-        assert!(matches!(&seen[4], AgentEvent::TokenUsage { .. }));
-        assert!(matches!(&seen[5], AgentEvent::Cancelled));
-        assert!(matches!(&seen[6], AgentEvent::Done { exit_code: 0, .. }));
-        assert_eq!(seen.len(), 8, "a RUN_ERROR without a runId ends no run");
-        assert!(matches!(&seen[7], AgentEvent::AgentError { message } if message == "no thread"));
+        assert!(matches!(&seen[3], AgentEvent::Info { .. }));
+        assert!(matches!(&seen[4], AgentEvent::Cancelled));
+        assert!(matches!(&seen[5], AgentEvent::Done { exit_code: 0, .. }));
+        assert_eq!(seen.len(), 7, "a RUN_ERROR without a runId ends no run");
+        assert!(matches!(&seen[6], AgentEvent::AgentError { message } if message == "no thread"));
+        assert!(
+            !seen
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TokenUsage { .. })),
+            "a cancelled terminal carries no usage and must not reset the session meters"
+        );
         drop(seen);
 
         assert!(
