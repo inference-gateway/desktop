@@ -137,6 +137,20 @@ describe("parseTimeline", () => {
     expect(trimClip(t, "cards", "o1", "end", 6).tracks[2].clips[0].end).toBe(6);
   });
 
+  test("keeps a video clip's avatar through a parse and save", () => {
+    const raw = JSON.stringify({
+      tracks: [
+        {
+          id: "video",
+          kind: "video",
+          clips: [{ id: "s1-avatar", start: 0, end: 5, src: "media/s1-avatar.mp4", avatar: "presenter" }],
+        },
+      ],
+    });
+    const saved = parseTimeline(serializeTimeline(parseTimeline(raw)));
+    expect(saved.tracks[0].clips[0].avatar).toBe("presenter");
+  });
+
   test("rejects files without tracks and derives duration from clips", () => {
     expect(() => parseTimeline("{}")).toThrow();
     expect(parseTimeline('{"tracks":[{"kind":"video","clips":[{"start":0,"end":7}]}]}').duration).toBe(7);

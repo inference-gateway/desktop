@@ -4,5 +4,7 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Inference Gateway uses the microphone for voice-to-text input.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Inference Gateway uses the camera to take an avatar photo.</string>
 </dict>
 </plist>

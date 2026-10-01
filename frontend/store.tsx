@@ -97,6 +97,7 @@ export const PROVIDERS = [
   { label: "Moonshot", env: "MOONSHOT_API_KEY" },
   { label: "MiniMax", env: "MINIMAX_API_KEY" },
   { label: "Ollama Cloud", env: "OLLAMA_CLOUD_API_KEY" },
+  { label: "ElevenLabs", env: "ELEVENLABS_API_KEY" },
 ] as const;
 
 const INIT_PR_INSTRUCTION =

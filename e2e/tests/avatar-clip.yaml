@@ -1,0 +1,20 @@
+name: avatar clip - the agent places a lip-synced avatar clip on a content project's timeline
+content_project: e2e-avatar
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
+  - "Ask for a talking avatar; the model returns a Write of intro.timeline.json."
+  - "The Write pauses for approval - approving is the precondition for the file landing."
+  - "Approve it."
+  - "The avatar clip lands on the video track as ordinary footage, labelled with the avatar's name."
+  - "Its script stays a spoken clip on the voice track, which the export mixes."
+  - "The agent confirms."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-avatar" }
+  - send: "add a talking avatar intro"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { button: "presenter: logo.png", timeout: 20 }
+  - wait_for: { button: "Hi, welcome to the demo.", timeout: 10 }
+  - wait_for: { text: "Avatar clip placed.", timeout: 15 }

@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 mod agent;
+mod avatars;
 mod binaries;
 mod cli_install;
 mod config;
@@ -177,6 +178,10 @@ pub fn run() {
             tts_samples::add_voice_sample,
             tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
+            avatars::list_avatars,
+            avatars::import_avatar,
+            avatars::snapshot_avatar,
+            avatars::delete_avatar,
             timeline::list_timelines,
             timeline::watch_project,
             timeline::read_timeline,

@@ -1641,6 +1641,8 @@ export function TimelineView() {
                           : safeProjectMediaSrc(resolveSrc(dir, c.src))
                         : null;
                     const sample = clipSample(tr, c);
+                    const avatar = tr.kind === "video" ? c.avatar : undefined;
+                    const stripe = sample ?? avatar;
                     return (
                       <div key={c.id} className="group absolute top-1 bottom-1" style={layout}>
                         <button
@@ -1648,6 +1650,7 @@ export function TimelineView() {
                             c.text || c.src || c.id,
                             missing && "Missing from the media pool - import the file again to relink it",
                             sample && `Voice: ${sample}`,
+                            avatar && `Avatar: ${avatar}`,
                           ]
                             .filter(Boolean)
                             .join("\n")}
@@ -1682,13 +1685,15 @@ export function TimelineView() {
                               />
                             ))}
                           <span className="relative block truncate bg-black/35 px-1.5 leading-5">
-                            {(c.text || c.src?.replace(/^media\//, "") || c.id) + (missing ? " (missing)" : "")}
+                            {(avatar ? `${avatar}: ` : "") +
+                              (c.text || c.src?.replace(/^media\//, "") || c.id) +
+                              (missing ? " (missing)" : "")}
                           </span>
-                          {sample && (
+                          {stripe && (
                             <span
                               aria-hidden="true"
                               className="absolute inset-x-0 bottom-0 h-1"
-                              style={{ background: sampleColour(sample) }}
+                              style={{ background: sampleColour(stripe) }}
                             />
                           )}
                           <span

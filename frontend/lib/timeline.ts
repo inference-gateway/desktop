@@ -46,6 +46,7 @@ export type Clip = {
 
   html?: string;
   voice_sample?: string;
+  avatar?: string;
   words?: CaptionWord[];
 };
 
@@ -200,6 +201,7 @@ export function parseTimeline(json: string): Timeline {
         keys: parseKeys(c?.keys),
         html: typeof c?.html === "string" ? c.html : undefined,
         voice_sample: typeof c?.voice_sample === "string" ? c.voice_sample : undefined,
+        avatar: typeof c?.avatar === "string" ? c.avatar : undefined,
         words: (Array.isArray(c?.words) && c.words.length
           ? c.words.map((w) => ({
               text: typeof w?.text === "string" ? w.text : undefined,

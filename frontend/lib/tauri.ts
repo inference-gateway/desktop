@@ -106,6 +106,7 @@ export type ProgressEvent =
 export type UpdateInfo = { name: string; current: string; latest: string | null; outdated: boolean };
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type VoiceSample = { name: string; path: string };
+export type Avatar = { name: string; images: string[] };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
@@ -160,6 +161,7 @@ export type DesktopConfig = {
   projects_max_file_size_mb: string;
   projects_allowed_mimes: string;
   text_to_speech_enabled: boolean;
+  text_to_video_enabled: boolean;
   status_bar_enabled: boolean;
   vision_annotator_model: string;
 };
@@ -363,6 +365,11 @@ export const api = {
   addVoiceSample: () => invoke<VoiceSample | null>("add_voice_sample"),
   saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
+  listAvatars: () => invoke<Avatar[]>("list_avatars"),
+  importAvatar: (name: string, onLine: Channel<string>) => invoke<boolean>("import_avatar", { name, onLine }),
+  snapshotAvatar: (name: string, jpeg: number[], onLine: Channel<string>) =>
+    invoke<void>("snapshot_avatar", { name, jpeg, onLine }),
+  deleteAvatar: (name: string) => invoke<void>("delete_avatar", { name }),
   listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
   watchProject: (project: string) => invoke<void>("watch_project", { project }),
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
