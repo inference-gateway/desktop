@@ -72,6 +72,18 @@ function reducer(state: MonitorState, action: Action): MonitorState {
 
 export default function Monitor() {
   const [sessions, dispatch] = useReducer(reducer, {});
+  // Pausing computer use stops the run, resuming continues the thread with a
+  // new run. The daemon reports neither, so the row's status is kept here.
+  const toggleRun = (sessionId: string, resume: boolean) => {
+    (resume ? api.resumeAgent(sessionId) : api.cancelAgent(sessionId))
+      .then(() =>
+        dispatch({
+          type: "event",
+          msg: { sessionId, name: "", event: { kind: resume ? "ComputerUseResumed" : "ComputerUsePaused" } },
+        }),
+      )
+      .catch(() => {});
+  };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -270,9 +282,7 @@ export default function Monitor() {
               className="size-6 shrink-0 bg-background/55 p-0"
               aria-label={session.status === "paused" ? "Resume" : "Pause"}
               disabled={session.status === "done"}
-              onClick={() =>
-                id && api.sendComputerUseControl(id, session.status === "paused" ? "resume" : "pause").catch(() => {})
-              }
+              onClick={() => id && toggleRun(id, session.status === "paused")}
             >
               {session.status === "paused" ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             </Button>
@@ -439,7 +449,7 @@ export default function Monitor() {
               variant="outline"
               className="h-7 flex-1 text-xs"
               aria-label="Resume"
-              onClick={() => id && api.sendComputerUseControl(id, "resume").catch(() => {})}
+              onClick={() => id && toggleRun(id, true)}
             >
               <Play className="size-3.5" /> Resume
             </Button>
@@ -450,7 +460,7 @@ export default function Monitor() {
               className="h-7 flex-1 text-xs"
               aria-label="Pause"
               disabled={session.status === "done"}
-              onClick={() => id && api.sendComputerUseControl(id, "pause").catch(() => {})}
+              onClick={() => id && toggleRun(id, false)}
             >
               <Pause className="size-3.5" /> Pause
             </Button>

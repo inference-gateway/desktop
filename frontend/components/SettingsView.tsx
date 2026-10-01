@@ -519,7 +519,8 @@ function GeneralTab() {
       <h3 className="text-[0.9rem] font-semibold">Browser Use</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
         Lets the agent drive your real browser through the opentask extension. Paste the port and token below into the
-        extension options; the desktop holds the port while running, so a standalone infer session cannot use it.
+        extension options. The infer daemon the app runs its chats through holds the port and reports when the extension
+        connects.
       </p>
       <div className="mb-3 flex items-center gap-3">
         <input

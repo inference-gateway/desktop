@@ -4,13 +4,13 @@
 import type {
   AgentEvent,
   BackgroundJob,
-  HistoryLine,
+  SnapshotMessage,
   InputEvent,
   RecordedArea,
   UserQuestion,
   UserQuestionAnswer,
 } from "./tauri";
-import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc, toolResultFrom } from "./tools";
+import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
 export type ToolState = "running" | "done" | "failed";
 
@@ -231,7 +231,7 @@ export const initialChatState: ChatState = {
 
 export type ChatAction =
   | { type: "newChat" }
-  | { type: "loadHistory"; ndjson: string }
+  | { type: "loadHistory"; messages: SnapshotMessage[] }
   | { type: "setUsage"; usage: TokenUsage }
   | { type: "userSend"; text: string }
   | { type: "event"; event: AgentEvent }
@@ -252,7 +252,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "newChat":
       return { ...initialChatState, seq: state.seq };
     case "loadHistory":
-      return loadHistory(state, action.ndjson);
+      return loadHistory(state, action.messages);
     case "setUsage":
       return { ...state, usage: action.usage };
     case "userSend": {
@@ -598,40 +598,11 @@ function finalizeTools(state: ChatState): ChatState {
   return changed ? { ...state, items } : state;
 }
 
-/** `infer conversations show --format json` returns one pretty-printed
-    `{ metadata, entries }` document (CLI >= 0.190); older CLIs streamed NDJSON. */
-function historyDoc(text: string): { entries: any[]; metadata?: any } {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{")) {
-    try {
-      const doc = JSON.parse(trimmed);
-      if (Array.isArray(doc?.entries)) return { entries: doc.entries, metadata: doc.metadata };
-    } catch {}
-  }
-  const entries: any[] = [];
-  for (const line of trimmed.split("\n")) {
-    try {
-      entries.push(JSON.parse(line.trim()));
-    } catch {}
-  }
-  return { entries };
-}
-
-export function historyUsage(ndjson: string): TokenUsage {
-  const { entries, metadata } = historyDoc(ndjson);
-  const t = metadata?.token_stats ?? {};
-  return {
-    input: t.total_input_tokens ?? 0,
-    output: t.total_output_tokens ?? 0,
-    cached_read: t.total_cached_tokens ?? 0,
-    last_input: t.last_input_tokens ?? 0,
-    cost: metadata?.total_cost ?? 0,
-    total_tool_calls: entries.filter((e) => (e?.entry?.message ?? e)?.role === "tool").length,
-    context_window: 0,
-  };
-}
-
-function loadHistory(state: ChatState, ndjson: string): ChatState {
+/** Rebuilds the transcript from the thread's MESSAGES_SNAPSHOT: assistant
+ * toolCalls become tool rows, a tool message fills the row with the same
+ * toolCallId (failed when it carries error), and media paths in tool output
+ * render inline. */
+function loadHistory(state: ChatState, messages: SnapshotMessage[]): ChatState {
   let seq = state.seq;
   const items: TranscriptItem[] = [];
   let seenImages: string[] = [];
@@ -654,37 +625,38 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
     items.push({ kind: "audio", id: String(seq++), src, filename: file, path: audioPath });
   };
 
-  for (const raw of historyDoc(ndjson).entries) {
-    const entry: HistoryLine = raw?.entry?.message ?? raw;
-    if (!entry || typeof entry !== "object") continue;
-    const content = entry.content || "";
-    if (entry.role === "user") {
+  const toolRows = new Map<string, Extract<TranscriptItem, { kind: "tool" }>>();
+  for (const m of messages) {
+    if (!m || typeof m !== "object") continue;
+    const content = typeof m.content === "string" ? m.content : "";
+    if (m.role === "user") {
       if (content.startsWith("<system-reminder>")) continue;
       if (backgroundNoteHeader(content)) {
         items.push({ kind: "task_result", id: String(seq++), text: content });
         continue;
       }
       items.push({ kind: "user", id: String(seq++), text: content });
-    } else if (entry.role === "assistant") {
-      if (entry.reasoning_content)
-        items.push({ kind: "reasoning", id: String(seq++), paragraphs: [entry.reasoning_content] });
+    } else if (m.role === "assistant") {
       if (content) items.push({ kind: "assistant", id: String(seq++), chunks: [content] });
-    } else if (entry.role === "tool") {
-      const execution = raw?.tool_execution ?? raw?.entry?.tool_execution;
-      const parsed = execution ? toolResultFrom(execution) : parseToolResult(content);
-      if (parsed) {
-        items.push({
+      for (const tc of m.toolCalls ?? []) {
+        const row: Extract<TranscriptItem, { kind: "tool" }> = {
           kind: "tool",
           id: String(seq++),
-          callId: null,
-          name: parsed.name,
-          args: parsed.args,
-          output: parsed.output,
-          state: parsed.failed ? "failed" : "done",
+          callId: tc.id,
+          name: tc.function.name,
+          args: tc.function.arguments,
+          output: "",
+          state: "done",
           skeleton: false,
-        });
-        pushImage(parsed.imagePath);
-        pushAudio(parsed.imagePath);
+        };
+        items.push(row);
+        toolRows.set(tc.id, row);
+      }
+    } else if (m.role === "tool") {
+      const row = m.toolCallId ? toolRows.get(m.toolCallId) : undefined;
+      if (row) {
+        row.output = m.error || content;
+        if (m.error) row.state = "failed";
       } else {
         items.push({
           kind: "tool",
@@ -696,13 +668,13 @@ function loadHistory(state: ChatState, ndjson: string): ChatState {
           state: FAILISH.test(content) ? "failed" : "done",
           skeleton: false,
         });
-        for (const m of content.match(/\/\S+\.(?:wav|png|gif|webp|avif|jpe?g)\b/gi) ?? []) {
-          pushImage(m);
-          pushAudio(m);
-        }
+      }
+      for (const path of content.match(/\/\S+\.(?:wav|png|gif|webp|avif|jpe?g)\b/gi) ?? []) {
+        pushImage(path);
+        pushAudio(path);
       }
     }
   }
 
-  return { ...initialChatState, items, seq, seenImages, usage: historyUsage(ndjson) };
+  return { ...initialChatState, items, seq, seenImages };
 }

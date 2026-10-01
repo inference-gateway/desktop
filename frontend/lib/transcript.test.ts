@@ -379,123 +379,66 @@ test("approval record renders above its tool card once the result arrives", () =
   }
 });
 
-test("loadHistory rebuilds user/assistant/tool items from NDJSON", () => {
-  const ndjson = [
-    JSON.stringify({ role: "user", content: "hello" }),
-    JSON.stringify({ role: "assistant", content: "hi there", reasoning_content: "thinking" }),
-    JSON.stringify({ role: "tool", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
-  ].join("\n");
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
-});
-
-test("loadHistory unwraps the CLI v2 entry envelope and skips meta/system-reminder lines", () => {
-  const wrap = (message: object) => JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message } });
-  const ndjson = [
-    wrap({ role: "user", content: "hello" }),
-    JSON.stringify({ type: "meta", metadata: { id: "x" } }),
-    wrap({ role: "user", content: "<system-reminder>\ninjected context\n</system-reminder>" }),
-    wrap({ role: "assistant", content: "hi there", reasoning_content: "thinking" }),
-    wrap({ role: "tool", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}' }),
-  ].join("\n");
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
-});
-
-// A tool entry's content is the tree the CLI renders for humans and the LLM.
-// Guessing success from it reads "error" in a commit subject as a failure, which
-// is what painted a successful `git commit` red (inference-gateway/desktop#289).
-// The projected tool_execution is authoritative.
-test("loadHistory takes the tool state from tool_execution, not from the rendered content", () => {
-  const content = [
-    'Bash(command=git commit -m "fix: handle the error path")',
-    "\u251c\u2500\u2500 Duration: 49ms",
-    "\u251c\u2500\u2500 Status: \u2713 Success",
-    "\u2570\u2500\u2500 Result:",
-    "    Exit Code: 0",
-  ].join("\n");
-  const doc = JSON.stringify({
-    metadata: { id: "s1" },
-    entries: [
-      {
-        role: "tool",
-        content,
-        tool_call_id: "call_x",
-        tool_execution: {
-          tool_name: "Bash",
-          arguments: { command: 'git commit -m "fix: handle the error path"' },
-          success: true,
-          data: { output: "[main abc1234] fix: handle the error path", exit_code: 0 },
-        },
-      },
-    ],
-  });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
-  expect(s.items).toHaveLength(1);
-  expect(s.items[0]).toMatchObject({
+test("loadHistory rebuilds user/assistant/tool items from the thread's snapshot", () => {
+  const messages = [
+    { id: "1", role: "user", content: "hello" },
+    {
+      id: "2",
+      role: "assistant",
+      content: "hi there",
+      toolCalls: [{ id: "c1", type: "function", function: { name: "Read", arguments: '{"file_path":"/tmp/x"}' } }],
+    },
+    {
+      id: "3",
+      role: "tool",
+      toolCallId: "c1",
+      content: "Read(file_path=/tmp/x)\n\u251c\u2500\u2500 Status: \u2713 Success",
+    },
+    { id: "4", role: "assistant", content: "done" },
+  ];
+  const s = chatReducer(initialChatState, { type: "loadHistory", messages });
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "assistant", "tool", "assistant"]);
+  expect(s.items[2]).toMatchObject({
     kind: "tool",
-    name: "Bash",
+    callId: "c1",
+    name: "Read",
+    args: '{"file_path":"/tmp/x"}',
     state: "done",
-    output: "[main abc1234] fix: handle the error path",
   });
+  expect(s.items[2]).toMatchObject({ output: expect.stringContaining("Success") });
 });
 
-test("loadHistory marks a tool failed when tool_execution says so", () => {
-  const doc = JSON.stringify({
-    metadata: { id: "s1" },
-    entries: [
-      {
-        role: "tool",
-        content: "Bash(command=false)\n\u251c\u2500\u2500 Status: \u2717 Failed",
-        tool_execution: { tool_name: "Bash", arguments: { command: "false" }, success: false, error: "exit status 1" },
-      },
-    ],
-  });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
+test("loadHistory skips system-reminder user messages and keeps task results", () => {
+  const messages = [
+    { id: "1", role: "user", content: "<system-reminder>\ninjected context\n</system-reminder>" },
+    { id: "2", role: "user", content: "[A2A Task Completed: t1]\n\nok" },
+    { id: "3", role: "user", content: "hello" },
+  ];
+  const s = chatReducer(initialChatState, { type: "loadHistory", messages });
+  expect(s.items.map((i) => i.kind)).toEqual(["task_result", "user"]);
+});
+
+test("loadHistory marks a tool failed when its message carries error", () => {
+  const messages = [
+    {
+      id: "2",
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "c1", type: "function", function: { name: "Bash", arguments: '{"command":"false"}' } }],
+    },
+    { id: "3", role: "tool", toolCallId: "c1", content: "Bash(command=false)", error: "exit status 1" },
+  ];
+  const s = chatReducer(initialChatState, { type: "loadHistory", messages });
   expect(s.items[0]).toMatchObject({ kind: "tool", name: "Bash", state: "failed", output: "exit status 1" });
 });
 
-test("loadHistory reads tool_execution out of the CLI v2 storage envelope too", () => {
-  const ndjson = JSON.stringify({
-    v: 2,
-    type: "entry",
-    index: 0,
-    entry: {
-      message: { role: "tool", content: "Read(file_path=/tmp/x)\n\u251c\u2500\u2500 Status: \u2713 Success" },
-      tool_execution: { tool_name: "Read", arguments: { file_path: "/tmp/x" }, success: true, data: { output: "x" } },
-    },
-  });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.items[0]).toMatchObject({ kind: "tool", name: "Read", state: "done", output: "x" });
+test("loadHistory keeps an orphan tool message as a bare tool row", () => {
+  const messages = [{ id: "3", role: "tool", toolCallId: "zzz", content: "Performed read" }];
+  const s = chatReducer(initialChatState, { type: "loadHistory", messages });
+  expect(s.items[0]).toMatchObject({ kind: "tool", callId: null, name: "tool", args: "Performed read", state: "done" });
 });
 
 // Older CLIs do not project tool_execution; that path must keep working.
-test("loadHistory falls back to the content when no tool_execution is projected", () => {
-  const ndjson = JSON.stringify({
-    role: "tool",
-    content: '{"tool_name":"Read","data":{"output":"file"},"success":true}',
-  });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.items[0]).toMatchObject({ kind: "tool", name: "Read", state: "done", output: "file" });
-});
-
-test("loadHistory reads the pretty-printed { metadata, entries } document from newer CLIs", () => {
-  const doc = JSON.stringify(
-    {
-      metadata: { id: "x", message_count: 4 },
-      entries: [
-        { role: "user", content: "hello", time: "t" },
-        { role: "user", content: "<system-reminder>\ninjected\n</system-reminder>" },
-        { role: "assistant", content: "hi there", reasoning_content: "thinking", model: "m" },
-        { role: "tool", content: '{"tool_name":"Read","data":{"output":"file"},"success":true}', tool_call_id: "c1" },
-      ],
-    },
-    null,
-    2,
-  );
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson: doc });
-  expect(s.items.map((i) => i.kind)).toEqual(["user", "reasoning", "assistant", "tool"]);
-});
 
 test("loadHistory recovers audio players from pretty-printed v2 tool results", () => {
   (globalThis as Record<string, unknown>).window = {
@@ -504,8 +447,10 @@ test("loadHistory recovers audio players from pretty-printed v2 tool results", (
   try {
     const content =
       "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tts/speech-1.wav (1.0s of audio)";
-    const ndjson = JSON.stringify({ v: 2, type: "entry", index: 0, entry: { message: { role: "tool", content } } });
-    const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+    const s = chatReducer(initialChatState, {
+      type: "loadHistory",
+      messages: [{ id: "1", role: "tool", toolCallId: "zzz", content }],
+    });
     expect(s.items.map((i) => i.kind)).toEqual(["tool", "audio"]);
     expect(s.items[1]).toMatchObject({
       kind: "audio",
@@ -632,16 +577,17 @@ test("todosDiffer compares content and status in order", () => {
 
 test("todosFrom survives a history reload of the last TodoWrite call", () => {
   const args = JSON.stringify({ todos: [{ content: "ship it", status: "in_progress" }] });
-  const result = JSON.stringify({
-    tool_name: "TodoWrite",
-    arguments: { todos: [{ content: "ship it", status: "in_progress" }] },
-    success: true,
-  });
-  const ndjson = [
-    JSON.stringify({ role: "user", content: "make a plan" }),
-    JSON.stringify({ role: "tool", content: result }),
-  ].join("\n");
-  const reloaded = chatReducer(initialChatState, { type: "loadHistory", ndjson });
+  const messages = [
+    { id: "1", role: "user", content: "make a plan" },
+    {
+      id: "2",
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "t1", type: "function", function: { name: "TodoWrite", arguments: args } }],
+    },
+    { id: "3", role: "tool", toolCallId: "t1", content: "Todos updated" },
+  ];
+  const reloaded = chatReducer(initialChatState, { type: "loadHistory", messages });
   expect(todosFrom(reloaded.items)).toEqual(todosFrom([toolItem("TodoWrite", args)]));
 });
 
@@ -722,36 +668,6 @@ test("an uncorrelated tool result counts as a tool call", () => {
   expect(s.usage.total_tool_calls).toBe(1);
 });
 
-test("loadHistory restores session usage from the show document metadata", () => {
-  const ndjson = JSON.stringify({
-    metadata: {
-      token_stats: {
-        total_input_tokens: 120,
-        total_output_tokens: 30,
-        total_cached_tokens: 100,
-        last_input_tokens: 80,
-      },
-      total_cost: 0.42,
-    },
-    entries: [
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "" },
-      { role: "tool", content: "Bash(command=ls)" },
-      { role: "tool", content: "Read(path=x)" },
-    ],
-  });
-  const s = chatReducer(initialChatState, { type: "loadHistory", ndjson });
-  expect(s.usage).toEqual({
-    input: 120,
-    output: 30,
-    cached_read: 100,
-    last_input: 80,
-    cost: 0.42,
-    total_tool_calls: 2,
-    context_window: 0,
-  });
-});
-
 test("a background note lands as its own task_result item and ends the open assistant bubble", () => {
   const note = "[A2A Task Completed: delay]\n\nslow done";
   const s = run([
@@ -785,8 +701,9 @@ test("background_tasks snapshot feeds delegations and clears on Done", () => {
 });
 
 test("a persisted background note reloads as a task_result, not a user bubble", () => {
-  const line = JSON.stringify({ role: "user", content: "[A2A Task Completed: x]\n\nok" });
-  const s = run([{ type: "loadHistory", ndjson: line }]);
+  const s = run([
+    { type: "loadHistory", messages: [{ id: "1", role: "user", content: "[A2A Task Completed: x]\n\nok" }] },
+  ]);
   expect(s.items.map((i) => i.kind)).toEqual(["task_result"]);
 });
 

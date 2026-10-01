@@ -222,10 +222,15 @@ export type ScheduleJob = {
   last_run: string;
   last_error: string;
 };
-export type HistoryLine = {
-  role: "user" | "assistant" | "tool";
-  content?: string;
-  reasoning_content?: string | null;
+/** One message of the thread's MESSAGES_SNAPSHOT, as the daemon's worker
+ * restored it: assistant toolCalls, tool toolCallId, error when the tool failed. */
+export type SnapshotMessage = {
+  id?: string;
+  role: string;
+  content?: unknown;
+  toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+  toolCallId?: string;
+  error?: string | null;
 };
 
 export type StoredSpan = {
@@ -275,18 +280,25 @@ export const api = {
     extraInstructions?: string;
     autoMode: boolean;
     project?: string;
-  }) => invoke<string | null>("send_message", args),
-  sendApproval: (sessionId: string, toolCallId: string, approved: boolean, scope?: "always") =>
-    invoke<void>("send_approval", { sessionId, toolCallId, approved, scope: scope ?? null }),
+  }) => invoke<void>("send_message", args),
+  /** Opens (or reuses) the chat's daemon thread and returns its history. */
+  openThread: (args: {
+    sessionId: string;
+    model: string;
+    systemPrompt?: string;
+    extraInstructions?: string;
+    autoMode: boolean;
+    project?: string;
+  }) => invoke<string>("open_thread", args).then((json) => JSON.parse(json) as SnapshotMessage[]),
+  sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
+    invoke<void>("send_approval", { sessionId, toolCallId, approved }),
   sendUserMessage: (sessionId: string, content: string) => invoke<void>("send_user_message", { sessionId, content }),
   sendQuestionAnswers: (sessionId: string, toolCallId: string, answers: UserQuestionAnswer[] | null) =>
     invoke<void>("send_question_answers", { sessionId, toolCallId, answers }),
-  sendComputerUseControl: (sessionId: string, action: "pause" | "resume") =>
-    invoke<void>("send_computer_use_control", { sessionId, action }),
+  /** Continues a thread after a stop with a new run (resumes paused computer use). */
+  resumeAgent: (sessionId: string) => invoke<void>("resume_agent", { sessionId }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),
   listConversations: () => invoke<string>("list_conversations"),
-  getConversation: (sessionId: string, cwd?: string, project?: string) =>
-    invoke<string>("get_conversation", { sessionId, cwd: cwd ?? null, project: project ?? null }),
   deleteConversation: (sessionId: string, cwd?: string) =>
     invoke<void>("delete_conversation", { sessionId, cwd: cwd ?? null }),
   moveConversation: (sessionId: string, fromCwd?: string, toProject?: string) =>

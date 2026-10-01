@@ -22,7 +22,6 @@ import {
   pendingInput,
   COMPUTER_USE_TOOLS,
   autoApproves,
-  historyUsage,
   type ChatAction,
   type ChatState,
   type Delegation,
@@ -618,6 +617,28 @@ function useDesktopStore() {
     [transcripts],
   );
 
+  // The system prompt and custom instructions a chat's thread launches with:
+  // the configured ones plus the project's group, type and context.
+  const threadPrompts = useCallback(
+    async (projectName?: string, extraInstruction?: string) => {
+      const cfg = await api.getConfig();
+      const projectContext = projectName ? projectContexts[projectName] : undefined;
+      const projectGroup =
+        projectName && projectGroups[projectName]
+          ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
+          : undefined;
+      const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
+      return {
+        systemPrompt: cfg.system_prompt || undefined,
+        extraInstructions:
+          [cfg.extra_instructions, projectGroup, projectType, projectContext, extraInstruction]
+            .filter(Boolean)
+            .join("\n\n") || undefined,
+      };
+    },
+    [projectContexts, projectGroups, projectTypes],
+  );
+
   const openConversation = useCallback(
     async (id: string) => {
       setActiveId(id);
@@ -625,14 +646,20 @@ function useDesktopStore() {
       setActiveProject(projects[id] ?? null);
       if (transcripts[id]) return;
       try {
-        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
-        const ndjson = await api.getConversation(id, cwd);
-        dispatchTo(id, { type: "loadHistory", ndjson });
+        const projectName = projects[id];
+        const messages = await api.openThread({
+          sessionId: id,
+          model,
+          ...(await threadPrompts(projectName)),
+          autoMode: autoModes[id] ?? autoMode,
+          project: projectName,
+        });
+        dispatchTo(id, { type: "loadHistory", messages });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, conversations, dispatchTo],
+    [transcripts, projects, model, autoModes, autoMode, threadPrompts, dispatchTo],
   );
 
   const newChat = useCallback(() => {
@@ -810,9 +837,9 @@ function useDesktopStore() {
   );
 
   const resolveApproval = useCallback(
-    async (id: string, callId: string, approved: boolean, scope?: "always") => {
+    async (id: string, callId: string, approved: boolean, _scope?: "always") => {
       try {
-        await api.sendApproval(id, callId, approved, scope);
+        await api.sendApproval(id, callId, approved);
         const status = approved ? "approved" : "denied";
         dispatchTo(id, { type: "setApproval", callId, status });
         emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
@@ -889,31 +916,16 @@ function useDesktopStore() {
               }
               recordTerminal(runId, { label: "Stopped", error: false });
               if (isInit && projectName) logActivity(projectName, "Init", "skipped", "stopped");
-              api
-                .getConversation(runId, undefined, projectName)
-                .then((ndjson) => dispatchTo(runId, { type: "setUsage", usage: historyUsage(ndjson) }))
-                .catch(() => {});
               break;
           }
         };
         if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
-        const cfg = await api.getConfig();
-        const projectContext = projectName ? projectContexts[projectName] : undefined;
-        const projectGroup =
-          projectName && projectGroups[projectName]
-            ? `This chat's project "${projectName}" belongs to the project group "${projectGroups[projectName]}".`
-            : undefined;
-        const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
         await api.sendMessage({
           prompt: text,
           model,
           sessionId: runId,
           onEvent: ch,
-          systemPrompt: cfg.system_prompt || undefined,
-          extraInstructions:
-            [cfg.extra_instructions, projectGroup, projectType, projectContext, extraInstruction]
-              .filter(Boolean)
-              .join("\n\n") || undefined,
+          ...(await threadPrompts(projectName, extraInstruction)),
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
         });
@@ -936,9 +948,7 @@ function useDesktopStore() {
       model,
       autoMode,
       autoModes,
-      projectContexts,
-      projectGroups,
-      projectTypes,
+      threadPrompts,
       setError,
       logActivity,
       refreshConversations,
@@ -1020,57 +1030,6 @@ function useDesktopStore() {
       unlisten.then((f) => f());
     };
   }, [sendPrompt, projects]);
-
-  // Commands from the opentask extension's side panel, relayed by the browser bridge.
-  // Subscribed once and dispatched to the latest handler: re-subscribing on every
-  // dependency change let one panel message reach several handlers, each starting
-  // (and orphan-killing) its own run of the same session.
-  const panelCommandRef = useRef<(p: BrowserPanelCommand) => Promise<void>>(async () => {});
-  useEffect(() => {
-    const activate = (id: string) => {
-      setActiveId(id);
-      activeIdRef.current = id;
-      if (projects[id]) setActiveProject(projects[id]);
-    };
-    panelCommandRef.current = async (p) => {
-      switch (p.kind) {
-        case "open":
-          await openConversation(p.id);
-          break;
-        case "new":
-          activate(p.id);
-          break;
-        case "send": {
-          const known = conversations.some((c) => c.id === p.sessionId);
-          if (activeIdRef.current !== p.sessionId) {
-            if (known) await openConversation(p.sessionId);
-            else activate(p.sessionId);
-          }
-          let project = projects[p.sessionId];
-          if (!project && !known && activeProject) {
-            assignProject(p.sessionId, activeProject);
-            project = activeProject;
-          }
-          recordHistory(p.text);
-          await sendPrompt(p.sessionId, p.text, project);
-          break;
-        }
-        case "select_model":
-          setModelState(p.model);
-          localStorage.setItem(STORAGE_KEY, p.model);
-          break;
-        case "set_mode":
-          setAutoMode(p.auto);
-          break;
-      }
-    };
-  });
-  useEffect(() => {
-    const unlisten = listen<BrowserPanelCommand>("browser-panel", (e) => void panelCommandRef.current(e.payload));
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
 
   // `!!ToolName(arg="value")` from the composer: parse, execute through the
   // CLI's own tool registry (`infer tools execute`) and render the result
@@ -1823,13 +1782,6 @@ function useDesktopStore() {
 export type DesktopStore = ReturnType<typeof useDesktopStore>;
 
 const DesktopContext = createContext<DesktopStore | null>(null);
-
-type BrowserPanelCommand =
-  | { kind: "open"; id: string }
-  | { kind: "new"; id: string }
-  | { kind: "send"; sessionId: string; text: string }
-  | { kind: "select_model"; model: string }
-  | { kind: "set_mode"; auto: boolean };
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
   const store = useDesktopStore();

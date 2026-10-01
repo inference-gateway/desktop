@@ -252,14 +252,6 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         .cloned()
 }
 
-/// Files directory of the project a chat is assigned to in projects.yaml.
-pub(crate) fn assigned_dir(session_id: &str) -> Option<PathBuf> {
-    let name = projects_state()["assignments"][session_id]
-        .as_str()?
-        .to_owned();
-    project_dir(&name)
-}
-
 /// A git repository found under the projects root, with its agent
 /// instructions (AGENTS.md, falling back to CLAUDE.md) when present.
 #[derive(Clone, PartialEq, Debug, serde::Serialize)]
