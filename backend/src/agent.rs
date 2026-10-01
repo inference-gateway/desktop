@@ -611,11 +611,14 @@ struct EventSink {
 
 const AGENT_MODE_ENV: &str = "INFER_SUBAGENT_AGENT_MODE";
 
+/// Attaches the approval broker in every mode, so a path outside the sandbox
+/// asks the user instead of failing. Auto mode only skips per-tool approval.
 fn apply_approval_mode(command: &mut Command, auto_mode: bool) {
+    command.arg("--require-approval");
     if auto_mode {
         command.env(AGENT_MODE_ENV, "auto");
     } else {
-        command.env_remove(AGENT_MODE_ENV).arg("--require-approval");
+        command.env_remove(AGENT_MODE_ENV);
     }
 }
 
@@ -1516,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn approval_mode_only_requires_approval_when_auto_mode_is_off() {
+    fn approval_broker_is_attached_in_both_modes() {
         let mut manual = Command::new("infer");
         apply_approval_mode(&mut manual, false);
         let manual_args: Vec<_> = manual
@@ -1533,7 +1536,11 @@ mod tests {
 
         let mut automatic = Command::new("infer");
         apply_approval_mode(&mut automatic, true);
-        assert_eq!(automatic.get_args().count(), 0);
+        let automatic_args: Vec<_> = automatic
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(automatic_args, ["--require-approval"]);
         assert_eq!(
             automatic
                 .get_envs()

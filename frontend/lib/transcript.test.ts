@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  autoApproves,
   backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
@@ -829,4 +830,10 @@ test("the transcript keeps following the bottom until the user scrolls up", () =
   expect(followsBottom(false, false, false)).toBe(false);
   expect(followsBottom(false, false, true)).toBe(true);
   expect(followsBottom(false, true, true)).toBe(true);
+});
+
+test("auto mode approves tool calls but leaves sandbox access to the user", () => {
+  expect(autoApproves("Write")).toBe(true);
+  expect(autoApproves("Computer")).toBe(true);
+  expect(autoApproves("SandboxAccess")).toBe(false);
 });
