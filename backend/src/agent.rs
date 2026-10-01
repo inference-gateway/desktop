@@ -237,6 +237,15 @@ fn message_id_of(val: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The `outcome.type` of a run terminal event: `success`, `interrupt` or a
+/// stopped turn's `cancelled`. A cancelled terminal carries no stats, so it
+/// must not synthesize a zero usage event.
+pub(crate) fn run_outcome(val: &serde_json::Value) -> Option<&str> {
+    val.get("outcome")
+        .and_then(|o| o.get("type"))
+        .and_then(|t| t.as_str())
+}
+
 /// Sums the AG-UI `usage` list (one TokenUsage per model, cumulative across
 /// the session) and reads what it has no field for from the run's `result`:
 /// tool calls, cost and the context window.
@@ -499,15 +508,18 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
-                if let Some(interrupt) = val
-                    .get("outcome")
-                    .filter(|o| o.get("type").and_then(|t| t.as_str()) == Some("interrupt"))
-                    .and_then(|o| o.get("interrupts")?.as_array()?.first())
+                if run_outcome(&val) == Some("interrupt")
+                    && let Some(interrupt) = val
+                        .get("outcome")
+                        .and_then(|o| o.get("interrupts")?.as_array()?.first())
                 {
                     return self.interrupt(interrupt);
                 }
                 if std::mem::take(&mut self.recording) {
                     return Some(AgentEvent::RecordingStopped);
+                }
+                if run_outcome(&val) == Some("cancelled") {
+                    return None;
                 }
                 Some(usage_event(
                     val.get("usage"),
@@ -1637,6 +1649,28 @@ mod tests {
         assert!(
             matches!(&events[2], AgentEvent::TokenUsage { .. }),
             "RUN_FINISHED emits TokenUsage"
+        );
+    }
+
+    #[test]
+    fn test_parse_agui_cancelled_run_finished_reports_no_usage() {
+        let lines = &[
+            r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-1"}"#,
+            r#"{"type":"TEXT_MESSAGE_START","messageId":"a1","role":"assistant"}"#,
+            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"a1","delta":"partial"}"#,
+            r#"{"type":"TEXT_MESSAGE_END","messageId":"a1"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-1","outcome":{"type":"cancelled"}}"#,
+        ];
+        let (events, _) = parse_all(lines);
+        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(
+            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "partial")
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TokenUsage { .. })),
+            "a stopped turn's terminal event carries no usage: synthesizing zeros would reset the session meters"
         );
     }
 
