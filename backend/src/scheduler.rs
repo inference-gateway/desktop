@@ -1,5 +1,4 @@
 use crate::AppState;
-use crate::env::{infer_bin_path, infer_env, mock_mode};
 use std::collections::{HashMap, VecDeque};
 use std::io::BufRead;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -9,7 +8,10 @@ use std::time::{Duration, Instant};
 const MAX_LOG: usize = 200;
 
 /// Spawn a background thread that reads lines from `pipe` and appends them to `log`.
-fn pipe_logger<R: std::io::Read + Send + 'static>(pipe: R, log: Arc<Mutex<VecDeque<String>>>) {
+pub(crate) fn pipe_logger<R: std::io::Read + Send + 'static>(
+    pipe: R,
+    log: Arc<Mutex<VecDeque<String>>>,
+) {
     std::thread::spawn(move || {
         let reader = std::io::BufReader::new(pipe);
         for line in reader.lines().map_while(Result::ok) {
@@ -30,50 +32,7 @@ fn pipe_logger<R: std::io::Read + Send + 'static>(pipe: R, log: Arc<Mutex<VecDeq
 
 #[tauri::command]
 pub(crate) async fn start_scheduler(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let processes = Arc::clone(&state.processes);
-    let log = Arc::clone(&state.scheduler_log);
-    tokio::task::spawn_blocking(move || restart_daemon(&processes, log))
-        .await
-        .map_err(|error| format!("scheduler startup task failed: {error}"))?
-}
-
-/// Kill any previous daemon child and spawn a fresh one. Called from the
-/// Settings save flow and from app setup (autostart when scheduling is
-/// enabled), so the daemon survives app restarts.
-pub(crate) fn spawn_daemon(state: &AppState) -> Result<(), String> {
-    restart_daemon(&state.processes, Arc::clone(&state.scheduler_log))
-}
-
-fn restart_daemon(
-    processes: &crate::processes::ProcessSupervisor,
-    log: Arc<Mutex<VecDeque<String>>>,
-) -> Result<(), String> {
-    if mock_mode() {
-        return Ok(());
-    }
-    processes.restart_scheduler(move || {
-        log.lock()
-            .map_err(|error| format!("scheduler log mutex poisoned: {error}"))?
-            .clear();
-
-        let bin = infer_bin_path();
-        let mut child = std::process::Command::new(&bin)
-            .arg("daemon")
-            .current_dir(crate::env::agent_cwd())
-            .envs(infer_env())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to start scheduler: {e}"))?;
-
-        if let Some(stdout) = child.stdout.take() {
-            pipe_logger(stdout, Arc::clone(&log));
-        }
-        if let Some(stderr) = child.stderr.take() {
-            pipe_logger(stderr, log);
-        }
-        Ok(child)
-    })
+    crate::daemon::ensure_running(&state).map(|_| ())
 }
 
 #[tauri::command]

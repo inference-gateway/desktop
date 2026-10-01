@@ -6,12 +6,10 @@
 
 use crate::gateway::GatewayStart;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin};
+use std::process::Child;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const GATEWAY_READY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -33,8 +31,6 @@ struct ManagedChild {
 struct ProcessState {
     gateway: Option<Child>,
     scheduler: Option<Child>,
-    agents: HashMap<String, Child>,
-    agent_stdins: HashMap<String, Arc<Mutex<ChildStdin>>>,
 }
 
 pub(crate) struct ProcessSupervisor {
@@ -170,82 +166,6 @@ impl ProcessSupervisor {
         )
     }
 
-    pub(crate) fn insert_agent(
-        &self,
-        session_id: String,
-        mut child: Child,
-        stdin: ChildStdin,
-    ) -> Result<(), String> {
-        if self.shutting_down.load(Ordering::SeqCst) {
-            force_stop_child("agent", &mut child)?;
-            return Err("application is shutting down".into());
-        }
-
-        let mut state = match self.state.lock() {
-            Ok(state) => state,
-            Err(error) => {
-                let message = format!("process state mutex poisoned: {error}");
-                drop(error);
-                force_stop_child("agent", &mut child)?;
-                return Err(message);
-            }
-        };
-        if self.shutting_down.load(Ordering::SeqCst) {
-            drop(state);
-            force_stop_child("agent", &mut child)?;
-            return Err("application is shutting down".into());
-        }
-        if let Some(mut orphan) = state.agents.remove(&session_id) {
-            state.agent_stdins.remove(&session_id);
-            force_stop_child("orphaned agent", &mut orphan)?;
-        }
-
-        state
-            .agent_stdins
-            .insert(session_id.clone(), Arc::new(Mutex::new(stdin)));
-        state.agents.insert(session_id, child);
-        Ok(())
-    }
-
-    pub(crate) fn write_agent(&self, session_id: &str, bytes: &[u8]) -> Result<(), String> {
-        let stdin = self
-            .lock_state()?
-            .agent_stdins
-            .get(session_id)
-            .cloned()
-            .ok_or("No running agent")?;
-        let mut stdin = stdin
-            .lock()
-            .map_err(|e| format!("agent stdin mutex poisoned: {e}"))?;
-        stdin.write_all(bytes).map_err(|e| e.to_string())?;
-        stdin.flush().map_err(|e| e.to_string())
-    }
-
-    pub(crate) fn remove_agent(&self, session_id: &str, pid: u32) -> Result<Option<Child>, String> {
-        let mut state = self.lock_state()?;
-        if state
-            .agents
-            .get(session_id)
-            .is_none_or(|child| child.id() != pid)
-        {
-            return Ok(None);
-        }
-        state.agent_stdins.remove(session_id);
-        Ok(state.agents.remove(session_id))
-    }
-
-    pub(crate) fn cancel_agent(&self, session_id: &str) -> Result<(), String> {
-        let child = {
-            let mut state = self.lock_state()?;
-            state.agent_stdins.remove(session_id);
-            state.agents.remove(session_id)
-        };
-        if let Some(mut child) = child {
-            force_stop_child("agent", &mut child)?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn restart_scheduler<F>(&self, spawn: F) -> Result<(), String>
     where
         F: FnOnce() -> Result<Child, String>,
@@ -323,11 +243,11 @@ impl ProcessSupervisor {
         let _gateway = lock_for_shutdown(&self.gateway_lifecycle, "gateway lifecycle");
         let _scheduler = lock_for_shutdown(&self.scheduler_lifecycle, "scheduler lifecycle");
 
-        let (gateway_owned, children, stdins) = {
+        let (gateway_owned, children) = {
             let mut state = lock_for_shutdown(&self.state, "process state");
             let gateway = state.gateway.take();
             let gateway_owned = gateway.is_some();
-            let mut children = Vec::with_capacity(state.agents.len() + 2);
+            let mut children = Vec::with_capacity(2);
             if let Some(child) = gateway {
                 children.push(ManagedChild {
                     name: "gateway".into(),
@@ -340,24 +260,9 @@ impl ProcessSupervisor {
                     child,
                 });
             }
-            children.extend(
-                state
-                    .agents
-                    .drain()
-                    .map(|(session_id, child)| ManagedChild {
-                        name: format!("agent {session_id}"),
-                        child,
-                    }),
-            );
-            let stdins = state
-                .agent_stdins
-                .drain()
-                .map(|(_, stdin)| stdin)
-                .collect::<Vec<_>>();
-            (gateway_owned, children, stdins)
+            (gateway_owned, children)
         };
 
-        drop(stdins);
         let stop_error = stop_children(children, self.shutdown_timeout).err();
         let ownership_error = if gateway_owned {
             self.clear_stopped_gateway_ownership().err()
@@ -674,23 +579,6 @@ fn send_unix_signal(pid: u32, signal: nix::sys::signal::Signal) -> Result<(), St
         Ok(()) | Err(nix::errno::Errno::ESRCH) => Ok(()),
         Err(error) => Err(error.to_string()),
     }
-}
-
-fn force_stop_child(name: &str, child: &mut Child) -> Result<(), String> {
-    if child
-        .try_wait()
-        .map_err(|error| format!("failed to inspect {name}: {error}"))?
-        .is_some()
-    {
-        return Ok(());
-    }
-    child
-        .kill()
-        .map_err(|error| format!("failed to force-kill {name}: {error}"))?;
-    child
-        .wait()
-        .map_err(|error| format!("failed to reap {name}: {error}"))?;
-    Ok(())
 }
 
 fn lock_for_shutdown<'a, T>(mutex: &'a Mutex<T>, name: &str) -> std::sync::MutexGuard<'a, T> {
@@ -1042,77 +930,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn agent_insert_is_rejected_during_shutdown() {
-        let supervisor = test_supervisor("insert-during-shutdown");
-        supervisor.shutdown().expect("shutdown should succeed");
-        let mut child = Command::new("sh")
-            .args(["-c", "while :; do sleep 0.01; done"])
-            .stdin(Stdio::piped())
-            .spawn()
-            .expect("test child should spawn");
-        let pid = child.id();
-        let stdin = child
-            .stdin
-            .take()
-            .expect("test child stdin should be piped");
-
-        let error = supervisor
-            .insert_agent("session".into(), child, stdin)
-            .expect_err("agent insert should be rejected during shutdown");
-
-        assert_eq!(error, "application is shutting down");
-        assert!(
-            process_executable(pid)
-                .expect("process lookup should succeed")
-                .is_none()
-        );
-    }
-
-    #[cfg(unix)]
-    fn spawn_agent_child() -> (Child, ChildStdin) {
-        let mut child = Command::new("sh")
-            .args(["-c", "while :; do sleep 0.01; done"])
-            .stdin(Stdio::piped())
-            .spawn()
-            .expect("test child should spawn");
-        let stdin = child
-            .stdin
-            .take()
-            .expect("test child stdin should be piped");
-        (child, stdin)
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn inserting_a_running_session_replaces_the_orphan() {
-        let supervisor = test_supervisor("replace-orphan");
-        let (first, first_stdin) = spawn_agent_child();
-        let (second, second_stdin) = spawn_agent_child();
-        let (first_pid, second_pid) = (first.id(), second.id());
-
-        supervisor
-            .insert_agent("session".into(), first, first_stdin)
-            .expect("first insert should succeed");
-        supervisor
-            .insert_agent("session".into(), second, second_stdin)
-            .expect("second insert should replace the orphan");
-
-        assert!(!process_exists(first_pid).expect("process lookup should succeed"));
-        assert!(
-            supervisor
-                .remove_agent("session", first_pid)
-                .expect("stale removal should succeed")
-                .is_none()
-        );
-        let mut replacement = supervisor
-            .remove_agent("session", second_pid)
-            .expect("current removal should succeed")
-            .expect("replacement should still be tracked");
-        force_stop_child("replacement", &mut replacement).expect("replacement should stop");
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn readiness_wait_observes_health_after_retries() {
         let mut child = Command::new("sh")
             .args(["-c", "sleep 5"])
@@ -1130,7 +947,8 @@ mod tests {
             },
         )
         .expect("third health check should be ready");
-        force_stop_child("test child", &mut child).expect("test child should stop");
+        child.kill().expect("test child should stop");
+        child.wait().expect("test child should be reaped");
 
         assert_eq!(attempts.get(), 3);
     }

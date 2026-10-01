@@ -133,24 +133,6 @@ pub(crate) fn composed_path() -> String {
     )
 }
 
-/// Prompt customisation env vars for the spawned agent. The CLI applies these
-/// after loading prompts.yaml, so they win over any file config: the override
-/// replaces the base system prompt, extras are appended after it
-/// (prompts.agent.custom_instructions).
-pub(crate) fn prompt_env(
-    system_prompt: Option<&str>,
-    extra_instructions: Option<&str>,
-) -> Vec<(&'static str, String)> {
-    let mut env = Vec::new();
-    if let Some(sp) = system_prompt.filter(|s| !s.trim().is_empty()) {
-        env.push(("INFER_PROMPTS_AGENT_SYSTEM_PROMPT", sp.to_string()));
-    }
-    if let Some(ei) = extra_instructions.filter(|s| !s.trim().is_empty()) {
-        env.push(("INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS", ei.to_string()));
-    }
-    env
-}
-
 /// Append the agent's actual working directory to the custom instructions so
 /// the model states it instead of guessing (Finder launches land in $HOME).
 pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
@@ -306,33 +288,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prompt_env_maps_override_and_extras_to_cli_env_vars() {
-        assert!(prompt_env(None, None).is_empty());
-        assert!(prompt_env(Some("  "), Some("")).is_empty());
-        assert_eq!(
-            prompt_env(None, Some("be a pirate")),
-            vec![(
-                "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
-                "be a pirate".to_string()
-            )]
-        );
-        assert_eq!(
-            prompt_env(Some("full override"), Some("extras")),
-            vec![
-                (
-                    "INFER_PROMPTS_AGENT_SYSTEM_PROMPT",
-                    "full override".to_string()
-                ),
-                (
-                    "INFER_PROMPTS_AGENT_CUSTOM_INSTRUCTIONS",
-                    "extras".to_string()
-                ),
-            ]
-        );
-    }
-
-    #[cfg(unix)]
     #[test]
     fn composed_path_prepends_launchd_omitted_dirs() {
         let path = composed_path();

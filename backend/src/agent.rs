@@ -1,16 +1,17 @@
 use crate::AppState;
 use crate::config::read_config;
 use crate::env::{
-    agent_cwd, compose_extras, home_dir, infer_bin_path, infer_env, mock_mode, prompt_env,
-    uploads_dir,
+    agent_cwd, compose_extras, home_dir, infer_bin_path, infer_env, mock_mode, uploads_dir,
 };
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
-use std::io::{BufRead, Read, Write};
+use crate::thread::{Sink, Thread, ThreadOptions};
+use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
+use tauri::Manager;
 use tauri::ipc::Channel;
 
 #[derive(Clone, serde::Serialize)]
@@ -62,8 +63,6 @@ pub(crate) enum AgentEvent {
         cost: f64,
     },
     Cancelled,
-    ComputerUsePaused,
-    ComputerUseResumed,
     AgentStatus {
         name: String,
         state: String,
@@ -141,7 +140,7 @@ struct AgentRecording {
 }
 
 impl AgentRecording {
-    fn start(sink: Arc<EventSink>) -> Self {
+    fn start(path: String, sink: Sink) -> Self {
         let inputs = Arc::new(Mutex::new(Vec::new()));
         let capture = InputCapture::start({
             let inputs = Arc::clone(&inputs);
@@ -150,13 +149,13 @@ impl AgentRecording {
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
                     .push(input.clone());
-                sink.send(AgentEvent::RecordingInput { input });
+                sink(AgentEvent::RecordingInput { input });
             }
         });
         AgentRecording {
             capture,
             inputs,
-            path: None,
+            path: Some(path),
         }
     }
 
@@ -198,7 +197,7 @@ pub(crate) struct BackgroundJob {
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct ToolCallInfo {
     id: String,
-    name: String,
+    pub(crate) name: String,
     args: String,
 }
 /// Folds AG-UI event-stream lines into complete AgentEvents, accumulating
@@ -210,6 +209,12 @@ pub(crate) struct AgentParser {
     tc_id: String,
     tc_name: String,
     tc_args: String,
+    /// Name and args of every tool call the run streamed, by id, for the
+    /// interrupt that names only the toolCallId it waits on.
+    tool_calls: HashMap<String, (String, String)>,
+    /// The cumulative input tokens the last usage carried, so the next one
+    /// yields the last request's input for the context meter.
+    last_total_input: i64,
     /// The `screenRecording` state is active. `RUN_FINISHED` then reports it
     /// stopped: the CLI finalizes it on exit with no `active: false` patch after
     /// the terminal event.
@@ -232,36 +237,59 @@ fn message_id_of(val: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Maps a usage stats object onto a TokenUsage event. The `RUN_FINISHED`
-/// terminal result and the per-step `token_usage` CUSTOM value carry the same
-/// camelCase fields; missing fields read as zero.
-fn usage_from_stats(stats: Option<&serde_json::Value>) -> AgentEvent {
-    let num = |key: &str| {
-        stats
-            .and_then(|s| s.get(key))
+/// Sums the AG-UI `usage` list (one TokenUsage per model, cumulative across
+/// the session) and reads what it has no field for from the run's `result`:
+/// tool calls, cost and the context window.
+fn usage_event(
+    usage: Option<&serde_json::Value>,
+    result: Option<&serde_json::Value>,
+    last_total_input: &mut i64,
+) -> AgentEvent {
+    let sum = |key: &str| {
+        usage
+            .and_then(|u| u.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|u| u.get(key))
+                    .map(json_val_i64)
+                    .sum()
+            })
+            .unwrap_or(0)
+    };
+    let from_result = |key: &str| {
+        result
+            .and_then(|r| r.get(key))
             .map(json_val_i64)
             .unwrap_or(0)
     };
+    let input = sum("inputTokens").max(from_result("inputTokens"));
+    let last_input = match from_result("lastInputTokens") {
+        0 if input > *last_total_input => input - *last_total_input,
+        n => n,
+    };
+    *last_total_input = input;
     AgentEvent::TokenUsage {
-        input: num("inputTokens"),
-        output: num("outputTokens"),
-        cached_read: num("cacheReadTokens"),
-        total_tool_calls: num("totalToolCalls"),
-        last_input: num("lastInputTokens"),
-        context_window: num("contextWindow"),
-        cost: stats
-            .and_then(|s| s.get("cost"))
+        input,
+        output: sum("outputTokens").max(from_result("outputTokens")),
+        cached_read: sum("cachedInputTokens").max(from_result("cacheReadTokens")),
+        total_tool_calls: from_result("totalToolCalls"),
+        last_input,
+        context_window: from_result("contextWindow"),
+        cost: result
+            .and_then(|r| r.get("cost"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0),
     }
 }
 
 impl AgentParser {
-    fn new(session_id: Option<String>) -> Self {
+    pub(crate) fn new(session_id: Option<String>) -> Self {
         Self {
             session_id,
             msg_from_user: false,
             message_id: None,
+            tool_calls: HashMap::new(),
+            last_total_input: 0,
             tc_id: String::new(),
             tc_name: String::new(),
             tc_args: String::new(),
@@ -284,11 +312,12 @@ impl AgentParser {
     }
 
     /// Take the accumulated session_id out.
+    #[cfg(test)]
     fn take_session_id(&mut self) -> Option<String> {
         self.session_id.take()
     }
 
-    fn parse_line(&mut self, line: &str) -> Option<AgentEvent> {
+    pub(crate) fn parse_line(&mut self, line: &str) -> Option<AgentEvent> {
         let val: serde_json::Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => {
@@ -318,12 +347,17 @@ impl AgentParser {
                 })
             }
             "MESSAGES_SNAPSHOT" => None,
-            "STATE_SNAPSHOT" => self.recording_state(val.get("snapshot")?.get("screenRecording")?),
+            "STATE_SNAPSHOT" => self.state(val.get("snapshot")?),
             "STATE_DELTA" => {
-                let patch = val.get("delta")?.as_array()?.iter().find(|op| {
-                    op.get("path").and_then(|p| p.as_str()) == Some("/screenRecording")
-                })?;
-                self.recording_state(patch.get("value")?)
+                let mut state = serde_json::Map::new();
+                for op in val.get("delta")?.as_array()? {
+                    if let (Some(path), Some(value)) =
+                        (op.get("path").and_then(|p| p.as_str()), op.get("value"))
+                    {
+                        state.insert(path.trim_start_matches('/').to_string(), value.clone());
+                    }
+                }
+                self.state(&serde_json::Value::Object(state))
             }
             "ACTIVITY_SNAPSHOT" => self.activity(&val),
             "TEXT_MESSAGE_START" => {
@@ -391,6 +425,10 @@ impl AgentParser {
                 if self.tc_id.is_empty() {
                     return None;
                 }
+                self.tool_calls.insert(
+                    self.tc_id.clone(),
+                    (self.tc_name.clone(), self.tc_args.clone()),
+                );
                 Some(AgentEvent::AssistantMessage {
                     content: String::new(),
                     reasoning_content: None,
@@ -423,8 +461,6 @@ impl AgentParser {
             }
             "CUSTOM" => {
                 match val.get("name").and_then(|v| v.as_str()) {
-                    Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
-                    Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
                     Some("agent_status") => {
                         let v = val.get("value");
                         let field = |k: &str| {
@@ -455,66 +491,7 @@ impl AgentParser {
                             .to_string();
                         return Some(AgentEvent::BackgroundNote { content });
                     }
-                    Some("background_tasks") => {
-                        let value = val.get("value");
-                        let running = value
-                            .and_then(|v| v.get("running"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let jobs = value
-                            .and_then(|v| v.get("jobs"))
-                            .cloned()
-                            .and_then(|j| serde_json::from_value(j).ok())
-                            .unwrap_or_default();
-                        return Some(AgentEvent::BackgroundTasks { running, jobs });
-                    }
-                    Some("token_usage") => {
-                        if let Some(value) = val.get("value").filter(|v| v.is_object()) {
-                            return Some(usage_from_stats(Some(value)));
-                        }
-                    }
                     _ => {}
-                }
-                if val.get("name").and_then(|v| v.as_str()) == Some("approval_request")
-                    && let Some(data) = val.get("value")
-                {
-                    let tool_name = data
-                        .get("tool_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let tool_args = data
-                        .get("tool_args")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let tool_call_id = data
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    return Some(AgentEvent::ApprovalRequest {
-                        tool_name,
-                        tool_args,
-                        tool_call_id,
-                    });
-                }
-                if val.get("name").and_then(|v| v.as_str()) == Some("user_question_request")
-                    && let Some(data) = val.get("value")
-                {
-                    let tool_call_id = data
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let questions = data
-                        .get("questions")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!([]));
-                    return Some(AgentEvent::UserQuestionRequest {
-                        tool_call_id,
-                        questions,
-                    });
                 }
                 Some(AgentEvent::RawLine {
                     line: line.to_string(),
@@ -522,11 +499,20 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
+                if let Some(interrupt) = val
+                    .get("outcome")
+                    .filter(|o| o.get("type").and_then(|t| t.as_str()) == Some("interrupt"))
+                    .and_then(|o| o.get("interrupts")?.as_array()?.first())
+                {
+                    return self.interrupt(interrupt);
+                }
                 if std::mem::take(&mut self.recording) {
                     return Some(AgentEvent::RecordingStopped);
                 }
-                Some(usage_from_stats(
+                Some(usage_event(
+                    val.get("usage"),
                     val.get("result").or_else(|| val.get("stats")),
+                    &mut self.last_total_input,
                 ))
             }
             "RUN_ERROR" => {
@@ -549,15 +535,68 @@ impl AgentParser {
         self.message_id = None;
     }
 
-    /// Follows the `screenRecording` state key: a recording starting carries its
-    /// path and area, one stopping ends it, and the idle key at run start is
-    /// nothing to report.
-    fn recording_state(&mut self, state: &serde_json::Value) -> Option<AgentEvent> {
-        if let Some((path, area)) = recording_area(state) {
-            self.recording = true;
-            return Some(AgentEvent::RecordingStarted { path, area });
+    /// Follows the run's state keys: `screenRecording` starting or stopping a
+    /// recording, `usage` streaming the token totals, and `backgroundTasks`.
+    /// A snapshot reports the first of them it carries something for.
+    fn state(&mut self, state: &serde_json::Value) -> Option<AgentEvent> {
+        if let Some(recording) = state.get("screenRecording") {
+            if let Some((path, area)) = recording_area(recording) {
+                self.recording = true;
+                return Some(AgentEvent::RecordingStarted { path, area });
+            }
+            if std::mem::take(&mut self.recording) {
+                return Some(AgentEvent::RecordingStopped);
+            }
         }
-        std::mem::take(&mut self.recording).then_some(AgentEvent::RecordingStopped)
+        if let Some(usage) = state
+            .get("usage")
+            .filter(|u| u.as_array().is_some_and(|l| !l.is_empty()))
+        {
+            return Some(usage_event(Some(usage), None, &mut self.last_total_input));
+        }
+        let tasks = state.get("backgroundTasks")?;
+        let running = tasks.get("running").and_then(|v| v.as_u64()).unwrap_or(0);
+        let jobs = tasks
+            .get("jobs")
+            .cloned()
+            .and_then(|j| serde_json::from_value(j).ok())
+            .unwrap_or_default();
+        Some(AgentEvent::BackgroundTasks { running, jobs })
+    }
+
+    /// Maps the interrupt a run suspended on: an approval for the tool call
+    /// it names, or the AskUserQuestion form whose questions are the args of
+    /// the call with the interrupt's id.
+    fn interrupt(&self, interrupt: &serde_json::Value) -> Option<AgentEvent> {
+        let id = interrupt.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let tool_call_id = interrupt
+            .get("toolCallId")
+            .and_then(|v| v.as_str())
+            .unwrap_or(id)
+            .to_string();
+        let (name, args) = self
+            .tool_calls
+            .get(&tool_call_id)
+            .cloned()
+            .unwrap_or_default();
+        match interrupt.get("reason").and_then(|v| v.as_str())? {
+            "tool_call" => Some(AgentEvent::ApprovalRequest {
+                tool_name: name,
+                tool_args: args,
+                tool_call_id,
+            }),
+            "input_required" => {
+                let questions = serde_json::from_str::<serde_json::Value>(&args)
+                    .ok()
+                    .and_then(|a| a.get("questions").cloned())
+                    .unwrap_or_else(|| serde_json::json!([]));
+                Some(AgentEvent::UserQuestionRequest {
+                    tool_call_id,
+                    questions,
+                })
+            }
+            _ => None,
+        }
     }
 
     /// Maps an ACTIVITY_SNAPSHOT: a computer-use action in screen coordinates,
@@ -598,40 +637,6 @@ impl AgentParser {
     }
 }
 
-/// Fan-out for agent events: the per-run IPC channel streams the ordered
-/// transcript to the invoking (main) webview, and a global "agent-event"
-/// broadcast reaches every window (monitor, overlay) straight from the
-/// backend - no frontend re-broadcast hop.
-struct EventSink {
-    channel: Channel<AgentEvent>,
-    app: tauri::AppHandle,
-    session_id: String,
-    name: String,
-}
-
-const AGENT_MODE_ENV: &str = "INFER_SUBAGENT_AGENT_MODE";
-
-/// Attaches the approval broker in every mode, so a path outside the sandbox
-/// asks the user instead of failing. Auto mode only skips per-tool approval.
-fn apply_approval_mode(command: &mut Command, auto_mode: bool) {
-    command.arg("--require-approval");
-    if auto_mode {
-        command.env(AGENT_MODE_ENV, "auto");
-    } else {
-        command.env_remove(AGENT_MODE_ENV);
-    }
-}
-
-impl EventSink {
-    fn send(&self, event: AgentEvent) {
-        let _ = self.app.emit(
-            "agent-event",
-            serde_json::json!({ "sessionId": self.session_id, "name": self.name, "event": event }),
-        );
-        let _ = self.channel.send(event);
-    }
-}
-
 /// A `!cmd` prompt runs straight through the CLI's direct-exec path and never
 /// touches agents, so it need not wait for shared services to start.
 fn is_bash_command(prompt: &str) -> bool {
@@ -658,6 +663,179 @@ fn agent_commit_message(prompt: &str) -> String {
     format!("chore(timeline): {summary}")
 }
 
+/// The daemon thread a chat runs in: its worker's launch options come from
+/// the first open, since the daemon applies them once.
+fn thread_options(
+    model: &str,
+    auto_mode: bool,
+    system_prompt: Option<&str>,
+    extra_instructions: Option<&str>,
+    cwd: &Path,
+) -> ThreadOptions {
+    ThreadOptions {
+        model: model.to_string(),
+        mode: if auto_mode { "auto" } else { "standard" }.to_string(),
+        system_prompt: system_prompt
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_owned),
+        custom_instructions: Some(compose_extras(extra_instructions, cwd)),
+        sandbox_directories: crate::projects::sandbox_allowed_dirs()
+            .map(|dirs| dirs.split(',').map(str::to_owned).collect())
+            .unwrap_or_default(),
+        max_turns: 500,
+    }
+}
+
+/// The directory a chat's thread runs in: its project dir, else the app's
+/// agent cwd.
+fn thread_dir(project: Option<&str>) -> PathBuf {
+    project
+        .and_then(crate::projects::project_dir)
+        .filter(|dir| std::fs::create_dir_all(dir).is_ok())
+        .unwrap_or_else(agent_cwd)
+}
+
+/// Fan-out for one thread's events: the chat's IPC channel streams the
+/// ordered transcript to the main webview, a global "agent-event" broadcast
+/// reaches every window, and a recording the run starts captures input
+/// until it stops.
+fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
+    let recording: Arc<Mutex<Option<AgentRecording>>> = Arc::new(Mutex::new(None));
+    let sink: Arc<Mutex<Option<Sink>>> = Arc::new(Mutex::new(None));
+    let inner = Arc::clone(&sink);
+    let emit: Sink = Arc::new(move |event: AgentEvent| {
+        let _ = app.emit(
+            "agent-event",
+            serde_json::json!({ "sessionId": session_id, "name": "", "event": event }),
+        );
+        if let Some(channel) = app
+            .state::<AppState>()
+            .channels
+            .lock()
+            .ok()
+            .and_then(|c| c.get(&session_id).cloned())
+        {
+            let _ = channel.send(event.clone());
+        }
+        let started = match &event {
+            AgentEvent::RecordingStarted { path, .. } => Some(path.clone()),
+            _ => None,
+        };
+        let ends = started.is_some()
+            || matches!(
+                event,
+                AgentEvent::RecordingStopped | AgentEvent::AgentError { .. }
+            );
+        if ends && let Some(r) = recording.lock().ok().and_then(|mut r| r.take()) {
+            r.stop();
+        }
+        if let (Some(path), Some(sink)) = (started, inner.lock().ok().and_then(|s| s.clone()))
+            && let Ok(mut slot) = recording.lock()
+        {
+            *slot = Some(AgentRecording::start(path, sink));
+        }
+    });
+    *sink.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&emit));
+    emit
+}
+
+/// The open thread for a chat, opened on the daemon when the app has none.
+async fn ensure_thread(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    session_id: &str,
+    project_dir: &Path,
+    options: ThreadOptions,
+) -> Result<Arc<Thread>, String> {
+    if let Some(thread) = state.threads.get(session_id) {
+        return Ok(thread);
+    }
+    let app = app.clone();
+    let session_id = session_id.to_string();
+    let project_dir = project_dir.to_string_lossy().into_owned();
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let binding = crate::daemon::ensure_running(&state)?;
+        let status_app = app.clone();
+        let thread = Thread::open(
+            &binding,
+            &session_id,
+            &project_dir,
+            &options,
+            session_sink(app.clone(), session_id.clone()),
+            Arc::new(move |status| crate::daemon::extension_status(&status_app, status)),
+        )?;
+        state.threads.insert(&session_id, Arc::clone(&thread));
+        Ok(thread)
+    })
+    .await
+    .map_err(|e| format!("thread open task failed: {e}"))?
+}
+
+fn thread_for(state: &AppState, session_id: &str) -> Result<Arc<Thread>, String> {
+    state
+        .threads
+        .get(session_id)
+        .ok_or_else(|| "No running agent".to_string())
+}
+
+/// Opens (or reuses) a chat's thread and returns its history as the AG-UI
+/// messages of the worker's MESSAGES_SNAPSHOT.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn open_thread(
+    session_id: String,
+    model: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    system_prompt: Option<String>,
+    extra_instructions: Option<String>,
+    auto_mode: bool,
+    project: Option<String>,
+) -> Result<String, String> {
+    let cwd = thread_dir(project.as_deref());
+    let options = thread_options(
+        &model,
+        auto_mode,
+        system_prompt.as_deref(),
+        extra_instructions.as_deref(),
+        &cwd,
+    );
+    let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    serde_json::to_string(thread.history()).map_err(|e| e.to_string())
+}
+
+/// The run_agent_input user message for a prompt: its text, plus one image
+/// part per decodable `[Attached image: <path>]` the composer prepended.
+fn message_content(prompt: &str) -> serde_json::Value {
+    let images: Vec<serde_json::Value> = attached_image_paths(prompt)
+        .into_iter()
+        .filter_map(|path| {
+            use base64::Engine as _;
+            let bytes = std::fs::read(&path).ok()?;
+            let ext = Path::new(&path).extension()?.to_str()?.to_ascii_lowercase();
+            let mime = match ext.as_str() {
+                "jpg" | "jpeg" => "image/jpeg",
+                "gif" => "image/gif",
+                "webp" => "image/webp",
+                _ => "image/png",
+            };
+            Some(serde_json::json!({
+                "type": "image",
+                "mimeType": mime,
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                "filename": Path::new(&path).file_name()?.to_str()?,
+            }))
+        })
+        .collect();
+    if images.is_empty() {
+        return prompt.into();
+    }
+    let mut parts = vec![serde_json::json!({ "type": "text", "text": prompt })];
+    parts.extend(images);
+    parts.into()
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_message(
@@ -671,33 +849,11 @@ pub(crate) async fn send_message(
     extra_instructions: Option<String>,
     auto_mode: bool,
     project: Option<String>,
-) -> Result<Option<String>, String> {
+) -> Result<(), String> {
     if !is_bash_command(&prompt) {
         crate::tools::await_services().await;
     }
-    let bin_path = infer_bin_path();
-
-    let mut cmd = Command::new(&bin_path);
-    cmd.arg("headless")
-        .arg("--format")
-        .arg("ag-ui")
-        .arg("--session-id")
-        .arg(&session_id);
-    apply_approval_mode(&mut cmd, auto_mode);
-    cmd.arg("-m").arg(&model);
-    let browser_use = crate::browser_bridge::read_settings().active();
-    if browser_use {
-        cmd.env(
-            "INFER_BROWSER_USE_EXTENSION_PORT",
-            crate::browser_bridge::RELAY_PORT.to_string(),
-        );
-    }
-
-    let cwd = project
-        .as_deref()
-        .and_then(crate::projects::project_dir)
-        .filter(|dir| std::fs::create_dir_all(dir).is_ok())
-        .unwrap_or_else(agent_cwd);
+    let cwd = thread_dir(project.as_deref());
     // Content projects are local git repos so agent edits are revertable. Take a
     // checkpoint of the pre-run state (best-effort - never block a run on git).
     let content_dir = project
@@ -708,212 +864,52 @@ pub(crate) async fn send_message(
         let _ = crate::projects::ensure_content_repo(dir);
         let _ = crate::projects::checkpoint(dir, "chore(timeline): checkpoint before agent run");
     }
-    let extras = compose_extras(extra_instructions.as_deref(), &cwd);
-    for path in attached_image_paths(&prompt) {
-        cmd.arg("-f").arg(path);
+    let options = thread_options(
+        &model,
+        auto_mode,
+        system_prompt.as_deref(),
+        extra_instructions.as_deref(),
+        &cwd,
+    );
+    let mode = options.mode.clone();
+    let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    if let Ok(mut channels) = state.channels.lock() {
+        channels.insert(session_id.clone(), on_event);
     }
-    cmd.arg(&prompt)
-        .envs(infer_env())
-        .envs(prompt_env(system_prompt.as_deref(), Some(&extras)))
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn infer agent: {}", e))?;
-
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let child_stdin = child.stdin.take().unwrap();
-    let pid = child.id();
-
-    state
-        .processes
-        .insert_agent(session_id.clone(), child, child_stdin)?;
-    if browser_use {
-        state.browser_bridge.connect_relay();
-    }
-    let bridge = Arc::clone(&state.browser_bridge);
-    bridge.user_turn(&session_id, &prompt);
-
-    let sink = Arc::new(EventSink {
-        channel: on_event,
-        app,
-        session_id: session_id.clone(),
-        name: prompt.clone(),
+    let commit = agent_commit_message(&prompt);
+    *thread.on_done.lock().unwrap_or_else(|e| e.into_inner()) = content_dir.map(|dir| {
+        Box::new(move || {
+            let _ = crate::projects::checkpoint(&dir, &commit);
+        }) as Box<dyn Fn() + Send + Sync>
     });
-    let sink_clone = Arc::clone(&sink);
-    let had_error = Arc::new(Mutex::new(false));
-    let had_error_clone = Arc::clone(&had_error);
-    let parser = Arc::new(Mutex::new(AgentParser::new(Some(session_id.clone()))));
-    let parser_clone = Arc::clone(&parser);
-
-    let stdout_handle: std::thread::JoinHandle<()> = std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stdout);
-        let mut p = parser_clone.lock().unwrap();
-        let mut recording: Option<AgentRecording> = None;
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => break,
-            };
-            if line.trim().is_empty() {
-                continue;
-            }
-            bridge.chat_event(&sink_clone.session_id, &line);
-            if let Some(event) = p.parse_line(&line) {
-                if matches!(event, AgentEvent::AgentError { .. }) {
-                    *had_error_clone.lock().unwrap() = true;
-                }
-                if let AgentEvent::ApprovalRequest {
-                    tool_name,
-                    tool_args,
-                    tool_call_id,
-                } = &event
-                {
-                    bridge.approval_request(
-                        &sink_clone.session_id,
-                        tool_call_id,
-                        tool_name,
-                        tool_args,
-                    );
-                }
-                let starts = match &event {
-                    AgentEvent::RecordingStarted { path, .. } => Some(path.clone()),
-                    _ => None,
-                };
-                let ends = starts.is_some()
-                    || matches!(
-                        event,
-                        AgentEvent::RecordingStopped | AgentEvent::AgentError { .. }
-                    );
-                sink_clone.send(event);
-                if ends && let Some(r) = recording.take() {
-                    r.stop();
-                }
-                if let Some(path) = starts {
-                    let mut r = AgentRecording::start(Arc::clone(&sink_clone));
-                    r.path = Some(path);
-                    recording = Some(r);
-                }
-            }
-        }
-        if let Some(r) = recording.take() {
-            r.stop();
-        }
-    });
-
-    let stderr_handle: std::thread::JoinHandle<String> = std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        let mut all = String::new();
-        for l in reader.lines().map_while(Result::ok) {
-            all.push_str(&l);
-            all.push('\n');
-        }
-        all
-    });
-
-    let _ = tokio::task::spawn_blocking(move || stdout_handle.join())
-        .await
-        .map_err(|e| format!("Join error: {}", e))?;
-
-    let child = state.processes.remove_agent(&session_id, pid)?;
-    let status = match child {
-        Some(mut child) => Some(
-            child
-                .wait()
-                .map_err(|e| format!("Failed to wait for process: {}", e))?,
-        ),
-        None => None,
-    };
-    let stderr_text = stderr_handle.join().unwrap_or_default();
-
-    // Commit the agent's file writes as one undo step (covers a stopped run too,
-    // so a SIGKILL mid-turn leaves a revertable commit rather than a dirty tree).
-    if let Some(dir) = &content_dir {
-        let _ = crate::projects::checkpoint(dir, &agent_commit_message(&prompt));
-    }
-
-    let had_error_val = *had_error.lock().unwrap();
-    if status.is_none() {
-        sink.send(AgentEvent::Cancelled);
-        sink.send(AgentEvent::Done {
-            exit_code: 0,
-            stderr: stderr_text,
-        });
-        return Ok(parser.lock().unwrap().take_session_id());
-    }
-    let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
-    if !status.as_ref().is_some_and(|s| s.success()) && !had_error_val {
-        let msg = if stderr_text.is_empty() {
-            format!("Process exited with code {}", exit_code)
-        } else {
-            format!(
-                "Process exited with code {}: {}",
-                exit_code,
-                stderr_text.trim()
-            )
-        };
-        sink.send(AgentEvent::AgentError { message: msg });
-    }
-
-    sink.send(AgentEvent::Done {
-        exit_code,
-        stderr: stderr_text,
-    });
-
-    let new_session = parser.lock().unwrap().take_session_id();
-    Ok(new_session)
+    thread.select(&model, &mode)?;
+    thread.run(Some(message_content(&prompt)))
 }
 
+/// Answers a tool-call interrupt: a resume entry on the thread's next run.
+/// `resolved` approves the call and `cancelled` declines it.
 #[tauri::command]
 pub(crate) async fn send_approval(
     session_id: String,
     tool_call_id: String,
     approved: bool,
-    scope: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut response = serde_json::json!({
-        "type": "approval_response",
-        "tool_call_id": tool_call_id,
-        "approved": approved,
-    });
-    if let Some(scope) = scope.filter(|s| !s.is_empty()) {
-        response["scope"] = serde_json::Value::String(scope);
-    }
-    let line = format!(
-        "{}\n",
-        serde_json::to_string(&response).map_err(|e| e.to_string())?
-    );
-    let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
-        .await
-        .map_err(|error| format!("agent write task failed: {error}"))?
+    thread_for(&state, &session_id)?.resume(serde_json::json!({
+        "interruptId": tool_call_id,
+        "status": if approved { "resolved" } else { "cancelled" },
+    }))
 }
 
-/// Pushes a follow-up prompt into a running headless session; the CLI queues
-/// it and drains it as the next turn (used while the run waits on tasks).
+/// Pushes a follow-up prompt into a running thread; the worker queues it and
+/// drains it as the next turn (used while the run waits on tasks).
 #[tauri::command]
 pub(crate) async fn send_user_message(
     session_id: String,
     content: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let response = serde_json::json!({
-        "type": "user_message",
-        "content": content,
-    });
-    let line = format!(
-        "{}\n",
-        serde_json::to_string(&response).map_err(|e| e.to_string())?
-    );
-    let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
-        .await
-        .map_err(|error| format!("agent write task failed: {error}"))?
+    thread_for(&state, &session_id)?.run(Some(content.into()))
 }
 
 /// Answers an AskUserQuestion form: `answers` is the frontend's
@@ -925,57 +921,37 @@ pub(crate) async fn send_question_answers(
     answers: Option<serde_json::Value>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let response = match answers {
+    let entry = match answers {
         Some(answers) => serde_json::json!({
-            "type": "user_question_response",
-            "tool_call_id": tool_call_id,
-            "answers": answers,
+            "interruptId": tool_call_id,
+            "status": "resolved",
+            "payload": { "answers": answers },
         }),
-        None => serde_json::json!({
-            "type": "user_question_response",
-            "tool_call_id": tool_call_id,
-            "cancelled": true,
-        }),
+        None => serde_json::json!({ "interruptId": tool_call_id, "status": "cancelled" }),
     };
-    let line = format!(
-        "{}\n",
-        serde_json::to_string(&response).map_err(|e| e.to_string())?
-    );
-    let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
-        .await
-        .map_err(|error| format!("agent write task failed: {error}"))?
+    thread_for(&state, &session_id)?.resume(entry)
 }
 
+/// Continues a thread after a stopped run with a new, empty run: how a
+/// paused computer-use session resumes.
 #[tauri::command]
-pub(crate) async fn send_computer_use_control(
+pub(crate) async fn resume_agent(
     session_id: String,
-    action: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    if action != "pause" && action != "resume" {
-        return Err(format!("Invalid computer-use control action: {action}"));
-    }
-    let message = serde_json::json!({
-        "type": "computer_use_control",
-        "action": action,
-    });
-    let line = format!(
-        "{}\n",
-        serde_json::to_string(&message).map_err(|e| e.to_string())?
-    );
-    let processes = Arc::clone(&state.processes);
-    tokio::task::spawn_blocking(move || processes.write_agent(&session_id, line.as_bytes()))
-        .await
-        .map_err(|error| format!("agent write task failed: {error}"))?
+    thread_for(&state, &session_id)?.run(None)
 }
 
+/// Stops the thread's running turn, which ends with outcome `cancelled`.
 #[tauri::command]
 pub(crate) async fn cancel_agent(
     session_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    state.processes.cancel_agent(&session_id)
+    match state.threads.get(&session_id) {
+        Some(thread) => thread.interrupt(),
+        None => Ok(()),
+    }
 }
 
 /// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
@@ -1072,29 +1048,15 @@ pub(crate) async fn list_conversations() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub(crate) async fn get_conversation(
-    session_id: String,
-    cwd: Option<String>,
-    project: Option<String>,
-) -> Result<String, String> {
-    let cwd = cwd.or_else(|| {
-        project
-            .as_deref()
-            .and_then(crate::projects::project_dir)
-            .map(|dir| dir.to_string_lossy().into_owned())
-    });
-    run_infer_in(
-        cwd,
-        &["conversations", "show", &session_id, "--format", "json"],
-    )
-    .await
-}
-
-#[tauri::command]
 pub(crate) async fn delete_conversation(
     session_id: String,
     cwd: Option<String>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
+    state.threads.remove(&session_id);
+    if let Ok(mut channels) = state.channels.lock() {
+        channels.remove(&session_id);
+    }
     match run_infer_in(cwd, &["conversations", "delete", &session_id]).await {
         Err(e) if e.contains("conversation not found") => Ok(String::new()),
         other => other,
@@ -1334,9 +1296,9 @@ fn copy_to_downloads(src: &Path, home: &Path) -> Result<String, String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Paths from the `[Attached image: <path>]` lines the composer and browser
-/// bridge prepend to a prompt, limited to formats the CLI can decode so they
-/// can be handed to `infer headless -f` and reach vision models as image parts.
+/// Paths from the `[Attached image: <path>]` lines the composer prepends to a
+/// prompt, limited to formats the CLI can decode so they travel as image
+/// content parts of the run's user message.
 pub(crate) fn attached_image_paths(prompt: &str) -> Vec<String> {
     const DECODABLE: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
     prompt
@@ -1494,6 +1456,16 @@ pub(crate) async fn set_a2a_agent_model(name: String, model: String) -> Result<(
 mod tests {
     use super::*;
 
+    fn parse_all(lines: &[&str]) -> (Vec<AgentEvent>, Option<String>) {
+        let mut p = AgentParser::new(None);
+        let events: Vec<AgentEvent> = lines
+            .iter()
+            .filter_map(|l| p.parse_line(l.trim()))
+            .collect();
+        let sid = p.take_session_id();
+        (events, sid)
+    }
+
     #[test]
     fn only_single_bang_prompts_are_bash_commands() {
         assert!(is_bash_command("!ls -la"));
@@ -1516,111 +1488,6 @@ mod tests {
         let msg = agent_commit_message(&long);
         assert!(msg.ends_with("..."));
         assert!(msg.len() < 90);
-    }
-
-    #[test]
-    fn approval_broker_is_attached_in_both_modes() {
-        let mut manual = Command::new("infer");
-        apply_approval_mode(&mut manual, false);
-        let manual_args: Vec<_> = manual
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(manual_args, ["--require-approval"]);
-        assert_eq!(
-            manual
-                .get_envs()
-                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
-            Some((std::ffi::OsStr::new(AGENT_MODE_ENV), None))
-        );
-
-        let mut automatic = Command::new("infer");
-        apply_approval_mode(&mut automatic, true);
-        let automatic_args: Vec<_> = automatic
-            .get_args()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(automatic_args, ["--require-approval"]);
-        assert_eq!(
-            automatic
-                .get_envs()
-                .find(|(key, _)| *key == std::ffi::OsStr::new(AGENT_MODE_ENV)),
-            Some((
-                std::ffi::OsStr::new(AGENT_MODE_ENV),
-                Some(std::ffi::OsStr::new("auto"))
-            ))
-        );
-    }
-
-    #[test]
-    fn safe_image_source_guards_scope() {
-        let home = PathBuf::from("/Users/me");
-        assert!(safe_image_source("/Users/me/proj/.infer/tmp/cat.png", &home).is_ok());
-        assert!(safe_image_source("/Users/me/.infer/tmp/cat.png", &home).is_ok());
-        assert!(safe_image_source("/Users/me/.infer/artifacts/sid-1/cat.png", &home).is_ok());
-        assert!(safe_image_source("/Users/me/proj/.infer/artifacts/sid-1/cat.png", &home).is_ok());
-        assert!(safe_image_source("/etc/passwd", &home).is_err());
-        assert!(safe_image_source("/Users/me/.infer/tmp/../../../etc/passwd", &home).is_err());
-        assert!(
-            safe_image_source("/Users/me/.infer/artifacts/../../../etc/passwd", &home).is_err()
-        );
-        assert!(safe_image_source("/Users/me/Pictures/cat.png", &home).is_err());
-    }
-
-    #[test]
-    fn safe_audio_source_guards_scope() {
-        let home = PathBuf::from("/Users/me");
-        assert!(safe_audio_source("/Users/me/.infer/tts/speech-1.wav", &home).is_ok());
-        assert!(
-            safe_audio_source("/Users/me/.infer/models/tts/samples/my-voice.wav", &home).is_ok()
-        );
-        assert!(safe_audio_source("/Users/me/.infer/tts/notes.txt", &home).is_err());
-        assert!(safe_audio_source("/Users/me/.infer/tts/../../../etc/passwd.wav", &home).is_err());
-        assert!(safe_audio_source("/etc/passwd.wav", &home).is_err());
-        assert!(safe_audio_source("/Users/me/Music/song.wav", &home).is_err());
-    }
-
-    // --- AG-UI parser tests ---
-
-    /// Helper: feed lines to an AgentParser and collect emitted events.
-    fn parse_all(lines: &[&str]) -> (Vec<AgentEvent>, Option<String>) {
-        let mut p = AgentParser::new(None);
-        let events: Vec<AgentEvent> = lines
-            .iter()
-            .filter_map(|l| p.parse_line(l.trim()))
-            .collect();
-        let sid = p.take_session_id();
-        (events, sid)
-    }
-
-    #[test]
-    fn test_parse_run_started() {
-        let (events, sid) =
-            parse_all(&[r#"{"type":"RUN_STARTED","threadId":"session-42","runId":"run-1"}"#]);
-        assert_eq!(events.len(), 1);
-        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
-        assert_eq!(sid, Some("session-42".into()));
-    }
-
-    #[test]
-    fn test_parse_run_started_no_session_id() {
-        let (events, sid) = parse_all(&[r#"{"type":"RUN_STARTED","threadId":"","runId":"run-1"}"#]);
-        assert_eq!(events.len(), 1);
-        assert!(sid.is_none());
-    }
-
-    #[test]
-    fn test_parse_text_message() {
-        let lines = &[
-            r#"{"type":"TEXT_MESSAGE_START","role":"assistant","messageId":"msg-1"}"#,
-            r#"{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"Hello! How can I help you?","contentType":"text"}"#,
-            r#"{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}"#,
-        ];
-        let (events, _) = parse_all(lines);
-        assert_eq!(events.len(), 1);
-        assert!(
-            matches!(&events[0], AgentEvent::AssistantMessage { content, .. } if content == "Hello! How can I help you?")
-        );
     }
 
     #[test]
@@ -1870,7 +1737,7 @@ mod tests {
 
     #[test]
     fn test_parse_run_finished_returns_token_usage() {
-        let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","success":true,"stats":{}}"#]);
+        let (events, _) = parse_all(&[r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r"}"#]);
         assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0],
@@ -1885,9 +1752,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_run_finished_reads_stats_from_result() {
+    fn test_parse_run_finished_reads_usage_and_result() {
         let (events, _) = parse_all(&[
-            r#"{"type":"RUN_FINISHED","result":{"inputTokens":4821,"outputTokens":310,"cacheReadTokens":3100,"totalToolCalls":3,"cost":0.042,"lastInputTokens":912,"contextWindow":128000}}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r","usage":[{"model":"a","inputTokens":4000,"outputTokens":300,"cachedInputTokens":3000},{"model":"b","inputTokens":821,"outputTokens":10,"cachedInputTokens":100}],"result":{"totalToolCalls":3,"cost":0.042,"lastInputTokens":912,"contextWindow":128000}}"#,
         ]);
         let AgentEvent::TokenUsage {
             input,
@@ -1916,51 +1783,71 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_state_snapshot_skipped() {
-        let (events, _) =
-            parse_all(&[r#"{"type":"STATE_SNAPSHOT","todos":[{"id":"1","content":"test"}]}"#]);
-        assert_eq!(events.len(), 0);
+    fn test_parse_state_snapshot_without_usage_reports_only_the_tasks() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"STATE_SNAPSHOT","snapshot":{"todos":[{"id":"1","content":"test"}],"usage":[],"backgroundTasks":{"running":0,"jobs":[]},"screenRecording":{"active":false}}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
+        );
+    }
+
+    #[test]
+    fn test_parse_state_usage_streams_the_last_request_input() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/usage","value":[{"model":"m","inputTokens":1200,"outputTokens":80,"cachedInputTokens":300}]}]}"#,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/usage","value":[{"model":"m","inputTokens":1840,"outputTokens":120,"cachedInputTokens":300}]}]}"#,
+        ]);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            AgentEvent::TokenUsage {
+                input: 1200,
+                output: 80,
+                cached_read: 300,
+                last_input: 1200,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &events[1],
+            AgentEvent::TokenUsage {
+                input: 1840,
+                output: 120,
+                last_input: 640,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_interrupts_name_the_tool_call_and_the_questions() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"TOOL_CALL_START","toolCallId":"call-1","toolCallName":"read_file"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","toolCallId":"call-1","delta":"{\"path\":\"/tmp/test\"}"}"#,
+            r#"{"type":"TOOL_CALL_END","toolCallId":"call-1"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r1","outcome":{"type":"interrupt","interrupts":[{"id":"call-1","reason":"tool_call","toolCallId":"call-1"}]}}"#,
+            r#"{"type":"TOOL_CALL_START","toolCallId":"call-2","toolCallName":"AskUserQuestion"}"#,
+            r#"{"type":"TOOL_CALL_ARGS","toolCallId":"call-2","delta":"{\"questions\":[{\"header\":\"Lang\",\"question\":\"Which?\",\"options\":[{\"label\":\"Go\",\"description\":\"\"}],\"multiSelect\":false}]}"}"#,
+            r#"{"type":"TOOL_CALL_END","toolCallId":"call-2"}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r2","outcome":{"type":"interrupt","interrupts":[{"id":"call-2","reason":"input_required","responseSchema":{"type":"object"}}]}}"#,
+        ]);
+        assert_eq!(events.len(), 4);
+        assert!(
+            matches!(&events[1], AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
+        );
+        assert!(
+            matches!(&events[3], AgentEvent::UserQuestionRequest { tool_call_id, questions }
+            if tool_call_id == "call-2" && questions[0]["options"][0]["label"] == "Go")
+        );
     }
 
     #[test]
     fn test_parse_messages_snapshot_skipped() {
         let (events, _) = parse_all(&[r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#]);
         assert_eq!(events.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_custom_user_question_request() {
-        let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"user_question_request","value":{"type":"user_question_request","tool_call_id":"call-2","questions":[{"header":"Lang","question":"Which?","options":[{"label":"Go","description":""}],"multiSelect":false}]}}"#,
-        ]);
-        assert_eq!(events.len(), 1);
-        assert!(
-            matches!(&events[0], AgentEvent::UserQuestionRequest { tool_call_id, questions }
-            if tool_call_id == "call-2" && questions[0]["options"][0]["label"] == "Go")
-        );
-    }
-
-    #[test]
-    fn test_parse_custom_approval_request() {
-        let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"approval_request","value":{"type":"approval_request","tool_name":"read_file","tool_args":"{\"path\":\"/tmp/test\"}","tool_call_id":"call-1"}}"#,
-        ]);
-        assert_eq!(events.len(), 1);
-        assert!(
-            matches!(&events[0], AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
-            if tool_name == "read_file" && tool_args == "{\"path\":\"/tmp/test\"}" && tool_call_id == "call-1")
-        );
-    }
-
-    #[test]
-    fn test_parse_custom_computer_use_pause_resume() {
-        let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"computer_use_paused","value":{}}"#,
-            r#"{"type":"CUSTOM","name":"computer_use_resumed","value":{}}"#,
-        ]);
-        assert_eq!(events.len(), 2);
-        assert!(matches!(&events[0], AgentEvent::ComputerUsePaused));
-        assert!(matches!(&events[1], AgentEvent::ComputerUseResumed));
     }
 
     #[test]
@@ -2033,11 +1920,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_custom_background_note_and_tasks() {
+    fn test_parse_background_note_and_tasks_state() {
         let (events, _) = parse_all(&[
             r#"{"type":"CUSTOM","name":"queued_message","value":{"content":"[A2A Task Completed: t1]\n\nok"}}"#,
-            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":1,"jobs":[{"id":"t1","kind":"a2a","label":"t1","description":"delay 15s","detail":"http://localhost:8081","status":"running","started_at":"2026-09-15T10:00:00Z"}]}}"#,
-            r#"{"type":"CUSTOM","name":"background_tasks","value":{"running":0}}"#,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/backgroundTasks","value":{"running":1,"jobs":[{"id":"t1","kind":"a2a","label":"t1","description":"delay 15s","detail":"http://localhost:8081","status":"running","started_at":"2026-09-15T10:00:00Z"}]}}]}"#,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/backgroundTasks","value":{"running":0}}]}"#,
         ]);
         assert_eq!(events.len(), 3);
         assert!(matches!(&events[0], AgentEvent::BackgroundNote { content }
@@ -2049,39 +1936,6 @@ mod tests {
         assert!(
             matches!(&events[2], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
         );
-    }
-
-    #[test]
-    fn test_parse_custom_token_usage_streams_usage_mid_run() {
-        let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"token_usage","value":{"inputTokens":1200,"outputTokens":80,"cacheReadTokens":300,"totalToolCalls":2,"lastInputTokens":640,"contextWindow":128000,"cost":0.012}}"#,
-        ]);
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            AgentEvent::TokenUsage {
-                input,
-                output,
-                cached_read,
-                total_tool_calls,
-                last_input,
-                context_window,
-                cost,
-            } => {
-                assert_eq!(
-                    (
-                        *input,
-                        *output,
-                        *cached_read,
-                        *total_tool_calls,
-                        *last_input,
-                        *context_window
-                    ),
-                    (1200, 80, 300, 2, 640, 128000)
-                );
-                assert!((cost - 0.012).abs() < f64::EPSILON);
-            }
-            _ => panic!("expected TokenUsage"),
-        }
     }
 
     #[test]

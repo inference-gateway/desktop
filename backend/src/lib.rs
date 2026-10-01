@@ -4,9 +4,9 @@ use tauri::Manager;
 
 mod agent;
 mod binaries;
-mod browser_bridge;
 mod cli_install;
 mod config;
+mod daemon;
 mod download;
 mod env;
 mod export;
@@ -21,6 +21,7 @@ mod screen_records;
 mod skills;
 mod stt;
 mod tasks;
+mod thread;
 mod timeline;
 mod tools;
 mod tts_samples;
@@ -34,7 +35,11 @@ pub(crate) struct AppState {
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
     screen_recording: std::sync::Mutex<Option<screen_records::RecordingHandle>>,
-    browser_bridge: Arc<browser_bridge::Bridge>,
+    threads: thread::Threads,
+    /// The main webview's channel per chat, replaced on every prompt.
+    channels:
+        std::sync::Mutex<std::collections::HashMap<String, tauri::ipc::Channel<agent::AgentEvent>>>,
+    extension: std::sync::Mutex<daemon::ExtensionStatus>,
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
@@ -95,7 +100,9 @@ pub fn run() {
             stored_traces,
             stored_metrics,
             screen_recording: std::sync::Mutex::new(None),
-            browser_bridge: Arc::new(browser_bridge::Bridge::default()),
+            threads: thread::Threads::default(),
+            channels: std::sync::Mutex::new(std::collections::HashMap::new()),
+            extension: std::sync::Mutex::new(daemon::ExtensionStatus::default()),
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -103,26 +110,13 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             realize_hidden_windows(app);
             skills::install_bundled_skills();
-            browser_bridge::start_if_enabled(&app.state::<AppState>(), app.handle().clone());
-            {
-                use tauri::Listener;
-                let bridge = Arc::clone(&app.state::<AppState>().browser_bridge);
-                app.listen_any("approval-resolved", move |event| {
-                    if let Some(call_id) =
-                        serde_json::from_str::<serde_json::Value>(event.payload())
-                            .ok()
-                            .and_then(|v| v.get("callId")?.as_str().map(String::from))
-                    {
-                        bridge.approval_resolved(&call_id);
-                    }
-                });
-            }
-            if config::read_config().schedule_enabled {
-                let state = app.state::<AppState>();
-                if let Err(e) = scheduler::spawn_daemon(&state) {
-                    eprintln!("scheduler autostart failed: {e}");
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<AppState>();
+                if let Err(e) = daemon::ensure_running(&state) {
+                    eprintln!("infer daemon autostart failed: {e}");
                 }
-            }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -131,10 +125,10 @@ pub fn run() {
             agent::send_approval,
             agent::send_user_message,
             agent::send_question_answers,
-            agent::send_computer_use_control,
+            agent::resume_agent,
             agent::cancel_agent,
+            agent::open_thread,
             agent::list_conversations,
-            agent::get_conversation,
             agent::delete_conversation,
             agent::move_conversation,
             agent::read_projects,
@@ -235,8 +229,8 @@ pub fn run() {
             observability::get_metrics,
             permissions::computer_use_permission_status,
             permissions::set_computer_use_enabled,
-            browser_bridge::browser_use_status,
-            browser_bridge::set_browser_use_enabled,
+            daemon::browser_use_status,
+            daemon::set_browser_use_enabled,
             permissions::request_accessibility_permission,
             permissions::request_screen_recording_permission,
             screen_records::start_screen_recording,
@@ -265,7 +259,7 @@ pub fn run() {
             }
             screen_records::stop_on_exit(&state);
             app_handle.state::<timeline::Export>().cancel();
-            state.browser_bridge.stop();
+            thread::close_all(&state);
         }
     });
 }

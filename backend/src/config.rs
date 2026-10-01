@@ -69,8 +69,10 @@ pub(crate) async fn get_auth() -> Result<BTreeMap<String, String>, String> {
 #[tauri::command]
 pub(crate) async fn set_auth(
     keys: std::collections::HashMap<String, String>,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
-    write_auth_in(&home_dir(), keys)
+    write_auth_in(&home_dir(), keys)?;
+    crate::daemon::restart(&state)
 }
 
 /// Desktop-facing config fields read from ~/.infer/config.yaml.

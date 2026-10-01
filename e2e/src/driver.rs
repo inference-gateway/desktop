@@ -92,6 +92,8 @@ fn which_infer() -> Option<std::path::PathBuf> {
 pub struct AppDriver {
     child: Child,
     repo_root: PathBuf,
+    /// The wiped HOME of a mock run, whose infer daemon the driver stops.
+    mock_home: Option<PathBuf>,
     artifacts: PathBuf,
 }
 
@@ -155,6 +157,10 @@ impl AppDriver {
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
+        let home = artifacts.join("home");
+        if mock {
+            stop_daemon(&home);
+        }
 
         let backend = repo_root.join("backend");
         let app_bundle = std::env::var_os("DESKTOP_APP").map(PathBuf::from);
@@ -171,7 +177,6 @@ impl AppDriver {
 
         std::fs::create_dir_all(artifacts)?;
         let log_path = artifacts.join(format!("{log_name}.log"));
-        let home = artifacts.join("home");
         if mock {
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(&home)?;
@@ -232,6 +237,7 @@ impl AppDriver {
             child,
             repo_root: repo_root.to_path_buf(),
             artifacts: artifacts.to_path_buf(),
+            mock_home: mock.then_some(home),
         };
         driver.wait_ready()?;
         Ok(driver)
@@ -521,7 +527,35 @@ impl Drop for AppDriver {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
+        if let Some(home) = &self.mock_home {
+            stop_daemon(home);
+        }
     }
+}
+
+/// Stops the `infer daemon` the app started under `home`, by the pid file the
+/// daemon keeps, so the next run talks to a daemon started with its own HOME.
+fn stop_daemon(home: &Path) {
+    let pid_file = home.join(".infer").join("run").join("daemon.pid");
+    let Some(pid) = std::fs::read_to_string(&pid_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+    else {
+        return;
+    };
+    let _ = Command::new("kill").arg(pid.to_string()).status();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let alive = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .is_ok_and(|s| s.success());
+        if !alive {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = std::fs::remove_file(pid_file);
 }
 
 /// Run an AppleScript, retrying once on transient AX flakes (-1700 / nonzero).
