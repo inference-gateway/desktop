@@ -21,6 +21,7 @@ import {
   initialChatState,
   pendingInput,
   COMPUTER_USE_TOOLS,
+  autoApproves,
   historyUsage,
   type ChatAction,
   type ChatState,
@@ -843,7 +844,7 @@ function useDesktopStore() {
           dispatchTo(runId, { type: "event", event });
           switch (event.kind) {
             case "ApprovalRequest":
-              if (autoModesRef.current[runId]) {
+              if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
                 resolveApproval(runId, event.tool_call_id, true);
                 break;
               }
@@ -1429,17 +1430,14 @@ function useDesktopStore() {
           setStatus("Checking video tools...");
           break;
         case "Installing":
-          setStatus("Installing video tools...");
+          setStatus("Installing tools...");
           break;
         case "Downloading":
           setStatus(
             e.total > 0
-              ? `Downloading video tools... ${Math.round((e.received / e.total) * 100)}%`
-              : "Downloading video tools...",
+              ? `Downloading voice model... ${Math.round((e.received / e.total) * 100)}%`
+              : "Downloading voice model...",
           );
-          break;
-        case "Verifying":
-          setStatus("Verifying video tools...");
           break;
         case "Ready":
           setStatus("Video tools ready");

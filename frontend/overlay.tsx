@@ -1,14 +1,14 @@
 // Fullscreen, transparent, click-through overlay that visualizes computer-use
 // actions: a rounded border glows at the screen edges while any computer-use
-// session is active, a cursor dot glides to each Computer move/scroll target,
-// a ring ripples on a Computer click, and a key-cast pill at the bottom shows what
+// session is active, a cursor dot glides to each pointer action the CLI reports
+// (computer_use activity, in screen coordinates), a ring ripples on a click, and a key-cast pill at the bottom shows what
 // the agent is typing or which non-pointer tool (screenshot, WebSearch, ...) it
 // is waiting on, so an unfocused user still sees activity. Fed by the backend's global "agent-event" broadcast;
 // all animation is CSS inside this webview, so no per-frame IPC. One Frame
 // draws three variants: blue at the screen edges for computer use, red at the
 // screen edges during workflow capture ("screen-recording" event from the top
 // bar), and red just outside the recorded area of an agent recording
-// (RecordStart; RecordingArea until RecordingStopped or the process ends).
+// (RecordingStarted until RecordingStopped or the process ends).
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -19,15 +19,13 @@ import {
   PhysicalSize,
 } from "@tauri-apps/api/window";
 import type { AgentEvent, ToolCallInfo } from "@/lib/tauri";
-import { overlayAction } from "@/lib/pointer";
+import { isClickAction, overlayAction } from "@/lib/pointer";
 import { type OverlayRect, type OverlayScreen, recordingFrame } from "@/lib/recording";
 import { COMPUTER_USE_TOOLS } from "@/lib/transcript";
 
 const IDLE_HIDE_MS = 1600;
 const ACCENT = "99, 102, 241";
 const RECORD = "239, 68, 68";
-const API_WIDTH = 1024;
-const API_HEIGHT = 768;
 const FRAME_BORDER = 3;
 
 const STYLE = `
@@ -133,7 +131,6 @@ export default function Overlay() {
   const seqRef = useRef(0);
   const hideTimer = useRef<number | undefined>(undefined);
   const sizedRef = useRef(false);
-  const mapRef = useRef({ sx: 1, sy: 1, dx: 0, dy: 0 });
   const screenRef = useRef<OverlayScreen | null>(null);
 
   useEffect(() => {
@@ -150,9 +147,7 @@ export default function Overlay() {
       await win.setSize(new PhysicalSize(mon.size.width, mon.position.y + mon.size.height - top));
       await win.setPosition(new PhysicalPosition(mon.position.x, top));
       const f = mon.scaleFactor || 1;
-      const s = Math.max(mon.size.width / f / API_WIDTH, mon.size.height / f / API_HEIGHT, 1);
       const dy = (top - mon.position.y) / f;
-      mapRef.current = { sx: s, sy: s, dx: 0, dy };
       screenRef.current = {
         width: mon.size.width / f,
         height: (mon.position.y + mon.size.height - top) / f,
@@ -215,7 +210,7 @@ export default function Overlay() {
         endAgentRecording(e.payload.sessionId);
         return;
       }
-      if (ev.kind === "RecordingArea") {
+      if (ev.kind === "RecordingStarted") {
         const sessionId = e.payload.sessionId;
         agentRecordingOwner = sessionId;
         fitToScreen()
@@ -229,6 +224,22 @@ export default function Overlay() {
       }
       if (ev.kind === "ToolResult" && activeSessions.current.has(e.payload.sessionId)) {
         setBusy(null);
+        return;
+      }
+      if (ev.kind === "ComputerUseAction") {
+        if (!activeSessions.current.has(e.payload.sessionId)) {
+          activeSessions.current.add(e.payload.sessionId);
+          setActive(true);
+        }
+        setBusy(null);
+        wake();
+        const screen = screenRef.current;
+        if (ev.x === null || ev.y === null || !screen || ev.screen_width <= 0) return;
+        const s = screen.width / ev.screen_width;
+        const target = { x: ev.x * s, y: ev.y * s - screen.dy };
+        cursorRef.current = target;
+        setCursor(target);
+        if (isClickAction(ev.action)) setRipple({ ...target, seq: seqRef.current++ });
         return;
       }
       if (ev.kind !== "AssistantMessage") return;
@@ -246,21 +257,7 @@ export default function Overlay() {
         }
         setBusy(null);
         wake();
-        if (action.kind === "type") {
-          setKeycast({ text: action.text, seq: seqRef.current++ });
-          continue;
-        }
-        const m = mapRef.current;
-        const target =
-          action.x !== null && action.y !== null
-            ? { x: action.x * m.sx - m.dx, y: action.y * m.sy - m.dy }
-            : cursorRef.current;
-        if (!target) continue;
-        cursorRef.current = target;
-        setCursor(target);
-        if (action.kind === "click") {
-          setRipple({ ...target, seq: seqRef.current++ });
-        }
+        setKeycast({ text: action.text, seq: seqRef.current++ });
       }
     });
     return () => {

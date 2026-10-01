@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  autoApproves,
   backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
@@ -813,9 +814,8 @@ test("an agent recording collects its area and input until it stops or the proce
   const area = { x: 100, y: 100, width: 400, height: 300, frame_width: 1024, frame_height: 640 };
   const click = { kind: "click" as const, t: 0.5, button: "left", x: 640, y: 380 };
   let s = run([
-    ev({ kind: "RecordingStarted" }),
+    ev({ kind: "RecordingStarted", path: "/tmp/r.mp4", area }),
     ev({ kind: "RecordingInput", input: click }),
-    ev({ kind: "RecordingArea", path: "/tmp/r.mp4", area }),
   ]);
   expect(s.recording).toEqual({ area, path: "/tmp/r.mp4", inputs: [click] });
   expect(chatReducer(s, ev({ kind: "RecordingStopped" })).recording).toBeUndefined();
@@ -830,4 +830,10 @@ test("the transcript keeps following the bottom until the user scrolls up", () =
   expect(followsBottom(false, false, false)).toBe(false);
   expect(followsBottom(false, false, true)).toBe(true);
   expect(followsBottom(false, true, true)).toBe(true);
+});
+
+test("auto mode approves tool calls but leaves sandbox access to the user", () => {
+  expect(autoApproves("Write")).toBe(true);
+  expect(autoApproves("Computer")).toBe(true);
+  expect(autoApproves("SandboxAccess")).toBe(false);
 });

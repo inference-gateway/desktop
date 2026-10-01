@@ -55,8 +55,16 @@ export type AgentEvent =
   | { kind: "AgentStatus"; name: string; state: string; message: string; done: number; total: number }
   | { kind: "BackgroundNote"; content: string }
   | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] }
-  | { kind: "RecordingStarted" }
-  | { kind: "RecordingArea"; path: string; area: RecordedArea }
+  | { kind: "RecordingStarted"; path: string; area: RecordedArea }
+  | {
+      kind: "ComputerUseAction";
+      tool_call_id: string;
+      action: string;
+      x: number | null;
+      y: number | null;
+      screen_width: number;
+      screen_height: number;
+    }
   | { kind: "RecordingInput"; input: InputEvent }
   | { kind: "RecordingStopped" };
 

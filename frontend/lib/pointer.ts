@@ -1,19 +1,9 @@
-// Maps Computer tool calls to overlay actions: where the agent's cursor
-// moves or clicks, and what it is typing. Coordinates arrive in the CLI's
-// frame coordinate space (computer_use.yaml screenshot.target_width x
-// target_height, aspect preserved); the overlay scales them to its own CSS
-// pixels.
+// Maps Computer tool calls to the overlay's key-cast: what the agent is
+// typing or which key combo it presses. Pointer moves and clicks come from the
+// CLI's computer_use activity events instead, already in screen coordinates.
 import type { ToolCallInfo } from "./tauri";
 
-export type OverlayAction =
-  | { kind: "move"; x: number; y: number }
-  | { kind: "click"; x: number | null; y: number | null }
-  | { kind: "type"; text: string };
-
-function coord(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
+export type OverlayAction = { kind: "type"; text: string };
 
 export function overlayAction(tc: ToolCallInfo): OverlayAction | null {
   if (tc.name !== "Computer") return null;
@@ -23,22 +13,13 @@ export function overlayAction(tc: ToolCallInfo): OverlayAction | null {
   } catch {
     return null;
   }
-  const x = coord(args.x);
-  const y = coord(args.y);
-  switch (args.action) {
-    case "move":
-    case "scroll":
-      return x !== null && y !== null ? { kind: "move", x, y } : null;
-    case "click":
-    case "double_click":
-    case "triple_click":
-      return { kind: "click", x, y };
-    case "type":
-    case "key": {
-      const shown = typeof args.combo === "string" ? args.combo : typeof args.text === "string" ? args.text : null;
-      return shown ? { kind: "type", text: shown } : null;
-    }
-    default:
-      return null;
-  }
+  if (args.action !== "type" && args.action !== "key") return null;
+  const shown = typeof args.combo === "string" ? args.combo : typeof args.text === "string" ? args.text : null;
+  return shown ? { kind: "type", text: shown } : null;
+}
+
+/** Whether a computer-use action positions the pointer with a click, so the
+ * overlay ripples at it. */
+export function isClickAction(action: string): boolean {
+  return action === "click" || action === "double_click" || action === "triple_click";
 }

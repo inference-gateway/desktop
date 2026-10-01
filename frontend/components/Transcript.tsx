@@ -10,7 +10,13 @@ import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
 import { isBashCommand, prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
-import { COMPUTER_USE_TOOLS, backgroundNoteHeader, followsBottom, type TranscriptItem } from "@/lib/transcript";
+import {
+  COMPUTER_USE_TOOLS,
+  SANDBOX_ACCESS_TOOL,
+  backgroundNoteHeader,
+  followsBottom,
+  type TranscriptItem,
+} from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
@@ -183,7 +189,7 @@ function ApprovalCard({
             A
           </kbd>
         </button>
-        {item.toolName === "SandboxAccess" && (
+        {item.toolName === SANDBOX_ACCESS_TOOL && (
           <button
             onClick={() => approve(item.callId, true, "always")}
             className="flex items-center gap-2 rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"

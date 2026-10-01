@@ -89,7 +89,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
           setStatus("Preparing voice input...");
           break;
         case "Installing":
-          setStatus("Installing whisper...");
+          setStatus("Installing tools...");
           break;
         case "Downloading":
           setStatus(
@@ -97,9 +97,6 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
               ? `Downloading voice model... ${Math.round((e.received / e.total) * 100)}%`
               : "Downloading voice model...",
           );
-          break;
-        case "Verifying":
-          setStatus("Verifying...");
           break;
       }
     };

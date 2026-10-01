@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod agent;
 mod avatars;
+mod binaries;
 mod browser_bridge;
 mod cli_install;
 mod config;
