@@ -78,10 +78,17 @@ pub(crate) enum AgentEvent {
         running: u64,
         jobs: Vec<BackgroundJob>,
     },
-    RecordingStarted,
-    RecordingArea {
+    RecordingStarted {
         path: String,
         area: RecordedArea,
+    },
+    ComputerUseAction {
+        tool_call_id: String,
+        action: String,
+        x: Option<f64>,
+        y: Option<f64>,
+        screen_width: f64,
+        screen_height: f64,
     },
     RecordingInput {
         input: InputEvent,
@@ -102,27 +109,24 @@ pub(crate) struct RecordedArea {
     frame_height: i64,
 }
 
-/// Translates a successful `RecordStart` result (`data.region` with the CLI's
-/// capitalised `X`/`Y`/`Width`/`Height`) into the MP4 path and recorded area.
-fn record_start_area(content: &str) -> Option<(String, RecordedArea)> {
-    let val: serde_json::Value = serde_json::from_str(content).ok()?;
-    if val.get("tool_name")?.as_str()? != "RecordStart"
-        || val.get("success")?.as_bool() != Some(true)
-    {
+/// Reads the `screenRecording` state key: the MP4 path and the recorded area
+/// while a recording runs (`region` in frame space with `frameWidth` and
+/// `frameHeight`), None once it is off.
+fn recording_area(state: &serde_json::Value) -> Option<(String, RecordedArea)> {
+    if state.get("active")?.as_bool() != Some(true) {
         return None;
     }
-    let data = val.get("data")?;
-    let region = data.get("region")?;
+    let region = state.get("region")?;
     let int = |v: &serde_json::Value, k: &str| v.get(k).and_then(|n| n.as_i64());
     Some((
-        data.get("path")?.as_str()?.to_string(),
+        state.get("path")?.as_str()?.to_string(),
         RecordedArea {
-            x: int(region, "X")?,
-            y: int(region, "Y")?,
-            width: int(region, "Width")?,
-            height: int(region, "Height")?,
-            frame_width: int(data, "frame_width")?,
-            frame_height: int(data, "frame_height")?,
+            x: int(region, "x")?,
+            y: int(region, "y")?,
+            width: int(region, "width")?,
+            height: int(region, "height")?,
+            frame_width: int(state, "frameWidth")?,
+            frame_height: int(state, "frameHeight")?,
         },
     ))
 }
@@ -206,9 +210,9 @@ pub(crate) struct AgentParser {
     tc_id: String,
     tc_name: String,
     tc_args: String,
-    /// A `screen_recording` is active. `RUN_FINISHED` then reports it stopped:
-    /// the CLI finalizes it on exit with no `active: false` after the terminal
-    /// event, and the run's stats already arrived through `token_usage`.
+    /// The `screenRecording` state is active. `RUN_FINISHED` then reports it
+    /// stopped: the CLI finalizes it on exit with no `active: false` patch after
+    /// the terminal event.
     recording: bool,
 }
 
@@ -313,7 +317,15 @@ impl AgentParser {
                     message: "Session started".into(),
                 })
             }
-            "MESSAGES_SNAPSHOT" | "STATE_SNAPSHOT" => None,
+            "MESSAGES_SNAPSHOT" => None,
+            "STATE_SNAPSHOT" => self.recording_state(val.get("snapshot")?.get("screenRecording")?),
+            "STATE_DELTA" => {
+                let patch = val.get("delta")?.as_array()?.iter().find(|op| {
+                    op.get("path").and_then(|p| p.as_str()) == Some("/screenRecording")
+                })?;
+                self.recording_state(patch.get("value")?)
+            }
+            "ACTIVITY_SNAPSHOT" => self.activity(&val),
             "TEXT_MESSAGE_START" => {
                 self.message_id = message_id_of(&val);
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
@@ -413,18 +425,6 @@ impl AgentParser {
                 match val.get("name").and_then(|v| v.as_str()) {
                     Some("computer_use_paused") => return Some(AgentEvent::ComputerUsePaused),
                     Some("computer_use_resumed") => return Some(AgentEvent::ComputerUseResumed),
-                    Some("screen_recording") => {
-                        self.recording = val
-                            .get("value")
-                            .and_then(|v| v.get("active"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        return Some(if self.recording {
-                            AgentEvent::RecordingStarted
-                        } else {
-                            AgentEvent::RecordingStopped
-                        });
-                    }
                     Some("agent_status") => {
                         let v = val.get("value");
                         let field = |k: &str| {
@@ -547,6 +547,54 @@ impl AgentParser {
     fn flush_message(&mut self) {
         self.msg_from_user = false;
         self.message_id = None;
+    }
+
+    /// Follows the `screenRecording` state key: a recording starting carries its
+    /// path and area, one stopping ends it, and the idle key at run start is
+    /// nothing to report.
+    fn recording_state(&mut self, state: &serde_json::Value) -> Option<AgentEvent> {
+        if let Some((path, area)) = recording_area(state) {
+            self.recording = true;
+            return Some(AgentEvent::RecordingStarted { path, area });
+        }
+        std::mem::take(&mut self.recording).then_some(AgentEvent::RecordingStopped)
+    }
+
+    /// Maps an ACTIVITY_SNAPSHOT: a computer-use action in screen coordinates,
+    /// or a local agent's startup progress.
+    fn activity(&self, val: &serde_json::Value) -> Option<AgentEvent> {
+        let content = val.get("content")?;
+        let text = |k: &str| {
+            content
+                .get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+        match val.get("activityType").and_then(|v| v.as_str())? {
+            "computer_use" => {
+                let num = |k: &str| content.get(k).and_then(|v| v.as_f64());
+                Some(AgentEvent::ComputerUseAction {
+                    tool_call_id: text("toolCallId"),
+                    action: text("action"),
+                    x: num("x"),
+                    y: num("y"),
+                    screen_width: num("screenWidth").unwrap_or(0.0),
+                    screen_height: num("screenHeight").unwrap_or(0.0),
+                })
+            }
+            "agent_status" => {
+                let num = |k: &str| content.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                Some(AgentEvent::AgentStatus {
+                    name: text("name"),
+                    state: text("state"),
+                    message: text("message"),
+                    done: num("done"),
+                    total: num("total"),
+                })
+            }
+            _ => None,
+        }
     }
 }
 
@@ -729,12 +777,11 @@ pub(crate) async fn send_message(
                         tool_args,
                     );
                 }
-                let area = match &event {
-                    AgentEvent::ToolResult { content, .. } => record_start_area(content),
+                let starts = match &event {
+                    AgentEvent::RecordingStarted { path, .. } => Some(path.clone()),
                     _ => None,
                 };
-                let starts = matches!(event, AgentEvent::RecordingStarted);
-                let ends = starts
+                let ends = starts.is_some()
                     || matches!(
                         event,
                         AgentEvent::RecordingStopped | AgentEvent::AgentError { .. }
@@ -743,12 +790,10 @@ pub(crate) async fn send_message(
                 if ends && let Some(r) = recording.take() {
                     r.stop();
                 }
-                if starts {
-                    recording = Some(AgentRecording::start(Arc::clone(&sink_clone)));
-                }
-                if let (Some(r), Some((path, area))) = (recording.as_mut(), area) {
-                    r.path = Some(path.clone());
-                    sink_clone.send(AgentEvent::RecordingArea { path, area });
+                if let Some(path) = starts {
+                    let mut r = AgentRecording::start(Arc::clone(&sink_clone));
+                    r.path = Some(path);
+                    recording = Some(r);
                 }
             }
         }
@@ -1912,52 +1957,67 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_screen_recording_start_stop_and_run_finished() {
+    fn test_parse_screen_recording_state_start_stop_and_run_finished() {
+        let on = r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/screenRecording","value":{"active":true,"path":"/tmp/r/2026.mp4","region":{"x":100,"y":80,"width":400,"height":300},"frameWidth":1024,"frameHeight":640}}]}"#;
         let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":true}}"#,
-            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":false}}"#,
+            r#"{"type":"STATE_SNAPSHOT","snapshot":{"todos":[],"screenRecording":{"active":false}}}"#,
+            on,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/screenRecording","value":{"active":false}}]}"#,
             r#"{"type":"RUN_FINISHED","result":{"inputTokens":1}}"#,
-            r#"{"type":"CUSTOM","name":"screen_recording","value":{"active":true}}"#,
+            on,
             r#"{"type":"RUN_FINISHED","result":{"inputTokens":1}}"#,
         ]);
-        assert!(matches!(&events[0], AgentEvent::RecordingStarted));
+        assert_eq!(events.len(), 5);
+        assert!(matches!(
+            &events[0],
+            AgentEvent::RecordingStarted { path, area }
+                if path == "/tmp/r/2026.mp4"
+                    && *area == RecordedArea { x: 100, y: 80, width: 400, height: 300, frame_width: 1024, frame_height: 640 }
+        ));
         assert!(matches!(&events[1], AgentEvent::RecordingStopped));
         assert!(matches!(
             &events[2],
             AgentEvent::TokenUsage { input: 1, .. }
         ));
-        assert!(matches!(&events[3], AgentEvent::RecordingStarted));
+        assert!(matches!(&events[3], AgentEvent::RecordingStarted { .. }));
         assert!(matches!(&events[4], AgentEvent::RecordingStopped));
     }
 
     #[test]
-    fn test_record_start_area_reads_capitalised_region() {
-        let ok = r#"{"tool_name":"RecordStart","success":true,"data":{"path":"/tmp/r/2026.mp4","region":{"X":100,"Y":80,"Width":400,"Height":300},"frame_width":1024,"frame_height":640,"message":"recording"}}"#;
-        assert_eq!(
-            record_start_area(ok),
-            Some((
-                "/tmp/r/2026.mp4".to_string(),
-                RecordedArea {
-                    x: 100,
-                    y: 80,
-                    width: 400,
-                    height: 300,
-                    frame_width: 1024,
-                    frame_height: 640,
-                }
-            ))
+    fn test_parse_screen_recording_snapshot_mid_recording() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"STATE_SNAPSHOT","snapshot":{"screenRecording":{"active":true,"path":"/tmp/r.mp4","region":{"x":0,"y":0,"width":10,"height":10},"frameWidth":100,"frameHeight":50}}}"#,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/todos","value":[]}]}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::RecordingStarted { path, .. } if path == "/tmp/r.mp4")
         );
-        let failed = r#"{"tool_name":"RecordStart","success":false,"error":"another infer process (pid 42) is already recording"}"#;
-        assert_eq!(record_start_area(failed), None);
-        let other = ok.replace("RecordStart", "RecordStop");
-        assert_eq!(record_start_area(&other), None);
-        assert_eq!(record_start_area("not json"), None);
+    }
+
+    #[test]
+    fn test_parse_computer_use_activity() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"ACTIVITY_SNAPSHOT","messageId":"computer_use:c1","activityType":"computer_use","content":{"toolCallId":"c1","action":"click","x":640.5,"y":380,"screenWidth":1440,"screenHeight":900}}"#,
+            r#"{"type":"ACTIVITY_SNAPSHOT","messageId":"computer_use:c2","activityType":"computer_use","content":{"toolCallId":"c2","action":"type","screenWidth":1440,"screenHeight":900}}"#,
+            r#"{"type":"ACTIVITY_SNAPSHOT","messageId":"judge:Bash:1","activityType":"judge_verdict","content":{"tool":"Bash"}}"#,
+        ]);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            AgentEvent::ComputerUseAction { tool_call_id, action, x: Some(x), y: Some(y), screen_width, screen_height }
+                if tool_call_id == "c1" && action == "click" && *x == 640.5 && *y == 380.0 && *screen_width == 1440.0 && *screen_height == 900.0
+        ));
+        assert!(matches!(
+            &events[1],
+            AgentEvent::ComputerUseAction { action, x: None, y: None, .. } if action == "type"
+        ));
     }
 
     #[test]
     fn test_parse_custom_agent_status() {
         let (events, _) = parse_all(&[
-            r#"{"type":"CUSTOM","name":"agent_status","value":{"name":"browser-agent","state":"PullingImage","message":"Pulling image","done":3,"total":10}}"#,
+            r#"{"type":"ACTIVITY_SNAPSHOT","messageId":"agent:browser-agent","activityType":"agent_status","content":{"name":"browser-agent","state":"PullingImage","message":"Pulling image","done":3,"total":10}}"#,
         ]);
         assert!(
             matches!(&events[0], AgentEvent::AgentStatus { name, state, done: 3, total: 10, .. }

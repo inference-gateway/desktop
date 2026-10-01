@@ -78,7 +78,7 @@ export type ChatState = {
   recording?: AgentRecording;
 };
 
-/** The agent recording this session's process owns, from RecordStart until
+/** The agent recording this session's process owns, from RecordingStarted until
  * it stops or the process exits. */
 export type AgentRecording = { area?: RecordedArea; path?: string; inputs: InputEvent[] };
 
@@ -315,6 +315,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     case "SessionId":
     case "Info":
     case "RawLine":
+    case "ComputerUseAction":
       return state;
     case "AssistantMessage":
       return applyAssistant(state, event);
@@ -366,9 +367,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     case "BackgroundTasks":
       return { ...state, backgroundJobs: Array.isArray(event.jobs) ? event.jobs : [] };
     case "RecordingStarted":
-      return { ...state, recording: { inputs: [] } };
-    case "RecordingArea":
-      return { ...state, recording: { inputs: [], ...state.recording, area: event.area, path: event.path } };
+      return { ...state, recording: { inputs: [], area: event.area, path: event.path } };
     case "RecordingInput":
       return state.recording
         ? { ...state, recording: { ...state.recording, inputs: [...state.recording.inputs, event.input] } }
