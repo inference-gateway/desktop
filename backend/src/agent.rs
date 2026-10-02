@@ -1236,15 +1236,28 @@ pub(crate) fn append_history(line: String, bash: Option<bool>) -> Result<(), Str
     Ok(())
 }
 
+/// Whether `path` lies in one of the CLI's runtime dirs `names`, either
+/// userspace (`~/.infer/<name>`) or per project (`~/.infer/projects/<slug>/<name>`).
+/// The CLI writes media and artifacts to the project's dirs while one is open.
+fn in_infer_runtime_dir(path: &str, names: &[&str]) -> bool {
+    let project_rest = path
+        .split_once("/.infer/projects/")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .map(|(_, rest)| rest);
+    names.iter().any(|name| {
+        path.contains(&format!("/.infer/{name}/"))
+            || project_rest.is_some_and(|rest| rest.starts_with(&format!("{name}/")))
+    })
+}
+
 /// Validate a generated-image path before copying it out: absolute, under
-/// `home`, inside an `.infer/artifacts` dir (or the legacy `.infer/tmp`),
-/// no `..` traversal. Split from `save_image` so the guard is testable
-/// without touching the filesystem.
+/// `home`, inside an `.infer` artifacts or tmp dir, no `..` traversal. Split
+/// from `save_image` so the guard is testable without touching the filesystem.
 pub(crate) fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, String> {
     let p = Path::new(path);
     let ok = p.starts_with(home)
         && !p.components().any(|c| c == Component::ParentDir)
-        && (path.contains("/.infer/artifacts/") || path.contains("/.infer/tmp/"));
+        && in_infer_runtime_dir(path, &["artifacts", "tmp"]);
     if !ok {
         return Err(format!(
             "Refusing to save image outside .infer/artifacts or .infer/tmp: {path}"
@@ -1293,11 +1306,12 @@ pub(crate) fn safe_audio_source(path: &str, home: &Path) -> Result<PathBuf, Stri
     let p = Path::new(path);
     let ok = p.starts_with(home)
         && !p.components().any(|c| c == Component::ParentDir)
-        && (path.contains("/.infer/tts/") || path.contains("/.infer/models/tts/samples/"))
+        && (in_infer_runtime_dir(path, &["tmp/media/tts", "tmp/tts"])
+            || path.contains("/.infer/models/tts/samples/"))
         && path.to_ascii_lowercase().ends_with(".wav");
     if !ok {
         return Err(format!(
-            "Refusing to save audio outside .infer/tts or .infer/models/tts/samples: {path}"
+            "Refusing to save audio outside the .infer tts or models/tts/samples dirs: {path}"
         ));
     }
     Ok(p.to_path_buf())
@@ -1474,6 +1488,43 @@ pub(crate) async fn set_a2a_agent_model(name: String, model: String) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_guards_accept_userspace_and_per_project_runtime_dirs() {
+        let home = Path::new("/Users/x");
+        for ok in [
+            "/Users/x/.infer/tmp/media/screenshots/computer-1.jpeg",
+            "/Users/x/.infer/projects/-Users-x-proj/tmp/media/screenshots/computer-1.jpeg",
+            "/Users/x/.infer/projects/-Users-x-proj/artifacts/sid-1/image-1.png",
+            "/Users/x/.infer/artifacts/sid-1/image-1.png",
+        ] {
+            assert!(safe_image_source(ok, home).is_ok(), "{ok}");
+        }
+        for bad in [
+            "/Users/x/.infer/uploads/a.png",
+            "/Users/x/.infer/projects/-Users-x-proj/history/a.png",
+            "/Users/x/.infer/projects/../tmp/a.png",
+            "/etc/.infer/tmp/a.png",
+        ] {
+            assert!(safe_image_source(bad, home).is_err(), "{bad}");
+        }
+        for ok in [
+            "/Users/x/.infer/tmp/media/tts/speech-1.wav",
+            "/Users/x/.infer/projects/-Users-x-proj/tmp/media/tts/speech-1.wav",
+            "/Users/x/.infer/models/tts/samples/me.wav",
+        ] {
+            assert!(safe_audio_source(ok, home).is_ok(), "{ok}");
+        }
+        for bad in [
+            "/Users/x/.infer/tts/speech-1.wav",
+            "/Users/x/.infer/projects/-Users-x-proj/tmp/media/music/song.mp3",
+            "/Users/x/.infer/projects/-Users-x-proj/conversations/a.wav",
+            "/Users/x/.infer/tmp/out.wav",
+            "/Users/x/.infer/tmp/media/voice/infer-voice-1.wav",
+        ] {
+            assert!(safe_audio_source(bad, home).is_err(), "{bad}");
+        }
+    }
 
     fn parse_all(lines: &[&str]) -> (Vec<AgentEvent>, Option<String>) {
         let mut p = AgentParser::new(None);

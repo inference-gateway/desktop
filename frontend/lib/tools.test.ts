@@ -46,6 +46,8 @@ test("safeImageSrc rejects uploads paths, non-image extensions, and traversal", 
   expect(safeImageSrc("/Users/x/.infer/tmp/a.pdf")).toBeNull();
   expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/a.pdf")).toBeNull();
   expect(safeImageSrc("/Users/x/.infer/tmp/../uploads/a.png")).toBeNull();
+  expect(safeImageSrc("/Users/x/.infer/projects/-Users-x-proj/history/a.png")).toBeNull();
+  expect(safeImageSrc("/Users/x/.infer/projects/../tmp/a.png")).toBeNull();
 });
 
 test("safeImageSrc allows nested computer-use screenshot and avatar paths", () => {
@@ -54,6 +56,11 @@ test("safeImageSrc allows nested computer-use screenshot and avatar paths", () =
   };
   try {
     expect(safeImageSrc("/Users/x/.infer/tmp/screenshots/session-b9fb/frame_001.png")).not.toBeNull();
+    expect(safeImageSrc("/Users/x/.infer/tmp/media/screenshots/computer-1.jpeg")).not.toBeNull();
+    expect(
+      safeImageSrc("/Users/x/.infer/projects/-Users-x-my proj/tmp/media/screenshots/region-1.jpeg"),
+    ).not.toBeNull();
+    expect(safeImageSrc("/Users/x/.infer/projects/-Users-x-proj/artifacts/sid-1/image-1.png")).not.toBeNull();
     expect(safeImageSrc("/Users/x/.infer/artifacts/sid-1/nested/a.png")).not.toBeNull();
     expect(safeImageSrc("/Users/x/.infer/avatars/presenter/01-front.jpeg")).not.toBeNull();
   } finally {
@@ -63,22 +70,28 @@ test("safeImageSrc allows nested computer-use screenshot and avatar paths", () =
 
 test("TextToSpeech result path in the default tts output dir is previewable", () => {
   const parsed = parseToolResult(
-    '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
+    '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tmp/media/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
   );
-  expect(parsed?.imagePath).toBe("/Users/x/.infer/tts/speech-20260102-150405-123.wav");
+  expect(parsed?.imagePath).toBe("/Users/x/.infer/tmp/media/tts/speech-20260102-150405-123.wav");
 });
 
-test("safeAudioSrc rejects non-tts wav paths, non-wav files, and traversal", () => {
+test("safeAudioSrc allows tts and samples wavs, rejects others, non-wav files, and traversal", () => {
   (globalThis as Record<string, unknown>).window = {
     __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
   };
   try {
-    expect(safeAudioSrc("/Users/x/.infer/tts/speech-1.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/media/tts/speech-1.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/tts/speech-1.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/projects/-Users-x-proj/tmp/media/tts/speech-1.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/models/tts/samples/me.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/uploads/me.wav")).toBeNull();
-    expect(safeAudioSrc("/Users/x/.infer/tts/Screen Recording 2026-09-03 at 14.05.28-s1.wav")).not.toBeNull();
-    expect(safeAudioSrc("/Users/x/.infer/tts/speech.mp3")).toBeNull();
-    expect(safeAudioSrc("/Users/x/.infer/tts/../uploads/me.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/out.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/projects/-Users-x-proj/tmp/media/voice/infer-voice-1.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tts/speech-1.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/media/tts/Screen Recording 2026-09-03 at 14.05.28-s1.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/media/tts/speech.mp3")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/tmp/../uploads/me.wav")).toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/projects/../uploads/me.wav")).toBeNull();
   } finally {
     delete (globalThis as Record<string, unknown>).window;
   }

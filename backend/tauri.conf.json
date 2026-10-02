@@ -60,9 +60,10 @@
         "scope": [
           "$HOME/**/.infer/tmp/**",
           "$HOME/.infer/tmp/**",
+          "$HOME/.infer/projects/*/tmp/**",
           "$HOME/**/.infer/artifacts/**",
           "$HOME/.infer/artifacts/**",
-          "$HOME/.infer/tts/**",
+          "$HOME/.infer/projects/*/artifacts/**",
           "$HOME/.infer/models/tts/samples/**",
           "$HOME/.infer/avatars/**",
           "$HOME/Documents/Inference Gateway Desktop/**"
