@@ -15,19 +15,20 @@ export type ParsedToolResult = {
   imageData: string | null;
 };
 
-// infer's ImageGeneration result carries the saved absolute path; WKWebView
-// can't load a bare file path, so only paths under ~/.infer/artifacts/<session-id>
-// or ~/.infer/tmp (including nested dirs like tmp/screenshots/session-<id>/),
-// plus the avatar library ~/.infer/avatars/<name>/, are served through Tauri's
-// asset protocol.
+// infer reports saved media by absolute path, and WKWebView can't load a bare
+// file path. Only the CLI's tmp and artifacts dirs, userspace (~/.infer/<dir>)
+// or per project (~/.infer/projects/<slug>/<dir>), plus the avatar library
+// ~/.infer/avatars/<name>/, are served through Tauri's asset protocol.
 const SAFE_IMAGE_PATH =
-  /\.infer\/(?:tmp|artifacts|avatars)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.(?:png|gif|webp|avif|jpe?g)$/i;
+  /\.infer\/(?:(?:projects\/(?!\.\.\/)[^/\0]+\/)?(?:tmp|artifacts)|avatars)\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]*\.(?:png|gif|webp|avif|jpe?g)$/i;
 
-// infer's TextToSpeech writes WAVs to its default output dir ~/.infer/tts and
-// voice samples live in ~/.infer/models/tts/samples; both are in the asset
-// protocol scope (tauri.conf.json). ponytail: a custom text_to_speech.output_dir
-// outside these dirs falls back to the plain tool card.
-const SAFE_AUDIO_PATH = /\.infer\/(?:tts|models\/tts\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
+// infer's TextToSpeech writes WAVs to tmp/media/tts (tmp/tts before the media
+// root) under ~/.infer or a project's ~/.infer/projects/<slug>, and voice samples
+// live in ~/.infer/models/tts/samples. All are in the asset protocol scope
+// (tauri.conf.json). ponytail: a custom text_to_speech.output_dir outside these
+// dirs falls back to the plain tool card.
+const SAFE_AUDIO_PATH =
+  /\.infer\/(?:(?:projects\/(?!\.\.\/)[^/\0]+\/)?tmp\/(?:media\/)?tts|models\/tts\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
 
 export function prettyJson(str: string): string {
   try {

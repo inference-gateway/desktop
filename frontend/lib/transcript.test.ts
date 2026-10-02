@@ -145,14 +145,14 @@ test("a TextToSpeech result with a tts wav path adds an inline audio item", () =
         kind: "ToolResult",
         tool_call_id: "c1",
         content:
-          '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
+          '{"tool_name":"TextToSpeech","data":{"path":"/Users/x/.infer/tmp/media/tts/speech-20260102-150405-123.wav","text":"hi","duration_seconds":1.5},"success":true}',
       }),
     ]);
     const audio = s.items.find((i) => i.kind === "audio");
     expect(audio).toMatchObject({
       kind: "audio",
       filename: "speech-20260102-150405-123.wav",
-      path: "/Users/x/.infer/tts/speech-20260102-150405-123.wav",
+      path: "/Users/x/.infer/tmp/media/tts/speech-20260102-150405-123.wav",
     });
     const other = run([
       ev({
@@ -446,7 +446,7 @@ test("loadHistory recovers audio players from pretty-printed v2 tool results", (
   };
   try {
     const content =
-      "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tts/speech-1.wav (1.0s of audio)";
+      "TextToSpeech(text=hi)\n╰── Result:\n    Speech saved to /Users/me/.infer/tmp/media/tts/speech-1.wav (1.0s of audio)";
     const s = chatReducer(initialChatState, {
       type: "loadHistory",
       messages: [{ id: "1", role: "tool", toolCallId: "zzz", content }],
@@ -455,7 +455,7 @@ test("loadHistory recovers audio players from pretty-printed v2 tool results", (
     expect(s.items[1]).toMatchObject({
       kind: "audio",
       filename: "speech-1.wav",
-      path: "/Users/me/.infer/tts/speech-1.wav",
+      path: "/Users/me/.infer/tmp/media/tts/speech-1.wav",
     });
   } finally {
     delete (globalThis as Record<string, unknown>).window;
