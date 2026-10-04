@@ -24,13 +24,22 @@ pub(crate) enum GatewayStart {
 }
 
 impl GatewayStart {
-    fn from_flags(force: bool, restart: bool) -> Self {
+    /// Without download support (Windows) a reinstall has no new binary to
+    /// install, so it becomes `Reuse`: the gateway already serving the URL -
+    /// desktop-owned or external - keeps running instead of being stopped for
+    /// a download that fails.
+    fn from_flags(force: bool, restart: bool, download_supported: bool) -> Self {
         match (force, restart) {
             (false, false) => Self::Reuse,
             (false, true) => Self::Restart,
-            (true, _) => Self::Reinstall,
+            (true, _) if download_supported => Self::Reinstall,
+            (true, _) => Self::Reuse,
         }
     }
+}
+
+pub(crate) fn gateway_download_supported() -> bool {
+    !cfg!(target_os = "windows")
 }
 
 pub(crate) fn gateway_bin_path() -> PathBuf {
@@ -104,7 +113,7 @@ pub(crate) fn ensure_gateway_binary(mode: GatewayStart) -> Result<PathBuf, Strin
     if bin.exists() && mode != GatewayStart::Reinstall {
         return Ok(bin);
     }
-    if cfg!(target_os = "windows") {
+    if !gateway_download_supported() {
         return Err("Automatic gateway download is not supported on Windows yet".into());
     }
 
@@ -205,7 +214,11 @@ pub(crate) async fn start_gateway(
 ) -> Result<(), String> {
     let processes = Arc::clone(&state.processes);
     tokio::task::spawn_blocking(move || {
-        processes.start_gateway(GatewayStart::from_flags(force, restart))
+        processes.start_gateway(GatewayStart::from_flags(
+            force,
+            restart,
+            gateway_download_supported(),
+        ))
     })
     .await
     .map_err(|error| format!("gateway startup task failed: {error}"))?
@@ -223,7 +236,19 @@ mod tests {
             (true, false, GatewayStart::Reinstall),
             (true, true, GatewayStart::Reinstall),
         ] {
-            assert_eq!(GatewayStart::from_flags(force, restart), mode);
+            assert_eq!(GatewayStart::from_flags(force, restart, true), mode);
+        }
+    }
+
+    #[test]
+    fn from_flags_keeps_the_gateway_up_when_it_cannot_be_downloaded() {
+        for (force, restart, mode) in [
+            (false, false, GatewayStart::Reuse),
+            (false, true, GatewayStart::Restart),
+            (true, false, GatewayStart::Reuse),
+            (true, true, GatewayStart::Reuse),
+        ] {
+            assert_eq!(GatewayStart::from_flags(force, restart, false), mode);
         }
     }
 
