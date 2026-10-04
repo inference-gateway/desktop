@@ -77,7 +77,6 @@ State is a single context store (`frontend/store.tsx`); the typed Tauri client a
 - No comments above modules, packages, or files.
 - Tool directives are not comments and stay where the tool needs them (lint suppressions, build
   tags, compiler pragmas, code generation markers).
-- `ponytail:` debt markers count as tool directives (harvested by `ponytail-debt`). The marker names the ceiling and upgrade path (e.g. `ponytail: O(n^2) - fine for <100 items`).
 - No semicolons in documentation prose (Markdown files, doc comments): split the sentence or use
   a dash instead.
 - User-facing docs (README, CONTRIBUTING) use `-`, not em dashes.
