@@ -68,15 +68,17 @@ State is a single context store (`frontend/store.tsx`); the typed Tauri client a
 
 ## Coding Style
 
-- Rust: follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and rustfmt. Prefer std over new dependencies; when adding one, use the latest stable version.
+- Rust: follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and rustfmt. Prefer std over new dependencies - when adding one, use the latest stable version.
 - Boring, explicit code over clever abstractions.
 - Write self-explanatory code: clear names and small, single-purpose functions carry the intent.
   If a block needs a comment to be understood, extract it into a well-named function or variable.
 - No inline comments inside function bodies.
-- Doc comments on functions, types, and modules are at most 5 lines: what it does and why, not how.
+- Doc comments on functions and types are at most 5 lines: what it does and why, not how.
+- No comments above modules, packages, or files.
 - Tool directives are not comments and stay where the tool needs them (lint suppressions, build
   tags, compiler pragmas, code generation markers).
-- `ponytail:` debt markers count as tool directives (harvested by `ponytail-debt`); the marker names the ceiling and upgrade path (e.g. `ponytail: O(n^2) - fine for <100 items`).
+- No semicolons in documentation prose (Markdown files, doc comments): split the sentence or use
+  a dash instead.
 - User-facing docs (README, CONTRIBUTING) use `-`, not em dashes.
 
 ## Commits & PRs
