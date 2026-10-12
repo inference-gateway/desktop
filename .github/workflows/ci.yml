@@ -24,10 +24,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.9.2
 
-      # The backend links GTK3 directly (gtk = "0.18"), so libgtk-3-dev is installed
-      # explicitly. GitHub's apt mirror can serve indexes whose .deb files are not on
-      # its pool yet - apt aborts with 404s and installs nothing - so the sources are
-      # pointed at the upstream archive and packages install directly, uncached.
       - name: Install system dependencies
         run: |
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
