@@ -27,7 +27,7 @@ pub(crate) fn parse_version(output: &str) -> Option<String> {
 }
 
 pub(crate) fn installed_version(bin: &std::path::Path, arg: &str) -> Option<String> {
-    let out = std::process::Command::new(bin).arg(arg).output().ok()?;
+    let out = crate::env::command(bin).arg(arg).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -37,7 +37,7 @@ pub(crate) fn installed_version(bin: &std::path::Path, arg: &str) -> Option<Stri
 /// Latest release tag for a repo, via `gh` when it is available and authenticated,
 /// falling back to the public GitHub API.
 pub(crate) fn latest_tag(repo: &str) -> Option<String> {
-    let gh = std::process::Command::new(crate::download::gh_bin())
+    let gh = crate::env::command(crate::download::gh_bin())
         .args([
             "release",
             "list",

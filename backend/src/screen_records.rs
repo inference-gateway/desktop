@@ -276,7 +276,7 @@ mod imp {
             }
             index += 1;
             let frame = frames_dir.join(format!("{index:06}.jpg"));
-            if let Err(e) = std::process::Command::new("screencapture")
+            if let Err(e) = crate::env::command("screencapture")
                 .args(["-x", "-t", "jpg", "-C"])
                 .arg(&frame)
                 .status()

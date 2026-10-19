@@ -660,7 +660,7 @@ fn process_executable(_pid: u32) -> Result<Option<PathBuf>, String> {
 
 #[cfg(all(unix, not(target_os = "linux")))]
 fn ps_field(pid: u32, field: &str) -> Result<Option<String>, String> {
-    let output = std::process::Command::new("ps")
+    let output = crate::env::command("ps")
         .args(["-p", &pid.to_string(), "-o", &format!("{field}=")])
         .output()
         .map_err(|error| format!("failed to inspect process {pid}: {error}"))?;
@@ -721,7 +721,7 @@ fn with_cleanup_errors(
 mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::sync::atomic::AtomicU64;
     use std::sync::mpsc;
     use std::sync::{Arc, Barrier};
@@ -744,7 +744,7 @@ mod tests {
 
     #[cfg(unix)]
     fn spawn_signal_child(trap: &str) -> Child {
-        let mut child = Command::new("sh")
+        let mut child = crate::env::command("sh")
             .args([
                 "-c",
                 &format!("trap '{trap}' TERM; echo ready; while :; do sleep 0.01; done"),
@@ -931,7 +931,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn readiness_wait_observes_health_after_retries() {
-        let mut child = Command::new("sh")
+        let mut child = crate::env::command("sh")
             .args(["-c", "sleep 5"])
             .spawn()
             .expect("test child should spawn");

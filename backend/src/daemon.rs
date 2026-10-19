@@ -121,7 +121,7 @@ pub(crate) fn ensure_running(state: &crate::AppState) -> Result<Binding, String>
         log.lock()
             .map_err(|error| format!("scheduler log mutex poisoned: {error}"))?
             .clear();
-        let mut child = std::process::Command::new(infer_bin_path())
+        let mut child = crate::env::command(infer_bin_path())
             .arg("daemon")
             .current_dir(agent_cwd())
             .envs(infer_env())

@@ -551,7 +551,7 @@ fn gh_call(args: &[&str], token: Option<&str>) -> Result<String, String> {
     let Some(token) = token else {
         return crate::scheduler::gh_output(args);
     };
-    let out = std::process::Command::new(crate::download::gh_bin())
+    let out = crate::env::command(crate::download::gh_bin())
         .args(args)
         .env("GH_TOKEN", token)
         .output()

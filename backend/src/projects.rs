@@ -525,7 +525,7 @@ fn read_default_branch(dir: &Path) -> String {
 /// libgit2 backend only if status on giant worktrees is ever slow in practice.
 fn has_uncommitted_changes(dir: &Path) -> bool {
     use std::io::Read;
-    let Ok(mut child) = std::process::Command::new("git")
+    let Ok(mut child) = crate::env::command("git")
         .arg("-C")
         .arg(dir)
         .args(["status", "--porcelain"])
@@ -645,7 +645,7 @@ pub(crate) async fn git_project_status(
 /// Run `git -C <dir> <args>`, returning stdout on success and stderr (or the
 /// spawn error) on failure.
 fn git_output(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new("git")
+    let out = crate::env::command("git")
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -943,9 +943,9 @@ pub(crate) fn content_can_undo(name: String) -> bool {
 /// `code` CLI elsewhere. Both exit promptly after handing the folder over.
 fn vscode_launch(dir: &Path) -> std::process::Command {
     #[cfg(target_os = "macos")]
-    let mut cmd = std::process::Command::new("open");
+    let mut cmd = crate::env::command("open");
     #[cfg(not(target_os = "macos"))]
-    let mut cmd = std::process::Command::new("code");
+    let mut cmd = crate::env::command("code");
     #[cfg(target_os = "macos")]
     cmd.arg("-a").arg("Visual Studio Code");
     cmd.arg(dir);
@@ -1355,7 +1355,7 @@ fn save_to_local(project: &str, fname: String, bytes: Vec<u8>) -> Result<String,
 /// Run `gh` with `input` piped over stdin (large bodies exceed argv limits).
 fn gh_stdin(args: &[&str], input: &str) -> Result<String, String> {
     use std::io::Write;
-    let mut child = std::process::Command::new(crate::download::gh_bin())
+    let mut child = crate::env::command(crate::download::gh_bin())
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1460,7 +1460,7 @@ mod tests {
         std::fs::create_dir_all(&repo).unwrap();
         let git = |args: &[&str]| {
             assert!(
-                std::process::Command::new("git")
+                crate::env::command("git")
                     .arg("-C")
                     .arg(&repo)
                     .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
@@ -1948,7 +1948,7 @@ mod tests {
         std::fs::create_dir_all(&repo).unwrap();
         let git = |args: &[&str]| {
             assert!(
-                std::process::Command::new("git")
+                crate::env::command("git")
                     .arg("-C")
                     .arg(&repo)
                     .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
@@ -1998,7 +1998,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let git = |dir: &Path, args: &[&str]| {
             assert!(
-                std::process::Command::new("git")
+                crate::env::command("git")
                     .arg("-C")
                     .arg(dir)
                     .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])
@@ -2059,7 +2059,7 @@ mod tests {
         std::fs::create_dir_all(&repo).unwrap();
         let git = |args: &[&str]| {
             assert!(
-                std::process::Command::new("git")
+                crate::env::command("git")
                     .arg("-C")
                     .arg(&repo)
                     .args(["-c", "user.name=t", "-c", "user.email=t@localhost"])

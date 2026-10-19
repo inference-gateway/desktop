@@ -992,7 +992,7 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
 
 /// An `infer` command with the desktop's environment, run from `dir`.
 pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
-    let mut command = std::process::Command::new(infer_bin_path());
+    let mut command = crate::env::command(infer_bin_path());
     command
         .env("HOME", home_dir().to_str().unwrap_or(""))
         .envs(infer_env())
@@ -1433,7 +1433,7 @@ pub(crate) fn parse_agent_list(json: &[u8]) -> Result<Vec<A2aAgent>, String> {
 pub(crate) async fn run_infer_agents(args: &[&str]) -> Result<std::process::Output, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
-        std::process::Command::new(infer_bin_path())
+        crate::env::command(infer_bin_path())
             .arg("agents")
             .args(&args)
             .arg("--no-colors")
