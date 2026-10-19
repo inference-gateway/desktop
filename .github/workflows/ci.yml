@@ -71,8 +71,6 @@ jobs:
         with:
             bun-version: latest
 
-      # The Rust build embeds frontendDist (../dist) via generate_context!, so
-      # the frontend must be built before any cargo compile step.
       - name: Build frontend
         working-directory: ${{ github.workspace }}
         run: bun install --frozen-lockfile && bun run build
@@ -83,16 +81,9 @@ jobs:
       - name: Lint with clippy
         run: cargo clippy -- -D warnings
 
-      # Compiles and runs the windows-only spawn code against a real
-      # powershell child: env::command() must leave the spawned process
-      # without a console window (issue #391).
       - name: Build and test
         run: cargo test
 
-      # Runtime verification on a native runner of the CLI contract the
-      # desktop depends on: `infer init` (no flags) seeds the userspace
-      # config, while `--userspace` must be gone - it broke the desktop's
-      # first-run setup when CLI v0.229.0 removed the flag (issue #391).
       - name: Verify CLI init contract
         shell: pwsh
         working-directory: ${{ github.workspace }}
