@@ -124,7 +124,7 @@ fn cli_error(stderr: &[u8]) -> String {
 }
 
 fn run_binaries(subcommand: &str, names: &[impl AsRef<std::ffi::OsStr>]) -> Result<Output, String> {
-    std::process::Command::new(infer_bin_path())
+    crate::env::command(infer_bin_path())
         .args(["binaries", subcommand])
         .args(names)
         .env("HOME", home_dir())

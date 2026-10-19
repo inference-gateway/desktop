@@ -49,6 +49,23 @@ pub(crate) fn infer_bin_path() -> PathBuf {
     }
 }
 
+/// A child process command as the platform wants it. From a windows GUI app
+/// every spawned console program gets its own console window that flashes
+/// open and closed for the child's lifetime, so CREATE_NO_WINDOW suppresses
+/// the console for each spawned child.
+pub(crate) fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut cmd = std::process::Command::new(program);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
+    }
+    #[cfg(not(windows))]
+    std::process::Command::new(program)
+}
+
 /// Token-free e2e testing: DESKTOP_MOCK=true skips the desktop-owned gateway,
 /// takes the model list from the scenarios file named by
 /// INFER_GATEWAY_MOCK_SCENARIOS (see agent::mock_models), and spawns infer
@@ -248,6 +265,7 @@ mod tests {
     /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a
     /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
 
+    #[cfg(unix)]
     #[test]
     fn absolute_storage_path_expands_tilde_and_anchors_relative_at_home() {
         let home = Path::new("/home/tester");
@@ -288,6 +306,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn composed_path_prepends_launchd_omitted_dirs() {
         let path = composed_path();
@@ -320,6 +339,24 @@ mod tests {
             format!(
                 "be a pirate\n\n{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
             )
+        );
+    }
+
+    /// The console suppression exists only on windows, so run a real spawn on
+    /// a windows runner: the child must report that it has no console window.
+    #[cfg(windows)]
+    #[test]
+    fn windows_spawns_have_no_console_window() {
+        const PROBE: &str = "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class ConsoleProbe{[DllImport(\"kernel32.dll\")]public static extern IntPtr GetConsoleWindow();}'; [ConsoleProbe]::GetConsoleWindow().Equals([IntPtr]::Zero)";
+        let output = command("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", PROBE])
+            .output()
+            .expect("powershell probe should spawn");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            "True",
+            "child spawned through command() reported a console window: {:?}",
+            output
         );
     }
 }

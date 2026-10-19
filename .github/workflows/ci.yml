@@ -2,29 +2,40 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+          - windows-2025
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2.9.2
 
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: |
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
                 if [ -f "$f" ]; then
@@ -34,7 +45,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
@@ -52,3 +63,27 @@ jobs:
 
       - name: Build and test
         run: cargo test
+
+      # The desktop installs the CLI from releases/latest, so the init contract
+      # it relies on is checked against the real latest release on windows.
+      - name: Verify CLI init contract
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'infer-verify'
+          $sandbox = Join-Path $dir 'home'
+          New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+          $bin = Join-Path $dir 'infer.exe'
+          Invoke-WebRequest -Uri 'https://github.com/inference-gateway/cli/releases/latest/download/infer-windows-amd64' -OutFile $bin
+          & $bin version
+          $env:USERPROFILE = $sandbox
+          $env:HOME = $sandbox
+          $stale = & $bin init --userspace 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) { throw 'infer init --userspace unexpectedly succeeded - the flag is back, the desktop needs updating again' }
+          if ($stale -notmatch 'unknown flag') { throw "expected 'unknown flag' when passing --userspace, got: $stale" }
+          & $bin init
+          if ($LASTEXITCODE -ne 0) { throw 'infer init without flags failed' }
+          if (-not (Test-Path (Join-Path $sandbox '.infer\config.yaml'))) { throw 'infer init did not create the userspace config.yaml' }
+          Write-Host 'CLI init contract verified: bare infer init seeds the userspace config, --userspace is gone'

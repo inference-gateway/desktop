@@ -105,14 +105,14 @@ pub(crate) fn gh_bin() -> &'static std::path::Path {
 }
 
 pub(crate) fn gh_available() -> bool {
-    std::process::Command::new(gh_bin())
+    crate::env::command(gh_bin())
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success())
 }
 
 pub(crate) fn gh_authenticated() -> bool {
-    std::process::Command::new(gh_bin())
+    crate::env::command(gh_bin())
         .args(["auth", "status"])
         .output()
         .is_ok_and(|o| o.status.success())
@@ -124,7 +124,7 @@ pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<boo
     if !gh_available() || !gh_authenticated() {
         return Ok(false);
     }
-    let output = std::process::Command::new(gh_bin())
+    let output = crate::env::command(gh_bin())
         .args([
             "release",
             "download",

@@ -80,6 +80,8 @@ State is a single context store (`frontend/store.tsx`); the typed Tauri client a
 - No semicolons in documentation prose (Markdown files, doc comments): split the sentence or use
   a dash instead.
 - User-facing docs (README, CONTRIBUTING) use `-`, not em dashes.
+- YAML: block lists (`- item` per line), never flow arrays (`[a, b]`).
+- GitHub Actions: pin every `uses:` to an explicit release tag (`v2.9.2`, not `v2`) or a commit SHA.
 
 ## Commits & PRs
 

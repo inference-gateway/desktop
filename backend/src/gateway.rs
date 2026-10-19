@@ -142,7 +142,7 @@ pub(crate) fn ensure_gateway_binary(mode: GatewayStart) -> Result<PathBuf, Strin
     std::io::copy(&mut reader, &mut file).map_err(|e| e.to_string())?;
     drop(file);
 
-    let status = std::process::Command::new("tar")
+    let status = crate::env::command("tar")
         .arg("-xzf")
         .arg(&archive)
         .arg("-C")
@@ -190,7 +190,7 @@ fn video_env(ttv_enabled: bool) -> Option<(&'static str, &'static str)> {
 
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
     let cfg = crate::config::read_config();
-    std::process::Command::new(bin)
+    crate::env::command(bin)
         .envs(auth_env())
         .envs(collector_env())
         .envs(audio_env(cfg.text_to_speech_enabled))

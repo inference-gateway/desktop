@@ -156,7 +156,7 @@ pub(crate) fn run_whisper(
     model: &std::path::Path,
     wav: &std::path::Path,
 ) -> Result<String, String> {
-    let output = std::process::Command::new(bin)
+    let output = crate::env::command(bin)
         .arg("-m")
         .arg(model)
         .arg("-f")

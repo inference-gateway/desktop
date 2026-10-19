@@ -176,7 +176,7 @@ pub(crate) fn write_timeline(project: String, name: String, data: String) -> Res
 /// `-encoders`). A build can have the filters and still have no H.264
 /// encoder, and the export needs both.
 fn lists(ffmpeg: &Path, query: &str, wanted: &[&str]) -> bool {
-    std::process::Command::new(ffmpeg)
+    crate::env::command(ffmpeg)
         .args(["-hide_banner", query])
         .output()
         .map(|out| {
@@ -723,7 +723,7 @@ impl Export {
         if held.is_some() {
             return Err("an export is already running".into());
         }
-        let child = std::process::Command::new(ffmpeg)
+        let child = crate::env::command(ffmpeg)
             .args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
@@ -862,12 +862,9 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
         return Err(format!("{} does not exist yet", path.display()));
     }
     #[cfg(target_os = "macos")]
-    let status = std::process::Command::new("open")
-        .arg("-R")
-        .arg(&path)
-        .status();
+    let status = crate::env::command("open").arg("-R").arg(&path).status();
     #[cfg(not(target_os = "macos"))]
-    let status = std::process::Command::new("xdg-open")
+    let status = crate::env::command("xdg-open")
         .arg(path.parent().unwrap_or(&path))
         .status();
     match status {

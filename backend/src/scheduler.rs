@@ -135,7 +135,7 @@ pub(crate) async fn github_auth_status() -> Result<GithubAuthStatus, String> {
 }
 
 pub(crate) fn gh_output(args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new(crate::download::gh_bin())
+    let out = crate::env::command(crate::download::gh_bin())
         .args(args)
         .output()
         .map_err(|e| format!("gh failed to start: {e}"))?;
@@ -340,7 +340,7 @@ pub(crate) async fn github_set_secret(
     }
     tokio::task::spawn_blocking(move || {
         use std::io::Write;
-        let mut child = std::process::Command::new(crate::download::gh_bin())
+        let mut child = crate::env::command(crate::download::gh_bin())
             .args(["secret", "set", &name, "--repo", &repo])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
@@ -375,7 +375,7 @@ pub(crate) async fn open_url(url: String) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     let opener = "xdg-open";
     tokio::task::spawn_blocking(move || {
-        std::process::Command::new(opener)
+        crate::env::command(opener)
             .arg(&url)
             .status()
             .map_err(|e| e.to_string())

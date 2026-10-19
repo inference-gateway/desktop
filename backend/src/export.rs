@@ -551,7 +551,7 @@ fn gh_call(args: &[&str], token: Option<&str>) -> Result<String, String> {
     let Some(token) = token else {
         return crate::scheduler::gh_output(args);
     };
-    let out = std::process::Command::new(crate::download::gh_bin())
+    let out = crate::env::command(crate::download::gh_bin())
         .args(args)
         .env("GH_TOKEN", token)
         .output()
@@ -1020,6 +1020,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    #[cfg(unix)]
     #[test]
     fn tilde_paths_round_trip_and_leave_strangers_untouched() {
         let home = Path::new("/home/x");

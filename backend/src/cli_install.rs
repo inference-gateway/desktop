@@ -104,13 +104,13 @@ pub(crate) async fn check_and_install_cli(
     let cfg_path = config_path();
     if !cfg_path.exists() {
         let _ = on_event.send(ProgressEvent::Initializing);
-        let status = std::process::Command::new(&bin_path)
-            .args(["init", "--userspace"])
+        let status = crate::env::command(&bin_path)
+            .args(["init"])
             .env("HOME", home_dir().to_str().unwrap_or(""))
             .status()
             .map_err(|e| format!("Failed to run infer init: {}", e))?;
         if !status.success() {
-            return Err("infer init --userspace failed".into());
+            return Err("infer init failed".into());
         }
 
         let mut config = String::new();

@@ -992,7 +992,7 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
 
 /// An `infer` command with the desktop's environment, run from `dir`.
 pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
-    let mut command = std::process::Command::new(infer_bin_path());
+    let mut command = crate::env::command(infer_bin_path());
     command
         .env("HOME", home_dir().to_str().unwrap_or(""))
         .envs(infer_env())
@@ -1433,7 +1433,7 @@ pub(crate) fn parse_agent_list(json: &[u8]) -> Result<Vec<A2aAgent>, String> {
 pub(crate) async fn run_infer_agents(args: &[&str]) -> Result<std::process::Output, String> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     tokio::task::spawn_blocking(move || {
-        std::process::Command::new(infer_bin_path())
+        crate::env::command(infer_bin_path())
             .arg("agents")
             .args(&args)
             .arg("--no-colors")
@@ -2112,10 +2112,16 @@ mod tests {
     fn owned_conversations_drops_chats_from_foreign_directories() {
         let tmp = std::env::temp_dir().join("desktop-owned-conv-test");
         std::fs::create_dir_all(&tmp).unwrap();
-        let json = format!(
-            r#"{{"conversations":[{{"id":"a","project":"{}"}},{{"id":"b","project":"/nowhere/else"}},{{"id":"c"}},{{"id":"d","project":""}}],"total":4}}"#,
-            tmp.display()
-        );
+        let json = serde_json::json!({
+            "conversations": [
+                {"id": "a", "project": tmp.display().to_string()},
+                {"id": "b", "project": "/nowhere/else"},
+                {"id": "c"},
+                {"id": "d", "project": ""},
+            ],
+            "total": 4,
+        })
+        .to_string();
         let out = owned_conversations(&json, std::slice::from_ref(&tmp));
         let ids: Vec<String> =
             serde_json::from_str::<serde_json::Value>(&out).unwrap()["conversations"]
@@ -2151,6 +2157,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_infer_in_recreates_a_vanished_project_dir() {
         let dir = std::env::temp_dir().join(format!("igd-vanished-{}", std::process::id()));
@@ -2170,6 +2177,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[cfg(unix)]
     #[test]
     fn conversation_store_dir_matches_the_cli_slug_scheme() {
         let dir = conversation_store_dir(Path::new("/home/alice/repo"));
