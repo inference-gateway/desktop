@@ -52,3 +52,64 @@ jobs:
 
       - name: Build and test
         run: cargo test
+
+    windows:
+      runs-on: windows-latest
+      defaults:
+      run:
+        working-directory: backend
+      steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+            components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.9.2
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+            bun-version: latest
+
+      # The Rust build embeds frontendDist (../dist) via generate_context!, so
+      # the frontend must be built before any cargo compile step.
+      - name: Build frontend
+        working-directory: ${{ github.workspace }}
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint with clippy
+        run: cargo clippy -- -D warnings
+
+      # Compiles and runs the windows-only spawn code against a real
+      # powershell child: env::command() must leave the spawned process
+      # without a console window (issue #391).
+      - name: Build and test
+        run: cargo test
+
+      # Runtime verification on a native runner of the CLI contract the
+      # desktop depends on: `infer init` (no flags) seeds the userspace
+      # config, while `--userspace` must be gone - it broke the desktop's
+      # first-run setup when CLI v0.229.0 removed the flag (issue #391).
+      - name: Verify CLI init contract
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+            $ErrorActionPreference = 'Stop'
+            $dir = Join-Path $env:RUNNER_TEMP 'infer-verify'
+            $home = Join-Path $dir 'home'
+            New-Item -ItemType Directory -Force -Path $home | Out-Null
+            $bin = Join-Path $dir 'infer.exe'
+            Invoke-WebRequest -Uri 'https://github.com/inference-gateway/cli/releases/latest/download/infer-windows-amd64' -OutFile $bin
+            & $bin version
+            $env:USERPROFILE = $home
+            $env:HOME = $home
+            $stale = & $bin init --userspace 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) { throw 'infer init --userspace unexpectedly succeeded - the flag is back, the desktop needs updating again' }
+            if ($stale -notmatch 'unknown flag') { throw "expected 'unknown flag' when passing --userspace, got: $stale" }
+            & $bin init
+            if ($LASTEXITCODE -ne 0) { throw 'infer init without flags failed' }
+            if (-not (Test-Path (Join-Path $home '.infer\config.yaml'))) { throw 'infer init did not create the userspace config.yaml' }
+            Write-Host 'CLI init contract verified: bare infer init seeds the userspace config, --userspace is gone'
