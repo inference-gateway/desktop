@@ -265,6 +265,7 @@ mod tests {
     /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a
     /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
 
+    #[cfg(unix)]
     #[test]
     fn absolute_storage_path_expands_tilde_and_anchors_relative_at_home() {
         let home = Path::new("/home/tester");
@@ -305,6 +306,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn composed_path_prepends_launchd_omitted_dirs() {
         let path = composed_path();

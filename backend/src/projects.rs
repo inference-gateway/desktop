@@ -1805,7 +1805,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let names: Vec<&str> = repos.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["repo-a", "repo-b", "worktree"], "{repos:?}");
-        assert!(repos[1].path.ends_with("group/repo-b"), "{repos:?}");
+        assert!(
+            Path::new(&repos[1].path).ends_with("group/repo-b"),
+            "{repos:?}"
+        );
         assert_eq!(repos[0].context.as_deref(), Some("agents rules"));
         assert_eq!(repos[1].context.as_deref(), Some("claude rules"));
         assert_eq!(repos[2].context, None);

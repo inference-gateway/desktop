@@ -143,8 +143,14 @@ mod tests {
             vec![Avatar {
                 name: "presenter".into(),
                 images: vec![
-                    "/home/u/.infer/avatars/presenter/01-front.jpeg".into(),
-                    "/home/u/.infer/avatars/presenter/02-three-quarter-left.png".into(),
+                    dir.join("presenter")
+                        .join("01-front.jpeg")
+                        .display()
+                        .to_string(),
+                    dir.join("presenter")
+                        .join("02-three-quarter-left.png")
+                        .display()
+                        .to_string(),
                 ],
             }]
         );

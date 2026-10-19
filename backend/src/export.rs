@@ -1020,6 +1020,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    #[cfg(unix)]
     #[test]
     fn tilde_paths_round_trip_and_leave_strangers_untouched() {
         let home = Path::new("/home/x");
