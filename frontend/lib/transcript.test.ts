@@ -4,6 +4,7 @@ import {
   backgroundNoteHeader,
   chatReducer,
   delegationsFrom,
+  delegationSessionId,
   followsBottom,
   initialChatState,
   pendingInput,
@@ -11,6 +12,7 @@ import {
   todosDiffer,
   todosFrom,
   type ChatState,
+  type Delegation,
   type TodoItem,
   type TranscriptItem,
 } from "./transcript";
@@ -768,6 +770,21 @@ test("auto mode approves tool calls but leaves sandbox access to the user", () =
   expect(autoApproves("Write")).toBe(true);
   expect(autoApproves("Computer")).toBe(true);
   expect(autoApproves("SandboxAccess")).toBe(false);
+});
+
+test("delegationSessionId resolves a subagent row to its child session", () => {
+  const parent = "11111111-1111-4111-8111-111111111111";
+  const child = (n: string) =>
+    `subagent-${parent}-${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${n.repeat(12)}`;
+  const row: Delegation = { id: "c1:0", label: "write docs", kind: "subagent" };
+  expect(delegationSessionId(parent, row, [{ id: parent }, { id: child("a") }])).toBe(child("a"));
+  const two = [
+    { id: child("a"), title: "fix tests" },
+    { id: child("b"), title: "write docs" },
+  ];
+  expect(delegationSessionId(parent, row, two)).toBe(child("b"));
+  expect(delegationSessionId(parent, { ...row, label: "other" }, two)).toBeNull();
+  expect(delegationSessionId(parent, { ...row, kind: "a2a" }, two)).toBeNull();
 });
 
 test("a user message from another client renders; the desktop's own echo is deduped", () => {

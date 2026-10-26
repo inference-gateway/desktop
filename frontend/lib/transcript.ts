@@ -108,6 +108,20 @@ export function subagentParentId(sessionId: string): string | null {
   return SUBAGENT_SESSION.exec(sessionId)?.[1] ?? null;
 }
 
+/** The stored session of a subagent delegation under `parentId`: the parent's
+ * only child session, or the one whose title matches the delegation label.
+ * A2A, shell and recording delegations have no session of their own. */
+export function delegationSessionId(
+  parentId: string,
+  delegation: Delegation,
+  conversations: { id: string; title?: string | null }[],
+): string | null {
+  if (delegation.kind !== "subagent") return null;
+  const children = conversations.filter((c) => subagentParentId(c.id) === parentId);
+  if (children.length === 1) return children[0].id;
+  return children.find((c) => c.title === delegation.label)?.id ?? null;
+}
+
 const DELEGATION_LABEL_MAX = 48;
 
 function delegationLabel(text: unknown): string | null {

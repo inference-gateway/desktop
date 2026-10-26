@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { Delegation } from "@/lib/transcript";
+import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
@@ -203,7 +203,7 @@ export function StatusBar() {
                     aria-label={`${BADGE[d.kind]} ${d.label} under ${a.title}`}
                     onClick={() => {
                       setOpen(false);
-                      openConversation(a.id);
+                      openConversation(delegationSessionId(a.id, d, conversations) ?? a.id);
                     }}
                     className="flex w-full items-center gap-[0.4rem] rounded py-1 pl-6 pr-2 text-left hover:bg-secondary"
                   >
