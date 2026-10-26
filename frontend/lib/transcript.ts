@@ -379,6 +379,14 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       else agentStartup[event.name] = { message: event.message, done: event.done, total: event.total };
       return { ...state, agentStartup };
     }
+    case "UserMessage": {
+      if (!event.content.trim()) return state;
+      const last = state.items[state.items.length - 1];
+      if (last?.kind === "user" && last.text === event.content) return state;
+      let seq = state.seq;
+      const items = [...state.items, { kind: "user", id: String(seq++), text: event.content } as TranscriptItem];
+      return { ...state, items, seq, currentAssistantId: null, currentAssistantMessageId: null };
+    }
     case "BackgroundNote": {
       if (!event.content.trim()) return state;
       let seq = state.seq;
@@ -410,7 +418,15 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       };
     case "TokenUsage": {
       const { kind: _kind, ...usage } = event;
-      return { ...state, usage };
+      return {
+        ...state,
+        usage: {
+          ...usage,
+          total_tool_calls: Math.max(state.usage.total_tool_calls, usage.total_tool_calls),
+          context_window: usage.context_window || state.usage.context_window,
+          cost: usage.cost || state.usage.cost,
+        },
+      };
     }
     case "Cancelled": {
       const finalized = finalizeTools(state);

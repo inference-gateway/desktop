@@ -647,6 +647,21 @@ test("tool calls climb live while the run streams; RUN_FINISHED overwrites with 
     }),
   ]);
   expect(s.usage.total_tool_calls).toBe(2);
+  const midRun = chatReducer(
+    s,
+    ev({
+      kind: "TokenUsage",
+      input: 10,
+      output: 5,
+      cached_read: 0,
+      total_tool_calls: 0,
+      last_input: 10,
+      context_window: 0,
+      cost: 0,
+    }),
+  );
+  expect(midRun.usage.total_tool_calls).toBe(2);
+  expect(midRun.usage.input).toBe(10);
   expect(
     chatReducer(s, {
       type: "event",
@@ -770,4 +785,11 @@ test("delegationSessionId resolves a subagent row to its child session", () => {
   expect(delegationSessionId(parent, row, two)).toBe(child("b"));
   expect(delegationSessionId(parent, { ...row, label: "other" }, two)).toBeNull();
   expect(delegationSessionId(parent, { ...row, kind: "a2a" }, two)).toBeNull();
+});
+
+test("a user message from another client renders; the desktop's own echo is deduped", () => {
+  const s = run([{ type: "userSend", text: "Hi" }, ev({ kind: "UserMessage", content: "Hi" })]);
+  expect(s.items.map((i) => i.kind)).toEqual(["user"]);
+  const t = chatReducer(s, ev({ kind: "UserMessage", content: "Not much" }));
+  expect(t.items.map((i) => (i.kind === "user" ? i.text : i.kind))).toEqual(["Hi", "Not much"]);
 });

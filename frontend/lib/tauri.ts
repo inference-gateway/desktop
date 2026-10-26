@@ -53,6 +53,7 @@ export type AgentEvent =
   | { kind: "ComputerUsePaused" }
   | { kind: "ComputerUseResumed" }
   | { kind: "AgentStatus"; name: string; state: string; message: string; done: number; total: number }
+  | { kind: "UserMessage"; content: string }
   | { kind: "BackgroundNote"; content: string }
   | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] }
   | { kind: "RecordingStarted"; path: string; area: RecordedArea }
