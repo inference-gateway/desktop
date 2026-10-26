@@ -1642,6 +1642,20 @@ function useDesktopStore() {
     (id: string): number => (transcripts[id]?.backgroundJobs ?? []).filter((j) => j.status === "running").length,
     [transcripts],
   );
+  const runningSubagents = useMemo(
+    () =>
+      Object.values(transcripts).reduce(
+        (n, t) => n + delegationsFrom(t.items, t.backgroundJobs).filter((d) => d.kind === "subagent").length,
+        0,
+      ),
+    [transcripts],
+  );
+  useEffect(() => {
+    if (runningSubagents === 0) return;
+    refreshConversations();
+    const later = setTimeout(refreshConversations, SUBAGENT_SESSION_SETTLE_MS);
+    return () => clearTimeout(later);
+  }, [runningSubagents, refreshConversations]);
 
   return {
     items: active.items,
@@ -1789,6 +1803,10 @@ function useDesktopStore() {
 export type DesktopStore = ReturnType<typeof useDesktopStore>;
 
 const DesktopContext = createContext<DesktopStore | null>(null);
+
+// ponytail: a subagent's session file lands shortly after its Agent call starts; a
+// second refresh after this delay catches it. Replace with a daemon push when one exists.
+const SUBAGENT_SESSION_SETTLE_MS = 1500;
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
   const store = useDesktopStore();
