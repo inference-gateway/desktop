@@ -870,6 +870,12 @@ function useDesktopStore() {
         ch.onmessage = (event) => {
           dispatchTo(runId, { type: "event", event });
           switch (event.kind) {
+            case "AssistantMessage":
+              if (event.tool_calls.some((tc) => tc.name === "Agent")) setTimeout(refreshConversations, 1000);
+              break;
+            case "BackgroundTasks":
+              refreshConversations();
+              break;
             case "ApprovalRequest":
               if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
                 resolveApproval(runId, event.tool_call_id, true);
