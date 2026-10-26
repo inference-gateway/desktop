@@ -645,6 +645,21 @@ test("tool calls climb live while the run streams; RUN_FINISHED overwrites with 
     }),
   ]);
   expect(s.usage.total_tool_calls).toBe(2);
+  const midRun = chatReducer(
+    s,
+    ev({
+      kind: "TokenUsage",
+      input: 10,
+      output: 5,
+      cached_read: 0,
+      total_tool_calls: 0,
+      last_input: 10,
+      context_window: 0,
+      cost: 0,
+    }),
+  );
+  expect(midRun.usage.total_tool_calls).toBe(2);
+  expect(midRun.usage.input).toBe(10);
   expect(
     chatReducer(s, {
       type: "event",

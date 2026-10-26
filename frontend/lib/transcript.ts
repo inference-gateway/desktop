@@ -404,7 +404,15 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       };
     case "TokenUsage": {
       const { kind: _kind, ...usage } = event;
-      return { ...state, usage };
+      return {
+        ...state,
+        usage: {
+          ...usage,
+          total_tool_calls: Math.max(state.usage.total_tool_calls, usage.total_tool_calls),
+          context_window: usage.context_window || state.usage.context_window,
+          cost: usage.cost || state.usage.cost,
+        },
+      };
     }
     case "Cancelled": {
       const finalized = finalizeTools(state);
