@@ -3,10 +3,11 @@
 //! mouse click reaches a caller-supplied sink as an [`InputEvent`] whose `t` is
 //! seconds since [`InputCapture::start`].
 //!
-//! macOS uses a listen-only `CGEventTap` on its own run-loop thread.
-//! ponytail: macOS only - Windows (low-level hooks) and Linux X11 (XRecord)
-//! capture are tracked in inference-gateway/desktop#321; until then `start`
-//! is a no-op there and the event log stays empty.
+//! macOS listens on a `CGEventTap` on its own run-loop thread, Windows on
+//! `WH_KEYBOARD_LL` / `WH_MOUSE_LL` hooks on their own message-loop thread and
+//! Linux X11 on an `XRecord` context streamed over its own connection.
+//! Wayland has no hook (like the CLI's `x11grab` capture), so a refused or
+//! unavailable hook only means no events.
 
 use crate::env::mock_mode;
 use serde::Serialize;
@@ -28,8 +29,40 @@ pub(crate) enum InputEvent {
     },
 }
 
-#[cfg(target_os = "macos")]
 type Sink = Box<dyn Fn(InputEvent) + Send + Sync>;
+
+/// Modifier bits in [`keys_string`] priority order: `ctrl`, `alt`, `cmd`, `shift`.
+const MASK_CTRL: u64 = 1;
+const MASK_ALT: u64 = 2;
+const MASK_CMD: u64 = 4;
+const MASK_SHIFT: u64 = 8;
+
+/// `ctrl+alt+cmd+shift` prefix (when set) plus the lowercased key text, so a
+/// cmd+shift+p press logs `keys: "cmd+shift+p"`. No keycode table needed.
+fn keys_string(mask: u64, text: &str) -> String {
+    let mut keys = String::new();
+    for (bit, name) in [
+        (MASK_CTRL, "ctrl"),
+        (MASK_ALT, "alt"),
+        (MASK_CMD, "cmd"),
+        (MASK_SHIFT, "shift"),
+    ] {
+        if mask & bit != 0 {
+            if !keys.is_empty() {
+                keys.push('+');
+            }
+            keys.push_str(name);
+        }
+    }
+    let key = text.to_lowercase();
+    if !key.is_empty() {
+        if !keys.is_empty() {
+            keys.push('+');
+        }
+        keys.push_str(&key);
+    }
+    keys
+}
 
 pub(crate) fn write_event<W: Write>(writer: &mut W, event: &InputEvent) -> std::io::Result<()> {
     serde_json::to_writer(&mut *writer, event)?;
@@ -39,12 +72,14 @@ pub(crate) fn write_event<W: Write>(writer: &mut W, event: &InputEvent) -> std::
 pub(crate) struct InputCapture {
     #[cfg(target_os = "macos")]
     tap: Option<imp::Tap>,
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    capture: Option<imp::Capture>,
 }
 
 impl InputCapture {
     /// Start delivering input to `sink` from a background thread. Never fails:
-    /// a tap the OS refuses (missing Accessibility / Input Monitoring) only
-    /// means no events.
+    /// a hook the OS refuses (missing Accessibility / Input Monitoring on
+    /// macOS, no X11 display on Linux) only means no events.
     pub(crate) fn start(sink: impl Fn(InputEvent) + Send + Sync + 'static) -> Self {
         if mock_mode() {
             return mock_capture(sink);
@@ -58,8 +93,10 @@ impl InputCapture {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = sink;
-            InputCapture {}
+            let capture = imp::Capture::start(Box::new(sink))
+                .map_err(|e| eprintln!("input capture: {e}"))
+                .ok();
+            InputCapture { capture }
         }
     }
 
@@ -67,6 +104,10 @@ impl InputCapture {
         #[cfg(target_os = "macos")]
         if let Some(tap) = self.tap {
             tap.stop();
+        }
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        if let Some(capture) = self.capture {
+            capture.stop();
         }
     }
 }
@@ -88,12 +129,14 @@ fn mock_capture(sink: impl Fn(InputEvent)) -> InputCapture {
     InputCapture {
         #[cfg(target_os = "macos")]
         tap: None,
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        capture: None,
     }
 }
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::{InputEvent, Sink};
+    use super::{InputEvent, MASK_ALT, MASK_CMD, MASK_CTRL, MASK_SHIFT, Sink, keys_string};
     use std::ffi::c_void;
     use std::ptr;
     use std::sync::Arc;
@@ -167,31 +210,22 @@ mod imp {
         sink: Sink,
     }
 
-    /// `ctrl+alt+cmd+shift` prefix (when set) plus the lowercased key text, so
-    /// a cmd+shift+p press logs `keys: "cmd+shift+p"`. No keycode table needed.
-    fn keys_string(flags: u64, text: &str) -> String {
-        let mut keys = String::new();
-        for (mask, name) in [
-            (FLAG_CONTROL, "ctrl"),
-            (FLAG_ALTERNATE, "alt"),
-            (FLAG_COMMAND, "cmd"),
-            (FLAG_SHIFT, "shift"),
-        ] {
-            if flags & mask != 0 {
-                if !keys.is_empty() {
-                    keys.push('+');
-                }
-                keys.push_str(name);
-            }
+    /// CG event flags to the shared [`keys_string`] mask bits.
+    fn capture_mask(flags: u64) -> u64 {
+        let mut mask = 0;
+        if flags & FLAG_CONTROL != 0 {
+            mask |= MASK_CTRL;
         }
-        let key = text.to_lowercase();
-        if !key.is_empty() {
-            if !keys.is_empty() {
-                keys.push('+');
-            }
-            keys.push_str(&key);
+        if flags & FLAG_ALTERNATE != 0 {
+            mask |= MASK_ALT;
         }
-        keys
+        if flags & FLAG_COMMAND != 0 {
+            mask |= MASK_CMD;
+        }
+        if flags & FLAG_SHIFT != 0 {
+            mask |= MASK_SHIFT;
+        }
+        mask
     }
 
     /// SAFETY: `context` is a `Box::into_raw` TapContext owned by the tap; the
@@ -307,7 +341,7 @@ mod imp {
                     CGEventGetFlags(event)
                 };
                 let text = String::from_utf16_lossy(&buffer[..length.min(buffer.len())]);
-                let keys = keys_string(flags, &text);
+                let keys = keys_string(capture_mask(flags), &text);
                 (context.sink)(InputEvent::Key { t, keys, text });
             }
             K_CG_EVENT_LEFT_MOUSE_DOWN | K_CG_EVENT_RIGHT_MOUSE_DOWN => {
@@ -329,47 +363,552 @@ mod imp {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(target_os = "windows")]
+mod imp {
+    use super::{InputEvent, MASK_ALT, MASK_CMD, MASK_CTRL, MASK_SHIFT, Sink, keys_string};
+    use std::cell::Cell;
+    use std::ptr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::thread::JoinHandle;
+    use std::time::Instant;
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ToUnicode, VK_SHIFT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
+        PeekMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL,
+        WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_QUIT, WM_RBUTTONDOWN, WM_SYSKEYDOWN,
+        WM_SYSKEYUP,
+    };
 
-    #[test]
-    fn events_writer_emits_one_valid_json_object_per_line() {
-        let mut out = Vec::new();
-        write_event(
-            &mut out,
-            &InputEvent::Key {
-                t: 12.4,
-                keys: "cmd+shift+p".into(),
-                text: "P".into(),
-            },
-        )
-        .unwrap();
-        write_event(
-            &mut out,
-            &InputEvent::Click {
-                t: 13.0,
-                button: "left",
-                x: 812,
-                y: 344,
-            },
-        )
-        .unwrap();
+    /// Virtual keys that act as modifiers, mapped to the shared mask bits.
+    fn vk_modifier(vk: u32) -> Option<u64> {
+        match vk {
+            0x10 | 0xA0 | 0xA1 => Some(MASK_SHIFT),
+            0x11 | 0xA2 | 0xA3 => Some(MASK_CTRL),
+            0x12 | 0xA4 | 0xA5 => Some(MASK_ALT),
+            0x5B | 0x5C => Some(MASK_CMD),
+            _ => None,
+        }
+    }
 
-        let lines: Vec<String> = String::from_utf8(out)
-            .unwrap()
-            .lines()
-            .map(String::from)
-            .collect();
-        assert_eq!(lines.len(), 2);
-        let key: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
-        assert_eq!(key["kind"], "key");
-        assert_eq!(key["keys"], "cmd+shift+p");
-        assert_eq!(key["text"], "P");
-        let click: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
-        assert_eq!(click["kind"], "click");
-        assert_eq!(click["button"], "left");
-        assert_eq!(click["x"], 812);
-        assert_eq!(click["y"], 344);
+    /// `ToUnicode` flag that leaves the foreground app's dead-key state alone.
+    const TO_UNICODE_NO_KEYBOARD_STATE_CHANGE: u32 = 1 << 2;
+
+    /// The printed character of a virtual key under the tracked modifiers. Only
+    /// shift is fed to the layout lookup so ctrl+s yields `s`, not `\u{13}`.
+    fn key_text(vk: u32, scan_code: u32, modifiers: u64) -> String {
+        let mut state = [0u8; 256];
+        if modifiers & MASK_SHIFT != 0 {
+            state[VK_SHIFT as usize] = 0x80;
+        }
+        let mut buffer = [0u16; 32];
+        let written = unsafe {
+            ToUnicode(
+                vk,
+                scan_code,
+                state.as_ptr(),
+                buffer.as_mut_ptr(),
+                buffer.len() as i32,
+                TO_UNICODE_NO_KEYBOARD_STATE_CHANGE,
+            )
+        };
+        if written <= 0 {
+            String::new()
+        } else {
+            String::from_utf16_lossy(&buffer[..written as usize])
+        }
+    }
+
+    struct HookContext {
+        start: Instant,
+        sink: Sink,
+        modifiers: Cell<u64>,
+    }
+
+    /// The hook procedures carry no user data, so the one live capture exposes
+    /// its context address here (0 = none). Low-level hook callbacks arrive
+    /// only on the installing thread, serialized with its message loop.
+    static CURRENT: AtomicUsize = AtomicUsize::new(0);
+
+    /// The live capture's context, if one is installed.
+    fn current() -> Option<&'static HookContext> {
+        let address = CURRENT.load(Ordering::SeqCst);
+        // SAFETY: the address is the box the capture thread owns; it unhooks
+        // both hooks before freeing it, so no callback can run after that.
+        (address != 0).then(|| unsafe { &*(address as *const HookContext) })
+    }
+
+    pub(super) struct Capture {
+        thread: JoinHandle<()>,
+        thread_id: mpsc::Receiver<u32>,
+    }
+
+    impl Capture {
+        pub(super) fn start(sink: Sink) -> Result<Capture, String> {
+            let context = Box::new(HookContext {
+                start: Instant::now(),
+                sink,
+                modifiers: Cell::new(0),
+            });
+            let (thread_id_tx, thread_id) = mpsc::channel();
+            let thread = std::thread::Builder::new()
+                .name("input-capture-hooks".into())
+                .spawn(move || loop_input(context, thread_id_tx))
+                .map_err(|e| format!("spawning the input capture thread: {e}"))?;
+            Ok(Capture { thread, thread_id })
+        }
+
+        pub(super) fn stop(self) {
+            if let Ok(thread_id) = self.thread_id.recv() {
+                let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) };
+            }
+            let _ = self.thread.join();
+        }
+    }
+
+    fn loop_input(context: Box<HookContext>, thread_id: mpsc::Sender<u32>) {
+        // The message queue for this thread must exist before the thread id is
+        // announced through the channel, or a WM_QUIT posted right after
+        // `start` would fail with no queue to receive it.
+        let mut probe: MSG = unsafe { std::mem::zeroed() };
+        let _ = unsafe { PeekMessageW(&mut probe, ptr::null_mut(), 0, 0, PM_NOREMOVE) };
+        let _ = thread_id.send(unsafe { GetCurrentThreadId() });
+        let address = &*context as *const HookContext as usize;
+        if CURRENT
+            .compare_exchange(0, address, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            eprintln!("input capture: another input capture is already running");
+            return;
+        }
+        let module = unsafe { GetModuleHandleW(ptr::null()) };
+        let keyboard = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0) };
+        let mouse = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0) };
+        if keyboard.is_null() || mouse.is_null() {
+            eprintln!("input capture: SetWindowsHookExW failed; input will not be logged");
+        } else {
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            while unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) } > 0 {}
+        }
+        unsafe {
+            if !keyboard.is_null() {
+                UnhookWindowsHookEx(keyboard);
+            }
+            if !mouse.is_null() {
+                UnhookWindowsHookEx(mouse);
+            }
+        }
+        CURRENT.store(0, Ordering::SeqCst);
+        drop(context);
+    }
+
+    unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0
+            && let Some(context) = current()
+            && lparam != 0
+        {
+            let info = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
+            handle_keyboard(context, wparam as u32, info);
+        }
+        unsafe { CallNextHookEx(ptr::null_mut(), code, wparam, lparam) }
+    }
+
+    unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0
+            && let Some(context) = current()
+            && lparam != 0
+        {
+            let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
+            handle_mouse(context, wparam as u32, info);
+        }
+        unsafe { CallNextHookEx(ptr::null_mut(), code, wparam, lparam) }
+    }
+
+    fn handle_keyboard(context: &HookContext, message: u32, info: &KBDLLHOOKSTRUCT) {
+        let pressed = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+        let released = message == WM_KEYUP || message == WM_SYSKEYUP;
+        if let Some(mask) = vk_modifier(info.vkCode) {
+            let was = context.modifiers.get();
+            let now = if pressed {
+                was | mask
+            } else if released {
+                was & !mask
+            } else {
+                return;
+            };
+            if now == was {
+                return;
+            }
+            context.modifiers.set(now);
+            (context.sink)(InputEvent::Key {
+                t: context.start.elapsed().as_secs_f64(),
+                keys: keys_string(now, ""),
+                text: String::new(),
+            });
+            return;
+        }
+        if !pressed {
+            return;
+        }
+        let text = key_text(info.vkCode, info.scanCode, context.modifiers.get());
+        (context.sink)(InputEvent::Key {
+            t: context.start.elapsed().as_secs_f64(),
+            keys: keys_string(context.modifiers.get(), &text),
+            text,
+        });
+    }
+
+    fn handle_mouse(context: &HookContext, message: u32, info: &MSLLHOOKSTRUCT) {
+        let button = match message {
+            WM_LBUTTONDOWN => "left",
+            WM_RBUTTONDOWN => "right",
+            _ => return,
+        };
+        (context.sink)(InputEvent::Click {
+            t: context.start.elapsed().as_secs_f64(),
+            button,
+            x: info.pt.x,
+            y: info.pt.y,
+        });
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn vk_modifier_maps_the_five_modifier_groups() {
+            assert_eq!(vk_modifier(0x10), Some(MASK_SHIFT));
+            assert_eq!(vk_modifier(0xA1), Some(MASK_SHIFT));
+            assert_eq!(vk_modifier(0x11), Some(MASK_CTRL));
+            assert_eq!(vk_modifier(0x12), Some(MASK_ALT));
+            assert_eq!(vk_modifier(0x5B), Some(MASK_CMD));
+            assert_eq!(vk_modifier(0x41), None);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{InputEvent, MASK_ALT, MASK_CMD, MASK_CTRL, MASK_SHIFT, Sink, keys_string};
+    use std::thread::JoinHandle;
+    use std::time::Instant;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::record::{CS, ConnectionExt as _, Range, Range8};
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    use x11rb::rust_connection::RustConnection;
+
+    /// Core X event types reported in the record stream.
+    const KEY_PRESS: u8 = 2;
+    const BUTTON_PRESS: u8 = 4;
+    /// The top bit of the type byte flags a `SendEvent`-generated event.
+    const EVENT_TYPE_MASK: u8 = 0x7f;
+
+    /// `EnableContext` reply category carrying server-to-client protocol data
+    /// (the recorded events). The others mark client lifecycle and stream ends.
+    const CATEGORY_FROM_SERVER: u8 = 0;
+
+    /// Modifier state bits of core X events: Shift, Control, Mod1 (Alt) and
+    /// Mod4 (Super on the usual X keyboard setup).
+    const X_SHIFT: u16 = 1 << 0;
+    const X_CONTROL: u16 = 1 << 2;
+    const X_MOD1: u16 = 1 << 3;
+    const X_MOD4: u16 = 1 << 6;
+
+    pub(super) struct Capture {
+        thread: JoinHandle<()>,
+        control: RustConnection,
+        context: u32,
+    }
+
+    impl Capture {
+        pub(super) fn start(sink: Sink) -> Result<Capture, String> {
+            let (control, _) = RustConnection::connect(None)
+                .map_err(|e| format!("opening the X11 control connection: {e:?}"))?;
+            let context = control
+                .generate_id()
+                .map_err(|e| format!("allocating an XRecord context id: {e:?}"))?;
+            let range = Range {
+                device_events: Range8 {
+                    first: KEY_PRESS,
+                    last: BUTTON_PRESS,
+                },
+                ..Default::default()
+            };
+            let cookie = control
+                .record_create_context(context, 0, &[CS::ALL_CLIENTS.into()], &[range])
+                .map_err(|e| format!("creating the XRecord context: {e:?}"))?;
+            cookie
+                .check()
+                .map_err(|e| format!("creating the XRecord context: {e:?}"))?;
+            let thread = std::thread::Builder::new()
+                .name("input-capture-xrecord".into())
+                .spawn(move || record_loop(sink, context))
+                .map_err(|e| format!("spawning the input capture thread: {e}"))?;
+            Ok(Capture {
+                thread,
+                control,
+                context,
+            })
+        }
+
+        pub(super) fn stop(self) {
+            let Capture {
+                thread,
+                control,
+                context,
+            } = self;
+            if let Ok(cookie) = control.record_disable_context(context) {
+                let _ = cookie.check();
+            }
+            // Closing also frees the context: X resources of a disconnecting
+            // client go away, so the stream ends even if the disable above
+            // did not reach the server.
+            drop(control);
+            let _ = thread.join();
+        }
+    }
+
+    fn record_loop(sink: Sink, context: u32) {
+        let (data, _) = match RustConnection::connect(None) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("input capture: opening the X11 data connection: {e:?}");
+                return;
+            }
+        };
+        let keymap = KeysymTable::load(&data);
+        if keymap.is_none() {
+            eprintln!("input capture: reading the X11 keymap failed; key text stays empty");
+        }
+        let start = Instant::now();
+        let cookie = match data.record_enable_context(context) {
+            Ok(cookie) => cookie,
+            Err(e) => {
+                eprintln!("input capture: enabling the XRecord context: {e:?}");
+                return;
+            }
+        };
+        for reply in cookie {
+            match reply {
+                Ok(reply) if reply.category == CATEGORY_FROM_SERVER => {
+                    for event in record_events(&reply.data) {
+                        deliver(keymap.as_ref(), start, &sink, event);
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("input capture: XRecord stream ended: {e:?}");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Input inside one EnableContext reply, mapped to the event shapes the
+    /// sink expects (left and right buttons only, like the other platforms).
+    #[derive(Debug, PartialEq)]
+    enum RecordEvent {
+        Key {
+            keycode: u8,
+            state: u16,
+        },
+        Button {
+            button: &'static str,
+            x: i32,
+            y: i32,
+        },
+    }
+
+    fn deliver(keymap: Option<&KeysymTable>, start: Instant, sink: &Sink, event: RecordEvent) {
+        let t = start.elapsed().as_secs_f64();
+        match event {
+            RecordEvent::Key { keycode, state } => {
+                let text = keymap
+                    .map(|table| table.text_for(keycode, state))
+                    .unwrap_or_default();
+                (sink)(InputEvent::Key {
+                    t,
+                    keys: keys_string(x11_mask(state), &text),
+                    text,
+                });
+            }
+            RecordEvent::Button { button, x, y } => {
+                (sink)(InputEvent::Click { t, button, x, y });
+            }
+        }
+    }
+
+    /// A `FromServer` reply batch is complete 32-byte core events back to back
+    /// (`element_header: 0` adds no time or sequence prefix).
+    fn record_events(data: &[u8]) -> Vec<RecordEvent> {
+        let (events, _) = data.as_chunks::<32>();
+        events
+            .iter()
+            .filter_map(|event| parse_event(event))
+            .collect()
+    }
+
+    /// Core X event layout: 1 type, 1 detail, 2 sequence, 4 timestamp, 4 root,
+    /// 4 event, 4 child, 2 root-x (s16), 2 root-y (s16), 2 event-x, 2 event-y,
+    /// 2 modifier state (u16).
+    fn parse_event(event: &[u8]) -> Option<RecordEvent> {
+        match event[0] & EVENT_TYPE_MASK {
+            KEY_PRESS => Some(RecordEvent::Key {
+                keycode: event[1],
+                state: u16::from_le_bytes([event[28], event[29]]),
+            }),
+            BUTTON_PRESS => match event[1] {
+                1 | 3 => Some(RecordEvent::Button {
+                    button: if event[1] == 1 { "left" } else { "right" },
+                    x: i16::from_le_bytes([event[20], event[21]]) as i32,
+                    y: i16::from_le_bytes([event[22], event[23]]) as i32,
+                }),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Modifier state bits to the shared `keys_string` bits.
+    fn x11_mask(state: u16) -> u64 {
+        let mut mask = 0;
+        if state & X_SHIFT != 0 {
+            mask |= MASK_SHIFT;
+        }
+        if state & X_CONTROL != 0 {
+            mask |= MASK_CTRL;
+        }
+        if state & X_MOD1 != 0 {
+            mask |= MASK_ALT;
+        }
+        if state & X_MOD4 != 0 {
+            mask |= MASK_CMD;
+        }
+        mask
+    }
+
+    /// Keycode to keysym lookup, kept from the data connection's keymap.
+    struct KeysymTable {
+        first: u8,
+        per_keycode: usize,
+        keysyms: Vec<u32>,
+    }
+
+    impl KeysymTable {
+        fn load(conn: &RustConnection) -> Option<KeysymTable> {
+            let setup = conn.setup();
+            let first = setup.min_keycode;
+            let count = setup.max_keycode.saturating_sub(first).saturating_add(1);
+            let reply = conn.get_keyboard_mapping(first, count).ok()?.reply().ok()?;
+            Some(KeysymTable {
+                first,
+                per_keycode: reply.keysyms_per_keycode as usize,
+                keysyms: reply.keysyms,
+            })
+        }
+
+        /// The printed character of a keycode under `state` (the shift bit
+        /// picks the shifted keysym).
+        fn text_for(&self, keycode: u8, state: u16) -> String {
+            if self.per_keycode == 0 || keycode < self.first {
+                return String::new();
+            }
+            let row = (keycode - self.first) as usize;
+            let index = usize::from(state & X_SHIFT != 0 && self.per_keycode > 1);
+            let Some(keysym) = self.keysyms.get(row * self.per_keycode + index).copied() else {
+                return String::new();
+            };
+            keysym_text(keysym)
+        }
+    }
+
+    /// Characters a keysym prints: Latin-1 keysyms map 1:1 (letters, digits,
+    /// space) and the few control keys with a printed character to their
+    /// control character; everything else (arrows, function keys) prints none.
+    fn keysym_text(keysym: u32) -> String {
+        match keysym {
+            0x20..=0xff => String::from(keysym as u8 as char),
+            0xff08 => "\u{8}".into(),
+            0xff09 => "\t".into(),
+            0xff0a => "\n".into(),
+            0xff0d => "\r".into(),
+            _ => String::new(),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        const KEY_RELEASE: u8 = 3;
+
+        use super::*;
+
+        fn event_bytes(type_code: u8, detail: u8, x: i16, y: i16, state: u16) -> Vec<u8> {
+            let mut event = vec![0u8; 32];
+            event[0] = type_code;
+            event[1] = detail;
+            event[20..22].copy_from_slice(&x.to_le_bytes());
+            event[22..24].copy_from_slice(&y.to_le_bytes());
+            event[28..30].copy_from_slice(&state.to_le_bytes());
+            event
+        }
+
+        #[test]
+        fn parses_key_and_button_press_events_from_a_record_batch() {
+            let mut batch = event_bytes(KEY_PRESS, 38, 100, 200, X_CONTROL);
+            batch.extend(event_bytes(BUTTON_PRESS, 3, -5, 7, 0));
+            assert_eq!(
+                record_events(&batch),
+                vec![
+                    RecordEvent::Key {
+                        keycode: 38,
+                        state: X_CONTROL
+                    },
+                    RecordEvent::Button {
+                        button: "right",
+                        x: -5,
+                        y: 7
+                    }
+                ]
+            );
+        }
+
+        #[test]
+        fn parses_send_event_flagged_presses() {
+            let batch = event_bytes(KEY_PRESS | 0x80, 38, 0, 0, 0);
+            assert_eq!(
+                record_events(&batch),
+                vec![RecordEvent::Key {
+                    keycode: 38,
+                    state: 0
+                }]
+            );
+        }
+
+        #[test]
+        fn ignores_key_release_events() {
+            let batch = event_bytes(KEY_RELEASE, 38, 0, 0, 0);
+            assert_eq!(record_events(&batch), Vec::new());
+        }
+
+        #[test]
+        fn latin1_keysyms_print_their_character_and_arrows_print_none() {
+            assert_eq!(keysym_text(0x61), "a");
+            assert_eq!(keysym_text(0x20), " ");
+            assert_eq!(keysym_text(0xff0d), "\r");
+            assert_eq!(keysym_text(0xff09), "\t");
+            assert_eq!(keysym_text(0xff52), "");
+        }
+
+        #[test]
+        fn x11_modifier_bits_map_to_the_shared_names() {
+            assert_eq!(x11_mask(X_CONTROL), MASK_CTRL);
+            assert_eq!(x11_mask(X_MOD1), MASK_ALT);
+            assert_eq!(x11_mask(X_MOD4), MASK_CMD);
+            assert_eq!(x11_mask(X_SHIFT), MASK_SHIFT);
+        }
     }
 }

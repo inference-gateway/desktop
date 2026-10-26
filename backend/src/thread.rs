@@ -472,12 +472,14 @@ mod tests {
         (port, received)
     }
 
-    fn sinks() -> (
+    type Sinks = (
         Sink,
         Arc<Mutex<Vec<AgentEvent>>>,
         StatusSink,
         Arc<Mutex<Vec<ExtensionStatus>>>,
-    ) {
+    );
+
+    fn sinks() -> Sinks {
         let events = Arc::new(Mutex::new(Vec::new()));
         let statuses = Arc::new(Mutex::new(Vec::new()));
         let e = Arc::clone(&events);
