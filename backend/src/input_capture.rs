@@ -73,7 +73,7 @@ pub(crate) struct InputCapture {
     #[cfg(target_os = "macos")]
     tap: Option<imp::Tap>,
     #[cfg(any(target_os = "windows", target_os = "linux"))]
-    hooks: Option<imp::Capture>,
+    capture: Option<imp::Capture>,
 }
 
 impl InputCapture {
@@ -93,10 +93,10 @@ impl InputCapture {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let hooks = imp::Capture::start(Box::new(sink))
+            let capture = imp::Capture::start(Box::new(sink))
                 .map_err(|e| eprintln!("input capture: {e}"))
                 .ok();
-            InputCapture { hooks }
+            InputCapture { capture }
         }
     }
 
@@ -106,8 +106,8 @@ impl InputCapture {
             tap.stop();
         }
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        if let Some(hooks) = self.hooks {
-            hooks.stop();
+        if let Some(capture) = self.capture {
+            capture.stop();
         }
     }
 }
@@ -130,7 +130,7 @@ fn mock_capture(sink: impl Fn(InputEvent)) -> InputCapture {
         #[cfg(target_os = "macos")]
         tap: None,
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        hooks: None,
+        capture: None,
     }
 }
 
@@ -368,14 +368,14 @@ mod imp {
     use super::{InputEvent, MASK_ALT, MASK_CMD, MASK_CTRL, MASK_SHIFT, Sink, keys_string};
     use std::cell::Cell;
     use std::ptr;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc;
     use std::thread::JoinHandle;
     use std::time::Instant;
-    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardState, ToUnicode};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ToUnicode, VK_SHIFT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, KBDLLHOOKSTRUCT, MSG, MSLLHOOKSTRUCT, PM_NOREMOVE,
         PeekMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL,
@@ -394,15 +394,27 @@ mod imp {
         }
     }
 
-    /// The printed character of a virtual key under the current keyboard state,
-    /// the layout lookup `ToUnicode` performs.
-    fn key_text(vk: u32, scan_code: u32) -> String {
+    /// `ToUnicode` flag that leaves the foreground app's dead-key state alone.
+    const TO_UNICODE_NO_KEYBOARD_STATE_CHANGE: u32 = 1 << 2;
+
+    /// The printed character of a virtual key under the tracked modifiers. Only
+    /// shift is fed to the layout lookup so ctrl+s yields `s`, not `\u{13}`.
+    fn key_text(vk: u32, scan_code: u32, modifiers: u64) -> String {
         let mut state = [0u8; 256];
-        if unsafe { GetKeyboardState(state.as_mut_ptr()) } == 0 {
-            return String::new();
+        if modifiers & MASK_SHIFT != 0 {
+            state[VK_SHIFT as usize] = 0x80;
         }
         let mut buffer = [0u16; 32];
-        let written = unsafe { ToUnicode(vk, scan_code, state.as_ptr(), &mut buffer, 0) };
+        let written = unsafe {
+            ToUnicode(
+                vk,
+                scan_code,
+                state.as_ptr(),
+                buffer.as_mut_ptr(),
+                buffer.len() as i32,
+                TO_UNICODE_NO_KEYBOARD_STATE_CHANGE,
+            )
+        };
         if written <= 0 {
             String::new()
         } else {
@@ -417,18 +429,16 @@ mod imp {
     }
 
     /// The hook procedures carry no user data, so the one live capture exposes
-    /// its context address here. Low-level hook callbacks arrive only on the
-    /// installing thread, serialized with its message loop.
-    static CURRENT: Mutex<Option<usize>> = Mutex::new(None);
+    /// its context address here (0 = none). Low-level hook callbacks arrive
+    /// only on the installing thread, serialized with its message loop.
+    static CURRENT: AtomicUsize = AtomicUsize::new(0);
 
     /// The live capture's context, if one is installed.
     fn current() -> Option<&'static HookContext> {
-        let current = CURRENT.lock().unwrap_or_else(|p| p.into_inner());
+        let address = CURRENT.load(Ordering::SeqCst);
         // SAFETY: the address is the box the capture thread owns; it unhooks
         // both hooks before freeing it, so no callback can run after that.
-        let context = current.map(|address| unsafe { &*(address as *const HookContext) });
-        drop(current);
-        context
+        (address != 0).then(|| unsafe { &*(address as *const HookContext) })
     }
 
     pub(super) struct Capture {
@@ -438,14 +448,15 @@ mod imp {
 
     impl Capture {
         pub(super) fn start(sink: Sink) -> Result<Capture, String> {
-            let mut current = CURRENT.lock().unwrap_or_else(|p| p.into_inner());
-            if current.is_some() {
-                return Err("another input capture is already running".into());
-            }
+            let context = Box::new(HookContext {
+                start: Instant::now(),
+                sink,
+                modifiers: Cell::new(0),
+            });
             let (thread_id_tx, thread_id) = mpsc::channel();
             let thread = std::thread::Builder::new()
                 .name("input-capture-hooks".into())
-                .spawn(move || loop_input(Box::new(sink), thread_id_tx))
+                .spawn(move || loop_input(context, thread_id_tx))
                 .map_err(|e| format!("spawning the input capture thread: {e}"))?;
             Ok(Capture { thread, thread_id })
         }
@@ -465,37 +476,39 @@ mod imp {
         let mut probe: MSG = unsafe { std::mem::zeroed() };
         let _ = unsafe { PeekMessageW(&mut probe, ptr::null_mut(), 0, 0, PM_NOREMOVE) };
         let _ = thread_id.send(unsafe { GetCurrentThreadId() });
+        let address = &*context as *const HookContext as usize;
+        if CURRENT
+            .compare_exchange(0, address, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            eprintln!("input capture: another input capture is already running");
+            return;
+        }
         let module = unsafe { GetModuleHandleW(ptr::null()) };
         let keyboard = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0) };
         let mouse = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0) };
         if keyboard.is_null() || mouse.is_null() {
             eprintln!("input capture: SetWindowsHookExW failed; input will not be logged");
-            unsafe {
-                if !keyboard.is_null() {
-                    UnhookWindowsHookEx(keyboard);
-                }
-                if !mouse.is_null() {
-                    UnhookWindowsHookEx(mouse);
-                }
-            }
-            return;
+        } else {
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            while unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) } > 0 {}
         }
-        *CURRENT.lock().unwrap_or_else(|p| p.into_inner()) =
-            Some(&*context as *const HookContext as usize);
-        let mut message: MSG = unsafe { std::mem::zeroed() };
-        while unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) } > 0 {}
         unsafe {
-            UnhookWindowsHookEx(keyboard);
-            UnhookWindowsHookEx(mouse);
+            if !keyboard.is_null() {
+                UnhookWindowsHookEx(keyboard);
+            }
+            if !mouse.is_null() {
+                UnhookWindowsHookEx(mouse);
+            }
         }
-        *CURRENT.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        CURRENT.store(0, Ordering::SeqCst);
         drop(context);
     }
 
     unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code >= 0
             && let Some(context) = current()
-            && !lparam.is_null()
+            && lparam != 0
         {
             let info = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
             handle_keyboard(context, wparam as u32, info);
@@ -506,7 +519,7 @@ mod imp {
     unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code >= 0
             && let Some(context) = current()
-            && !lparam.is_null()
+            && lparam != 0
         {
             let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
             handle_mouse(context, wparam as u32, info);
@@ -540,7 +553,7 @@ mod imp {
         if !pressed {
             return;
         }
-        let text = key_text(info.vkCode, info.scanCode);
+        let text = key_text(info.vkCode, info.scanCode, context.modifiers.get());
         (context.sink)(InputEvent::Key {
             t: context.start.elapsed().as_secs_f64(),
             keys: keys_string(context.modifiers.get(), &text),
@@ -591,12 +604,18 @@ mod imp {
     /// Core X event types reported in the record stream.
     const KEY_PRESS: u8 = 2;
     const BUTTON_PRESS: u8 = 4;
+    /// The top bit of the type byte flags a `SendEvent`-generated event.
+    const EVENT_TYPE_MASK: u8 = 0x7f;
+
+    /// `EnableContext` reply category carrying server-to-client protocol data
+    /// (the recorded events). The others mark client lifecycle and stream ends.
+    const CATEGORY_FROM_SERVER: u8 = 0;
 
     /// Modifier state bits of core X events: Shift, Control, Mod1 (Alt) and
     /// Mod4 (Super on the usual X keyboard setup).
     const X_SHIFT: u16 = 1 << 0;
     const X_CONTROL: u16 = 1 << 2;
-    const X_MOD1: u16 = 1 << 5;
+    const X_MOD1: u16 = 1 << 3;
     const X_MOD4: u16 = 1 << 6;
 
     pub(super) struct Capture {
@@ -675,11 +694,12 @@ mod imp {
         };
         for reply in cookie {
             match reply {
-                Ok(reply) => {
+                Ok(reply) if reply.category == CATEGORY_FROM_SERVER => {
                     for event in record_events(&reply.data) {
                         deliver(keymap.as_ref(), start, &sink, event);
                     }
                 }
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("input capture: XRecord stream ended: {e:?}");
                     break;
@@ -722,30 +742,21 @@ mod imp {
         }
     }
 
-    /// Each reply batch starts with a CARD32 sequence number followed by
-    /// complete 32-byte core events (`element_header: 0`). Offset 0 covers a
-    /// stream that carries no sequence prefix.
+    /// A `FromServer` reply batch is complete 32-byte core events back to back
+    /// (`element_header: 0` adds no time or sequence prefix).
     fn record_events(data: &[u8]) -> Vec<RecordEvent> {
-        for offset in [4, 0] {
-            let Some((chunks, _)) = data.get(offset..).map(|body| body.as_chunks::<32>()) else {
-                continue;
-            };
-            let events: Vec<_> = chunks
-                .iter()
-                .filter_map(|event| parse_event(event))
-                .collect();
-            if !events.is_empty() {
-                return events;
-            }
-        }
-        Vec::new()
+        let (events, _) = data.as_chunks::<32>();
+        events
+            .iter()
+            .filter_map(|event| parse_event(event))
+            .collect()
     }
 
     /// Core X event layout: 1 type, 1 detail, 2 sequence, 4 timestamp, 4 root,
     /// 4 event, 4 child, 2 root-x (s16), 2 root-y (s16), 2 event-x, 2 event-y,
     /// 2 modifier state (u16).
     fn parse_event(event: &[u8]) -> Option<RecordEvent> {
-        match event[0] {
+        match event[0] & EVENT_TYPE_MASK {
             KEY_PRESS => Some(RecordEvent::Key {
                 keycode: event[1],
                 state: u16::from_le_bytes([event[28], event[29]]),
@@ -847,8 +858,7 @@ mod imp {
 
         #[test]
         fn parses_key_and_button_press_events_from_a_record_batch() {
-            let mut batch = 0u32.to_le_bytes().to_vec();
-            batch.extend(event_bytes(KEY_PRESS, 38, 100, 200, X_CONTROL));
+            let mut batch = event_bytes(KEY_PRESS, 38, 100, 200, X_CONTROL);
             batch.extend(event_bytes(BUTTON_PRESS, 3, -5, 7, 0));
             assert_eq!(
                 record_events(&batch),
@@ -867,8 +877,8 @@ mod imp {
         }
 
         #[test]
-        fn parses_events_that_carry_no_sequence_prefix() {
-            let batch = event_bytes(KEY_PRESS, 38, 0, 0, 0);
+        fn parses_send_event_flagged_presses() {
+            let batch = event_bytes(KEY_PRESS | 0x80, 38, 0, 0, 0);
             assert_eq!(
                 record_events(&batch),
                 vec![RecordEvent::Key {
