@@ -462,7 +462,7 @@ mod imp {
         }
 
         pub(super) fn stop(self) {
-            if let Some(thread_id) = self.thread_id.recv().ok() {
+            if let Ok(thread_id) = self.thread_id.recv() {
                 let _ = unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) };
             }
             let _ = self.thread.join();
