@@ -31,6 +31,10 @@ pub(crate) enum AgentEvent {
         content: String,
         tool_call_id: String,
     },
+    /// A user message another client of the thread sent, echoed by the daemon.
+    UserMessage {
+        content: String,
+    },
     ApprovalRequest {
         tool_name: String,
         tool_args: String,
@@ -306,11 +310,13 @@ impl AgentParser {
         }
     }
 
-    /// Emits an assistant text delta unless the current message is the echoed
-    /// user prompt.
+    /// Emits an assistant text delta, or the user message the daemon echoes
+    /// when the current message carries the user role.
     fn assistant_text(&self, val: &serde_json::Value) -> Option<AgentEvent> {
         if self.msg_from_user {
-            return None;
+            return Some(AgentEvent::UserMessage {
+                content: delta_of(val)?.to_string(),
+            });
         }
         Some(AgentEvent::AssistantMessage {
             content: delta_of(val)?.to_string(),
@@ -1645,7 +1651,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agui_real_turn_skips_user_echo_and_reads_delta() {
+    fn test_parse_agui_real_turn_reports_user_echo_and_reads_delta() {
         let lines = &[
             r#"{"type":"RUN_STARTED","threadId":"sess-1","runId":"run-1"}"#,
             r#"{"type":"TEXT_MESSAGE_START","messageId":"u1","role":"user"}"#,
@@ -1659,16 +1665,20 @@ mod tests {
         let (events, _) = parse_all(lines);
         assert_eq!(
             events.len(),
-            3,
-            "expected Info + AssistantMessage + TokenUsage"
+            4,
+            "expected Info + UserMessage + AssistantMessage + TokenUsage"
         );
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "All good!"),
-            "assistant reply must render from `delta`; the user echo must be skipped"
+            matches!(&events[1], AgentEvent::UserMessage { content } if content == "what is up?"),
+            "the user echo is what another client of the thread sent"
         );
         assert!(
-            matches!(&events[2], AgentEvent::TokenUsage { .. }),
+            matches!(&events[2], AgentEvent::AssistantMessage { content, .. } if content == "All good!"),
+            "assistant reply must render from `delta`"
+        );
+        assert!(
+            matches!(&events[3], AgentEvent::TokenUsage { .. }),
             "RUN_FINISHED emits TokenUsage"
         );
     }
@@ -1689,16 +1699,17 @@ mod tests {
         let (events, _) = parse_all(lines);
         assert_eq!(
             events.len(),
-            3,
-            "expected Info + AssistantMessage + TokenUsage"
+            4,
+            "expected Info + UserMessage + AssistantMessage + TokenUsage"
         );
         assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(matches!(&events[1], AgentEvent::UserMessage { content } if content == "and now?"));
         assert!(
-            matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
+            matches!(&events[2], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
             "resumed reply must render from `delta`"
         );
         assert!(
-            matches!(&events[2], AgentEvent::TokenUsage { .. }),
+            matches!(&events[3], AgentEvent::TokenUsage { .. }),
             "RUN_FINISHED emits TokenUsage"
         );
     }
