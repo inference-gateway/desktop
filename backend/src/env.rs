@@ -262,9 +262,6 @@ mod tests {
         unsafe { std::env::remove_var("DESKTOP_MOCK") };
     }
 
-    /// The updater plugin looks up `{os}-{arch}` keys and hard-fails on a
-    /// malformed `pub_date`, so pin the latest.json shape release.yml emits.
-
     #[cfg(unix)]
     #[test]
     fn absolute_storage_path_expands_tilde_and_anchors_relative_at_home() {
