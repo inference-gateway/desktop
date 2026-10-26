@@ -730,7 +730,10 @@ mod imp {
             let Some((chunks, _)) = data.get(offset..).map(|body| body.as_chunks::<32>()) else {
                 continue;
             };
-            let events: Vec<_> = chunks.iter().filter_map(|event| parse_event(event)).collect();
+            let events: Vec<_> = chunks
+                .iter()
+                .filter_map(|event| parse_event(event))
+                .collect();
             if !events.is_empty() {
                 return events;
             }
