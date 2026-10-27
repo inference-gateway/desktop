@@ -35,7 +35,8 @@ pub(crate) struct ThreadOptions {
 pub(crate) type Sink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 pub(crate) type StatusSink = Arc<dyn Fn(ExtensionStatus) + Send + Sync>;
 
-/// A connection following one thread. Dropping the sender ends the pump.
+/// A connection following one thread. The pump holds it weakly, so dropping
+/// the last `Arc<Thread>` drops the sender, ends the pump and closes the socket.
 pub(crate) struct Thread {
     session_id: String,
     tx: mpsc::Sender<String>,
@@ -119,8 +120,14 @@ impl Thread {
             status,
             on_done: Mutex::new(None),
         });
-        let follower = Arc::clone(&thread);
-        std::thread::spawn(move || pump(ws, rx, |text| follower.handle(text)));
+        let follower = Arc::downgrade(&thread);
+        std::thread::spawn(move || {
+            pump(ws, rx, |text| {
+                if let Some(thread) = follower.upgrade() {
+                    thread.handle(text);
+                }
+            })
+        });
         Ok(thread)
     }
 
@@ -430,6 +437,18 @@ impl Threads {
     pub(crate) fn remove(&self, session_id: &str) -> Option<Arc<Thread>> {
         lock(&self.0).remove(session_id)
     }
+
+    /// Stops following a chat with nothing in flight, so the daemon may idle
+    /// its worker out. A chat with open interrupts stays: a resume needs them.
+    pub(crate) fn close_idle(&self, session_id: &str) {
+        let mut threads = lock(&self.0);
+        let idle = threads
+            .get(session_id)
+            .is_some_and(|t| lock(&t.open_interrupts).is_empty());
+        if idle {
+            threads.remove(session_id);
+        }
+    }
 }
 
 pub(crate) fn close_all(state: &crate::AppState) {
@@ -468,6 +487,7 @@ mod tests {
                     _ => {}
                 }
             }
+            seen.lock().unwrap().push("<closed>".to_string());
         });
         (port, received)
     }
@@ -552,6 +572,52 @@ mod tests {
             serde_json::json!([".", "/tmp"])
         );
         assert_eq!(open["max_turns"], 500);
+    }
+
+    #[test]
+    fn closing_an_idle_thread_hangs_up_but_an_interrupted_one_stays() {
+        let (port, received) = fake_daemon(
+            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            vec![r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#],
+        );
+        let binding = Binding {
+            port,
+            token: "t".into(),
+        };
+        let (sink, _, status, _) = sinks();
+        let thread = Thread::open(
+            &binding,
+            "s1",
+            "/proj",
+            &ThreadOptions::default(),
+            sink,
+            status,
+        )
+        .unwrap();
+        let threads = Threads::default();
+        threads.insert("s1", thread);
+
+        threads
+            .get("s1")
+            .unwrap()
+            .open_interrupts
+            .lock()
+            .unwrap()
+            .push("call_1".into());
+        threads.close_idle("s1");
+        assert!(threads.get("s1").is_some());
+
+        threads
+            .get("s1")
+            .unwrap()
+            .open_interrupts
+            .lock()
+            .unwrap()
+            .clear();
+        threads.close_idle("s1");
+        assert!(threads.get("s1").is_none());
+        wait_for(&received, 3);
+        assert_eq!(received.lock().unwrap().last().unwrap(), "<closed>");
     }
 
     #[test]

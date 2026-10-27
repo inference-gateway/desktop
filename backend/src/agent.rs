@@ -790,6 +790,12 @@ async fn ensure_thread(
     .map_err(|e| format!("thread open task failed: {e}"))?
 }
 
+/// Stops following a chat the user left, so its worker idles out in the daemon.
+#[tauri::command]
+pub(crate) fn close_thread(session_id: String, state: tauri::State<'_, AppState>) {
+    state.threads.close_idle(&session_id);
+}
+
 fn thread_for(state: &AppState, session_id: &str) -> Result<Arc<Thread>, String> {
     state
         .threads
