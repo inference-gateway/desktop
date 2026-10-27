@@ -356,8 +356,8 @@ export function Composer() {
           <span className="min-w-0 flex-1 truncate">{currentProject}</span>
           {currentProject === activeProject && (
             <button
-              aria-label="Leave project context"
-              title="Leave project context"
+              aria-label={`Leave project ${currentProject}`}
+              title={`Leave project ${currentProject}`}
               onClick={() => setActiveProject(null)}
               className="inline-flex shrink-0 items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
             >
