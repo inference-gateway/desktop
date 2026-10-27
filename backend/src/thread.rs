@@ -63,22 +63,7 @@ impl Thread {
         sink: Sink,
         status: StatusSink,
     ) -> Result<Arc<Thread>, String> {
-        let stream = TcpStream::connect(("127.0.0.1", binding.port)).map_err(|e| {
-            format!(
-                "infer daemon is not listening on port {}: {e}",
-                binding.port
-            )
-        })?;
-        stream
-            .set_read_timeout(Some(HELLO_TIMEOUT))
-            .map_err(|e| e.to_string())?;
-        let (mut ws, _) =
-            tungstenite::client(format!("ws://127.0.0.1:{}/ws", binding.port), stream)
-                .map_err(|e| format!("infer daemon refused the connection: {e}"))?;
-        ws.send(Message::text(hello_frame(&binding.token)))
-            .map_err(|e| e.to_string())?;
-        let ack = read_text(&mut ws)?;
-        check_ack(&ack)?;
+        let mut ws = dial(binding)?;
         ws.send(Message::text(open_frame(session_id, project_dir, options)))
             .map_err(|e| e.to_string())?;
 
@@ -129,6 +114,25 @@ impl Thread {
             })
         });
         Ok(thread)
+    }
+
+    /// Tells the daemon to stop the thread's worker at once, as a deleted chat
+    /// has no use for it. Nothing is awaited: the daemon answers nothing.
+    pub(crate) fn stop(
+        binding: &Binding,
+        session_id: &str,
+        project_dir: &str,
+    ) -> Result<(), String> {
+        let mut ws = dial(binding)?;
+        let frame = serde_json::json!({
+            "type": "stop_thread",
+            "project_dir": project_dir,
+            "id": session_id,
+        });
+        ws.send(Message::text(frame.to_string()))
+            .map_err(|e| e.to_string())?;
+        let _ = ws.close(None);
+        Ok(())
     }
 
     /// The messages the worker restored for this thread when it was opened.
@@ -279,6 +283,27 @@ impl Thread {
             stderr: String::new(),
         });
     }
+}
+
+/// Connects to the binding and presents the hello, so the connection is ready
+/// for its first thread frame.
+fn dial(binding: &Binding) -> Result<WebSocket<TcpStream>, String> {
+    let stream = TcpStream::connect(("127.0.0.1", binding.port)).map_err(|e| {
+        format!(
+            "infer daemon is not listening on port {}: {e}",
+            binding.port
+        )
+    })?;
+    stream
+        .set_read_timeout(Some(HELLO_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+    let (mut ws, _) = tungstenite::client(format!("ws://127.0.0.1:{}/ws", binding.port), stream)
+        .map_err(|e| format!("infer daemon refused the connection: {e}"))?;
+    ws.send(Message::text(hello_frame(&binding.token)))
+        .map_err(|e| e.to_string())?;
+    let ack = read_text(&mut ws)?;
+    check_ack(&ack)?;
+    Ok(ws)
 }
 
 fn uuid() -> String {
@@ -618,6 +643,29 @@ mod tests {
         assert!(threads.get("s1").is_none());
         wait_for(&received, 3);
         assert_eq!(received.lock().unwrap().last().unwrap(), "<closed>");
+    }
+
+    #[test]
+    fn stop_presents_the_hello_and_names_the_thread() {
+        let (port, received) = fake_daemon(
+            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            vec![],
+        );
+        let binding = Binding {
+            port,
+            token: "tok".into(),
+        };
+        Thread::stop(&binding, "s1", "/proj").unwrap();
+        wait_for(&received, 3);
+        let frames = received.lock().unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&frames[0]).unwrap();
+        assert_eq!(hello["token"], "tok");
+        let stop: serde_json::Value = serde_json::from_str(&frames[1]).unwrap();
+        assert_eq!(
+            stop,
+            serde_json::json!({"type": "stop_thread", "project_dir": "/proj", "id": "s1"})
+        );
+        assert_eq!(frames[2], "<closed>");
     }
 
     #[test]
