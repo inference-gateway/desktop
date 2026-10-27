@@ -525,7 +525,7 @@ function useDesktopStore() {
               break;
           }
         };
-        await api.checkAndInstallCli(ch, force);
+        await api.checkAndInstallCli(ch, force, restart);
       } catch (err) {
         setError(`Setup failed: ${err}`);
       }
