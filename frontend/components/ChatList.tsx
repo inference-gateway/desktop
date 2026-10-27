@@ -578,7 +578,7 @@ export function ChatList() {
     selectProjectsInGroup,
     isRunning,
     activeProject,
-    setActiveProject,
+    selectProject,
     setInitialSettingsTab,
     setInitialProjectFilter,
     setCurrentView,
@@ -758,7 +758,7 @@ export function ChatList() {
                 collapsed={collapsed}
                 active={activeProject === name}
                 onToggle={() => toggleCollapseProject(name)}
-                onSelect={() => setActiveProject(activeProject === name ? null : name)}
+                onSelect={() => selectProject(activeProject === name ? null : name)}
                 onInit={() => initProject(name)}
                 onOpenInVsCode={() => api.openInVsCode(name).catch((e) => setError(String(e)))}
                 onOpenOnGithub={
