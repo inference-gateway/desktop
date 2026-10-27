@@ -4,11 +4,14 @@ use std::io::Read;
 use tauri::ipc::Channel;
 
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
-/// which is how an update is applied.
+/// which is how an update is applied. `restart` also restarts the daemon, so
+/// its workers run the installed binary.
 #[tauri::command]
 pub(crate) async fn check_and_install_cli(
     on_event: Channel<ProgressEvent>,
     force: bool,
+    restart: bool,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
 
@@ -20,14 +23,12 @@ pub(crate) async fn check_and_install_cli(
             use std::os::unix::fs::PermissionsExt;
             let meta = std::fs::metadata(&bin_path).map_err(|e| e.to_string())?;
             if meta.permissions().mode() & 0o111 != 0 {
-                let _ = on_event.send(ProgressEvent::Ready);
-                return Ok(());
+                return finish(&on_event, restart, &state);
             }
         }
         #[cfg(not(unix))]
         {
-            let _ = on_event.send(ProgressEvent::Ready);
-            return Ok(());
+            return finish(&on_event, restart, &state);
         }
     }
 
@@ -129,6 +130,18 @@ pub(crate) async fn check_and_install_cli(
         }
     }
 
+    finish(&on_event, restart, &state)
+}
+
+/// Reports the binary ready, after restarting the daemon when asked.
+fn finish(
+    on_event: &Channel<ProgressEvent>,
+    restart: bool,
+    state: &crate::AppState,
+) -> Result<(), String> {
+    if restart {
+        crate::daemon::restart(state)?;
+    }
     let _ = on_event.send(ProgressEvent::Ready);
     Ok(())
 }

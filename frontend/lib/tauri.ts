@@ -272,8 +272,8 @@ const hexEncode = (value: string) =>
   Array.from(new TextEncoder().encode(value), (b) => b.toString(16).padStart(2, "0")).join("");
 
 export const api = {
-  checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false) =>
-    invoke<void>("check_and_install_cli", { onEvent, force }),
+  checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false, restart = false) =>
+    invoke<void>("check_and_install_cli", { onEvent, force, restart }),
   sendMessage: (args: {
     prompt: string;
     model: string;

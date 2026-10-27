@@ -119,8 +119,14 @@ export function delegationSessionId(
   if (delegation.kind !== "subagent") return null;
   const children = conversations.filter((c) => subagentParentId(c.id) === parentId);
   if (children.length === 1) return children[0].id;
-  return children.find((c) => c.title === delegation.label)?.id ?? null;
+  const label = trimEllipsis(delegation.label);
+  return children.find((c) => c.title && sameCut(trimEllipsis(c.title), label))?.id ?? null;
 }
+
+// A title and a label are both cuts of the same prompt, at different lengths.
+const sameCut = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
+
+const trimEllipsis = (text: string): string => text.replace(/(…|\.\.\.)$/, "");
 
 const DELEGATION_LABEL_MAX = 48;
 

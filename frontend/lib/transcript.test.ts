@@ -784,6 +784,14 @@ test("delegationSessionId resolves a subagent row to its child session", () => {
   ];
   expect(delegationSessionId(parent, row, two)).toBe(child("b"));
   expect(delegationSessionId(parent, { ...row, label: "other" }, two)).toBeNull();
+  const cuts = [
+    { id: child("a"), title: "Write a long poem (at least 12 stanzas / 48" },
+    { id: child("b"), title: "Write a short poem (4-8 lines) about dawn breaking over" },
+  ];
+  const long = { ...row, label: "Write a long poem (at least 12 stanzas / 48 line…" };
+  const short = { ...row, label: "Write a short poem (4-8 lines) about dawn breaki…" };
+  expect(delegationSessionId(parent, long, cuts)).toBe(child("a"));
+  expect(delegationSessionId(parent, short, cuts)).toBe(child("b"));
   expect(delegationSessionId(parent, { ...row, kind: "a2a" }, two)).toBeNull();
 });
 
