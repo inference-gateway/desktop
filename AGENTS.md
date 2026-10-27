@@ -61,7 +61,8 @@ The e2e harness drives the real UI through the accessibility tree. When editing 
 
 - Native `<select id="model-select">` (not a custom dropdown).
 - A single native, **uncontrolled** `<textarea id="prompt-input">`.
-- Exact button names: visible text `Approve`, `Deny`; `aria-label` on icon buttons (`New chat`, `Broadcast to projects`, `Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`).
+- Exact button names: visible text `Approve`, `Deny`, `Save agent`, `New agent`; `aria-label` on icon buttons (`New chat`, `Broadcast to projects`, `Filter all`, `Filter agents`, `Send`, `Restart CLI`, `Settings`, `Voice input`, `Stop`, `Delete conversation`) and on per-item buttons (`Select project <name>`, `Leave project <name>`, `Select agent <name>`, `Leave agent <name>`, `Edit agent <name>`, `Delete agent <name>`).
+- Agent editor inputs keep their ids (`agent-name`, `agent-description`, `agent-model`, `agent-instructions`, `agent-emoji`); Enter in the name or description field moves focus to the next one, which is how the e2e `type` step fills the form.
 - Shallow DOM: `App` renders `<header id="top-bar">` + `<div id="main">` into `#app`, no wrapper.
 
 State is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine live in `frontend/lib/`.

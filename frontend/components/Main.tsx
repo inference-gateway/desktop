@@ -12,6 +12,7 @@ import { clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from "@/lib/sid
 const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
 const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default: m.TimelineView })));
 const ObservabilityView = lazy(() => import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })));
+const AgentEditor = lazy(() => import("./AgentEditor").then((m) => ({ default: m.AgentEditor })));
 
 const CHAT_DOCK_KEY = "chatDockWidth";
 const DEFAULT_CHAT_DOCK_WIDTH = 400;
@@ -21,7 +22,8 @@ const DEFAULT_CHAT_DOCK_WIDTH = 400;
 // panels collapse and resize; the sidebar starts collapsed for content
 // projects so the editor gets the room.
 export function Main() {
-  const { currentView, currentProject, projectTypes, sidebarOpen, setSidebarOpen, chatOpen } = useDesktop();
+  const { currentView, currentProject, projectTypes, sidebarOpen, setSidebarOpen, chatOpen, agentEditor } =
+    useDesktop();
   const content = currentProject !== null && projectTypes[currentProject] === "content";
   useEffect(() => setSidebarOpen(!content), [content, setSidebarOpen]);
   if (currentView === "settings") {
@@ -45,7 +47,13 @@ export function Main() {
   return (
     <div id="main" className="flex min-h-0 flex-1">
       {sidebarOpen && <Sidebar />}
-      {content ? (
+      {agentEditor ? (
+        <div id="content" className="flex min-w-0 flex-1 flex-col">
+          <Suspense>
+            <AgentEditor key={agentEditor.agent?.name ?? "new"} />
+          </Suspense>
+        </div>
+      ) : content ? (
         <div id="content" className="flex min-w-0 flex-1">
           <Suspense>
             <TimelineView />

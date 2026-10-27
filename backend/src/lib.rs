@@ -13,6 +13,7 @@ mod env;
 mod export;
 mod gateway;
 mod input_capture;
+mod markdown_agents;
 mod observability;
 mod permissions;
 mod processes;
@@ -123,6 +124,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cli_install::check_and_install_cli,
             agent::send_message,
+            markdown_agents::list_markdown_agents,
+            markdown_agents::save_markdown_agent,
+            markdown_agents::delete_markdown_agent,
+            markdown_agents::pick_agent_avatar,
+            markdown_agents::remove_agent_avatar,
+            markdown_agents::set_agent_avatar_from_url,
             agent::send_approval,
             agent::send_user_message,
             agent::send_question_answers,
