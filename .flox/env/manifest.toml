@@ -1,4 +1,4 @@
-schema-version = "1.18.0"
+schema-version = "1.19.0"
 
 [install]
 go-task.pkg-path = "go-task"
@@ -16,7 +16,7 @@ cargo.version = "1.98.1"
 cargo-tauri.pkg-path = "cargo-tauri"
 cargo-tauri.version = "2.11.4"
 claude-code.pkg-path = "claude-code"
-claude-code.version = "2.1.296"
+claude-code.version = "2.1.308"
 claude-code.pkg-group = "claude-code"
 codex.pkg-path = "codex"
 codex.version = "0.162.1"
