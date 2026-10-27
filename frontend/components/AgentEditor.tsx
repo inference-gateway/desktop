@@ -3,12 +3,11 @@ import { ImagePlus, X } from "lucide-react";
 import { useDesktop } from "@/store";
 import { api, type MarkdownAgent } from "@/lib/tauri";
 import { normaliseAgentName } from "@/lib/agents";
+import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl, type FluentEmoji } from "@/lib/fluent-emoji";
 import { AgentAvatar } from "./AgentAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-const QUICK_EMOJIS = ["🤖", "🧠", "🛠️", "🔍", "✍️", "🎨", "📊", "🧪", "🚀", "🦉"];
 
 const EMPTY: MarkdownAgent = {
   name: "",
@@ -28,6 +27,7 @@ export function AgentEditor() {
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [agentsDir, setAgentsDir] = useState("~/.infer/agents");
   const [saving, setSaving] = useState(false);
+  const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   useEffect(() => {
     api
       .getConfig()
@@ -49,8 +49,21 @@ export function AgentEditor() {
     set("avatar", fresh?.avatar ?? null);
   };
 
+  // A Fluent emoji previews its animated PNG straight from GitHub and is
+  // downloaded beside the agent file on save, so it keeps moving offline.
+  const pickAnimated = (pick: FluentEmoji) => {
+    if (animatedPick?.folder === pick.folder) {
+      setAnimatedPick(null);
+      set("avatar", existing?.avatar ?? null);
+      return;
+    }
+    setAnimatedPick(pick);
+    setDraft((d) => ({ ...d, emoji: pick.emoji, avatar: fluentAnimatedUrl(pick) }));
+  };
+
   const choosePicture = async () => {
     try {
+      setAnimatedPick(null);
       if (await api.pickAgentAvatar(draft.name)) await refreshAvatar();
     } catch (e) {
       setError(String(e));
@@ -59,7 +72,8 @@ export function AgentEditor() {
 
   const removePicture = async () => {
     try {
-      await api.removeAgentAvatar(draft.name);
+      setAnimatedPick(null);
+      if (draft.name) await api.removeAgentAvatar(draft.name);
       set("avatar", null);
     } catch (e) {
       setError(String(e));
@@ -70,7 +84,7 @@ export function AgentEditor() {
     if (!complete || saving) return;
     setSaving(true);
     try {
-      await saveAgent(draft, existing?.name);
+      await saveAgent(draft, existing?.name, animatedPick ? fluentAnimatedUrl(animatedPick) : undefined);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -96,26 +110,30 @@ export function AgentEditor() {
         <div className="flex items-center gap-4">
           <AgentAvatar agent={draft} size={72} className="text-[2.2rem]" />
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-1">
-              {QUICK_EMOJIS.map((e) => (
+            <div className="flex max-w-[30rem] flex-wrap gap-1">
+              {FLUENT_EMOJIS.map((e) => (
                 <button
-                  key={e}
+                  key={e.folder}
                   type="button"
-                  aria-label={`Use emoji ${e}`}
-                  aria-pressed={draft.emoji === e}
-                  onClick={() => set("emoji", draft.emoji === e ? "" : e)}
-                  className={`rounded-md px-1.5 py-0.5 text-[1.1rem] hover:bg-secondary ${draft.emoji === e ? "ring-2 ring-primary" : ""}`}
+                  aria-label={`Use animated ${e.label}`}
+                  aria-pressed={animatedPick?.folder === e.folder}
+                  title={`${e.label} (animates once picked)`}
+                  onClick={() => pickAnimated(e)}
+                  className={`rounded-md p-0.5 hover:bg-secondary ${animatedPick?.folder === e.folder ? "ring-2 ring-primary" : ""}`}
                 >
-                  {e}
+                  <img src={fluentStaticUrl(e)} alt={e.emoji} width={32} height={32} loading="lazy" />
                 </button>
               ))}
+            </div>
+            <div className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
+              or type a plain emoji
               <Input
                 id="agent-emoji"
                 aria-label="Agent emoji"
                 value={draft.emoji}
-                placeholder="emoji"
+                placeholder="🤖"
                 onChange={(e) => set("emoji", e.target.value)}
-                className="w-20"
+                className="w-16"
               />
             </div>
             <div className="flex gap-2">

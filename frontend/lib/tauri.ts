@@ -453,4 +453,5 @@ export const api = {
   deleteMarkdownAgent: (name: string) => invoke<void>("delete_markdown_agent", { name }),
   pickAgentAvatar: (name: string) => invoke<boolean>("pick_agent_avatar", { name }),
   removeAgentAvatar: (name: string) => invoke<void>("remove_agent_avatar", { name }),
+  setAgentAvatarFromUrl: (name: string, url: string) => invoke<void>("set_agent_avatar_from_url", { name, url }),
 };

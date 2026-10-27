@@ -1,14 +1,34 @@
+import { Avatar, Style } from "@dicebear/core";
+import bottts from "@dicebear/styles/bottts.json";
 import type { MarkdownAgent } from "./tauri";
 
 export type AgentFace =
   { kind: "picture"; src: string } | { kind: "emoji"; emoji: string } | { kind: "initial"; letter: string };
 
-/** What to show for an agent: its picture, else its emoji, else its first letter. */
+const BOTTTS = new Style(bottts);
+const ROBOT_BACKGROUNDS = ["1e1b4b", "312e81", "0f172a", "134e4a"];
+const generated = new Map<string, string>();
+
+/** A robot drawn deterministically from the agent's name (DiceBear bottts,
+ * generated locally), so every agent has a face before anyone picks one. */
+export function generatedRobot(name: string): string {
+  let src = generated.get(name);
+  if (!src) {
+    const svg = new Avatar(BOTTTS, { seed: name, backgroundColor: ROBOT_BACKGROUNDS }).toString();
+    src = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    generated.set(name, src);
+  }
+  return src;
+}
+
+/** What to show for an agent: its picture, else its emoji, else a robot
+ * generated from its name, else a question mark while the name is empty. */
 export function agentFace(agent: Pick<MarkdownAgent, "name" | "emoji" | "avatar">): AgentFace {
   if (agent.avatar) return { kind: "picture", src: agent.avatar };
   const emoji = agent.emoji.trim();
   if (emoji) return { kind: "emoji", emoji };
-  return { kind: "initial", letter: (agent.name[0] ?? "?").toUpperCase() };
+  if (agent.name) return { kind: "picture", src: generatedRobot(agent.name) };
+  return { kind: "initial", letter: "?" };
 }
 
 /** The model an agent chat launches with: a provider-prefixed frontmatter

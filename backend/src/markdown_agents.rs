@@ -35,8 +35,16 @@ struct Frontmatter {
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 /// ponytail: avatars travel inline as data URLs, so cap them rather than stream them.
-const AVATAR_MAX_BYTES: u64 = 2 * 1024 * 1024;
+/// Fluent's animated PNGs run up to 3.4 MB. Serve them through the asset protocol if the list gets heavy.
+const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
+/// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
+/// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
+/// so a crafted URL cannot pull arbitrary bytes.
+const ANIMATED_EMOJI_BASES: [&str; 2] = [
+    "https://media.githubusercontent.com/media/microsoft/fluentui-emoji-animated/",
+    "https://fonts.gstatic.com/s/e/notoemoji/",
+];
 
 /// The CLI's rule for a named agent: lowercase letters, digits, `-` and `_`.
 pub(crate) fn valid_agent_name(name: &str) -> bool {
@@ -214,26 +222,52 @@ pub(crate) fn delete_in(dir: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Copies `source` in as the agent's picture, replacing any previous one.
-pub(crate) fn set_avatar_in(dir: &Path, name: &str, source: &Path) -> Result<PathBuf, String> {
-    if !valid_agent_name(name) {
-        return Err(format!("invalid agent name: {name}"));
-    }
-    let ext = source
+fn avatar_extension(path: &str) -> Result<String, String> {
+    Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase)
         .filter(|e| AVATAR_EXTENSIONS.contains(&e.as_str()))
-        .ok_or("pick a gif, png, webp or jpg picture")?;
+        .ok_or_else(|| "pick a gif, png, webp or jpg picture".to_string())
+}
+
+/// Copies `source` in as the agent's picture, replacing any previous one.
+pub(crate) fn set_avatar_in(dir: &Path, name: &str, source: &Path) -> Result<PathBuf, String> {
+    let ext = avatar_extension(&source.to_string_lossy())?;
     let size = std::fs::metadata(source).map_err(|e| e.to_string())?.len();
     if size > AVATAR_MAX_BYTES {
-        return Err("pictures are capped at 2 MB".into());
+        return Err("pictures are capped at 4 MB".into());
+    }
+    let bytes = std::fs::read(source).map_err(|e| format!("reading picture: {e}"))?;
+    store_avatar_in(dir, name, &ext, &bytes)
+}
+
+fn store_avatar_in(dir: &Path, name: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    if !valid_agent_name(name) {
+        return Err(format!("invalid agent name: {name}"));
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     remove_avatar_in(dir, name);
     let target = dir.join(format!("{name}.{ext}"));
-    std::fs::copy(source, &target).map_err(|e| format!("copying picture: {e}"))?;
+    std::fs::write(&target, bytes).map_err(|e| format!("writing picture: {e}"))?;
     Ok(target)
+}
+
+fn fetch_animated_emoji(url: &str) -> Result<Vec<u8>, String> {
+    if !ANIMATED_EMOJI_BASES
+        .iter()
+        .any(|base| url.starts_with(base))
+    {
+        return Err("only Fluent or Noto animated emoji can be fetched".into());
+    }
+    let resp = ureq::get(url)
+        .call()
+        .map_err(|e| format!("fetching {url}: {e}"))?;
+    resp.into_body()
+        .with_config()
+        .limit(AVATAR_MAX_BYTES)
+        .read_to_vec()
+        .map_err(|e| format!("reading {url}: {e}"))
 }
 
 #[tauri::command]
@@ -280,6 +314,18 @@ pub(crate) async fn pick_agent_avatar(app: tauri::AppHandle, name: String) -> Re
             return Ok(false);
         };
         set_avatar_in(&agents_dir(), &name, &picture).map(|_| true)
+    })
+    .await
+    .map_err(|e| format!("avatar task failed: {e}"))?
+}
+
+/// Downloads a Noto animated emoji as the agent's picture.
+#[tauri::command]
+pub(crate) async fn set_agent_avatar_from_url(name: String, url: String) -> Result<(), String> {
+    let ext = avatar_extension(&url)?;
+    tokio::task::spawn_blocking(move || {
+        let bytes = fetch_animated_emoji(&url)?;
+        store_avatar_in(&agents_dir(), &name, &ext, &bytes).map(|_| ())
     })
     .await
     .map_err(|e| format!("avatar task failed: {e}"))?
@@ -412,6 +458,26 @@ mod tests {
         assert!(list_in(&dir).is_empty());
         assert!(!dir.join("code-reviewer.png").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn animated_emoji_fetch_only_accepts_the_noto_host() {
+        assert!(fetch_animated_emoji("https://evil.example/512.gif").is_err());
+        assert_eq!(
+            avatar_extension("https://fonts.gstatic.com/s/e/notoemoji/latest/1f916/512.webp")
+                .unwrap(),
+            "webp"
+        );
+        assert!(
+            avatar_extension("https://fonts.gstatic.com/s/e/notoemoji/latest/1f916/lottie.json")
+                .is_err()
+        );
+        let fluent = "https://media.githubusercontent.com/media/microsoft/fluentui-emoji-animated/main/assets/Robot/animated/robot_animated.png";
+        assert_eq!(avatar_extension(fluent).unwrap(), "png");
+        assert!(
+            fetch_animated_emoji("https://media.githubusercontent.com/media/microsoft/other/x.png")
+                .is_err()
+        );
     }
 
     #[test]

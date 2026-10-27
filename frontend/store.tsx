@@ -913,8 +913,9 @@ function useDesktopStore() {
 
   // Saving lands the user in a fresh chat with the agent, Grok Bot style.
   const saveAgent = useCallback(
-    async (agent: MarkdownAgent, previousName?: string) => {
+    async (agent: MarkdownAgent, previousName?: string, avatarUrl?: string) => {
       await api.saveMarkdownAgent(agent, previousName);
+      if (avatarUrl) await api.setAgentAvatarFromUrl(agent.name, avatarUrl);
       await loadAgents();
       if (previousName && previousName !== agent.name) {
         setAgentOf((prev) =>

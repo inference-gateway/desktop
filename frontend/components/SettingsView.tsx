@@ -1461,8 +1461,8 @@ function MarkdownAgentsCard() {
       <h3 className="text-[0.9rem] font-semibold">Your agents</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
         Markdown agents you chat with from the sidebar's Agents filter, one <code>&lt;name&gt;.md</code> per agent
-        (Claude Code format). Agents in <code>~/.infer/agents</code> can also delegate to each other through the Agent
-        tool.
+        (Claude Code format). Each gets a robot face drawn from its name until you pick an animated emoji or a picture.
+        Agents in <code>~/.infer/agents</code> can also delegate to each other through the Agent tool.
       </p>
       <div className="mb-3 flex flex-col gap-1">
         <Label htmlFor="agents-dir" className="text-[0.8rem] text-muted-foreground">

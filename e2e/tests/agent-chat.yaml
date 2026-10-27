@@ -5,7 +5,8 @@ narration:
   - "Name it e2e-helper."
   - "Describe what it is for."
   - "Give it its instructions."
-  - "Save it."
+  - "Pick the animated robot as its face."
+  - "Save it, which also downloads the robot beside the agent file."
   - "The agent is selected and the composer addresses it."
   - "Send it a prompt."
   - "The reply lands."
@@ -17,6 +18,7 @@ steps:
   - type: "e2e-helper"
   - type: "Answers e2e questions tersely"
   - type: "You are the e2e helper. Keep every answer to one line."
+  - click: { button: "Use animated robot" }
   - click: { button: "Save agent" }
   - wait_for: { button: "Leave agent e2e-helper", timeout: 15 }
   - send: "hi"
