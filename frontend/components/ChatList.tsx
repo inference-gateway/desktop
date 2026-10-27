@@ -72,9 +72,9 @@ function ChatItem({ index }: { index: number }) {
         e.dataTransfer.effectAllowed = "move";
       }}
       className={cn(
-        "group flex cursor-pointer items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.83rem] text-muted-foreground hover:bg-card hover:text-foreground",
-        isActive && "bg-card font-medium text-foreground shadow-[inset_3px_0_0_var(--primary)]",
-        isSelected && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)] ring-1 ring-primary/25",
+        "group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.83rem] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+        isActive && "bg-card font-medium text-foreground shadow-sm ring-1 ring-border ring-inset hover:bg-card",
+        isSelected && "bg-primary/10 text-foreground ring-1 ring-primary/40 ring-inset hover:bg-primary/15",
       )}
     >
       {running && (
@@ -104,7 +104,7 @@ function ChatItem({ index }: { index: number }) {
           "inline-flex shrink-0 items-center justify-center rounded-md p-[0.15rem] opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
           confirm
             ? "bg-destructive text-white opacity-100"
-            : "text-muted-foreground hover:bg-card hover:text-destructive",
+            : "text-muted-foreground hover:bg-foreground/10 hover:text-destructive",
         )}
       >
         <Trash2 size={14} />
@@ -235,7 +235,7 @@ function Section({
         {title}
         <span className="ml-1 text-[0.72rem] font-normal text-muted-foreground/60">({count})</span>
       </button>
-      {!collapsed && <div className="mt-1 flex flex-col gap-[2px] pl-3">{children}</div>}
+      {!collapsed && <div className="mt-1 flex flex-col gap-1 pl-3">{children}</div>}
     </div>
   );
 }
@@ -269,8 +269,8 @@ function AgentGroup({
         onClick={onSelect}
         title={agent.description}
         className={cn(
-          "flex cursor-pointer items-center gap-1.5 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
-          active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
+          "flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+          active && "bg-primary/10 text-foreground ring-1 ring-primary/25 ring-inset hover:bg-primary/15",
         )}
       >
         <button
@@ -325,7 +325,9 @@ function AgentGroup({
           </button>
         </div>
       </div>
-      {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
+      {!collapsed && count > 0 && (
+        <div className="mt-1 mb-2 ml-3 flex flex-col gap-1 border-l border-border pl-2">{children}</div>
+      )}
     </div>
   );
 }
@@ -431,8 +433,8 @@ function ProjectGroup({
         onClick={onSelect}
         onContextMenu={openMenu}
         className={cn(
-          "flex cursor-pointer items-center gap-1 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
-          active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
+          "flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+          active && "bg-primary/10 text-foreground ring-1 ring-primary/25 ring-inset hover:bg-primary/15",
         )}
       >
         {selecting && (
@@ -557,7 +559,9 @@ function ProjectGroup({
           </button>
         </div>
       </div>
-      {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
+      {!collapsed && count > 0 && (
+        <div className="mt-1 mb-2 ml-3 flex flex-col gap-1 border-l border-border pl-2">{children}</div>
+      )}
       {menu && (
         <>
           <div
@@ -843,7 +847,7 @@ export function ChatList() {
   const orchestratorRows = (
     <>
       {projectClusters.map(([label, entries]) => (
-        <div key={label || "(ungrouped)"} className="flex flex-col gap-[2px]">
+        <div key={label || "(ungrouped)"} className="flex flex-col gap-1">
           {label && (
             <div
               onDragOver={(e) => {
@@ -941,7 +945,7 @@ export function ChatList() {
           }}
           onDragLeave={() => setDragOverUngrouped(false)}
           onDrop={handleDropOnUngrouped}
-          className={cn("flex flex-col gap-[2px] rounded-md", dragOverUngrouped && "ring-1 ring-primary/30")}
+          className={cn("flex flex-col gap-1 rounded-md", dragOverUngrouped && "ring-1 ring-primary/30")}
         >
           {groups.ungrouped.map((i) => (
             <ChatItem key={conversations[i]?.id ?? i} index={i} />
@@ -953,7 +957,7 @@ export function ChatList() {
 
   return (
     <>
-      <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto select-none">
+      <div id="chat-list" role="list" className="flex flex-1 flex-col gap-1 overflow-y-auto select-none">
         {agentsFilter ? (
           agentRows
         ) : groups.agents.length > 0 ? (
