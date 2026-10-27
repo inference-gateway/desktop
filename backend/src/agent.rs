@@ -1104,7 +1104,6 @@ async fn stop_worker(session_id: &str, cwd: Option<&str>) {
         .to_string_lossy()
         .into_owned();
     let session_id = session_id.to_string();
-    let chat = session_id.clone();
     let _ = tokio::task::spawn_blocking(move || {
         let binding = crate::daemon::binding()?;
         if !crate::daemon::reachable(binding.port) {
@@ -1115,7 +1114,7 @@ async fn stop_worker(session_id: &str, cwd: Option<&str>) {
     .await
     .map(|result: Result<(), String>| {
         if let Err(e) = result {
-            eprintln!("stopping the worker of chat {chat}: {e}");
+            eprintln!("stopping a deleted chat's worker: {e}");
         }
     });
 }
