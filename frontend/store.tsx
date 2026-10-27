@@ -640,8 +640,15 @@ function useDesktopStore() {
     [projectContexts, projectGroups, projectTypes],
   );
 
+  const leaveConversation = useCallback((nextId: string | null) => {
+    const previous = activeIdRef.current;
+    if (!previous || previous === nextId || runningIdsRef.current.has(previous)) return;
+    api.closeThread(previous).catch((e) => console.error("Close thread failed:", e));
+  }, []);
+
   const openConversation = useCallback(
     async (id: string) => {
+      leaveConversation(id);
       setActiveId(id);
       activeIdRef.current = id;
       setActiveProject(projects[id] ?? null);
@@ -660,15 +667,16 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, model, autoModes, autoMode, threadPrompts, dispatchTo],
+    [transcripts, projects, model, autoModes, autoMode, threadPrompts, dispatchTo, leaveConversation],
   );
 
   const newChat = useCallback(() => {
+    leaveConversation(null);
     setActiveId(null);
     activeIdRef.current = null;
     clearSelection();
     composerRef.current?.focus();
-  }, [clearSelection, composerRef]);
+  }, [clearSelection, composerRef, leaveConversation]);
 
   const deleteConversation = useCallback(
     async (id: string) => {

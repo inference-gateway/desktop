@@ -129,6 +129,7 @@ pub fn run() {
             agent::resume_agent,
             agent::cancel_agent,
             agent::open_thread,
+            agent::close_thread,
             agent::list_conversations,
             agent::delete_conversation,
             agent::move_conversation,

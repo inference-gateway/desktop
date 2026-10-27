@@ -293,6 +293,8 @@ export const api = {
     autoMode: boolean;
     project?: string;
   }) => invoke<string>("open_thread", args).then((json) => JSON.parse(json) as SnapshotMessage[]),
+  /** Stops following a chat the user left, so the daemon may idle its worker out. */
+  closeThread: (sessionId: string) => invoke<void>("close_thread", { sessionId }),
   sendApproval: (sessionId: string, toolCallId: string, approved: boolean) =>
     invoke<void>("send_approval", { sessionId, toolCallId, approved }),
   sendUserMessage: (sessionId: string, content: string) => invoke<void>("send_user_message", { sessionId, content }),
