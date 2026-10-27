@@ -1088,10 +1088,35 @@ pub(crate) async fn delete_conversation(
     if let Ok(mut channels) = state.channels.lock() {
         channels.remove(&session_id);
     }
+    stop_worker(&session_id, cwd.as_deref()).await;
     match run_infer_in(cwd, &["conversations", "delete", &session_id]).await {
         Err(e) if e.contains("conversation not found") => Ok(String::new()),
         other => other,
     }
+}
+
+/// Stops a deleted chat's worker on a running daemon. Best effort: no daemon
+/// means no worker to stop, and a refused frame is not worth failing the delete.
+async fn stop_worker(session_id: &str, cwd: Option<&str>) {
+    let project_dir = cwd
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(agent_cwd)
+        .to_string_lossy()
+        .into_owned();
+    let session_id = session_id.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        if !crate::daemon::reachable(binding.port) {
+            return Ok(());
+        }
+        Thread::stop(&binding, &session_id, &project_dir)
+    })
+    .await
+    .map(|result: Result<(), String>| {
+        if let Err(e) = result {
+            eprintln!("stopping a deleted chat's worker: {e}");
+        }
+    });
 }
 
 /// The CLI's per-cwd conversation store: ~/.infer/projects/<slug>/conversations,
