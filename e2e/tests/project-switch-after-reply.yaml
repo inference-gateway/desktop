@@ -1,0 +1,29 @@
+name: project switch - selecting another project after a reply moves the composer to it
+narration:
+  - "Open a fresh chat."
+  - "Create a project from the sidebar."
+  - "Name it e2e-switch-a."
+  - "The project shows up in the sidebar."
+  - "Create a second project."
+  - "Name it e2e-switch-b."
+  - "The second project shows up too."
+  - "Select the first project."
+  - "The composer picks up e2e-switch-a."
+  - "Send a prompt into it."
+  - "The reply lands."
+  - "Select the second project."
+  - "The composer follows the selection instead of staying on the previous project."
+steps:
+  - new_chat
+  - click: { button: "New project" }
+  - type: "e2e-switch-a"
+  - wait_for: { button: "Select project e2e-switch-a", timeout: 15 }
+  - click: { button: "New project" }
+  - type: "e2e-switch-b"
+  - wait_for: { button: "Select project e2e-switch-b", timeout: 15 }
+  - click: { button: "Select project e2e-switch-a" }
+  - wait_for: { button: "Leave project e2e-switch-a", timeout: 10 }
+  - send: "hi"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - click: { button: "Select project e2e-switch-b" }
+  - wait_for: { button: "Leave project e2e-switch-b", timeout: 10 }
