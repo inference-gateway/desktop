@@ -678,6 +678,15 @@ function useDesktopStore() {
     composerRef.current?.focus();
   }, [clearSelection, composerRef, leaveConversation]);
 
+  const selectProject = useCallback(
+    (name: string | null) => {
+      const current = activeIdRef.current;
+      if (name && current && projects[current] !== name) newChat();
+      setActiveProject(name);
+    },
+    [projects, newChat],
+  );
+
   const deleteConversation = useCallback(
     async (id: string) => {
       dropQueued(id);
@@ -1705,6 +1714,7 @@ function useDesktopStore() {
     answerQuestions,
     openConversation,
     newChat,
+    selectProject,
     restartBackend,
     currentView,
     sidebarOpen,
