@@ -6,6 +6,7 @@ import {
   type A2aStatus,
   type Conversation,
   type DesktopConfig,
+  type MarkdownAgent,
   type McpStatus,
   type ProgressEvent,
   type Shortcut,
@@ -30,6 +31,7 @@ import {
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
+import { agentInstructionsPreamble, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import {
   loadSnippets,
@@ -44,6 +46,8 @@ import { hydrateRegistry } from "@/lib/skills";
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
+/** What the sidebar lists: every project, one project type, or the agents. */
+export type SidebarFilter = ProjectType | "agents";
 
 export type ActivityStatus = "running" | "done" | "failed" | "skipped";
 
@@ -170,11 +174,18 @@ function useDesktopStore() {
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
   const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
-  const [projectFilter, setProjectFilter] = useState<ProjectType | null>(null);
+  const [projectFilter, setProjectFilter] = useState<SidebarFilter | null>(null);
   const visibleProjectNames = useMemo(
-    () => (projectFilter ? projectNames.filter((n) => (projectTypes[n] ?? "code") === projectFilter) : projectNames),
+    () =>
+      projectFilter && projectFilter !== "agents"
+        ? projectNames.filter((n) => (projectTypes[n] ?? "code") === projectFilter)
+        : projectNames,
     [projectFilter, projectNames, projectTypes],
   );
+  const [agents, setAgents] = useState<MarkdownAgent[]>(() => []);
+  const [agentOf, setAgentOf] = useState<Record<string, string>>(() => ({}));
+  const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
   const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
@@ -442,6 +453,10 @@ function useDesktopStore() {
       for (const [name, t] of Object.entries(parsed?.types ?? {})) {
         if (t === "content") types[name] = t;
       }
+      const agentAssignments: Record<string, string> = {};
+      for (const [id, name] of Object.entries(parsed?.agents ?? {})) {
+        if (typeof name === "string" && name.trim()) agentAssignments[id] = name;
+      }
       const selected = new Set<string>();
       if (Array.isArray(parsed?.selected)) {
         for (const n of parsed.selected) {
@@ -454,12 +469,21 @@ function useDesktopStore() {
       setProjectPaths(paths);
       setProjectGroups(groups);
       setProjectTypes(types);
+      setAgentOf(agentAssignments);
       setInitSelection(selected);
       setActiveProject(typeof parsed?.active === "string" && names.has(parsed.active) ? parsed.active : null);
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
       setProjectsLoaded(true);
+    }
+  }, []);
+
+  const loadAgents = useCallback(async () => {
+    try {
+      setAgents(await api.listMarkdownAgents());
+    } catch (e) {
+      console.error("Failed to load agents:", e);
     }
   }, []);
 
@@ -583,9 +607,10 @@ function useDesktopStore() {
       .then(setBashHistory)
       .catch(() => {});
     loadProjects();
+    loadAgents();
     const t = setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
     return () => clearInterval(t);
-  }, [initBackend, checkForUpdates]);
+  }, [initBackend, checkForUpdates, loadAgents]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -621,8 +646,10 @@ function useDesktopStore() {
   // The system prompt and custom instructions a chat's thread launches with:
   // the configured ones plus the project's group, type and context.
   const threadPrompts = useCallback(
-    async (projectName?: string, extraInstruction?: string) => {
+    async (projectName?: string, extraInstruction?: string, agentName?: string) => {
       const cfg = await api.getConfig();
+      const agent = agentName ? agents.find((a) => a.name === agentName) : undefined;
+      const agentPreamble = agent ? agentInstructionsPreamble(agent, agents) : undefined;
       const projectContext = projectName ? projectContexts[projectName] : undefined;
       const projectGroup =
         projectName && projectGroups[projectName]
@@ -630,14 +657,14 @@ function useDesktopStore() {
           : undefined;
       const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
       return {
-        systemPrompt: cfg.system_prompt || undefined,
+        systemPrompt: agent?.instructions || cfg.system_prompt || undefined,
         extraInstructions:
-          [cfg.extra_instructions, projectGroup, projectType, projectContext, extraInstruction]
+          [cfg.extra_instructions, agentPreamble, projectGroup, projectType, projectContext, extraInstruction]
             .filter(Boolean)
             .join("\n\n") || undefined,
       };
     },
-    [projectContexts, projectGroups, projectTypes],
+    [agents, projectContexts, projectGroups, projectTypes],
   );
 
   const leaveConversation = useCallback((nextId: string | null) => {
@@ -652,13 +679,18 @@ function useDesktopStore() {
       setActiveId(id);
       activeIdRef.current = id;
       setActiveProject(projects[id] ?? null);
+      setActiveAgent(agentOf[id] ?? null);
       if (transcripts[id]) return;
       try {
         const projectName = projects[id];
+        const agentName = agentOf[id];
         const messages = await api.openThread({
           sessionId: id,
-          model,
-          ...(await threadPrompts(projectName)),
+          model: agentThreadModel(
+            agents.find((a) => a.name === agentName),
+            model,
+          ),
+          ...(await threadPrompts(projectName, undefined, agentName)),
           autoMode: autoModes[id] ?? autoMode,
           project: projectName,
         });
@@ -667,7 +699,7 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, model, autoModes, autoMode, threadPrompts, dispatchTo, leaveConversation],
+    [transcripts, projects, agentOf, agents, model, autoModes, autoMode, threadPrompts, dispatchTo, leaveConversation],
   );
 
   const newChat = useCallback(() => {
@@ -682,9 +714,22 @@ function useDesktopStore() {
     (name: string | null) => {
       const current = activeIdRef.current;
       if (name && current && projects[current] !== name) newChat();
+      if (name) setActiveAgent(null);
       setActiveProject(name);
     },
     [projects, newChat],
+  );
+
+  // Picking an agent works like picking a project: the next message opens a
+  // chat with it, unless the open chat is already one of its own.
+  const selectAgent = useCallback(
+    (name: string | null) => {
+      const current = activeIdRef.current;
+      if (name && current && agentOf[current] !== name) newChat();
+      if (name) setActiveProject(null);
+      setActiveAgent(name);
+    },
+    [agentOf, newChat],
   );
 
   const deleteConversation = useCallback(
@@ -795,6 +840,7 @@ function useDesktopStore() {
           paths: projectPaths,
           groups: projectGroups,
           types: projectTypes,
+          agents: agentOf,
           selected: Array.from(initSelection),
           active: activeProject ?? undefined,
         }),
@@ -809,6 +855,7 @@ function useDesktopStore() {
     projectPaths,
     projectGroups,
     projectTypes,
+    agentOf,
     initSelection,
     activeProject,
     fetchGitProjects,
@@ -854,6 +901,45 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
+  const assignAgent = useCallback((sessionId: string, agentName: string) => {
+    setAgentOf((prev) => ({ ...prev, [sessionId]: agentName }));
+  }, []);
+
+  const openAgentEditor = useCallback((agent: MarkdownAgent | null) => {
+    setCurrentView("chat");
+    setAgentEditor({ agent });
+  }, []);
+  const closeAgentEditor = useCallback(() => setAgentEditor(null), []);
+
+  // Saving lands the user in a fresh chat with the agent, Grok Bot style.
+  const saveAgent = useCallback(
+    async (agent: MarkdownAgent, previousName?: string) => {
+      await api.saveMarkdownAgent(agent, previousName);
+      await loadAgents();
+      if (previousName && previousName !== agent.name) {
+        setAgentOf((prev) =>
+          Object.fromEntries(Object.entries(prev).map(([id, n]) => [id, n === previousName ? agent.name : n])),
+        );
+      }
+      setAgentEditor(null);
+      setProjectFilter("agents");
+      selectAgent(agent.name);
+      composerRef.current?.focus();
+    },
+    [loadAgents, selectAgent],
+  );
+
+  const deleteAgent = useCallback(
+    async (name: string) => {
+      await api.deleteMarkdownAgent(name);
+      setAgentOf((prev) => Object.fromEntries(Object.entries(prev).filter(([, n]) => n !== name)));
+      setActiveAgent((prev) => (prev === name ? null : prev));
+      setAgentEditor((prev) => (prev?.agent?.name === name ? null : prev));
+      await loadAgents();
+    },
+    [loadAgents],
+  );
+
   const resolveApproval = useCallback(
     async (id: string, callId: string, approved: boolean, _scope?: "always") => {
       try {
@@ -869,7 +955,7 @@ function useDesktopStore() {
   );
 
   const sendPrompt = useCallback(
-    async (runId: string, text: string, projectName?: string, extraInstruction?: string) => {
+    async (runId: string, text: string, projectName?: string, extraInstruction?: string, agentName?: string) => {
       if (runningIds.has(runId) || runningIdsRef.current.has(runId)) return;
       if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
@@ -946,10 +1032,13 @@ function useDesktopStore() {
         if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
         await api.sendMessage({
           prompt: text,
-          model,
+          model: agentThreadModel(
+            agents.find((a) => a.name === agentName),
+            model,
+          ),
           sessionId: runId,
           onEvent: ch,
-          ...(await threadPrompts(projectName, extraInstruction)),
+          ...(await threadPrompts(projectName, extraInstruction, agentName)),
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
         });
@@ -970,6 +1059,7 @@ function useDesktopStore() {
     [
       runningIds,
       model,
+      agents,
       autoMode,
       autoModes,
       threadPrompts,
@@ -1077,10 +1167,17 @@ function useDesktopStore() {
       }
       const runId = activeId ?? crypto.randomUUID();
       if (!activeId && activeProject) assignProject(runId, activeProject);
+      if (!activeId && activeAgent) assignAgent(runId, activeAgent);
       setActiveId(runId);
       activeIdRef.current = runId;
       recordHistory(text);
-      await sendPrompt(runId, text, (activeId ? projects[activeId] : activeProject) ?? undefined);
+      await sendPrompt(
+        runId,
+        text,
+        (activeId ? projects[activeId] : activeProject) ?? undefined,
+        undefined,
+        (activeId ? agentOf[activeId] : activeAgent) ?? undefined,
+      );
       return true;
     },
     [
@@ -1089,8 +1186,11 @@ function useDesktopStore() {
       model,
       maxSessions,
       activeProject,
+      activeAgent,
       assignProject,
+      assignAgent,
       projects,
+      agentOf,
       sendPrompt,
       setError,
       recordHistory,
@@ -1572,6 +1672,7 @@ function useDesktopStore() {
   }, []);
 
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
+  const currentAgent = (activeId ? agentOf[activeId] : null) ?? activeAgent;
 
   const queuedItems = activeId != null ? queuedPrompts[activeId] : undefined;
   const queuedPrompt =
@@ -1715,6 +1816,17 @@ function useDesktopStore() {
     openConversation,
     newChat,
     selectProject,
+    selectAgent,
+    agents,
+    agentOf,
+    activeAgent,
+    currentAgent,
+    agentEditor,
+    openAgentEditor,
+    closeAgentEditor,
+    saveAgent,
+    deleteAgent,
+    loadAgents,
     restartBackend,
     currentView,
     sidebarOpen,

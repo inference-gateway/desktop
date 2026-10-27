@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clapperboard, Code, MessageSquarePlus, Radio } from "lucide-react";
+import { Bot, Clapperboard, Code, LayoutList, MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,23 @@ export function Sidebar() {
   const [dragging, setDragging] = useState(false);
   const mixedTypes = new Set(projectNames.map((n) => projectTypes[n] ?? "code")).size > 1;
   useEffect(() => {
-    if (!mixedTypes) setFilter(null);
+    if (!mixedTypes) setFilter((f) => (f === "agents" ? f : null));
   }, [mixedTypes, setFilter]);
+  const filters = [
+    { id: null, label: "Filter all", title: "Show everything", icon: <LayoutList /> },
+    ...(mixedTypes
+      ? [
+          { id: "code" as const, label: "Filter code projects", title: "Show only code projects", icon: <Code /> },
+          {
+            id: "content" as const,
+            label: "Filter content projects",
+            title: "Show only content projects",
+            icon: <Clapperboard />,
+          },
+        ]
+      : []),
+    { id: "agents" as const, label: "Filter agents", title: "Show your agents", icon: <Bot /> },
+  ];
   const resetWidth = () => {
     setWidth(DEFAULT_SIDEBAR_WIDTH);
     saveSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
@@ -54,21 +69,24 @@ export function Sidebar() {
         >
           <Radio />
         </Button>
-        {mixedTypes &&
-          (["code", "content"] as const).map((t) => (
-            <Button
-              key={t}
-              size="icon"
-              variant="outline"
-              aria-label={`Filter ${t} projects`}
-              aria-pressed={filter === t}
-              title={filter === t ? "Show all projects" : `Show only ${t} projects`}
-              onClick={() => setFilter(filter === t ? null : t)}
-              className={cn(filter === t && "ring-2 ring-primary")}
-            >
-              {t === "code" ? <Code /> : <Clapperboard />}
-            </Button>
-          ))}
+      </div>
+      <div role="tablist" aria-label="Sidebar filters" className="flex gap-2">
+        {filters.map((f) => (
+          <Button
+            key={f.id ?? "all"}
+            role="tab"
+            size="icon"
+            variant="outline"
+            aria-label={f.label}
+            aria-pressed={filter === f.id}
+            aria-selected={filter === f.id}
+            title={f.title}
+            onClick={() => setFilter(f.id)}
+            className={cn(filter === f.id && "ring-2 ring-primary")}
+          >
+            {f.icon}
+          </Button>
+        ))}
       </div>
       <ChatList />
       <ResizeHandle

@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { AgentAvatar } from "./AgentAvatar";
 
 type SlashItem = { name: string; description: string; kind: "command" | "skill" };
 
@@ -60,6 +61,10 @@ export function Composer() {
     activeProject,
     setActiveProject,
     currentProject,
+    agents,
+    activeAgent,
+    currentAgent,
+    selectAgent,
     initSelecting,
     initSelection,
     cancelInitSelection,
@@ -350,7 +355,26 @@ export function Composer() {
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
-      {currentProject && (
+      {currentAgent && (
+        <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
+          <AgentAvatar
+            agent={agents.find((a) => a.name === currentAgent) ?? { name: currentAgent, emoji: "", avatar: null }}
+            size={18}
+          />
+          <span className="min-w-0 flex-1 truncate">{currentAgent}</span>
+          {currentAgent === activeAgent && (
+            <button
+              aria-label={`Leave agent ${currentAgent}`}
+              title={`Leave agent ${currentAgent}`}
+              onClick={() => selectAgent(null)}
+              className="inline-flex shrink-0 items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      )}
+      {currentProject && !currentAgent && (
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{currentProject}</span>
@@ -586,7 +610,9 @@ export function Composer() {
                 ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
                 : running
                   ? "Write a follow-up..."
-                  : "Message the orchestrator..."
+                  : currentAgent
+                    ? `Message ${currentAgent}...`
+                    : "Message the orchestrator..."
             }
             disabled={!ready}
             onPaste={onPaste}

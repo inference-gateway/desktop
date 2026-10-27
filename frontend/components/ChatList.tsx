@@ -1,5 +1,6 @@
 import { useMemo, useState, type DragEvent } from "react";
 import {
+  Bot,
   FolderPlus,
   GitBranch,
   RefreshCw,
@@ -17,6 +18,8 @@ import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { Button } from "@/components/ui/button";
+import { AgentAvatar } from "./AgentAvatar";
+import type { MarkdownAgent } from "@/lib/tauri";
 
 function CheckboxGlyph({ checked }: { checked: boolean }) {
   return (
@@ -233,6 +236,96 @@ function Section({
         <span className="ml-1 text-[0.72rem] font-normal text-muted-foreground/60">({count})</span>
       </button>
       {!collapsed && <div className="mt-1 flex flex-col gap-[2px] pl-3">{children}</div>}
+    </div>
+  );
+}
+
+// An agent row under the Agents filter: face, name, its chats nested below.
+function AgentGroup({
+  agent,
+  count,
+  collapsed,
+  active,
+  onToggle,
+  onSelect,
+  onEdit,
+  onDelete,
+  children,
+}: {
+  agent: MarkdownAgent;
+  count: number;
+  collapsed: boolean;
+  active: boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <div className="group/agent">
+      <div
+        onClick={onSelect}
+        title={agent.description}
+        className={cn(
+          "flex cursor-pointer items-center gap-1.5 rounded-md px-[0.4rem] py-1.5 text-[0.8rem] font-semibold text-muted-foreground hover:bg-card",
+          active && "bg-primary/10 text-foreground shadow-[inset_3px_0_0_var(--primary)]",
+        )}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          aria-label={collapsed ? `Expand ${agent.name}` : `Collapse ${agent.name}`}
+          className="inline-flex shrink-0 items-center"
+        >
+          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        </button>
+        <AgentAvatar agent={agent} size={22} />
+        <button
+          aria-label={`Select agent ${agent.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect();
+          }}
+          className="min-w-0 truncate"
+        >
+          {agent.name}
+        </button>
+        <span className="text-[0.7rem] text-muted-foreground/60">({count})</span>
+        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/agent:opacity-100 focus-within:opacity-100">
+          <button
+            aria-label={`Edit agent ${agent.name}`}
+            title="Edit agent"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            aria-label={`Delete agent ${agent.name}`}
+            title={armed ? "Click again to delete" : "Delete agent"}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (armed) onDelete();
+              setArmed(!armed);
+            }}
+            onBlur={() => setArmed(false)}
+            className={cn(
+              "inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-destructive",
+              armed && "text-destructive",
+            )}
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+      {!collapsed && <div className="flex flex-col gap-[2px] pl-2">{children}</div>}
     </div>
   );
 }
@@ -596,7 +689,16 @@ export function ChatList() {
     projectFilter: filter,
     visibleProjectNames,
     setError,
+    agents,
+    agentOf,
+    activeAgent,
+    selectAgent,
+    openAgentEditor,
+    deleteAgent,
+    loadAgents,
   } = useDesktop();
+  const agentsFilter = filter === "agents";
+  const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(() => new Set());
 
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -694,6 +796,49 @@ export function ChatList() {
     }
     return Array.from(clusters.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [groups.projects, projectGroups, projectTypes, filter]);
+
+  const agentChats = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    conversations.forEach((conv, i) => {
+      const name = agentOf[conv.id];
+      if (name) (map[name] ??= []).push(i);
+    });
+    return map;
+  }, [conversations, agentOf]);
+
+  const agentRows = (
+    <>
+      {agents.map((agent) => (
+        <AgentGroup
+          key={agent.name}
+          agent={agent}
+          count={agentChats[agent.name]?.length ?? 0}
+          collapsed={collapsedAgents.has(agent.name)}
+          active={activeAgent === agent.name}
+          onToggle={() =>
+            setCollapsedAgents((prev) => {
+              const next = new Set(prev);
+              if (next.has(agent.name)) next.delete(agent.name);
+              else next.add(agent.name);
+              return next;
+            })
+          }
+          onSelect={() => selectAgent(activeAgent === agent.name ? null : agent.name)}
+          onEdit={() => openAgentEditor(agent)}
+          onDelete={() => deleteAgent(agent.name).catch((e) => setError(String(e)))}
+        >
+          {(agentChats[agent.name] ?? []).map((i) => (
+            <ChatItem key={conversations[i]?.id ?? i} index={i} />
+          ))}
+        </AgentGroup>
+      ))}
+      {agents.length === 0 && (
+        <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">
+          No agents yet. Create one with + New agent.
+        </p>
+      )}
+    </>
+  );
 
   const orchestratorRows = (
     <>
@@ -809,7 +954,9 @@ export function ChatList() {
   return (
     <>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-[2px] overflow-y-auto select-none">
-        {groups.agents.length > 0 ? (
+        {agentsFilter ? (
+          agentRows
+        ) : groups.agents.length > 0 ? (
           <>
             <Section
               title="Orchestrators"
@@ -820,7 +967,7 @@ export function ChatList() {
               {orchestratorRows}
             </Section>
             <Section
-              title="Agents"
+              title="Subagents"
               count={groups.agents.length}
               collapsed={agentsCollapsed}
               onToggle={() => setAgentsCollapsed((v) => !v)}
@@ -835,12 +982,31 @@ export function ChatList() {
           orchestratorRows
         )}
 
-        {conversations.length === 0 && (
+        {!agentsFilter && conversations.length === 0 && (
           <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">No conversations yet</p>
         )}
       </div>
 
-      {newProjectInput ? (
+      {agentsFilter ? (
+        <div className="flex shrink-0 items-center border-t border-border">
+          <button
+            onClick={() => openAgentEditor(null)}
+            className="flex flex-1 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
+          >
+            <Bot size={14} />
+            <Plus size={11} />
+            New agent
+          </button>
+          <button
+            aria-label="Refresh agents"
+            title="Reload agents from disk"
+            onClick={loadAgents}
+            className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+      ) : newProjectInput ? (
         <div className="shrink-0 border-t border-border px-1 py-2">
           <input
             value={newProjectName}

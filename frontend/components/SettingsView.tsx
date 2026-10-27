@@ -46,6 +46,7 @@ import { AudioPlayer } from "@/components/AudioPlayer";
 import { useBrowserUseStatus } from "@/components/BrowserBridgeDot";
 import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
+import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import { safeAudioSrc, safeImageSrc } from "@/lib/tools";
@@ -391,6 +392,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   text_to_video_enabled: false,
   status_bar_enabled: true,
   vision_annotator_model: "",
+  agents_dir: "~/.infer/agents",
 };
 
 // Text inputs for the github scheduling backend; the repository picker and
@@ -1427,6 +1429,84 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
+// The Markdown agents (`<agents_dir>/<name>.md`) the sidebar lists, and
+// where they live. The CLI's Agent tool only reads ~/.infer/agents and a
+// project's .infer/agents, so a custom directory is desktop-only for now.
+function MarkdownAgentsCard() {
+  const { agents, openAgentEditor, deleteAgent, loadAgents, setError } = useDesktop();
+  const [agentsDir, setAgentsDir] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api
+      .getConfig()
+      .then((cfg) => setAgentsDir(cfg.agents_dir))
+      .catch(() => {});
+  }, []);
+  const apply = async () => {
+    setSaving(true);
+    try {
+      const cfg = await api.getConfig();
+      await api.setConfig({ ...cfg, agents_dir: agentsDir.trim() });
+      setDirty(false);
+      await loadAgents();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <>
+      <h3 className="text-[0.9rem] font-semibold">Your agents</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        Markdown agents you chat with from the sidebar's Agents filter, one <code>&lt;name&gt;.md</code> per agent
+        (Claude Code format). Agents in <code>~/.infer/agents</code> can also delegate to each other through the Agent
+        tool.
+      </p>
+      <div className="mb-3 flex flex-col gap-1">
+        <Label htmlFor="agents-dir" className="text-[0.8rem] text-muted-foreground">
+          Agents directory
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            id="agents-dir"
+            value={agentsDir}
+            placeholder="~/.infer/agents"
+            onChange={(e) => {
+              setAgentsDir(e.target.value);
+              setDirty(true);
+            }}
+          />
+          <Button size="sm" disabled={!dirty || saving} onClick={apply}>
+            Save
+          </Button>
+        </div>
+      </div>
+      <div className="mb-6 flex flex-col gap-1.5">
+        {agents.map((agent) => (
+          <div key={agent.name} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
+            <AgentAvatar agent={agent} size={28} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[0.85rem] font-medium">{agent.name}</div>
+              <div className="truncate text-[0.72rem] text-muted-foreground">{agent.description}</div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => openAgentEditor(agent)}>
+              Edit
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => deleteAgent(agent.name).catch((e) => setError(String(e)))}>
+              Delete
+            </Button>
+          </div>
+        ))}
+        <Button size="sm" variant="outline" className="self-start" onClick={() => openAgentEditor(null)}>
+          New agent
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function AgentsTab() {
   const { models, startServices } = useDesktop();
   const [agents, setAgents] = useState<A2aAgent[]>([]);
@@ -1504,9 +1584,10 @@ function AgentsTab() {
     <>
       <h2 className="text-[1.05rem] font-semibold">Agents</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        A2A agents your local infer agent can delegate to. Toggle the local agents you want, or add a remote agent by
-        URL. Selections are persisted and loaded on startup.
+        Your Markdown agents, plus the A2A agents your local infer agent can delegate to. Toggle the local A2A agents
+        you want, or add a remote agent by URL. Selections are persisted and loaded on startup.
       </p>
+      <MarkdownAgentsCard />
 
       <h3 className="text-[0.9rem] font-semibold">Local A2A Agents (containers)</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">

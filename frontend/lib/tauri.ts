@@ -110,6 +110,16 @@ export type VoiceSample = { name: string; path: string };
 export type Avatar = { name: string; images: string[] };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
+/** A Markdown agent (`<agents_dir>/<name>.md`): frontmatter profile plus its instructions. */
+export type MarkdownAgent = {
+  name: string;
+  description: string;
+  emoji: string;
+  model: string;
+  instructions: string;
+  avatar: string | null;
+  path: string;
+};
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
 export type ProjectFile = { name: string; size: number };
@@ -165,6 +175,7 @@ export type DesktopConfig = {
   text_to_video_enabled: boolean;
   status_bar_enabled: boolean;
   vision_annotator_model: string;
+  agents_dir: string;
 };
 export type Timelines = { dir: string; names: string[] };
 export type UndoResult = { popped: string; base: string; canUndo: boolean };
@@ -436,4 +447,10 @@ export const api = {
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
+  listMarkdownAgents: () => invoke<MarkdownAgent[]>("list_markdown_agents"),
+  saveMarkdownAgent: (agent: MarkdownAgent, previousName?: string) =>
+    invoke<string>("save_markdown_agent", { agent, previousName }),
+  deleteMarkdownAgent: (name: string) => invoke<void>("delete_markdown_agent", { name }),
+  pickAgentAvatar: (name: string) => invoke<boolean>("pick_agent_avatar", { name }),
+  removeAgentAvatar: (name: string) => invoke<void>("remove_agent_avatar", { name }),
 };
