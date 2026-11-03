@@ -63,14 +63,14 @@ Settings > General > **Export / Import** moves the complete desktop state betwee
 
 | Platform | Asset name |
 | --- | --- |
-| Linux amd64 | `infer-linux-amd64` |
-| Linux arm64 | `infer-linux-arm64` |
-| macOS amd64 | `infer-darwin-amd64` |
-| macOS arm64 | `infer-darwin-arm64` |
-| Windows amd64 | `infer-windows-amd64` |
-| Windows arm64 | `infer-windows-arm64` |
+| Linux amd64 | `infer-linux-amd64.tar.gz` |
+| Linux arm64 | `infer-linux-arm64.tar.gz` |
+| macOS amd64 | `infer-darwin-amd64.tar.gz` |
+| macOS arm64 | `infer-darwin-arm64.tar.gz` |
+| Windows amd64 | `infer-windows-amd64.tar.gz` |
+| Windows arm64 | `infer-windows-arm64.tar.gz` |
 
-Those are the `infer` CLI assets. The app itself is released for fewer: a universal macOS `.dmg` (Apple Silicon and Intel), Linux x86_64 (AppImage, deb and rpm) and Windows x64 (setup.exe and msi). There is no Linux arm64 or Windows arm64 app bundle, and the updater serves exactly those four targets (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`). Its prebuilt content and voice tools (ffmpeg, whisper-cli) come from the [binaries release](https://github.com/inference-gateway/binaries) and are managed by the CLI in `~/.infer/bin/tools`: the app checks them with `infer binaries status` and runs `infer binaries install` for any that are missing or stale (sha256 no longer matching the release), so an outdated copy is upgraded and a current one is kept. They are published for Apple Silicon macOS, Linux amd64/arm64 and Windows amd64 only - the Intel Mac (macOS x86_64) assets were dropped in binaries v0.5.0 and the app skips the install there instead of failing. On an Intel Mac, install the tools yourself and the app picks them up from PATH: voice input needs a whisper.cpp CLI (`brew install whisper-cpp`, or point `WHISPER_BIN` at the binary), and content projects need a full ffmpeg with H.264 encoding (`brew install ffmpeg`) for keyframes and export.
+Those are the `infer` CLI assets, each a tarball holding one `infer` executable (`infer.exe` on Windows). The app itself is released for fewer: a universal macOS `.dmg` (Apple Silicon and Intel), Linux x86_64 (AppImage, deb and rpm) and Windows x64 (setup.exe and msi). There is no Linux arm64 or Windows arm64 app bundle, and the updater serves exactly those four targets (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`). Its prebuilt content and voice tools (ffmpeg, whisper-cli) come from the [binaries release](https://github.com/inference-gateway/binaries) and are managed by the CLI in `~/.infer/bin/tools`: the app checks them with `infer binaries status` and runs `infer binaries install` for any that are missing or stale (sha256 no longer matching the release), so an outdated copy is upgraded and a current one is kept. They are published for Apple Silicon macOS, Linux amd64/arm64 and Windows amd64 only - the Intel Mac (macOS x86_64) assets were dropped in binaries v0.5.0 and the app skips the install there instead of failing. On an Intel Mac, install the tools yourself and the app picks them up from PATH: voice input needs a whisper.cpp CLI (`brew install whisper-cpp`, or point `WHISPER_BIN` at the binary), and content projects need a full ffmpeg with H.264 encoding (`brew install ffmpeg`) for keyframes and export.
 
 ## Development
 

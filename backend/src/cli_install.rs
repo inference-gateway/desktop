@@ -45,14 +45,18 @@ pub(crate) async fn check_and_install_cli(
     let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
 
-    let temp_path = bin_dir.join(format!("{}.tmp", binary_name()));
+    let archive_path = bin_dir.join(asset);
 
     let _ = on_event.send(ProgressEvent::Downloading {
         received: 0,
         total: 0,
     });
-    if !try_gh_download(asset, &temp_path)? {
-        download(&format!("{}/{}", release_url, asset), &temp_path, &on_event)?;
+    if !try_gh_download(asset, &archive_path)? {
+        download(
+            &format!("{}/{}", release_url, asset),
+            &archive_path,
+            &on_event,
+        )?;
     }
 
     let _ = on_event.send(ProgressEvent::Verifying);
@@ -79,10 +83,10 @@ pub(crate) async fn check_and_install_cli(
 
     let expected_hash = find_checksum(&checksums_text, asset)
         .ok_or_else(|| format!("Checksum not found for {}", asset))?;
-    let actual_hash = sha256_digest(&temp_path)?;
+    let actual_hash = sha256_digest(&archive_path)?;
 
     if actual_hash != expected_hash {
-        let _ = std::fs::remove_file(&temp_path);
+        let _ = std::fs::remove_file(&archive_path);
         return Err(format!(
             "Checksum mismatch for {}: expected {}, got {}",
             asset, expected_hash, actual_hash
@@ -90,7 +94,10 @@ pub(crate) async fn check_and_install_cli(
     }
 
     let _ = on_event.send(ProgressEvent::Installing);
-    std::fs::rename(&temp_path, &bin_path).map_err(|e| e.to_string())?;
+    let staging = extract_cli(&archive_path, &bin_dir)?;
+    let _ = std::fs::remove_file(&archive_path);
+    std::fs::rename(staging.join(binary_name()), &bin_path).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&staging);
 
     #[cfg(unix)]
     {
@@ -131,6 +138,31 @@ pub(crate) async fn check_and_install_cli(
     }
 
     finish(&on_event, restart, &state)
+}
+
+/// Extracts the executable from the release tarball into a staging directory
+/// next to the binary and returns that directory, so the rename into place
+/// stays atomic and never writes over a running `infer`.
+fn extract_cli(
+    archive: &std::path::Path,
+    bin_dir: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    let staging = bin_dir.join("cli-install.tmp");
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let status = crate::env::command("tar")
+        .arg("-xzf")
+        .arg(archive)
+        .arg("-C")
+        .arg(&staging)
+        .arg(binary_name())
+        .status()
+        .map_err(|e| format!("Failed to extract the CLI: {}", e))?;
+    if !status.success() || !staging.join(binary_name()).exists() {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err("Failed to extract the CLI binary from the release archive".into());
+    }
+    Ok(staging)
 }
 
 /// Reports the binary ready, after restarting the daemon when asked.
