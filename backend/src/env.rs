@@ -7,18 +7,20 @@ const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and Te
 
 const PROJECTS_GUIDANCE: &str = "For anything about organising projects or chats (grouping, moving, renaming, the projects root, assigning conversations to a project), read and follow ~/.infer/skills/desktop-projects/SKILL.md, which is already installed. Do not modify the app's source code for this.";
 
-/// Map the running platform to the CLI release asset name.
-/// Returns `None` for unsupported platforms.
+/// Map the running platform to the CLI release asset, a tarball holding the
+/// executable as `infer` (`infer.exe` on Windows). `None` for unsupported platforms.
 pub(crate) fn asset_name() -> Option<&'static str> {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
+    asset_name_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
-        ("linux", "x86_64") => Some("infer-linux-amd64"),
-        ("linux", "aarch64") => Some("infer-linux-arm64"),
-        ("macos", "x86_64") => Some("infer-darwin-amd64"),
-        ("macos", "aarch64") => Some("infer-darwin-arm64"),
-        ("windows", "x86_64") => Some("infer-windows-amd64"),
-        ("windows", "aarch64") => Some("infer-windows-arm64"),
+        ("linux", "x86_64") => Some("infer-linux-amd64.tar.gz"),
+        ("linux", "aarch64") => Some("infer-linux-arm64.tar.gz"),
+        ("macos", "x86_64") => Some("infer-darwin-amd64.tar.gz"),
+        ("macos", "aarch64") => Some("infer-darwin-arm64.tar.gz"),
+        ("windows", "x86_64") => Some("infer-windows-amd64.tar.gz"),
+        ("windows", "aarch64") => Some("infer-windows-arm64.tar.gz"),
         _ => None,
     }
 }
@@ -207,43 +209,33 @@ mod tests {
 
     #[test]
     fn test_asset_name_mapping() {
-        assert_eq!(asset_name_for("linux", "x86_64"), Some("infer-linux-amd64"));
+        assert_eq!(
+            asset_name_for("linux", "x86_64"),
+            Some("infer-linux-amd64.tar.gz")
+        );
         assert_eq!(
             asset_name_for("linux", "aarch64"),
-            Some("infer-linux-arm64")
+            Some("infer-linux-arm64.tar.gz")
         );
         assert_eq!(
             asset_name_for("macos", "x86_64"),
-            Some("infer-darwin-amd64")
+            Some("infer-darwin-amd64.tar.gz")
         );
         assert_eq!(
             asset_name_for("macos", "aarch64"),
-            Some("infer-darwin-arm64")
+            Some("infer-darwin-arm64.tar.gz")
         );
         assert_eq!(
             asset_name_for("windows", "x86_64"),
-            Some("infer-windows-amd64")
+            Some("infer-windows-amd64.tar.gz")
         );
         assert_eq!(
             asset_name_for("windows", "aarch64"),
-            Some("infer-windows-arm64")
+            Some("infer-windows-arm64.tar.gz")
         );
 
         assert_eq!(asset_name_for("linux", "i686"), None);
         assert_eq!(asset_name_for("freebsd", "x86_64"), None);
-    }
-
-    /// Test helper that mirrors asset_name() but takes explicit os/arch strings.
-    fn asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
-        match (os, arch) {
-            ("linux", "x86_64") => Some("infer-linux-amd64"),
-            ("linux", "aarch64") => Some("infer-linux-arm64"),
-            ("macos", "x86_64") => Some("infer-darwin-amd64"),
-            ("macos", "aarch64") => Some("infer-darwin-arm64"),
-            ("windows", "x86_64") => Some("infer-windows-amd64"),
-            ("windows", "aarch64") => Some("infer-windows-arm64"),
-            _ => None,
-        }
     }
 
     #[test]
