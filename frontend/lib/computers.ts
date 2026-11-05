@@ -1,4 +1,4 @@
-import type { MarkdownAgent } from "./tauri";
+import type { Conversation, MarkdownAgent } from "./tauri";
 import { COMPUTER_USE_TOOLS, pendingInput, type ChatState, type TranscriptItem } from "./transcript";
 
 export type ComputerStatus = "running" | "awaiting" | "idle";
@@ -35,6 +35,27 @@ export function chatWorkspace(
 export function moveHops(current: string, target: string): string[] {
   if (current === target) return [];
   return current !== THIS_COMPUTER && target !== THIS_COMPUTER ? [THIS_COMPUTER, target] : [target];
+}
+
+/**
+ * The sidebar's chats: the stored ones, led by those the local store cannot list -
+ * a running chat not yet saved, and a chat whose transcript lives on a workspace.
+ */
+export function sidebarConversations(
+  conversations: Conversation[],
+  runningIds: Set<string>,
+  workspaceOf: Record<string, string>,
+  titles: Record<string, string>,
+  transcripts: Record<string, ChatState>,
+): Conversation[] {
+  const stored = new Set(conversations.map((c) => c.id));
+  const onWorkspace = Object.keys(workspaceOf).filter((id) => workspaceOf[id] !== THIS_COMPUTER);
+  const unlisted = [...new Set([...runningIds, ...onWorkspace])].filter((id) => !stored.has(id));
+  const firstPrompt = (id: string) => {
+    const first = transcripts[id]?.items.find((item) => item.kind === "user");
+    return first?.kind === "user" ? first.text : undefined;
+  };
+  return [...unlisted.map((id) => ({ id, title: firstPrompt(id) ?? titles[id] ?? "New chat" })), ...conversations];
 }
 
 function lastComputerAction(items: TranscriptItem[]): string | null {

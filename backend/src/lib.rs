@@ -260,6 +260,7 @@ pub fn run() {
             workspaces::screen_frame,
             workspaces::list_artifacts,
             workspaces::save_artifact,
+            workspaces::clean_machines,
             workspaces::screen_control,
             workspaces::screen_input,
             workspace_settings::workspace_configs,

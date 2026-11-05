@@ -496,6 +496,7 @@ export const api = {
   listArtifacts: (sessionId: string, project?: string) => invoke<Artifact[]>("list_artifacts", { sessionId, project }),
   saveArtifact: (sessionId: string, project: string | undefined, name: string) =>
     invoke<string>("save_artifact", { sessionId, project, name }),
+  cleanMachines: (sessions: { id: string; project?: string }[]) => invoke<number>("clean_machines", { sessions }),
   screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
     invoke<boolean>("screen_control", { sessionId, project, takeOver }),

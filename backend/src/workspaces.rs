@@ -17,6 +17,8 @@ const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
 const ARTIFACTS_TIMEOUT: Duration = Duration::from_secs(120);
 const ARTIFACT_TIMEOUT: Duration = Duration::from_secs(300);
 const MOCK_ARTIFACT: &str = "demo.gif";
+/// The daemon gives a workspace a minute to delete a session's machine.
+const STOP_TIMEOUT: Duration = Duration::from_secs(70);
 const MOCK_WORKSPACE: &str = "mock-computer";
 
 /// A computer a session can run on: an entry of the daemon's `workspaces`.
@@ -45,6 +47,13 @@ pub(crate) struct Artifact {
     size: u64,
     #[serde(default)]
     modified_at: String,
+}
+
+/// A chat whose machine is to be removed, with the project it runs in.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct MachineSession {
+    id: String,
+    project: Option<String>,
 }
 
 /// Where a teleport stands, as the daemon reports it stage by stage.
@@ -87,6 +96,22 @@ fn parse_screen_result(frame: &Value) -> Option<Result<bool, String>> {
     Some(match frame["error"].as_str().filter(|e| !e.is_empty()) {
         Some(error) => Err(error.to_owned()),
         None => Ok(frame["held"].as_bool().unwrap_or(false)),
+    })
+}
+
+fn stop_thread_frame(session_id: &str, project_dir: &str) -> Value {
+    json!({ "type": "stop_thread", "project_dir": project_dir, "id": session_id })
+}
+
+/// Whether a `thread_stopped` answer for `session_id` removed a machine, or why
+/// the workspace kept it. `None` is a frame of another kind or session.
+fn parse_thread_stopped(frame: &Value, session_id: &str) -> Option<Result<bool, String>> {
+    if frame["type"] != "thread_stopped" || frame["id"] != session_id {
+        return None;
+    }
+    Some(match frame["error"].as_str().filter(|e| !e.is_empty()) {
+        Some(error) => Err(error.to_owned()),
+        None => Ok(frame["workspace"].as_str().is_some_and(|w| !w.is_empty())),
     })
 }
 
@@ -337,6 +362,52 @@ pub(crate) async fn save_artifact(
     .map_err(|e| format!("artifact task failed: {e}"))?
 }
 
+/// Has the daemon delete the machine of one chat and release its lease, so the
+/// chat starts on this computer next time. Answers whether a machine went.
+fn remove_machine(binding: &Binding, session: &MachineSession) -> Result<bool, String> {
+    let project_dir = crate::agent::thread_dir(session.project.as_deref());
+    let request = stop_thread_frame(&session.id, &project_dir.to_string_lossy());
+    exchange(binding, request, STOP_TIMEOUT, |frame| {
+        parse_thread_stopped(frame, &session.id)
+    })?
+}
+
+/// ponytail: one chat after another, each waiting on its workspace. Stop them
+/// side by side with `std::thread::scope` once a clean-up of many chats is slow.
+fn remove_machines(sessions: &[MachineSession]) -> Result<usize, String> {
+    let binding = crate::daemon::binding()?;
+    let of_chats = sessions.iter().map(|session| {
+        remove_machine(&binding, session)
+            .map(usize::from)
+            .map_err(|error| format!("{}: {error}", session.id))
+    });
+    let configs = crate::workspace_settings::workspace_configs();
+    let left_behind = configs
+        .iter()
+        .map(crate::workspace_settings::delete_machines);
+    let (removed, failures): (Vec<_>, Vec<_>) =
+        of_chats.chain(left_behind).partition(Result::is_ok);
+    if failures.is_empty() {
+        Ok(removed.into_iter().flatten().sum())
+    } else {
+        let reasons: Vec<String> = failures.into_iter().filter_map(Result::err).collect();
+        Err(reasons.join("\n"))
+    }
+}
+
+/// Removes every machine of the workspaces: those of the given chats through
+/// the daemon, which also releases their leases, then any a cluster still has.
+/// Answers how many machines went.
+#[tauri::command]
+pub(crate) async fn clean_machines(sessions: Vec<MachineSession>) -> Result<usize, String> {
+    if mock_mode() {
+        return Ok(sessions.len());
+    }
+    tokio::task::spawn_blocking(move || remove_machines(&sessions))
+        .await
+        .map_err(|e| format!("clean-up task failed: {e}"))?
+}
+
 /// The latest screen of the computer a session runs on.
 /// ponytail: one connection per poll, keep one open if tiles outgrow a dozen.
 #[tauri::command]
@@ -441,6 +512,29 @@ mod tests {
         for name in ["", ".", "..", "../x", "a/b", "a\\b", "/etc/passwd"] {
             assert!(artifact_file_name(name).is_err(), "{name}");
         }
+    }
+
+    #[test]
+    fn a_stopped_thread_tells_whether_its_machine_went() {
+        let stopped = |extra: Value| {
+            let mut frame = json!({ "type": "thread_stopped", "id": "s1" });
+            frame
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            parse_thread_stopped(&frame, "s1")
+        };
+        assert_eq!(stopped(json!({ "workspace": "k8s" })), Some(Ok(true)));
+        assert_eq!(stopped(json!({ "workspace": "" })), Some(Ok(false)));
+        assert_eq!(
+            stopped(json!({ "error": "cluster unreachable" })),
+            Some(Err("cluster unreachable".into()))
+        );
+        assert_eq!(stopped(json!({ "id": "s2", "workspace": "k8s" })), None);
+        assert_eq!(
+            parse_thread_stopped(&json!({ "type": "frame" }), "s1"),
+            None
+        );
     }
 
     #[test]

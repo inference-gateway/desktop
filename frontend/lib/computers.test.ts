@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chatWorkspace, computerTiles, moveHops } from "./computers";
+import { chatWorkspace, computerTiles, moveHops, sidebarConversations } from "./computers";
 import type { MarkdownAgent } from "./tauri";
 import { initialChatState, type ChatState, type TranscriptItem } from "./transcript";
 
@@ -79,4 +79,21 @@ test("a chat on one workspace comes home before it moves to another", () => {
   expect(moveHops("k8s", "")).toEqual([""]);
   expect(moveHops("k8s", "build")).toEqual(["", "build"]);
   expect(moveHops("k8s", "k8s")).toEqual([]);
+});
+
+test("a chat on a workspace stays in the sidebar once its run ends, a chat at home is listed once", () => {
+  const stored = [{ id: "local", title: "Local" }];
+  const listed = sidebarConversations(
+    stored,
+    new Set(["local", "fresh"]),
+    { remote: "k8s", restarted: "k8s", home: "", local: "k8s" },
+    { remote: "stale title", restarted: "Hi" },
+    { remote: chat([{ kind: "user", id: "u1", text: "open the docs" } as TranscriptItem]) },
+  );
+  expect(listed).toEqual([
+    { id: "fresh", title: "New chat" },
+    { id: "remote", title: "open the docs" },
+    { id: "restarted", title: "Hi" },
+    { id: "local", title: "Local" },
+  ]);
 });

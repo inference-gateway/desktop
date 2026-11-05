@@ -28,7 +28,7 @@ import {
   type Delegation,
   type TodoItem,
 } from "@/lib/transcript";
-import { chatWorkspace, moveHops, THIS_COMPUTER } from "@/lib/computers";
+import { chatWorkspace, moveHops, sidebarConversations, THIS_COMPUTER } from "@/lib/computers";
 import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
@@ -191,6 +191,7 @@ function useDesktopStore() {
   useEffect(() => {
     workspaceOfRef.current = workspaceOf;
   }, [workspaceOf]);
+  const [workspaceTitles, setWorkspaceTitles] = useState<Record<string, string>>(() => ({}));
   const [moving, setMoving] = useState<Record<string, string>>(() => ({}));
   const movingRef = useRef(moving);
   useEffect(() => {
@@ -473,6 +474,10 @@ function useDesktopStore() {
       for (const [id, name] of Object.entries(parsed?.workspaces ?? {})) {
         if (typeof name === "string") chatWorkspaces[id] = name;
       }
+      const chatTitles: Record<string, string> = {};
+      for (const [id, title] of Object.entries(parsed?.titles ?? {})) {
+        if (typeof title === "string") chatTitles[id] = title;
+      }
       const selected = new Set<string>();
       if (Array.isArray(parsed?.selected)) {
         for (const n of parsed.selected) {
@@ -487,6 +492,7 @@ function useDesktopStore() {
       setProjectTypes(types);
       setAgentOf(agentAssignments);
       setWorkspaceOf(chatWorkspaces);
+      setWorkspaceTitles(chatTitles);
       setInitSelection(selected);
       setActiveProject(typeof parsed?.active === "string" && names.has(parsed.active) ? parsed.active : null);
     } catch (e) {
@@ -634,18 +640,10 @@ function useDesktopStore() {
     lastClickedIndex.current = -1;
   }, []);
 
-  // Running sessions not yet persisted to disk still need a sidebar entry so the
-  // user can switch back to them; show them first, titled by their first prompt.
-  const displayConversations = useMemo(() => {
-    const known = new Set(conversations.map((c) => c.id));
-    const pending: Conversation[] = [];
-    for (const id of runningIds) {
-      if (known.has(id)) continue;
-      const first = transcripts[id]?.items.find((it) => it.kind === "user");
-      pending.push({ id, title: first && first.kind === "user" ? first.text : "New chat" });
-    }
-    return [...pending, ...conversations];
-  }, [conversations, runningIds, transcripts]);
+  const displayConversations = useMemo(
+    () => sidebarConversations(conversations, runningIds, workspaceOf, workspaceTitles, transcripts),
+    [conversations, runningIds, workspaceOf, workspaceTitles, transcripts],
+  );
 
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
@@ -773,6 +771,8 @@ function useDesktopStore() {
           return next;
         });
         clearTerminal(id);
+        setWorkspaceOf(({ [id]: _, ...rest }) => rest);
+        setWorkspaceTitles(({ [id]: _, ...rest }) => rest);
         if (id === activeId) newChat();
         await refreshConversations();
       } catch (err) {
@@ -859,6 +859,7 @@ function useDesktopStore() {
           types: projectTypes,
           agents: agentOf,
           workspaces: workspaceOf,
+          titles: workspaceTitles,
           selected: Array.from(initSelection),
           active: activeProject ?? undefined,
         }),
@@ -875,6 +876,7 @@ function useDesktopStore() {
     projectTypes,
     agentOf,
     workspaceOf,
+    workspaceTitles,
     initSelection,
     activeProject,
     fetchGitProjects,
@@ -1011,6 +1013,7 @@ function useDesktopStore() {
               break;
             case "Done":
               refreshStatus();
+              refreshConversations();
               setRunningIds((prev) => {
                 const next = new Set(prev);
                 next.delete(runId);
@@ -1054,7 +1057,10 @@ function useDesktopStore() {
           runId in workspaceOfRef.current
             ? workspaceOfRef.current[runId]
             : agents.find((a) => a.name === agentName)?.workspace || THIS_COMPUTER;
-        if (runsOn && !(runId in workspaceOfRef.current)) setWorkspaceOf((prev) => ({ ...prev, [runId]: runsOn }));
+        if (runsOn && !(runId in workspaceOfRef.current)) {
+          setWorkspaceOf((prev) => ({ ...prev, [runId]: runsOn }));
+          setWorkspaceTitles((prev) => ({ ...prev, [runId]: text.slice(0, 200) }));
+        }
         const workspaces = runsOn ? await api.workspaceConfigs().catch(() => []) : [];
         const onWorkspace = workspaceModel(
           agentThreadModel(
@@ -1403,6 +1409,15 @@ function useDesktopStore() {
     },
     [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
   );
+
+  // Removes the machine of every chat on a workspace. Their transcripts go with
+  // the machines, so the chats start over on their agent's workspace or here.
+  const cleanMachines = useCallback(async () => {
+    const remote = Object.keys(workspaceOf).filter((id) => workspaceOf[id] !== THIS_COMPUTER);
+    const removed = await api.cleanMachines(remote.map((id) => ({ id, project: projects[id] })));
+    setWorkspaceOf((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !remote.includes(id))));
+    return removed;
+  }, [workspaceOf, projects]);
 
   const takeOver = useCallback(
     async (sessionId: string) => {
@@ -1936,6 +1951,7 @@ function useDesktopStore() {
     workspaceOf,
     moving,
     moveChat,
+    cleanMachines,
     transcripts,
     promptProject,
     runningIds,
