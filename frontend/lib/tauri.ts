@@ -2,6 +2,7 @@
 // camelCases them); event/return payloads keep their Rust serde snake_case
 // names, so the discriminated unions below use snake_case fields.
 import { invoke, Channel, convertFileSrc } from "@tauri-apps/api/core";
+import type { ScreenInput } from "./screen-input";
 
 export { Channel, convertFileSrc };
 
@@ -122,6 +123,8 @@ export type MarkdownAgent = {
   avatar: string | null;
   path: string;
 };
+/** The latest screen of a session's computer and the frame space a pointer maps onto, zero when unknown. */
+export type Screen = { src: string; width: number; height: number };
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
@@ -452,7 +455,11 @@ export const api = {
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
-  screenFrame: (sessionId: string, project?: string) => invoke<string | null>("screen_frame", { sessionId, project }),
+  screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
+  screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
+    invoke<boolean>("screen_control", { sessionId, project, takeOver }),
+  screenInput: (sessionId: string, project: string | undefined, input: ScreenInput) =>
+    invoke<boolean>("screen_input", { sessionId, project, input }),
   listMarkdownAgents: () => invoke<MarkdownAgent[]>("list_markdown_agents"),
   saveMarkdownAgent: (agent: MarkdownAgent, previousName?: string) =>
     invoke<string>("save_markdown_agent", { agent, previousName }),

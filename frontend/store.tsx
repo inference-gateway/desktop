@@ -1331,6 +1331,31 @@ function useDesktopStore() {
     setCurrentView("computers");
   }, []);
 
+  const [drivenId, setDrivenId] = useState<string | null>(null);
+
+  const handBack = useCallback(async () => {
+    if (!drivenId) return;
+    setDrivenId(null);
+    await api
+      .screenControl(drivenId, projects[drivenId], false)
+      .catch((e) => setError(`Failed to hand the screen back: ${e}`));
+  }, [drivenId, projects, setError]);
+
+  const takeOver = useCallback(
+    async (sessionId: string) => {
+      if (drivenId && drivenId !== sessionId) await handBack();
+      try {
+        const held = await api.screenControl(sessionId, projects[sessionId], true);
+        if (!held) throw new Error("the computer kept its screen");
+        setDrivenId(sessionId);
+        setCurrentView("computers");
+      } catch (e) {
+        setError(`Failed to take over: ${e}`);
+      }
+    },
+    [drivenId, handBack, projects, setError],
+  );
+
   // Start a fresh chat in a project with a given prompt (the timeline's
   // "Generate" button) and switch to it so progress and approvals are visible.
   const promptProject = useCallback(
@@ -1842,6 +1867,9 @@ function useDesktopStore() {
     openSettings,
     openObservability,
     openComputers,
+    drivenId,
+    takeOver,
+    handBack,
     transcripts,
     promptProject,
     runningIds,

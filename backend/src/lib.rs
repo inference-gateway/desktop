@@ -256,6 +256,8 @@ pub fn run() {
             screen_records::screen_recording_status,
             workspaces::list_workspaces,
             workspaces::screen_frame,
+            workspaces::screen_control,
+            workspaces::screen_input,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

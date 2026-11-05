@@ -11,6 +11,8 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(8);
 /// A Kubernetes workspace pulls an image and boots a pod on its first teleport.
 const TELEPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
+/// Taking a screen over can relaunch the session's worker first.
+const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
 const MOCK_WORKSPACE: &str = "mock-computer";
 
 /// A computer a session can run on: an entry of the daemon's `workspaces`.
@@ -20,6 +22,15 @@ pub(crate) struct Workspace {
     kind: String,
     reachable: bool,
     error: Option<String>,
+}
+
+/// The latest screen of a session's computer and the frame space a person's
+/// pointer maps onto while they drive it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct Screen {
+    src: String,
+    width: u64,
+    height: u64,
 }
 
 /// Where a teleport stands, as the daemon reports it stage by stage.
@@ -42,6 +53,27 @@ fn teleport_frame(session_id: &str, project_dir: &str, target: &str, teleport_id
 
 fn read_frame_frame(session_id: &str, project_dir: &str) -> Value {
     json!({ "type": "read_frame", "project_dir": project_dir, "id": session_id })
+}
+
+fn screen_control_frame(session_id: &str, project_dir: &str, take_over: bool) -> Value {
+    let action = if take_over { "take_over" } else { "hand_back" };
+    json!({ "type": "screen_control", "project_dir": project_dir, "id": session_id, "action": action })
+}
+
+fn screen_input_frame(session_id: &str, project_dir: &str, input: &Value) -> Value {
+    json!({ "type": "screen_input", "project_dir": project_dir, "id": session_id, "input": input })
+}
+
+/// Whether the person holds the screen after a `screen_result`, or why the
+/// worker refused. `None` is a frame of another kind.
+fn parse_screen_result(frame: &Value) -> Option<Result<bool, String>> {
+    if frame["type"] != "screen_result" {
+        return None;
+    }
+    Some(match frame["error"].as_str().filter(|e| !e.is_empty()) {
+        Some(error) => Err(error.to_owned()),
+        None => Ok(frame["held"].as_bool().unwrap_or(false)),
+    })
 }
 
 fn parse_workspaces(frame: &Value) -> Option<Vec<Workspace>> {
@@ -76,16 +108,20 @@ fn parse_stage(frame: &Value) -> Option<Stage> {
     })
 }
 
-/// The screen a `frame` answer carries as a data URL. The outer `None` is a
+/// The screen a `frame` answer carries, as a data URL. The outer `None` is a
 /// frame of another kind, the inner one a session that streams no screen yet.
-fn frame_data_url(frame: &Value) -> Option<Option<String>> {
+fn parse_screen(frame: &Value) -> Option<Option<Screen>> {
     if frame["type"] != "frame" {
         return None;
     }
     let screen = &frame["frame"];
     Some(screen["data"].as_str().map(|data| {
         let format = screen["format"].as_str().unwrap_or("jpeg");
-        format!("data:image/{format};base64,{data}")
+        Screen {
+            src: format!("data:image/{format};base64,{data}"),
+            width: screen["width"].as_u64().unwrap_or(0),
+            height: screen["height"].as_u64().unwrap_or(0),
+        }
     }))
 }
 
@@ -155,11 +191,15 @@ fn mock_workspaces() -> Vec<Workspace> {
     }]
 }
 
-fn mock_screen() -> String {
+fn mock_screen() -> Screen {
     use base64::Engine as _;
     let jpeg =
         base64::engine::general_purpose::STANDARD.encode(crate::screen_records::PLACEHOLDER_JPEG);
-    format!("data:image/jpeg;base64,{jpeg}")
+    Screen {
+        src: format!("data:image/jpeg;base64,{jpeg}"),
+        width: 0,
+        height: 0,
+    }
 }
 
 /// The daemon's workspaces. A daemon that cannot answer, such as a CLI from
@@ -184,10 +224,10 @@ pub(crate) async fn list_workspaces(app: tauri::AppHandle) -> Vec<Workspace> {
     .unwrap_or_default()
 }
 
-/// The latest screen of the computer a session runs on, as a data URL.
+/// The latest screen of the computer a session runs on.
 /// ponytail: one connection per poll, keep one open if tiles outgrow a dozen.
 #[tauri::command]
-pub(crate) async fn screen_frame(session_id: String, project: Option<String>) -> Option<String> {
+pub(crate) async fn screen_frame(session_id: String, project: Option<String>) -> Option<Screen> {
     if mock_mode() {
         return Some(mock_screen());
     }
@@ -195,11 +235,61 @@ pub(crate) async fn screen_frame(session_id: String, project: Option<String>) ->
         let binding = crate::daemon::binding().ok()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = read_frame_frame(&session_id, &project_dir.to_string_lossy());
-        exchange(&binding, request, FRAME_TIMEOUT, frame_data_url).ok()?
+        exchange(&binding, request, FRAME_TIMEOUT, parse_screen).ok()?
     })
     .await
     .ok()
     .flatten()
+}
+
+/// Sends one screen request for a session and answers whether the person
+/// holds its screen afterwards.
+async fn screen_request(
+    project: Option<String>,
+    request: impl FnOnce(&str) -> Value + Send + 'static,
+) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        let project_dir = crate::agent::thread_dir(project.as_deref());
+        let request = request(&project_dir.to_string_lossy());
+        exchange(&binding, request, SCREEN_TIMEOUT, parse_screen_result)?
+    })
+    .await
+    .map_err(|e| format!("screen task failed: {e}"))?
+}
+
+/// Takes the screen of a session's computer over for the person, or hands it
+/// back to the agent. Answers whether the person holds it afterwards.
+#[tauri::command]
+pub(crate) async fn screen_control(
+    session_id: String,
+    project: Option<String>,
+    take_over: bool,
+) -> Result<bool, String> {
+    if mock_mode() {
+        return Ok(take_over);
+    }
+    screen_request(project, move |dir| {
+        screen_control_frame(&session_id, dir, take_over)
+    })
+    .await
+}
+
+/// Drives a held screen with one input of the person, in frame space.
+/// ponytail: one connection per input, keep one open if typing feels slow.
+#[tauri::command]
+pub(crate) async fn screen_input(
+    session_id: String,
+    project: Option<String>,
+    input: Value,
+) -> Result<bool, String> {
+    if mock_mode() {
+        return Ok(true);
+    }
+    screen_request(project, move |dir| {
+        screen_input_frame(&session_id, dir, &input)
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -258,16 +348,51 @@ mod tests {
 
     #[test]
     fn a_frame_becomes_a_data_url_and_an_error_is_no_screen() {
-        let frame = json!({"type": "frame", "frame": {"data": "QUJD", "format": "png"}});
+        let frame = json!({"type": "frame", "frame": {"data": "QUJD", "format": "png", "width": 1280, "height": 800}});
         assert_eq!(
-            frame_data_url(&frame),
-            Some(Some("data:image/png;base64,QUJD".into()))
+            parse_screen(&frame),
+            Some(Some(Screen {
+                src: "data:image/png;base64,QUJD".into(),
+                width: 1280,
+                height: 800,
+            }))
         );
         assert_eq!(
-            frame_data_url(&json!({"type": "frame", "error": "no screen"})),
+            parse_screen(&json!({"type": "frame", "error": "no screen"})),
             Some(None)
         );
-        assert_eq!(frame_data_url(&json!({"type": "thread_activity"})), None);
+        assert_eq!(parse_screen(&json!({"type": "thread_activity"})), None);
+    }
+
+    #[test]
+    fn screen_frames_name_the_session_and_what_the_person_does() {
+        assert_eq!(
+            screen_control_frame("s1", "/proj", true),
+            json!({"type": "screen_control", "project_dir": "/proj", "id": "s1", "action": "take_over"})
+        );
+        assert_eq!(
+            screen_control_frame("s1", "/proj", false)["action"],
+            "hand_back"
+        );
+        let click = json!({"kind": "click", "x": 64, "y": 32});
+        assert_eq!(
+            screen_input_frame("s1", "/proj", &click),
+            json!({"type": "screen_input", "project_dir": "/proj", "id": "s1", "input": click})
+        );
+    }
+
+    #[test]
+    fn a_screen_result_says_who_holds_the_screen_or_why_not() {
+        let result = |held: bool| json!({"type": "screen_result", "held": held});
+        assert_eq!(parse_screen_result(&result(true)), Some(Ok(true)));
+        assert_eq!(parse_screen_result(&result(false)), Some(Ok(false)));
+        assert_eq!(
+            parse_screen_result(
+                &json!({"type": "screen_result", "held": true, "error": "already held"})
+            ),
+            Some(Err("already held".into()))
+        );
+        assert_eq!(parse_screen_result(&json!({"type": "frame"})), None);
     }
 
     #[test]
