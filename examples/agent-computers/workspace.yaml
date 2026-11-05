@@ -1,0 +1,15 @@
+name: ubuntu-desktop
+kind: kubernetes
+context: k3d-agent-computers
+namespace: agent-computers
+image: agent-computer:local
+storage: 1Gi
+idle_ttl: 30m
+away_ttl: 1m
+retention: 1h
+env:
+  INFER_GATEWAY_MOCK: "true"
+  INFER_GATEWAY_MOCK_SCENARIOS: /opt/agent-computer/scenarios.yaml
+  INFER_AGENT_MODEL: mock/openai/gpt-4o
+  INFER_COMPUTER_USE_ENABLED: "true"
+  INFER_COMPUTER_USE_APPROVAL: never

@@ -1,0 +1,15 @@
+{
+  "policies": {
+    "SkipTermsOfUse": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "DontCheckDefaultBrowser": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "UserMessaging": {
+      "SkipOnboarding": true,
+      "WhatsNew": false,
+      "FeatureRecommendations": false
+    }
+  }
+}
