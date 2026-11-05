@@ -722,9 +722,14 @@ fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
     let sink: Arc<Mutex<Option<Sink>>> = Arc::new(Mutex::new(None));
     let inner = Arc::clone(&sink);
     let emit: Sink = Arc::new(move |event: AgentEvent| {
+        let remote = app
+            .state::<AppState>()
+            .remote_sessions
+            .lock()
+            .is_ok_and(|sessions| sessions.contains(&session_id));
         let _ = app.emit(
             "agent-event",
-            serde_json::json!({ "sessionId": session_id, "name": "", "event": event }),
+            serde_json::json!({ "sessionId": session_id, "name": "", "remote": remote, "event": event }),
         );
         if let Some(channel) = app
             .state::<AppState>()
@@ -736,7 +741,7 @@ fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
             let _ = channel.send(event.clone());
         }
         let started = match &event {
-            AgentEvent::RecordingStarted { path, .. } => Some(path.clone()),
+            AgentEvent::RecordingStarted { path, .. } if !remote => Some(path.clone()),
             _ => None,
         };
         let ends = started.is_some()
@@ -900,6 +905,11 @@ pub(crate) async fn send_message(
     let is_new_to_the_app = state.threads.get(&session_id).is_none();
     let mut thread = ensure_thread(&app, &state, &session_id, &cwd, options.clone()).await?;
     let target = workspace.filter(|name| !name.trim().is_empty());
+    if target.is_some()
+        && let Ok(mut sessions) = state.remote_sessions.lock()
+    {
+        sessions.insert(session_id.clone());
+    }
     if let Some(target) = target.filter(|_| is_new_to_the_app && thread.history().is_empty()) {
         teleport_thread(&session_id, &cwd, &target, &on_event).await?;
         state.threads.remove(&session_id);

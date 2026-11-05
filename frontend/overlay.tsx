@@ -200,7 +200,8 @@ export default function Overlay() {
       else hideIfIdle();
     });
 
-    const unlisten = listen<{ sessionId: string; event: AgentEvent }>("agent-event", (e) => {
+    const unlisten = listen<{ sessionId: string; remote?: boolean; event: AgentEvent }>("agent-event", (e) => {
+      if (e.payload.remote) return;
       const ev = e.payload.event;
       if (ev.kind === "Done" || ev.kind === "Cancelled" || ev.kind === "AgentError") {
         endSession(e.payload.sessionId);

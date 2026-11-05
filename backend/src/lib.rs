@@ -43,6 +43,9 @@ pub(crate) struct AppState {
     channels:
         std::sync::Mutex<std::collections::HashMap<String, tauri::ipc::Channel<agent::AgentEvent>>>,
     extension: std::sync::Mutex<daemon::ExtensionStatus>,
+    /// Chats that run on their agent's own computer, so the overlay and the
+    /// monitor never draw their computer use over this machine's screen.
+    remote_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
@@ -106,6 +109,7 @@ pub fn run() {
             threads: thread::Threads::default(),
             channels: std::sync::Mutex::new(std::collections::HashMap::new()),
             extension: std::sync::Mutex::new(daemon::ExtensionStatus::default()),
+            remote_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
         })
         .setup(|app| {
             #[cfg(target_os = "macos")]
