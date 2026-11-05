@@ -65,6 +65,11 @@ export function Composer() {
     activeAgent,
     currentAgent,
     selectAgent,
+    sessionId,
+    agentOf,
+    drivenId,
+    takeOver,
+    handBack,
     initSelecting,
     initSelection,
     cancelInitSelection,
@@ -352,6 +357,9 @@ export function Composer() {
     }
   };
 
+  const onOwnComputer = sessionId !== null && Boolean(agents.find((a) => a.name === agentOf[sessionId])?.workspace);
+  const driving = sessionId !== null && drivenId === sessionId;
+
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
       <StatusBar />
@@ -361,7 +369,19 @@ export function Composer() {
             agent={agents.find((a) => a.name === currentAgent) ?? { name: currentAgent, emoji: "", avatar: null }}
             size={18}
           />
-          <span className="min-w-0 flex-1 truncate">{currentAgent}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {currentAgent}
+            {driving && " - you are driving its computer"}
+          </span>
+          {onOwnComputer && (
+            <button
+              onClick={() => (driving ? handBack() : takeOver(sessionId))}
+              title={driving ? "Hand the screen back to the agent" : "Drive this agent's computer yourself"}
+              className="shrink-0 rounded-md border border-border-strong bg-card px-2 py-0.5 text-[0.75rem] font-medium text-foreground hover:border-primary/60"
+            >
+              {driving ? "Hand back" : "Take over"}
+            </button>
+          )}
           {currentAgent === activeAgent && (
             <button
               aria-label={`Leave agent ${currentAgent}`}
