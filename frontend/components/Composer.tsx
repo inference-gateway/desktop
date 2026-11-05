@@ -21,7 +21,9 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
-import { api, type Workspace } from "@/lib/tauri";
+import { api, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import { agentThreadModel } from "@/lib/agents";
+import { workspaceModel } from "@/lib/workspace-model";
 import { chatWorkspace, THIS_COMPUTER } from "@/lib/computers";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -64,10 +66,11 @@ const MENU_ITEM =
 // Moves the open chat to a workspace of the daemon or back to this computer.
 // The workspaces are asked for when the menu opens, so it shows what the
 // daemon can reach right now.
-function MoveToWorkspace({ sessionId, runsOn }: { sessionId: string; runsOn: string }) {
+function MoveToWorkspace({ sessionId, runsOn, model }: { sessionId: string; runsOn: string; model: string }) {
   const { moveChat, moving } = useDesktop();
   const [open, setOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
   const stage = moving[sessionId];
 
   const toggle = () => {
@@ -76,8 +79,20 @@ function MoveToWorkspace({ sessionId, runsOn }: { sessionId: string; runsOn: str
         .listWorkspaces()
         .then((all) => setWorkspaces(all.filter((workspace) => workspace.kind !== "local")))
         .catch(() => {});
+      api
+        .workspaceConfigs()
+        .then(setConfigs)
+        .catch(() => {});
     }
     setOpen(!open);
+  };
+
+  const modelWarning = (name: string) => {
+    const there = workspaceModel(
+      model,
+      configs.find((config) => config.name === name),
+    );
+    return "problem" in there ? there.problem : there.note;
   };
 
   const target = (name: string, label: string, reachable: boolean, hint?: string) => (
@@ -86,15 +101,23 @@ function MoveToWorkspace({ sessionId, runsOn }: { sessionId: string; runsOn: str
       aria-label={`Move to ${label}`}
       aria-pressed={runsOn === name}
       disabled={!reachable || runsOn === name}
-      title={runsOn === name ? "The chat runs here" : hint}
+      title={runsOn === name ? "The chat runs here" : (hint ?? modelWarning(name))}
+      aria-description={modelWarning(name)}
       onClick={() => {
         setOpen(false);
         moveChat(sessionId, name);
       }}
       className={MENU_ITEM}
     >
-      <Check size={13} className={runsOn === name ? "" : "invisible"} aria-hidden="true" />
-      <span className="min-w-0 truncate">{reachable ? label : `${label} (unreachable)`}</span>
+      <Check size={13} className={runsOn === name ? "shrink-0" : "invisible shrink-0"} aria-hidden="true" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{reachable ? label : `${label} (unreachable)`}</span>
+        {modelWarning(name) && (
+          <span className="whitespace-normal text-[0.7rem] text-amber-600 dark:text-amber-400">
+            {modelWarning(name)}
+          </span>
+        )}
+      </span>
     </button>
   );
 
@@ -123,7 +146,7 @@ function MoveToWorkspace({ sessionId, runsOn }: { sessionId: string; runsOn: str
         </span>
       )}
       {open && !stage && (
-        <div className="absolute bottom-full left-0 z-10 mb-1 flex min-w-[13rem] flex-col rounded-md border border-border bg-card p-1 shadow-md">
+        <div className="absolute bottom-full left-0 z-10 mb-1 flex w-[18rem] flex-col rounded-md border border-border bg-card p-1 shadow-md">
           {target(THIS_COMPUTER, "this computer", true)}
           {workspaces.map((workspace) =>
             target(workspace.name, workspace.name, workspace.reachable, workspace.error ?? undefined),
@@ -162,6 +185,7 @@ export function Composer() {
     takeOver,
     handBack,
     workspaceOf,
+    model,
     initSelecting,
     initSelection,
     cancelInitSelection,
@@ -702,7 +726,16 @@ export function Composer() {
           </div>
         )}
         <div className="flex items-end gap-[0.35rem] px-[0.4rem] py-[0.35rem]">
-          {sessionId !== null && <MoveToWorkspace sessionId={sessionId} runsOn={runsOn} />}
+          {sessionId !== null && (
+            <MoveToWorkspace
+              sessionId={sessionId}
+              runsOn={runsOn}
+              model={agentThreadModel(
+                agents.find((a) => a.name === agentOf[sessionId]),
+                model,
+              )}
+            />
+          )}
           <button
             aria-label="Attach file"
             title="Attach image or file"
