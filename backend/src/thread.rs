@@ -306,7 +306,43 @@ fn dial(binding: &Binding) -> Result<WebSocket<TcpStream>, String> {
     Ok(ws)
 }
 
-fn uuid() -> String {
+/// One request on a connection of its own: sends `request` and feeds every
+/// answer to `on_frame` until it yields a value. A `RUN_ERROR`, a closed
+/// connection or `timeout` passing without that value is an error.
+pub(crate) fn exchange<T>(
+    binding: &Binding,
+    request: serde_json::Value,
+    timeout: Duration,
+    mut on_frame: impl FnMut(&serde_json::Value) -> Option<T>,
+) -> Result<T, String> {
+    let mut ws = dial(binding)?;
+    ws.send(Message::text(request.to_string()))
+        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + timeout;
+    let answer = loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break Err("infer daemon did not answer in time".to_string());
+        }
+        ws.get_ref()
+            .set_read_timeout(Some(remaining))
+            .map_err(|e| e.to_string())?;
+        let frame: serde_json::Value = match read_text(&mut ws) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+            Err(e) => break Err(e),
+        };
+        if frame["type"] == "RUN_ERROR" {
+            break Err(frame["message"].as_str().unwrap_or("").to_string());
+        }
+        if let Some(value) = on_frame(&frame) {
+            break Ok(value);
+        }
+    };
+    let _ = ws.close(None);
+    answer
+}
+
+pub(crate) fn uuid() -> String {
     let mut b: [u8; 16] = rand::random();
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
@@ -655,6 +691,58 @@ mod tests {
             serde_json::json!({"type": "stop_thread", "project_dir": "/proj", "id": "s1"})
         );
         assert_eq!(frames[2], "<closed>");
+    }
+
+    #[test]
+    fn exchange_sends_the_request_and_reads_until_the_answer() {
+        let (port, received) = fake_daemon(
+            r#"{"type":"browser_hello_ack"}"#,
+            vec![
+                r#"{"type":"teleport_progress","stage":"provisioning"}"#,
+                r#"{"type":"teleport_progress","stage":"ready"}"#,
+            ],
+        );
+        let binding = Binding {
+            port,
+            token: "tok".into(),
+        };
+        let mut stages = Vec::new();
+        let last = exchange(
+            &binding,
+            serde_json::json!({"type": "teleport_session", "id": "s1"}),
+            Duration::from_secs(5),
+            |frame| {
+                let stage = frame["stage"].as_str()?.to_string();
+                stages.push(stage.clone());
+                (stage == "ready").then_some(stage)
+            },
+        )
+        .unwrap();
+        assert_eq!(last, "ready");
+        assert_eq!(stages, ["provisioning", "ready"]);
+        wait_for(&received, 3);
+        let request: serde_json::Value =
+            serde_json::from_str(&received.lock().unwrap()[1]).unwrap();
+        assert_eq!(request["type"], "teleport_session");
+    }
+
+    #[test]
+    fn exchange_turns_a_run_error_into_an_error() {
+        let (port, _) = fake_daemon(
+            r#"{"type":"browser_hello_ack"}"#,
+            vec![r#"{"type":"RUN_ERROR","message":"session s1 is not open"}"#],
+        );
+        let binding = Binding {
+            port,
+            token: "tok".into(),
+        };
+        let answer = exchange(
+            &binding,
+            serde_json::json!({"type": "read_frame", "id": "s1"}),
+            Duration::from_secs(5),
+            |_| Some(()),
+        );
+        assert_eq!(answer.unwrap_err(), "session s1 is not open");
     }
 
     #[test]

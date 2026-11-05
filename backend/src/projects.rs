@@ -644,7 +644,7 @@ pub(crate) async fn git_project_status(
 
 /// Run `git -C <dir> <args>`, returning stdout on success and stderr (or the
 /// spawn error) on failure.
-fn git_output(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_output(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = crate::env::command("git")
         .arg("-C")
         .arg(dir)

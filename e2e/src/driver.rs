@@ -143,6 +143,26 @@ fn seed_content_project(home: &Path, name: &str, repo_root: &Path) -> Result<()>
     Ok(())
 }
 
+/// An agent whose chats run on the workspace mock mode lists.
+fn seed_workspace_agent(home: &Path, name: &str) -> Result<()> {
+    let agents = home.join(".infer").join("agents");
+    std::fs::create_dir_all(&agents)?;
+    std::fs::write(
+        agents.join(format!("{name}.md")),
+        format!(
+            "---\nname: {name}\ndescription: Works on a computer of its own\nworkspace: mock-computer\n---\n\nYou work on your own computer.\n"
+        ),
+    )?;
+    Ok(())
+}
+
+/// What a test wants on disk in the fresh HOME before the app starts.
+#[derive(Clone, Copy, Default)]
+pub struct Seeds<'a> {
+    pub content_project: Option<&'a str>,
+    pub workspace_agent: Option<&'a str>,
+}
+
 impl AppDriver {
     /// Kill stale instances, launch the prebuilt binary fresh (mock mode by
     /// default), and wait until the AX tree answers.
@@ -153,7 +173,7 @@ impl AppDriver {
         mock: bool,
         scenarios: &Path,
         infer_bin: Option<&Path>,
-        content_project: Option<&str>,
+        seeds: Seeds,
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         std::thread::sleep(Duration::from_millis(500));
@@ -181,8 +201,11 @@ impl AppDriver {
             let _ = std::fs::remove_dir_all(&home);
             std::fs::create_dir_all(&home)?;
             wipe_webkit_store(app_bundle.is_some());
-            if let Some(name) = content_project {
+            if let Some(name) = seeds.content_project {
                 seed_content_project(&home, name, repo_root)?;
+            }
+            if let Some(name) = seeds.workspace_agent {
+                seed_workspace_agent(&home, name)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

@@ -382,3 +382,9 @@ scenarios:
         tool_calls:
           - { name: Write, args: { file_path: "long-transcript.txt", content: "end of the long transcript" } }
       - content: "Written at the end of the long transcript."
+
+  # The agent runs on the mock workspace, so the Computers view has a tile.
+  - name: agent-computers
+    match: '(?i)open the docs on your computer'
+    turns:
+      - content: "The docs are open."

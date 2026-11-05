@@ -7,7 +7,7 @@ mod driver;
 mod spec;
 
 use anyhow::{Context, Result, bail};
-use driver::AppDriver;
+use driver::{AppDriver, Seeds};
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -182,7 +182,10 @@ fn run_test(
         mock,
         scenarios,
         infer_bin,
-        test.content_project.as_deref(),
+        Seeds {
+            content_project: test.content_project.as_deref(),
+            workspace_agent: test.workspace_agent.as_deref(),
+        },
     )?;
     clean(&app, &test.cleanup);
 

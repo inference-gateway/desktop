@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ChartColumn,
   Circle,
+  Monitor,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
@@ -30,6 +31,7 @@ export function TopBar() {
     restartBackend,
     openSettings,
     openObservability,
+    openComputers,
     composerRef,
     setError,
     sidebarOpen,
@@ -174,6 +176,16 @@ export function TopBar() {
           )}
         </>
       )}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title="Computers"
+        aria-label="Computers"
+        onClick={openComputers}
+        className="text-muted-foreground"
+      >
+        <Monitor size={16} />
+      </Button>
       <Button
         variant="ghost"
         size="icon-sm"

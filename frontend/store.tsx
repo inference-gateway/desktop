@@ -134,7 +134,7 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability">("chat");
+  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "computers">("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
@@ -1042,6 +1042,7 @@ function useDesktopStore() {
           ...(await threadPrompts(projectName, extraInstruction, agentName)),
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
+          workspace: agents.find((a) => a.name === agentName)?.workspace || undefined,
         });
         refreshConversations();
         loadProjects();
@@ -1324,6 +1325,10 @@ function useDesktopStore() {
 
   const openObservability = useCallback(() => {
     setCurrentView("observability");
+  }, []);
+
+  const openComputers = useCallback(() => {
+    setCurrentView("computers");
   }, []);
 
   // Start a fresh chat in a project with a given prompt (the timeline's
@@ -1836,6 +1841,8 @@ function useDesktopStore() {
     setChatOpen,
     openSettings,
     openObservability,
+    openComputers,
+    transcripts,
     promptProject,
     runningIds,
     setCurrentView,

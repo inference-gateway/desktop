@@ -5,7 +5,8 @@
 //! optional `record` flag (screen-record the run into artifacts/<slug>.mov), an
 //! optional `narration` list (one line per step index, printed by the runner so
 //! the file reads top to bottom as a walkthrough of the feature it demos), an
-//! optional `content_project` name (seeded into the fresh HOME before launch),
+//! optional `content_project` name and an optional `workspace_agent` name (both
+//! seeded into the fresh HOME before launch),
 //! and a list of steps. Steps are either a bare verb (`- new_chat`) or a
 //! single-key map (`- send: "..."`).
 
@@ -30,6 +31,10 @@ pub struct Test {
     /// cannot drive, so a content-project demo cannot create one through the UI.
     #[serde(default)]
     pub content_project: Option<String>,
+    /// Seed this agent into the fresh HOME, bound to the mock workspace. The
+    /// computer picker is a native `<select>` too, so the UI cannot bind it.
+    #[serde(default)]
+    pub workspace_agent: Option<String>,
     pub steps: Vec<Step>,
 }
 
