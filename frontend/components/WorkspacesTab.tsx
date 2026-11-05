@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Check, CircleCheck, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import { api, type ClusterCheck, type Prerequisite, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import {
   configOf,
   draftOf,
@@ -16,6 +16,8 @@ import { useDesktop } from "@/store";
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
 
+const DAEMON_RETRIES = 3;
+const DAEMON_RETRY_MS = 4000;
 const FIELD_CLASS = "flex flex-col gap-1";
 const HINT_CLASS = "text-[0.72rem] text-muted-foreground";
 const AREA_CLASS =
@@ -32,58 +34,155 @@ function advanceOnEnter(nextId: string) {
   };
 }
 
-function reachability(config: WorkspaceConfig, known: Workspace | undefined): { label: string; dot: string } {
-  if (!known) return { label: "Not loaded yet - restart the CLI", dot: "bg-amber-500" };
+function reachability(
+  config: WorkspaceConfig,
+  known: Workspace | undefined,
+  stale: boolean,
+): { label: string; dot: string } {
+  if (!known && stale) return { label: "Not loaded yet - restart the CLI", dot: "bg-amber-500" };
+  if (!known) return { label: "The daemon has not reported this workspace", dot: "bg-muted-foreground/40" };
   if (known.reachable) return { label: "Reachable", dot: "bg-emerald-500" };
   return { label: known.error || `${kindLabel(config.kind)} is unreachable`, dot: "bg-destructive" };
+}
+
+/** The cluster prerequisites of a Kubernetes workspace, checked when the row shows and again on demand. */
+function useClusterCheck(config: WorkspaceConfig): { check: ClusterCheck | null; recheck: () => void } {
+  const [check, setCheck] = useState<ClusterCheck | null>(null);
+  const { kind, context, namespace } = config;
+  const recheck = useCallback(() => {
+    if (kind !== "kubernetes" || !context) return;
+    setCheck(null);
+    api
+      .checkWorkspace(context, namespace)
+      .then(setCheck)
+      .catch((e) =>
+        setCheck({
+          prerequisites: [{ name: "Cluster reachable", met: false, detail: String(e) }],
+          running: null,
+          suspended: null,
+        }),
+      );
+  }, [kind, context, namespace]);
+  useEffect(recheck, [recheck]);
+  return { check, recheck };
+}
+
+function RunningBadge({ check }: { check: ClusterCheck | null }) {
+  if (!check || check.running === null) return null;
+  const active = check.running > 0;
+  return (
+    <span
+      title={`${check.suspended ?? 0} suspended`}
+      className={`ml-2 rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${
+        active ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-foreground/5 text-muted-foreground"
+      }`}
+    >
+      {`${check.running} running`}
+    </span>
+  );
+}
+
+function Prerequisites({ checks }: { checks: Prerequisite[] | null }) {
+  if (!checks) return <span className={HINT_CLASS}>Checking the cluster...</span>;
+  const missing = checks.filter((check) => !check.met);
+  if (missing.length === 0) {
+    return (
+      <span className="flex items-center gap-1.5 text-[0.75rem] text-emerald-600 dark:text-emerald-400">
+        <CircleCheck size={13} aria-hidden="true" />
+        Cluster has everything it needs
+      </span>
+    );
+  }
+  return (
+    <div role="alert" className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+      <span className="flex items-center gap-1.5 text-[0.75rem] font-medium">
+        <TriangleAlert size={13} className="text-amber-500" aria-hidden="true" />
+        {`Cluster is missing: ${missing.map((check) => check.name).join(", ")}`}
+      </span>
+      <ul className="flex flex-col gap-0.5">
+        {checks.map((check) => (
+          <li key={check.name} className="flex items-start gap-1.5 text-[0.72rem] text-muted-foreground">
+            {check.met ? (
+              <Check size={12} className="mt-0.5 shrink-0 text-emerald-500" aria-label="Met" />
+            ) : (
+              <X size={12} className="mt-0.5 shrink-0 text-destructive" aria-label="Missing" />
+            )}
+            <span className="min-w-0 break-words">
+              {check.name}
+              {check.detail && ` - ${check.detail}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function WorkspaceRow({
   config,
   known,
+  stale,
   onEdit,
   onDelete,
 }: {
   config: WorkspaceConfig;
   known: Workspace | undefined;
+  stale: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [armed, setArmed] = useState(false);
-  const state = reachability(config, known);
+  const { check, recheck } = useClusterCheck(config);
+  const state = reachability(config, known, stale);
   const where = [config.context, config.namespace].filter(Boolean).join(" / ");
+  const checkable = config.kind === "kubernetes" && Boolean(config.context);
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[0.88rem] font-medium">
-          {config.name}
-          <span className="ml-2 text-[0.72rem] font-normal text-muted-foreground">{kindLabel(config.kind)}</span>
-        </span>
-        {where && <span className="truncate text-[0.75rem] text-muted-foreground">{where}</span>}
-        <span className="flex items-center gap-1.5 truncate text-[0.72rem] text-muted-foreground">
-          <span className={`h-2 w-2 shrink-0 rounded-full ${state.dot}`} aria-hidden="true" />
-          {state.label}
-        </span>
-      </div>
-      {editable(config.kind) && (
-        <Button variant="outline" size="xs" aria-label={`Edit workspace ${config.name}`} onClick={onEdit}>
-          <Pencil size={12} />
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[0.88rem] font-medium">
+            {config.name}
+            <span className="ml-2 text-[0.72rem] font-normal text-muted-foreground">{kindLabel(config.kind)}</span>
+            <RunningBadge check={check} />
+          </span>
+          {where && <span className="truncate text-[0.75rem] text-muted-foreground">{where}</span>}
+          <span className="flex items-center gap-1.5 truncate text-[0.72rem] text-muted-foreground">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${state.dot}`} aria-hidden="true" />
+            {state.label}
+          </span>
+        </div>
+        {checkable && (
+          <Button
+            variant="outline"
+            size="xs"
+            aria-label={`Check workspace ${config.name}`}
+            title="Check the cluster's prerequisites again"
+            onClick={recheck}
+          >
+            <RefreshCw size={12} />
+          </Button>
+        )}
+        {editable(config.kind) && (
+          <Button variant="outline" size="xs" aria-label={`Edit workspace ${config.name}`} onClick={onEdit}>
+            <Pencil size={12} />
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="xs"
+          aria-label={`Delete workspace ${config.name}`}
+          title={armed ? "Click again to delete" : "Delete workspace"}
+          onClick={() => {
+            if (armed) onDelete();
+            setArmed(!armed);
+          }}
+          onBlur={() => setArmed(false)}
+          className={armed ? "border-destructive text-destructive" : ""}
+        >
+          <Trash2 size={12} />
         </Button>
-      )}
-      <Button
-        variant="outline"
-        size="xs"
-        aria-label={`Delete workspace ${config.name}`}
-        title={armed ? "Click again to delete" : "Delete workspace"}
-        onClick={() => {
-          if (armed) onDelete();
-          setArmed(!armed);
-        }}
-        onBlur={() => setArmed(false)}
-        className={armed ? "border-destructive text-destructive" : ""}
-      >
-        <Trash2 size={12} />
-      </Button>
+      </div>
+      {checkable && <Prerequisites checks={check?.prerequisites ?? null} />}
     </div>
   );
 }
@@ -242,17 +341,25 @@ export function WorkspacesTab() {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [stale, setStale] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const loadKnown = useCallback((retries: number) => {
+    api
+      .listWorkspaces()
+      .then((list) => {
+        setKnown(Object.fromEntries(list.map((workspace) => [workspace.name, workspace])));
+        if (list.length === 0 && retries > 0) setTimeout(() => loadKnown(retries - 1), DAEMON_RETRY_MS);
+      })
+      .catch(() => {});
+  }, []);
 
   const reload = useCallback(() => {
     api
       .workspaceConfigs()
       .then(setConfigs)
       .catch((e) => setProblem(String(e)));
-    api
-      .listWorkspaces()
-      .then((list) => setKnown(Object.fromEntries(list.map((workspace) => [workspace.name, workspace]))))
-      .catch(() => {});
-  }, []);
+    loadKnown(DAEMON_RETRIES);
+  }, [loadKnown]);
 
   useEffect(() => {
     reload();
@@ -287,6 +394,18 @@ export function WorkspacesTab() {
       .then(changed)
       .catch((e) => setProblem(String(e)));
 
+  const detect = async () => {
+    setNotice("");
+    try {
+      const added = await api.detectWorkspaces();
+      if (added.length === 0) return setNotice("Every cluster in your kubeconfig already has a workspace.");
+      changed();
+      setNotice(`Added ${added.join(", ")}.`);
+    } catch (e) {
+      setProblem(String(e));
+    }
+  };
+
   const restart = async () => {
     await restartBackend(false);
     setStale(false);
@@ -309,6 +428,11 @@ export function WorkspacesTab() {
           </Button>
         </div>
       )}
+      {notice && (
+        <p aria-live="polite" className="mb-4 text-[0.8rem] text-muted-foreground">
+          {notice}
+        </p>
+      )}
       {problem && (
         <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
           {problem}
@@ -321,6 +445,7 @@ export function WorkspacesTab() {
             key={config.name}
             config={config}
             known={known[config.name]}
+            stale={stale}
             onEdit={() => setEditing({ previous: config.name, draft: draftOf(config) })}
             onDelete={() => remove(config.name)}
           />
@@ -338,7 +463,7 @@ export function WorkspacesTab() {
             }}
           />
         ) : (
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -346,6 +471,18 @@ export function WorkspacesTab() {
             >
               New workspace
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={detect}
+              title="Add a workspace for every cluster in your kubeconfig that has none yet"
+            >
+              Detect clusters
+            </Button>
+            <span className={HINT_CLASS}>
+              Detecting adds every kubeconfig context as a Kubernetes workspace in the infer-workspaces namespace, with
+              the names of your saved API keys for its gateway.
+            </span>
           </div>
         )}
       </div>

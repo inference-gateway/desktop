@@ -263,6 +263,8 @@ pub fn run() {
             workspace_settings::save_workspace,
             workspace_settings::delete_workspace,
             workspace_settings::kube_contexts,
+            workspace_settings::detect_workspaces,
+            workspace_settings::check_workspace,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

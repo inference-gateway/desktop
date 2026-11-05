@@ -8,6 +8,7 @@ narration:
   - "Name the namespace its sessions run in."
   - "Save the workspace."
   - "It shows up in the list, ready to be edited."
+  - "Its cluster is checked for what sessions need."
   - "The daemon's configuration file holds it."
   - "Settings asks for a CLI restart so the daemon loads it."
 steps:
@@ -19,5 +20,6 @@ steps:
   - type: "e2e-agents"
   - click: { button: "Save workspace" }
   - wait_for: { button: "Edit workspace e2e-cluster", timeout: 10 }
+  - wait_for: { text: "Cluster has everything it needs", timeout: 10 }
   - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "name: e2e-cluster", timeout: 10 }
   - wait_for: { button: "Restart CLI now", timeout: 5 }

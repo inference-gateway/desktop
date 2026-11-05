@@ -125,6 +125,10 @@ export type MarkdownAgent = {
 };
 /** The latest screen of a session's computer and the frame space a pointer maps onto, zero when unknown. */
 export type Screen = { src: string; width: number; height: number };
+/** One thing a Kubernetes workspace needs from its cluster, and what to do when it is missing. */
+export type Prerequisite = { name: string; met: boolean; detail: string };
+/** The state of a Kubernetes workspace's cluster. The session counts are null when it cannot list sessions. */
+export type ClusterCheck = { prerequisites: Prerequisite[]; running: number | null; suspended: number | null };
 /** A workspace entry of ~/.infer/daemon.yaml as Settings edits it. */
 export type WorkspaceConfig = {
   name: string;
@@ -474,6 +478,9 @@ export const api = {
     invoke<void>("save_workspace", { config, previousName }),
   deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),
   kubeContexts: () => invoke<string[]>("kube_contexts"),
+  detectWorkspaces: () => invoke<string[]>("detect_workspaces"),
+  checkWorkspace: (context: string, namespace: string) =>
+    invoke<ClusterCheck>("check_workspace", { context, namespace }),
   screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
     invoke<boolean>("screen_control", { sessionId, project, takeOver }),
