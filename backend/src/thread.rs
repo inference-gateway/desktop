@@ -9,6 +9,7 @@ use crate::daemon::{Binding, ExtensionStatus, lock};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
@@ -46,6 +47,7 @@ pub(crate) struct Thread {
     parser: Mutex<AgentParser>,
     open_interrupts: Mutex<Vec<String>>,
     answers: Mutex<Vec<serde_json::Value>>,
+    run_open: AtomicBool,
     sink: Sink,
     status: StatusSink,
     pub(crate) on_done: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
@@ -101,6 +103,7 @@ impl Thread {
             parser: Mutex::new(AgentParser::new(Some(session_id.to_string()))),
             open_interrupts: Mutex::default(),
             answers: Mutex::default(),
+            run_open: AtomicBool::new(false),
             sink,
             status,
             on_done: Mutex::new(None),
@@ -238,12 +241,14 @@ impl Thread {
         if kind == "RUN_STARTED" {
             lock(&self.open_interrupts).clear();
             lock(&self.answers).clear();
+            self.run_open.store(true, Ordering::SeqCst);
         }
         if let Some(event) = lock(&self.parser).parse_line(text) {
             (self.sink)(event);
         }
         match kind {
             "RUN_FINISHED" => {
+                self.run_open.store(false, Ordering::SeqCst);
                 let outcome = run_outcome(&frame).unwrap_or("success");
                 match outcome {
                     "interrupt" => {
@@ -267,11 +272,16 @@ impl Thread {
                     _ => self.done(0),
                 }
             }
-            "RUN_ERROR" if frame.get("runId").and_then(|r| r.as_str()).is_some() => {
-                self.done(1);
-            }
+            "RUN_ERROR" if self.ends_a_run(&frame) => self.done(1),
             _ => {}
         }
+    }
+
+    /// A worker reports its own failure without a runId, so an error ends the
+    /// run it names or the one that is open - and nothing when no run is.
+    fn ends_a_run(&self, error: &serde_json::Value) -> bool {
+        let was_open = self.run_open.swap(false, Ordering::SeqCst);
+        was_open || error.get("runId").and_then(|r| r.as_str()).is_some()
     }
 
     fn done(&self, exit_code: i32) {
@@ -829,6 +839,48 @@ mod tests {
         assert_eq!(run["type"], "run_agent_input");
         assert_eq!(run["input"]["threadId"], "s1");
         assert_eq!(run["input"]["messages"][0]["content"], "hello");
+    }
+
+    #[test]
+    fn a_worker_error_without_a_run_id_ends_the_open_run() {
+        let (port, _) = fake_daemon(
+            r#"{"type":"browser_hello_ack"}"#,
+            vec![
+                r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#,
+                r#"{"type":"RUN_STARTED","threadId":"s1","runId":"r1"}"#,
+                r#"{"type":"RUN_ERROR","message":"max_turns_reached"}"#,
+                r#"{"type":"RUN_ERROR","message":"no thread"}"#,
+            ],
+        );
+        let (sink, events, status, _) = sinks();
+        let binding = Binding {
+            port,
+            token: "tok".into(),
+        };
+        let _thread = Thread::open(
+            &binding,
+            "s1",
+            "/proj",
+            &ThreadOptions::default(),
+            sink,
+            status,
+        )
+        .unwrap();
+        wait_for(&events, 3);
+        let seen = events.lock().unwrap();
+        let errors: Vec<&str> = seen
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::AgentError { message } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(errors, ["max_turns_reached", "no thread"]);
+        let done = seen
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Done { exit_code: 1, .. }))
+            .count();
+        assert_eq!(done, 1, "only the error of the open run ends it");
     }
 
     #[test]
