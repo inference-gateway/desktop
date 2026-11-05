@@ -1,18 +1,17 @@
 version: '3'
 
 vars:
-  CLUSTER: agent-computers
-  NAMESPACE: agent-computers
+  CLUSTER: computer-use
+  NAMESPACE: computer-use
   WORKSPACE: ubuntu-desktop
   AGENT_SANDBOX_VERSION: v1.0.8
   OPERATOR_VERSION: v0.29.0
   INFER_DIR: '{{.HOME}}/.infer'
   MODEL: mock/openai/gpt-4o
-  KEY: ''
 
 tasks:
   up:
-    desc: Everything the app needs - the cluster, the computer image, the workspace and the three agents (MODEL and KEY switch from the mock model to a real one)
+    desc: Everything the app needs - the cluster, the computer image, the workspace and the three agents (MODEL switches from the mock model to a real one)
     cmds:
       - task: agents:install
       - task: cluster:create
@@ -42,7 +41,7 @@ tasks:
       - touch {{.INFER_DIR}}/daemon.yaml
       - cp {{.INFER_DIR}}/daemon.yaml {{.INFER_DIR}}/daemon.yaml.bak
       - |
-        yq -i '.workspaces = ((.workspaces // []) | map(select(.name != "{{.WORKSPACE}}"))) + [load("workspace.yaml") | .env.INFER_AGENT_MODEL = "{{.MODEL}}"{{if .KEY}} | del(.env.INFER_GATEWAY_MOCK) | del(.env.INFER_GATEWAY_MOCK_SCENARIOS) | . * {"gateway_env": ["{{.KEY}}"]}{{end}}]' {{.INFER_DIR}}/daemon.yaml
+        yq -i '.workspaces = ((.workspaces // []) | map(select(.name != "{{.WORKSPACE}}"))) + [load("workspace.yaml") | .env.INFER_AGENT_MODEL = "{{.MODEL}}"{{$provider := splitList "/" .MODEL | first}}{{if ne $provider "mock"}} | del(.env.INFER_GATEWAY_MOCK) | del(.env.INFER_GATEWAY_MOCK_SCENARIOS) | . * {"gateway_env": ["{{upper $provider}}_API_KEY"]}{{end}}]' {{.INFER_DIR}}/daemon.yaml
 
   agents:install:
     desc: Copy the researcher, writer and tester agents into ~/.infer/agents, refusing to overwrite an agent of your own

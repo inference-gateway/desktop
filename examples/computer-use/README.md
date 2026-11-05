@@ -1,4 +1,4 @@
-# Agent computers
+# Computer use
 
 Three agents, each on an Ubuntu desktop of its own, working in parallel while you watch their screens from the app.
 
@@ -29,10 +29,10 @@ task down   # delete the cluster, the workspace entry and the agents
 ## A real model
 
 ```bash
-task up MODEL=ollama_cloud/glm-5.3-flash KEY=OLLAMA_CLOUD_API_KEY
+task up MODEL=ollama_cloud/glm-5.3-flash
 ```
 
-`MODEL` is the `provider/model` the agents and the workspace run on, and it has to read screenshots. `KEY` names the provider key the workspace's gateway gets: the daemon reads its value from its own environment or from `~/.infer/auth.yaml`, and it lands in the gateway's Secret, never in the agent's pod. Press **Restart CLI**, then give the agents tasks of your own. `task up` without the two goes back to the mock model.
+`MODEL` is the `provider/model` the agents and the workspace run on, and it has to read screenshots. The provider's key is the one you already have: the workspace lists `<PROVIDER>_API_KEY` under `gateway_env`, the daemon reads its value from its own environment or from `~/.infer/auth.yaml`, and it lands in the gateway's Secret, never in the agent's pod. Press **Restart CLI**, then give the agents tasks of your own. `task up` without it goes back to the mock model.
 
 The agents use their computer without asking for approval - it is a pod of their own, not your machine.
 
