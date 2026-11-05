@@ -5,7 +5,7 @@
 //! drains an mpsc queue of outbound frames, so no lock spans socket I/O.
 
 use crate::agent::{AgentEvent, AgentParser, run_outcome};
-use crate::daemon::{Binding, ExtensionStatus, PROTOCOL_VERSION, lock};
+use crate::daemon::{Binding, ExtensionStatus, lock};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::TcpStream;
@@ -326,26 +326,19 @@ fn hello_frame(token: &str) -> String {
         "type": "browser_hello",
         "token": token,
         "client": "desktop",
-        "protocol_version": PROTOCOL_VERSION,
         "extension_version": env!("CARGO_PKG_VERSION"),
     })
     .to_string()
 }
 
-/// The daemon accepts any valid hello, but a binding of another protocol
-/// version is one the app cannot drive: say so instead of a silent panel.
+/// The daemon accepts any hello with a valid token and closes the socket on
+/// a bad one, so anything but the ack means the binding token is wrong.
 fn check_ack(text: &str) -> Result<(), String> {
     let ack: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
     if ack.get("type").and_then(|t| t.as_str()) != Some("browser_hello_ack") {
         return Err("infer daemon rejected the hello (check the binding token)".into());
     }
-    match ack.get("protocol_version").and_then(|v| v.as_u64()) {
-        Some(v) if v == PROTOCOL_VERSION => Ok(()),
-        other => Err(format!(
-            "infer daemon speaks protocol version {}, this app needs {PROTOCOL_VERSION}: update infer",
-            other.map_or("unknown".to_string(), |v| v.to_string())
-        )),
-    }
+    Ok(())
 }
 
 fn open_frame(session_id: &str, project_dir: &str, options: &ThreadOptions) -> String {
@@ -551,7 +544,7 @@ mod tests {
     #[test]
     fn open_presents_the_hello_and_thread_options_and_reads_the_snapshot() {
         let (port, received) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            r#"{"type":"browser_hello_ack"}"#,
             vec![
                 r#"{"type":"browser_extension_status","connected":true,"extension_version":"1.9.2","protocol_version":1}"#,
                 r#"{"type":"MESSAGES_SNAPSHOT","messages":[{"id":"m1","role":"user","content":"hi"}]}"#,
@@ -582,7 +575,6 @@ mod tests {
         let frames = received.lock().unwrap();
         let hello: serde_json::Value = serde_json::from_str(&frames[0]).unwrap();
         assert_eq!(hello["client"], "desktop");
-        assert_eq!(hello["protocol_version"], 2);
         assert_eq!(hello["token"], "tok");
         let open: serde_json::Value = serde_json::from_str(&frames[1]).unwrap();
         assert_eq!(open["type"], "resume_conversation");
@@ -602,7 +594,7 @@ mod tests {
     #[test]
     fn closing_an_idle_thread_hangs_up_but_an_interrupted_one_stays() {
         let (port, received) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            r#"{"type":"browser_hello_ack"}"#,
             vec![r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#],
         );
         let binding = Binding {
@@ -647,10 +639,7 @@ mod tests {
 
     #[test]
     fn stop_presents_the_hello_and_names_the_thread() {
-        let (port, received) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
-            vec![],
-        );
+        let (port, received) = fake_daemon(r#"{"type":"browser_hello_ack"}"#, vec![]);
         let binding = Binding {
             port,
             token: "tok".into(),
@@ -669,11 +658,8 @@ mod tests {
     }
 
     #[test]
-    fn open_refuses_another_protocol_version() {
-        let (port, _) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":1}"#,
-            vec![],
-        );
+    fn open_refuses_a_hello_the_daemon_did_not_acknowledge() {
+        let (port, _) = fake_daemon(r#"{"type":"error"}"#, vec![]);
         let (sink, _, status, _) = sinks();
         let binding = Binding {
             port,
@@ -688,14 +674,14 @@ mod tests {
             status,
         )
         .err()
-        .expect("another protocol version is refused");
-        assert!(err.contains("update infer"), "{err}");
+        .expect("an unacknowledged hello is refused");
+        assert!(err.contains("rejected the hello"), "{err}");
     }
 
     #[test]
     fn a_run_streams_events_and_an_interrupt_is_answered_by_one_resume() {
         let (port, received) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            r#"{"type":"browser_hello_ack"}"#,
             vec![
                 r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#,
                 r#"{"type":"RUN_STARTED","threadId":"s1","runId":"r1"}"#,
@@ -760,7 +746,7 @@ mod tests {
     #[test]
     fn resume_covers_every_open_interrupt_before_it_goes_out() {
         let (port, received) = fake_daemon(
-            r#"{"type":"browser_hello_ack","protocol_version":2}"#,
+            r#"{"type":"browser_hello_ack"}"#,
             vec![
                 r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#,
                 r#"{"type":"RUN_FINISHED","threadId":"s1","runId":"r1","outcome":{"type":"interrupt","interrupts":[{"id":"a","reason":"tool_call","toolCallId":"a"},{"id":"b","reason":"tool_call","toolCallId":"b"}]}}"#,
