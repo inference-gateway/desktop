@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WorkspacesTab } from "./WorkspacesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -65,6 +66,7 @@ type Tab =
   | "prompt"
   | "updates"
   | "agents"
+  | "workspaces"
   | "snippets"
   | "projects"
   | "github"
@@ -85,6 +87,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "keys", label: "API Keys" },
   { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
+  { id: "workspaces", label: "Workspaces" },
   { id: "projects", label: "Projects" },
   { id: "snippets", label: "Snippets" },
   { id: "github", label: "GitHub" },
@@ -289,6 +292,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
+          {tab === "workspaces" && <WorkspacesTab />}
           {tab === "github" && <GithubTab sub={githubSub} />}
           {tab === "projects" && <ProjectsTab />}
           {tab === "snippets" && <SnippetsTab />}

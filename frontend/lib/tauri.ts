@@ -125,6 +125,20 @@ export type MarkdownAgent = {
 };
 /** The latest screen of a session's computer and the frame space a pointer maps onto, zero when unknown. */
 export type Screen = { src: string; width: number; height: number };
+/** A workspace entry of ~/.infer/daemon.yaml as Settings edits it. */
+export type WorkspaceConfig = {
+  name: string;
+  kind: string;
+  context: string;
+  namespace: string;
+  image: string;
+  storage: string;
+  idle_ttl: string;
+  retention: string;
+  gateway_env: string[];
+  forward_env: string[];
+  env: Record<string, string>;
+};
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
@@ -455,6 +469,11 @@ export const api = {
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
+  workspaceConfigs: () => invoke<WorkspaceConfig[]>("workspace_configs"),
+  saveWorkspace: (config: WorkspaceConfig, previousName?: string) =>
+    invoke<void>("save_workspace", { config, previousName }),
+  deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),
+  kubeContexts: () => invoke<string[]>("kube_contexts"),
   screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
     invoke<boolean>("screen_control", { sessionId, project, takeOver }),

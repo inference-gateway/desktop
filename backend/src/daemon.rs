@@ -69,6 +69,11 @@ pub(crate) fn binding() -> Result<Binding, String> {
     binding_in(&home_dir())
 }
 
+/// Where the daemon's own configuration lives, `~/.infer/daemon.yaml`.
+pub(crate) fn config_path() -> PathBuf {
+    home_dir().join(".infer").join(DAEMON_FILE)
+}
+
 fn binding_in(home: &Path) -> Result<Binding, String> {
     let daemon_path = home.join(".infer").join(DAEMON_FILE);
     let daemon = read_yaml(&daemon_path).and_then(|v| v.get("binding").cloned());
