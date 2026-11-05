@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { computerTiles } from "./computers";
+import { chatWorkspace, computerTiles, moveHops } from "./computers";
 import type { MarkdownAgent } from "./tauri";
 import { initialChatState, type ChatState, type TranscriptItem } from "./transcript";
 
@@ -39,6 +39,7 @@ const approval: TranscriptItem = {
 test("only chats of agents with a workspace get a tile, running ones first", () => {
   const agents = [agent("pilot", "ubuntu-desktop"), agent("local", "")];
   const tiles = computerTiles(
+    {},
     { idle: "pilot", busy: "pilot", here: "local", unopened: "pilot" },
     agents,
     { idle: chat([click]), busy: chat([click, approval]), here: chat([]) },
@@ -52,8 +53,30 @@ test("only chats of agents with a workspace get a tile, running ones first", () 
 });
 
 test("a chat that has not used its computer yet has no last action", () => {
-  const tiles = computerTiles({ s1: "pilot" }, [agent("pilot", "k8s")], { s1: chat([]) }, new Set(["s1"]));
+  const tiles = computerTiles({}, { s1: "pilot" }, [agent("pilot", "k8s")], { s1: chat([]) }, new Set(["s1"]));
   expect(tiles).toEqual([
     { sessionId: "s1", agent: agent("pilot", "k8s"), workspace: "k8s", status: "running", lastAction: null },
   ]);
+});
+
+test("a moved chat runs where it was moved, whatever its agent says", () => {
+  const agents = [agent("pilot", "k8s")];
+  expect(chatWorkspace("s1", {}, { s1: "pilot" }, agents)).toBe("k8s");
+  expect(chatWorkspace("s1", { s1: "" }, { s1: "pilot" }, agents)).toBe("");
+  expect(chatWorkspace("s2", { s2: "build" }, {}, agents)).toBe("build");
+  expect(chatWorkspace("s3", {}, {}, agents)).toBe("");
+});
+
+test("a chat without an agent gets a tile once it is on a workspace, and loses it at home", () => {
+  const agents = [agent("pilot", "k8s")];
+  const chats = { plain: chat([]), home: chat([]) };
+  const tiles = computerTiles({ plain: "build", home: "" }, { home: "pilot" }, agents, chats, new Set());
+  expect(tiles.map((t) => [t.sessionId, t.agent.name, t.workspace])).toEqual([["plain", "chat", "build"]]);
+});
+
+test("a chat on one workspace comes home before it moves to another", () => {
+  expect(moveHops("", "k8s")).toEqual(["k8s"]);
+  expect(moveHops("k8s", "")).toEqual([""]);
+  expect(moveHops("k8s", "build")).toEqual(["", "build"]);
+  expect(moveHops("k8s", "k8s")).toEqual([]);
 });

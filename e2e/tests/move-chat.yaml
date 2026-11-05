@@ -1,0 +1,29 @@
+name: move chat - an existing chat moves to a workspace and back to this computer
+narration:
+  - "Open a fresh chat."
+  - "Ask a question on this computer."
+  - "The agent answers here."
+  - "Open the chat's move menu."
+  - "Move the chat to the workspace."
+  - "Open the Computers view."
+  - "The chat has a computer there, although it has no agent."
+  - "Open it."
+  - "It lands back in the chat."
+  - "Open the move menu again."
+  - "Move the chat back to this computer."
+  - "Open the Computers view."
+  - "No chat runs on a workspace any more."
+steps:
+  - new_chat
+  - send: "think out loud about the meaning of life"
+  - wait_for: { text: "The answer is 42, plainly.", timeout: 30 }
+  - click: { button: "Move to workspace" }
+  - click: { button: "Move to mock-computer" }
+  - click: { button: "Computers" }
+  - wait_for: { button: "Open computer chat", timeout: 10 }
+  - click: { button: "Open computer chat" }
+  - wait_for: { text: "The answer is 42, plainly.", timeout: 10 }
+  - click: { button: "Move to workspace" }
+  - click: { button: "Move to this computer" }
+  - click: { button: "Computers" }
+  - wait_for: { text: "No chat runs on a workspace yet.", timeout: 10 }

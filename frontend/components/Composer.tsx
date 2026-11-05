@@ -1,4 +1,18 @@
-import { ArrowUp, FileText, Film, Folder, Mic, Music, Plus, Square, Terminal, Wrench, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  FileText,
+  Film,
+  Folder,
+  Mic,
+  MonitorUp,
+  Music,
+  Plus,
+  Square,
+  Terminal,
+  Wrench,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { StatusBar } from "./StatusBar";
@@ -7,7 +21,8 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
-import { api } from "@/lib/tauri";
+import { api, type Workspace } from "@/lib/tauri";
+import { chatWorkspace, THIS_COMPUTER } from "@/lib/computers";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -43,6 +58,82 @@ const KIND_ICON = { video: Film, audio: Music, file: FileText } as const;
 
 const baseName = (path: string) => path.split("/").pop() || path;
 
+const MENU_ITEM =
+  "flex items-center gap-2 rounded px-2 py-1.5 text-left text-[0.8rem] hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50";
+
+// Moves the open chat to a workspace of the daemon or back to this computer.
+// The workspaces are asked for when the menu opens, so it shows what the
+// daemon can reach right now.
+function MoveToWorkspace({ sessionId, runsOn }: { sessionId: string; runsOn: string }) {
+  const { moveChat, moving } = useDesktop();
+  const [open, setOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const stage = moving[sessionId];
+
+  const toggle = () => {
+    if (!open) {
+      api
+        .listWorkspaces()
+        .then((all) => setWorkspaces(all.filter((workspace) => workspace.kind !== "local")))
+        .catch(() => {});
+    }
+    setOpen(!open);
+  };
+
+  const target = (name: string, label: string, reachable: boolean, hint?: string) => (
+    <button
+      key={name}
+      aria-label={`Move to ${label}`}
+      aria-pressed={runsOn === name}
+      disabled={!reachable || runsOn === name}
+      title={runsOn === name ? "The chat runs here" : hint}
+      onClick={() => {
+        setOpen(false);
+        moveChat(sessionId, name);
+      }}
+      className={MENU_ITEM}
+    >
+      <Check size={13} className={runsOn === name ? "" : "invisible"} aria-hidden="true" />
+      <span className="min-w-0 truncate">{reachable ? label : `${label} (unreachable)`}</span>
+    </button>
+  );
+
+  return (
+    <div className="relative">
+      <button
+        aria-label="Move to workspace"
+        aria-expanded={open}
+        title={stage ?? `Runs on ${runsOn || "this computer"} - move this chat`}
+        disabled={Boolean(stage)}
+        onClick={toggle}
+        className={cn(
+          ROUND,
+          runsOn ? "text-primary" : "text-muted-foreground",
+          "hover:bg-secondary hover:text-foreground disabled:cursor-wait disabled:opacity-60",
+        )}
+      >
+        <MonitorUp size={16} className={stage ? "animate-pulse" : ""} />
+      </button>
+      {stage && (
+        <span
+          aria-live="polite"
+          className="absolute bottom-full left-0 mb-1 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-[0.72rem] text-muted-foreground shadow-sm"
+        >
+          {stage}
+        </span>
+      )}
+      {open && !stage && (
+        <div className="absolute bottom-full left-0 z-10 mb-1 flex min-w-[13rem] flex-col rounded-md border border-border bg-card p-1 shadow-md">
+          {target(THIS_COMPUTER, "this computer", true)}
+          {workspaces.map((workspace) =>
+            target(workspace.name, workspace.name, workspace.reachable, workspace.error ?? undefined),
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Composer() {
   const {
     composerRef,
@@ -70,6 +161,7 @@ export function Composer() {
     drivenId,
     takeOver,
     handBack,
+    workspaceOf,
     initSelecting,
     initSelection,
     cancelInitSelection,
@@ -357,7 +449,8 @@ export function Composer() {
     }
   };
 
-  const onOwnComputer = sessionId !== null && Boolean(agents.find((a) => a.name === agentOf[sessionId])?.workspace);
+  const runsOn = sessionId !== null ? chatWorkspace(sessionId, workspaceOf, agentOf, agents) : THIS_COMPUTER;
+  const onOwnComputer = runsOn !== THIS_COMPUTER;
   const driving = sessionId !== null && drivenId === sessionId;
 
   return (
@@ -373,7 +466,7 @@ export function Composer() {
             {currentAgent}
             {driving && " - you are driving its computer"}
           </span>
-          {onOwnComputer && (
+          {onOwnComputer && sessionId !== null && (
             <button
               onClick={() => (driving ? handBack() : takeOver(sessionId))}
               title={driving ? "Hand the screen back to the agent" : "Drive this agent's computer yourself"}
@@ -609,6 +702,7 @@ export function Composer() {
           </div>
         )}
         <div className="flex items-end gap-[0.35rem] px-[0.4rem] py-[0.35rem]">
+          {sessionId !== null && <MoveToWorkspace sessionId={sessionId} runsOn={runsOn} />}
           <button
             aria-label="Attach file"
             title="Attach image or file"

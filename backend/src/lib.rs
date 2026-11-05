@@ -137,6 +137,7 @@ pub fn run() {
             markdown_agents::remove_agent_avatar,
             markdown_agents::set_agent_avatar_from_url,
             agent::send_approval,
+            agent::move_session,
             agent::send_user_message,
             agent::send_question_answers,
             agent::resume_agent,
