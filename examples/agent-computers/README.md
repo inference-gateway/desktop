@@ -4,7 +4,7 @@ Three agents, each on an Ubuntu desktop of its own, working in parallel while yo
 
 Every chat with an agent that has a `workspace` is teleported to that workspace of the `infer` daemon before its first run. The `ubuntu-desktop` workspace here is a Kubernetes one, so each chat gets its own pod - Xvfb, openbox and Firefox - and the app's **Computers** view shows the latest screen of each.
 
-Needs `docker`, `ctlptl`, `k3d`, `kubectl`, `yq`, `task` and `infer` v0.244.0 or newer. Runs on a mock model - no API key, no tokens - or on [a real one](#a-real-model).
+Needs `docker`, `ctlptl`, `k3d`, `kubectl`, `yq`, `task` and `infer` v0.245.0 or newer. Runs on a mock model - no API key, no tokens - or on [a real one](#a-real-model).
 
 ```bash
 task up     # cluster, image, workspace in ~/.infer/daemon.yaml, agents in ~/.infer/agents
@@ -29,7 +29,7 @@ task down   # delete the cluster, the workspace entry and the agents
 ## A real model
 
 ```bash
-task up MODEL=anthropic/claude-sonnet-5-5 KEY=ANTHROPIC_API_KEY
+task up MODEL=ollama_cloud/glm-5.3-flash KEY=OLLAMA_CLOUD_API_KEY
 ```
 
 `MODEL` is the `provider/model` the agents and the workspace run on, and it has to read screenshots. `KEY` names the provider key the workspace's gateway gets: the daemon reads its value from its own environment or from `~/.infer/auth.yaml`, and it lands in the gateway's Secret, never in the agent's pod. Press **Restart CLI**, then give the agents tasks of your own. `task up` without the two goes back to the mock model.

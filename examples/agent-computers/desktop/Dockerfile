@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-ARG INFER_VERSION=v0.244.0
+ARG INFER_VERSION=v0.245.0
 ARG TARGETARCH
 ARG INFER_RELEASE=https://github.com/inference-gateway/cli/releases/download/${INFER_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
