@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 pub(crate) const DEFAULT_PORT: u16 = 52789;
-pub(crate) const PROTOCOL_VERSION: u64 = 2;
 pub(crate) const EVENT: &str = "browser-bridge";
 const DAEMON_FILE: &str = "daemon.yaml";
 const BROWSER_USE_FILE: &str = "browser_use.yaml";

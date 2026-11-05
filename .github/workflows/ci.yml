@@ -66,6 +66,8 @@ jobs:
 
       # The desktop installs the CLI from releases/latest, so the init contract
       # it relies on is checked against the real latest release on windows.
+      # Releases ship the executable inside a tarball, so the check downloads
+      # and extracts it the same way the installer does.
       - name: Verify CLI init contract
         if: runner.os == 'Windows'
         shell: pwsh
@@ -75,8 +77,11 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'infer-verify'
           $sandbox = Join-Path $dir 'home'
           New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+          $archive = Join-Path $dir 'infer-windows-amd64.tar.gz'
+          Invoke-WebRequest -Uri 'https://github.com/inference-gateway/cli/releases/latest/download/infer-windows-amd64.tar.gz' -OutFile $archive
+          tar -xzf $archive -C $dir
+          if ($LASTEXITCODE -ne 0) { throw 'failed to extract infer.exe from the release tarball' }
           $bin = Join-Path $dir 'infer.exe'
-          Invoke-WebRequest -Uri 'https://github.com/inference-gateway/cli/releases/latest/download/infer-windows-amd64' -OutFile $bin
           & $bin version
           $env:USERPROFILE = $sandbox
           $env:HOME = $sandbox
