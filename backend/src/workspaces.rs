@@ -13,6 +13,10 @@ const TELEPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 /// Taking a screen over can relaunch the session's worker first.
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
+/// Listing wakes a suspended workspace first.
+const ARTIFACTS_TIMEOUT: Duration = Duration::from_secs(120);
+const ARTIFACT_TIMEOUT: Duration = Duration::from_secs(300);
+const MOCK_ARTIFACT: &str = "demo.gif";
 const MOCK_WORKSPACE: &str = "mock-computer";
 
 /// A computer a session can run on: an entry of the daemon's `workspaces`.
@@ -31,6 +35,16 @@ pub(crate) struct Screen {
     src: String,
     width: u64,
     height: u64,
+}
+
+/// A file a session produced, as the worker that owns the session lists it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Artifact {
+    name: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    modified_at: String,
 }
 
 /// Where a teleport stands, as the daemon reports it stage by stage.
@@ -74,6 +88,43 @@ fn parse_screen_result(frame: &Value) -> Option<Result<bool, String>> {
         Some(error) => Err(error.to_owned()),
         None => Ok(frame["held"].as_bool().unwrap_or(false)),
     })
+}
+
+fn artifact_frame(kind: &str, session_id: &str, project_dir: &str) -> Value {
+    json!({ "type": kind, "project_dir": project_dir, "id": session_id })
+}
+
+/// The files an `artifacts` answer lists, newest first as the worker sends them.
+fn parse_artifacts(frame: &Value) -> Option<Vec<Artifact>> {
+    if frame["type"] != "artifacts" {
+        return None;
+    }
+    Some(serde_json::from_value(frame["artifacts"].clone()).unwrap_or_default())
+}
+
+/// The bytes of the file an `artifact` answer carries, or why the worker could
+/// not send it. `None` is a frame of another kind.
+fn parse_artifact(frame: &Value) -> Option<Result<Vec<u8>, String>> {
+    use base64::Engine as _;
+    if frame["type"] != "artifact" {
+        return None;
+    }
+    if let Some(error) = frame["error"].as_str().filter(|e| !e.is_empty()) {
+        return Some(Err(error.to_owned()));
+    }
+    let data = frame["data"].as_str().unwrap_or("");
+    Some(
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| format!("the artifact did not arrive intact: {e}")),
+    )
+}
+
+/// An artifact is a bare file name, so a saved one cannot land outside Downloads.
+fn artifact_file_name(name: &str) -> Result<&str, String> {
+    let bare = !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\']);
+    bare.then_some(name)
+        .ok_or_else(|| format!("{name:?} is not an artifact file name"))
 }
 
 fn parse_workspaces(frame: &Value) -> Option<Vec<Workspace>> {
@@ -224,6 +275,68 @@ pub(crate) async fn list_workspaces(app: tauri::AppHandle) -> Vec<Workspace> {
     .unwrap_or_default()
 }
 
+/// The files a session produced, read from wherever the session runs.
+#[tauri::command]
+pub(crate) async fn list_artifacts(
+    session_id: String,
+    project: Option<String>,
+) -> Result<Vec<Artifact>, String> {
+    if mock_mode() {
+        return Ok(vec![Artifact {
+            name: MOCK_ARTIFACT.into(),
+            size: 43,
+            modified_at: String::new(),
+        }]);
+    }
+    tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        let project_dir = crate::agent::thread_dir(project.as_deref());
+        let request = artifact_frame(
+            "list_artifacts",
+            &session_id,
+            &project_dir.to_string_lossy(),
+        );
+        exchange(&binding, request, ARTIFACTS_TIMEOUT, parse_artifacts)
+    })
+    .await
+    .map_err(|e| format!("artifacts task failed: {e}"))?
+}
+
+fn fetch_artifact(session_id: &str, project: Option<&str>, name: &str) -> Result<Vec<u8>, String> {
+    if mock_mode() {
+        return Ok(crate::screen_records::PLACEHOLDER_JPEG.to_vec());
+    }
+    let binding = crate::daemon::binding()?;
+    let project_dir = crate::agent::thread_dir(project);
+    let mut request = artifact_frame("read_artifact", session_id, &project_dir.to_string_lossy());
+    request["name"] = json!(name);
+    exchange(&binding, request, ARTIFACT_TIMEOUT, parse_artifact)?
+}
+
+/// Saves one of a session's artifacts to the Downloads folder, fetching it from
+/// the session's workspace, and shows it in the file manager. Answers its path.
+#[tauri::command]
+pub(crate) async fn save_artifact(
+    session_id: String,
+    project: Option<String>,
+    name: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let file_name = artifact_file_name(&name)?;
+        let bytes = fetch_artifact(&session_id, project.as_deref(), file_name)?;
+        let downloads = crate::env::home_dir().join("Downloads");
+        std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
+        let saved = downloads.join(file_name);
+        std::fs::write(&saved, bytes).map_err(|e| format!("saving {}: {e}", saved.display()))?;
+        if !mock_mode() {
+            let _ = crate::timeline::reveal(&saved);
+        }
+        Ok(saved.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| format!("artifact task failed: {e}"))?
+}
+
 /// The latest screen of the computer a session runs on.
 /// ponytail: one connection per poll, keep one open if tiles outgrow a dozen.
 #[tauri::command]
@@ -295,6 +408,40 @@ pub(crate) async fn screen_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_artifacts_answer_lists_the_files_and_an_artifact_answer_carries_one() {
+        let listed = json!({ "type": "artifacts", "artifacts": [
+            { "name": "x.mp4", "size": 60416, "modified_at": "2026-10-28T20:25:18Z" }
+        ]});
+        assert_eq!(
+            parse_artifacts(&listed),
+            Some(vec![Artifact {
+                name: "x.mp4".into(),
+                size: 60416,
+                modified_at: "2026-10-28T20:25:18Z".into(),
+            }])
+        );
+        assert_eq!(
+            parse_artifacts(&json!({ "type": "artifacts" })),
+            Some(vec![])
+        );
+        assert_eq!(parse_artifacts(&json!({ "type": "frame" })), None);
+
+        let file = json!({ "type": "artifact", "name": "x.txt", "data": "aGk=" });
+        assert_eq!(parse_artifact(&file), Some(Ok(b"hi".to_vec())));
+        let refused = json!({ "type": "artifact", "error": "too large" });
+        assert_eq!(parse_artifact(&refused), Some(Err("too large".into())));
+        assert_eq!(parse_artifact(&json!({ "type": "artifacts" })), None);
+    }
+
+    #[test]
+    fn only_a_bare_file_name_is_an_artifact() {
+        assert_eq!(artifact_file_name("demo.gif"), Ok("demo.gif"));
+        for name in ["", ".", "..", "../x", "a/b", "a\\b", "/etc/passwd"] {
+            assert!(artifact_file_name(name).is_err(), "{name}");
+        }
+    }
 
     #[test]
     fn teleport_frame_names_the_session_and_its_target() {

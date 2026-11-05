@@ -861,11 +861,16 @@ pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), S
     if !path.is_file() {
         return Err(format!("{} does not exist yet", path.display()));
     }
+    reveal(&path)
+}
+
+/// Shows a file in the platform file manager (Finder on macOS).
+pub(crate) fn reveal(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let status = crate::env::command("open").arg("-R").arg(&path).status();
+    let status = crate::env::command("open").arg("-R").arg(path).status();
     #[cfg(not(target_os = "macos"))]
     let status = crate::env::command("xdg-open")
-        .arg(path.parent().unwrap_or(&path))
+        .arg(path.parent().unwrap_or(path))
         .status();
     match status {
         Ok(s) if s.success() => Ok(()),
