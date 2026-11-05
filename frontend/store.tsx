@@ -29,6 +29,7 @@ import {
   type TodoItem,
 } from "@/lib/transcript";
 import { chatWorkspace, moveHops, THIS_COMPUTER } from "@/lib/computers";
+import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
@@ -191,6 +192,10 @@ function useDesktopStore() {
     workspaceOfRef.current = workspaceOf;
   }, [workspaceOf]);
   const [moving, setMoving] = useState<Record<string, string>>(() => ({}));
+  const movingRef = useRef(moving);
+  useEffect(() => {
+    movingRef.current = moving;
+  }, [moving]);
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -1050,12 +1055,19 @@ function useDesktopStore() {
             ? workspaceOfRef.current[runId]
             : agents.find((a) => a.name === agentName)?.workspace || THIS_COMPUTER;
         if (runsOn && !(runId in workspaceOfRef.current)) setWorkspaceOf((prev) => ({ ...prev, [runId]: runsOn }));
-        await api.sendMessage({
-          prompt: text,
-          model: agentThreadModel(
+        const workspaces = runsOn ? await api.workspaceConfigs().catch(() => []) : [];
+        const onWorkspace = workspaceModel(
+          agentThreadModel(
             agents.find((a) => a.name === agentName),
             model,
           ),
+          workspaces.find((workspace) => workspace.name === runsOn),
+        );
+        if ("problem" in onWorkspace) throw onWorkspace.problem;
+        if (onWorkspace.note) setStatus(onWorkspace.note);
+        await api.sendMessage({
+          prompt: text,
+          model: onWorkspace.model,
           sessionId: runId,
           onEvent: ch,
           ...(await threadPrompts(projectName, extraInstruction, agentName)),
@@ -1173,6 +1185,10 @@ function useDesktopStore() {
   // Returns false when the send was rejected so callers keep their text.
   const sendText = useCallback(
     async (text: string): Promise<boolean> => {
+      if (activeId && movingRef.current[activeId]) {
+        setError("Wait for the chat to finish moving before you send");
+        return false;
+      }
       if (activeId && runningIds.has(activeId)) {
         recordHistory(text);
         queuePrompt(activeId, text);
