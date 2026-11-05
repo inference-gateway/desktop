@@ -34,7 +34,7 @@
         "version": "3.53.1"
       },
       "infer": {
-        "flake": "github:inference-gateway/cli/v0.236.3"
+        "flake": "github:inference-gateway/cli/v0.244.0"
       },
       "rustc": {
         "pkg-path": "rustc",
@@ -847,12 +847,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/870924378d047fe5ce03402875293fcbd26b3642?narHash=sha256-Je5ZZpo07OM%2Bov35ZLENVzWu0OKQ/T4BDZ1Pw/QrVzc%3D",
+      "locked-url": "github:inference-gateway/cli/93ea48ef160532edb9525a5508141dca765e8d0e?narHash=sha256-zIigdV4sqTZWwqJER069xzJAJYXqWuVP3/Fm3Am5O68%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-darwin.default",
-      "derivation": "/nix/store/qclvwkaiq8k30nfw5ax58q4yi1i38zrl-infer-0.236.3.drv",
+      "derivation": "/nix/store/z1gh1f11ai3rvv46gwlafgpp8cpilwfh-infer-0.244.0.drv",
       "outputs": {
-        "out": "/nix/store/i7yn9afh77acz8wwdk3ll4k3g89g2n7l-infer-0.236.3"
+        "out": "/nix/store/4fr9nndh83cqpxccyjyd8fkv4x7fc4n6-infer-0.244.0"
       },
       "output-names": [
         "out"
@@ -863,9 +863,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-darwin",
       "system": "aarch64-darwin",
-      "name": "infer-0.236.3",
+      "name": "infer-0.244.0",
       "pname": "infer",
-      "version": "0.236.3",
+      "version": "0.244.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -876,12 +876,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/870924378d047fe5ce03402875293fcbd26b3642?narHash=sha256-Je5ZZpo07OM%2Bov35ZLENVzWu0OKQ/T4BDZ1Pw/QrVzc%3D",
+      "locked-url": "github:inference-gateway/cli/93ea48ef160532edb9525a5508141dca765e8d0e?narHash=sha256-zIigdV4sqTZWwqJER069xzJAJYXqWuVP3/Fm3Am5O68%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.aarch64-linux.default",
-      "derivation": "/nix/store/70pnyh9qarnr3i87h0dxp01pn1r0zhx8-infer-0.236.3.drv",
+      "derivation": "/nix/store/5svg3sqlmhiw61ggczhs5p5gbfx8dmg9-infer-0.244.0.drv",
       "outputs": {
-        "out": "/nix/store/pb595vzzs4m45mahx3azmlsgx1mc5gc2-infer-0.236.3"
+        "out": "/nix/store/vq6z5wcj5p5j1bm1mi54csf1mm7y0wd4-infer-0.244.0"
       },
       "output-names": [
         "out"
@@ -892,9 +892,9 @@
       "requested-outputs-to-install": [],
       "package-system": "aarch64-linux",
       "system": "aarch64-linux",
-      "name": "infer-0.236.3",
+      "name": "infer-0.244.0",
       "pname": "infer",
-      "version": "0.236.3",
+      "version": "0.244.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
@@ -905,12 +905,12 @@
     },
     {
       "install_id": "infer",
-      "locked-url": "github:inference-gateway/cli/870924378d047fe5ce03402875293fcbd26b3642?narHash=sha256-Je5ZZpo07OM%2Bov35ZLENVzWu0OKQ/T4BDZ1Pw/QrVzc%3D",
+      "locked-url": "github:inference-gateway/cli/93ea48ef160532edb9525a5508141dca765e8d0e?narHash=sha256-zIigdV4sqTZWwqJER069xzJAJYXqWuVP3/Fm3Am5O68%3D",
       "flake-description": "Inference Gateway CLI - infer",
       "locked-flake-attr-path": "packages.x86_64-linux.default",
-      "derivation": "/nix/store/b8q8l6nmhy8riz7198aszsa077ik8i1f-infer-0.236.3.drv",
+      "derivation": "/nix/store/0vk0y2769a5yj9bjcxcngd3q453g16r6-infer-0.244.0.drv",
       "outputs": {
-        "out": "/nix/store/pllxl7y0mziqgsd61kzwv8sz7k47k4m2-infer-0.236.3"
+        "out": "/nix/store/jdvb3s76yh7l7cvbr4sinpjmblfkcia6-infer-0.244.0"
       },
       "output-names": [
         "out"
@@ -921,9 +921,9 @@
       "requested-outputs-to-install": [],
       "package-system": "x86_64-linux",
       "system": "x86_64-linux",
-      "name": "infer-0.236.3",
+      "name": "infer-0.244.0",
       "pname": "infer",
-      "version": "0.236.3",
+      "version": "0.244.0",
       "description": "Command-line interface for the Inference Gateway - AI model interaction manager",
       "licenses": [
         "MIT"
