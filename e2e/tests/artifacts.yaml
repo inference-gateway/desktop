@@ -1,0 +1,15 @@
+name: artifacts - the files a chat produced are listed and saved to Downloads
+narration:
+  - "Send a message so a chat is open."
+  - "The agent answers."
+  - "Open the chat's artifacts."
+  - "The file the chat produced is listed."
+  - "Save it."
+  - "It lands in the Downloads folder."
+steps:
+  - send: "hi"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - click: { button: "Artifacts" }
+  - wait_for: { button: "Save artifact demo.gif", timeout: 10 }
+  - click: { button: "Save artifact demo.gif" }
+  - wait_for: { file: "e2e/artifacts/home/Downloads/demo.gif", timeout: 10 }

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
+import { ArtifactsButton } from "./ArtifactsButton";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
 
 const DOT: Record<string, string> = {
@@ -231,6 +232,7 @@ export function StatusBar() {
       </span>
       <span className="ml-auto inline-flex items-center gap-1">
         <BrowserBridgeDot />
+        <ArtifactsButton />
         <button
           aria-label={autoModeDescription}
           aria-pressed={autoMode}

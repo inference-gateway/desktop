@@ -109,6 +109,7 @@ export type UpdateInfo = { name: string; current: string; latest: string | null;
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type VoiceSample = { name: string; path: string };
 export type Avatar = { name: string; images: string[] };
+export type Artifact = { name: string; size: number; modified_at: string };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 /** A Markdown agent (`<agents_dir>/<name>.md`): frontmatter profile plus its instructions. */
@@ -492,6 +493,9 @@ export const api = {
     stages.onmessage = onStage;
     return invoke<void>("move_session", { sessionId, project, target, remote, onStage: stages });
   },
+  listArtifacts: (sessionId: string, project?: string) => invoke<Artifact[]>("list_artifacts", { sessionId, project }),
+  saveArtifact: (sessionId: string, project: string | undefined, name: string) =>
+    invoke<string>("save_artifact", { sessionId, project, name }),
   cleanMachines: (sessions: { id: string; project?: string }[]) => invoke<number>("clean_machines", { sessions }),
   screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
