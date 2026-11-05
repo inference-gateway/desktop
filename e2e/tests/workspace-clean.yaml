@@ -1,0 +1,13 @@
+name: workspace clean - every machine of the workspaces is removed from Settings
+narration:
+  - "Open Settings."
+  - "Switch to the Workspaces tab."
+  - "Ask to clean up the machines."
+  - "Confirm, as their chats go with them."
+  - "Settings reports how many machines went."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Workspaces" }
+  - click: { button: "Clean up machines" }
+  - click: { button: "Clean up machines" }
+  - wait_for: { text: "Removed 0 machines.", timeout: 10 }

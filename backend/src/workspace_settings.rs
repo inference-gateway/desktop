@@ -11,6 +11,7 @@ const KUBECTL_TIMEOUT: &str = "--request-timeout=5s";
 const MANAGED_LABEL: &str = "inference-gateway.com/managed";
 const REACHABLE: &str = "Cluster reachable";
 const ORCHESTRATORS: &str = "orchestrators.core.inference-gateway.com";
+const WORKSPACE_LABEL: &str = "inference-gateway.com/workspace";
 const READY_STATUSES: &str =
     r#"jsonpath={range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}"#;
 
@@ -307,6 +308,35 @@ fn last_line(stderr: &str) -> String {
         .find(|line| !line.is_empty())
         .unwrap_or("kubectl failed")
         .to_owned()
+}
+
+/// Deletes every machine a Kubernetes workspace still has in its cluster and
+/// answers how many went. The operator removes each machine's pod and volumes
+/// with its Orchestrator.
+pub(crate) fn delete_machines(workspace: &WorkspaceConfig) -> Result<usize, String> {
+    if workspace.kind != KUBERNETES || workspace.context.is_empty() {
+        return Ok(0);
+    }
+    let selector = format!("{WORKSPACE_LABEL}={}", workspace.name);
+    let mut args = vec![
+        "delete",
+        ORCHESTRATORS,
+        "-l",
+        &selector,
+        "--ignore-not-found",
+        "--wait=false",
+    ];
+    if !workspace.namespace.is_empty() {
+        args.extend(["-n", &workspace.namespace]);
+    }
+    kubectl(&workspace.context, &args)
+        .map(|deleted| {
+            deleted
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .count()
+        })
+        .map_err(|error| format!("{}: {error}", workspace.name))
 }
 
 /// Running and suspended sessions from the Ready status of each session's

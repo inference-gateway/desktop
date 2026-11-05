@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Check, CircleCheck, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleCheck, Eraser, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -334,7 +334,8 @@ function WorkspaceForm({
 // The computers sessions can run on: the workspaces of ~/.infer/daemon.yaml.
 // The daemon reads them when it starts, so a change asks for a CLI restart.
 export function WorkspacesTab() {
-  const { restartBackend } = useDesktop();
+  const { restartBackend, cleanMachines } = useDesktop();
+  const [cleanArmed, setCleanArmed] = useState(false);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
   const [known, setKnown] = useState<Record<string, Workspace>>({});
   const [contexts, setContexts] = useState<string[]>([]);
@@ -402,6 +403,19 @@ export function WorkspacesTab() {
       changed();
       setNotice(`Added ${added.join(", ")}.`);
     } catch (e) {
+      setProblem(String(e));
+    }
+  };
+
+  const clean = async () => {
+    setCleanArmed(!cleanArmed);
+    if (!cleanArmed) return;
+    setNotice("Removing machines...");
+    try {
+      const removed = await cleanMachines();
+      setNotice(`Removed ${removed} ${removed === 1 ? "machine" : "machines"}.`);
+    } catch (e) {
+      setNotice("");
       setProblem(String(e));
     }
   };
@@ -478,6 +492,21 @@ export function WorkspacesTab() {
               title="Add a workspace for every cluster in your kubeconfig that has none yet"
             >
               Detect clusters
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Clean up machines"
+              title={
+                cleanArmed
+                  ? "Click again to remove all machines and their chats"
+                  : "Clean up machines - removes every machine of every workspace, with the chats that live on them"
+              }
+              className={cleanArmed ? "border-destructive text-destructive" : ""}
+              onClick={clean}
+              onBlur={() => setCleanArmed(false)}
+            >
+              <Eraser size={14} />
             </Button>
             <span className={HINT_CLASS}>
               Detecting adds every kubeconfig context as a Kubernetes workspace in the infer-workspaces namespace, with

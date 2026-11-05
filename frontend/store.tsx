@@ -1410,6 +1410,15 @@ function useDesktopStore() {
     [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
   );
 
+  // Removes the machine of every chat on a workspace. Their transcripts go with
+  // the machines, so the chats start over on their agent's workspace or here.
+  const cleanMachines = useCallback(async () => {
+    const remote = Object.keys(workspaceOf).filter((id) => workspaceOf[id] !== THIS_COMPUTER);
+    const removed = await api.cleanMachines(remote.map((id) => ({ id, project: projects[id] })));
+    setWorkspaceOf((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !remote.includes(id))));
+    return removed;
+  }, [workspaceOf, projects]);
+
   const takeOver = useCallback(
     async (sessionId: string) => {
       if (drivenId && drivenId !== sessionId) await handBack();
@@ -1942,6 +1951,7 @@ function useDesktopStore() {
     workspaceOf,
     moving,
     moveChat,
+    cleanMachines,
     transcripts,
     promptProject,
     runningIds,
