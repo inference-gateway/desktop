@@ -164,8 +164,10 @@ impl Thread {
     }
 
     /// Starts the thread's next run with one user message, or continues it
-    /// after a stop when `content` is None.
+    /// after a stop when `content` is None. The run counts as open from here,
+    /// so a daemon that refuses it before it starts still ends it.
     pub(crate) fn run(&self, content: Option<serde_json::Value>) -> Result<(), String> {
+        self.run_open.store(true, Ordering::SeqCst);
         let messages = match content {
             Some(content) => vec![serde_json::json!({
                 "id": uuid(),
@@ -278,7 +280,7 @@ impl Thread {
     }
 
     /// A worker reports its own failure without a runId, so an error ends the
-    /// run it names or the one that is open - and nothing when no run is.
+    /// run it names or the one that is requested or open - and nothing else.
     fn ends_a_run(&self, error: &serde_json::Value) -> bool {
         let was_open = self.run_open.swap(false, Ordering::SeqCst);
         was_open || error.get("runId").and_then(|r| r.as_str()).is_some()
@@ -534,6 +536,10 @@ mod tests {
 
     /// A daemon stand-in: accepts one client, answers the hello with `ack`,
     /// records every frame it receives, and plays `script` after the open.
+    const AWAIT_A_CLIENT_FRAME: &str = "<await a client frame>";
+
+    /// A daemon that acknowledges the hello, reads the open frame and plays
+    /// `script`, pausing at each `AWAIT_A_CLIENT_FRAME` until the client sends.
     fn fake_daemon(ack: &str, script: Vec<&str>) -> (u16, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -550,6 +556,11 @@ mod tests {
             let open = ws.read().unwrap();
             seen.lock().unwrap().push(open.to_string());
             for frame in script {
+                if frame == AWAIT_A_CLIENT_FRAME {
+                    let sent = ws.read().unwrap();
+                    seen.lock().unwrap().push(sent.to_string());
+                    continue;
+                }
                 ws.send(Message::text(frame)).unwrap();
             }
             while let Ok(msg) = ws.read() {
@@ -790,6 +801,7 @@ mod tests {
             r#"{"type":"browser_hello_ack"}"#,
             vec![
                 r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#,
+                AWAIT_A_CLIENT_FRAME,
                 r#"{"type":"RUN_STARTED","threadId":"s1","runId":"r1"}"#,
                 r#"{"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"Bash"}"#,
                 r#"{"type":"TOOL_CALL_ARGS","toolCallId":"c1","delta":"{\"command\":\"ls\"}"}"#,
@@ -889,6 +901,43 @@ mod tests {
             .filter(|e| matches!(e, AgentEvent::Done { exit_code: 1, .. }))
             .count();
         assert_eq!(done, 1, "only the error of the open run ends it");
+    }
+
+    #[test]
+    fn a_rejected_run_ends_although_it_never_started() {
+        let (port, _) = fake_daemon(
+            r#"{"type":"browser_hello_ack"}"#,
+            vec![
+                r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#,
+                AWAIT_A_CLIENT_FRAME,
+                r#"{"type":"RUN_ERROR","message":"open a thread with new_session or resume_conversation first"}"#,
+                r#"{"type":"RUN_ERROR","message":"session s1 is not open in /proj"}"#,
+            ],
+        );
+        let (sink, events, status, _) = sinks();
+        let binding = Binding {
+            port,
+            token: "tok".into(),
+        };
+        let thread = Thread::open(
+            &binding,
+            "s1",
+            "/proj",
+            &ThreadOptions::default(),
+            sink,
+            status,
+        )
+        .unwrap();
+        thread.run(Some("hello".into())).unwrap();
+        wait_for(&events, 3);
+        let seen = events.lock().unwrap();
+        assert!(matches!(&seen[0], AgentEvent::AgentError { .. }));
+        assert!(
+            matches!(&seen[1], AgentEvent::Done { exit_code: 1, .. }),
+            "the refusal of a requested run ends it"
+        );
+        assert!(matches!(&seen[2], AgentEvent::AgentError { .. }));
+        assert_eq!(seen.len(), 3, "a later error ends no second run");
     }
 
     #[test]
