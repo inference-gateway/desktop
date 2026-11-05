@@ -28,6 +28,7 @@ import {
   type Delegation,
   type TodoItem,
 } from "@/lib/transcript";
+import { chatWorkspace, moveHops, THIS_COMPUTER } from "@/lib/computers";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
@@ -184,6 +185,12 @@ function useDesktopStore() {
   );
   const [agents, setAgents] = useState<MarkdownAgent[]>(() => []);
   const [agentOf, setAgentOf] = useState<Record<string, string>>(() => ({}));
+  const [workspaceOf, setWorkspaceOf] = useState<Record<string, string>>(() => ({}));
+  const workspaceOfRef = useRef(workspaceOf);
+  useEffect(() => {
+    workspaceOfRef.current = workspaceOf;
+  }, [workspaceOf]);
+  const [moving, setMoving] = useState<Record<string, string>>(() => ({}));
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -457,6 +464,10 @@ function useDesktopStore() {
       for (const [id, name] of Object.entries(parsed?.agents ?? {})) {
         if (typeof name === "string" && name.trim()) agentAssignments[id] = name;
       }
+      const chatWorkspaces: Record<string, string> = {};
+      for (const [id, name] of Object.entries(parsed?.workspaces ?? {})) {
+        if (typeof name === "string") chatWorkspaces[id] = name;
+      }
       const selected = new Set<string>();
       if (Array.isArray(parsed?.selected)) {
         for (const n of parsed.selected) {
@@ -470,6 +481,7 @@ function useDesktopStore() {
       setProjectGroups(groups);
       setProjectTypes(types);
       setAgentOf(agentAssignments);
+      setWorkspaceOf(chatWorkspaces);
       setInitSelection(selected);
       setActiveProject(typeof parsed?.active === "string" && names.has(parsed.active) ? parsed.active : null);
     } catch (e) {
@@ -841,6 +853,7 @@ function useDesktopStore() {
           groups: projectGroups,
           types: projectTypes,
           agents: agentOf,
+          workspaces: workspaceOf,
           selected: Array.from(initSelection),
           active: activeProject ?? undefined,
         }),
@@ -856,6 +869,7 @@ function useDesktopStore() {
     projectGroups,
     projectTypes,
     agentOf,
+    workspaceOf,
     initSelection,
     activeProject,
     fetchGitProjects,
@@ -1031,6 +1045,11 @@ function useDesktopStore() {
           }
         };
         if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
+        const runsOn =
+          runId in workspaceOfRef.current
+            ? workspaceOfRef.current[runId]
+            : agents.find((a) => a.name === agentName)?.workspace || THIS_COMPUTER;
+        if (runsOn && !(runId in workspaceOfRef.current)) setWorkspaceOf((prev) => ({ ...prev, [runId]: runsOn }));
         await api.sendMessage({
           prompt: text,
           model: agentThreadModel(
@@ -1042,7 +1061,7 @@ function useDesktopStore() {
           ...(await threadPrompts(projectName, extraInstruction, agentName)),
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
-          workspace: agents.find((a) => a.name === agentName)?.workspace || undefined,
+          workspace: runsOn || undefined,
         });
         refreshConversations();
         loadProjects();
@@ -1340,6 +1359,34 @@ function useDesktopStore() {
       .screenControl(drivenId, projects[drivenId], false)
       .catch((e) => setError(`Failed to hand the screen back: ${e}`));
   }, [drivenId, projects, setError]);
+
+  // A chat moves between turns: an open run stops first, and a chat on one
+  // workspace comes home before it goes to another.
+  const moveChat = useCallback(
+    async (sessionId: string, target: string) => {
+      const hops = moveHops(chatWorkspace(sessionId, workspaceOf, agentOf, agents), target);
+      if (hops.length === 0) return;
+      try {
+        if (runningIds.has(sessionId)) await api.cancelAgent(sessionId);
+        if (drivenId === sessionId) await handBack();
+        const home = (await api.listWorkspaces()).find((w) => w.kind === "local")?.name ?? "local";
+        for (const hop of hops) {
+          const label = hop || "this computer";
+          setMoving((prev) => ({ ...prev, [sessionId]: `Moving to ${label}` }));
+          await api.moveSession(sessionId, projects[sessionId], hop || home, hop !== THIS_COMPUTER, (stage) =>
+            setMoving((prev) => ({ ...prev, [sessionId]: `Moving to ${label}: ${stage}` })),
+          );
+          setWorkspaceOf((prev) => ({ ...prev, [sessionId]: hop }));
+        }
+        setStatus(`The chat now runs on ${target || "this computer"}`);
+      } catch (e) {
+        setError(`Failed to move the chat: ${e}`);
+      } finally {
+        setMoving((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== sessionId)));
+      }
+    },
+    [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
+  );
 
   const takeOver = useCallback(
     async (sessionId: string) => {
@@ -1870,6 +1917,9 @@ function useDesktopStore() {
     drivenId,
     takeOver,
     handBack,
+    workspaceOf,
+    moving,
+    moveChat,
     transcripts,
     promptProject,
     runningIds,

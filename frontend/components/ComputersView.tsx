@@ -196,9 +196,19 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
 // screen, what the agent did last and whether it waits for an answer. A
 // computer the person took over fills the view until they hand it back.
 export function ComputersView() {
-  const { agentOf, agents, transcripts, runningIds, projects, openConversation, setCurrentView, drivenId, takeOver } =
-    useDesktop();
-  const tiles = computerTiles(agentOf, agents, transcripts, runningIds);
+  const {
+    workspaceOf,
+    agentOf,
+    agents,
+    transcripts,
+    runningIds,
+    projects,
+    openConversation,
+    setCurrentView,
+    drivenId,
+    takeOver,
+  } = useDesktop();
+  const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
   const open = (sessionId: string) => {
     setCurrentView("chat");
@@ -219,7 +229,8 @@ export function ComputersView() {
         <DrivenScreen key={driven.sessionId} tile={driven} project={projects[driven.sessionId]} />
       ) : tiles.length === 0 ? (
         <p className="text-[0.85rem] text-muted-foreground">
-          No agent is on a computer of its own yet. Give an agent a workspace in its editor, then send it a task.
+          No chat runs on a workspace yet. Give an agent a workspace in its editor and send it a task, or move a chat to
+          a workspace from its composer.
         </p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-4">

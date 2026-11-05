@@ -481,6 +481,17 @@ export const api = {
   detectWorkspaces: () => invoke<string[]>("detect_workspaces"),
   checkWorkspace: (context: string, namespace: string) =>
     invoke<ClusterCheck>("check_workspace", { context, namespace }),
+  moveSession: (
+    sessionId: string,
+    project: string | undefined,
+    target: string,
+    remote: boolean,
+    onStage: (stage: string) => void,
+  ) => {
+    const stages = new Channel<string>();
+    stages.onmessage = onStage;
+    return invoke<void>("move_session", { sessionId, project, target, remote, onStage: stages });
+  },
   screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
     invoke<boolean>("screen_control", { sessionId, project, takeOver }),

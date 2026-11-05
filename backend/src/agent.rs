@@ -975,6 +975,39 @@ async fn teleport_thread(
     outcome
 }
 
+/// Moves a chat to another workspace of the daemon, or back to this computer,
+/// reporting each stage. Its thread is dropped, so the next prompt opens
+/// through the daemon's relay to wherever the session lives now.
+#[tauri::command]
+pub(crate) async fn move_session(
+    session_id: String,
+    project: Option<String>,
+    target: String,
+    remote: bool,
+    on_stage: Channel<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let project_dir = thread_dir(project.as_deref());
+    let (id, name) = (session_id.clone(), target);
+    tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        crate::workspaces::teleport(&binding, &id, &project_dir, &name, |stage| {
+            let _ = on_stage.send(stage.to_owned());
+        })
+    })
+    .await
+    .map_err(|e| format!("teleport task failed: {e}"))??;
+    state.threads.remove(&session_id);
+    if let Ok(mut sessions) = state.remote_sessions.lock() {
+        if remote {
+            sessions.insert(session_id);
+        } else {
+            sessions.remove(&session_id);
+        }
+    }
+    Ok(())
+}
+
 /// Answers a tool-call interrupt: a resume entry on the thread's next run.
 /// `resolved` approves the call and `cancelled` declines it.
 #[tauri::command]
