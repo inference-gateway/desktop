@@ -1,0 +1,65 @@
+version: '3'
+
+vars:
+  CLUSTER: computer-use
+  NAMESPACE: computer-use
+  WORKSPACE: ubuntu-desktop
+  AGENT_SANDBOX_VERSION: v1.0.8
+  OPERATOR_VERSION: v0.29.0
+  INFER_DIR: '{{.HOME}}/.infer'
+  MODEL: mock/openai/gpt-4o
+
+tasks:
+  up:
+    desc: Everything the app needs - the cluster, the computer image, the workspace and the three agents (MODEL switches from the mock model to a real one)
+    cmds:
+      - task: agents:install
+      - task: cluster:create
+      - task: image
+      - task: workspace:register
+
+  cluster:create:
+    desc: Create the k3d cluster with ctlptl, install agent-sandbox, the Inference Gateway operator and the workspace namespace
+    cmds:
+      - ctlptl apply -f Cluster.yaml
+      - kubectl --context k3d-{{.CLUSTER}} apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{{.AGENT_SANDBOX_VERSION}}/sandbox.yaml
+      - kubectl --context k3d-{{.CLUSTER}} -n agent-sandbox-system wait --for=condition=Available deployment --all --timeout=180s
+      - kubectl --context k3d-{{.CLUSTER}} apply -f https://github.com/inference-gateway/operator/releases/download/{{.OPERATOR_VERSION}}/install.yaml
+      - kubectl --context k3d-{{.CLUSTER}} -n inference-gateway-system wait --for=condition=Available deployment --all --timeout=180s
+      - kubectl --context k3d-{{.CLUSTER}} apply -f k8s/namespace.yaml
+
+  image:
+    desc: Build the Ubuntu desktop image an agent's computer runs and import it into the cluster
+    cmds:
+      - docker build -t agent-computer:local desktop
+      - k3d image import agent-computer:local -c {{.CLUSTER}}
+
+  workspace:register:
+    desc: Add the ubuntu-desktop workspace to ~/.infer/daemon.yaml, keeping every other entry (the previous file is saved as daemon.yaml.bak)
+    cmds:
+      - mkdir -p {{.INFER_DIR}}
+      - touch {{.INFER_DIR}}/daemon.yaml
+      - cp {{.INFER_DIR}}/daemon.yaml {{.INFER_DIR}}/daemon.yaml.bak
+      - |
+        yq -i '.workspaces = ((.workspaces // []) | map(select(.name != "{{.WORKSPACE}}"))) + [load("workspace.yaml") | .env.INFER_AGENT_MODEL = "{{.MODEL}}"{{$provider := splitList "/" .MODEL | first}}{{if ne $provider "mock"}} | del(.env.INFER_GATEWAY_MOCK) | del(.env.INFER_GATEWAY_MOCK_SCENARIOS) | . * {"gateway_env": ["{{upper $provider}}_API_KEY"]}{{end}}]' {{.INFER_DIR}}/daemon.yaml
+
+  agents:install:
+    desc: Copy the researcher, writer and tester agents into ~/.infer/agents, refusing to overwrite an agent of your own
+    preconditions:
+      - sh: 'for agent in researcher writer tester; do [ ! -e {{.INFER_DIR}}/agents/$agent.md ] || grep -q "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/$agent.md || exit 1; done'
+        msg: ~/.infer/agents already holds a researcher, writer or tester agent of your own - move it aside first
+    cmds:
+      - mkdir -p {{.INFER_DIR}}/agents
+      - 'for agent in researcher writer tester; do sed "s|^model: .*|model: {{.MODEL}}|" agents/$agent.md > {{.INFER_DIR}}/agents/$agent.md; done'
+
+  pods:
+    desc: List the computers - one Orchestrator and pod per chat
+    cmds:
+      - kubectl --context k3d-{{.CLUSTER}} -n {{.NAMESPACE}} get orchestrators,pods
+
+  down:
+    desc: Delete the cluster and take the workspace and the agents back out of ~/.infer
+    cmds:
+      - ctlptl delete -f Cluster.yaml
+      - 'for agent in researcher writer tester; do ! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/$agent.md || rm {{.INFER_DIR}}/agents/$agent.md; done'
+      - yq -i 'del(.workspaces[] | select(.name == "{{.WORKSPACE}}"))' {{.INFER_DIR}}/daemon.yaml

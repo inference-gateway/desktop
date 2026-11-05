@@ -295,6 +295,12 @@ function AgentGroup({
           {agent.name}
         </button>
         <span className="text-[0.7rem] text-muted-foreground/60">({count})</span>
+        <span
+          title={agent.model || "Runs on the model selected in the top bar"}
+          className="min-w-0 truncate text-[0.7rem] font-normal text-muted-foreground/60"
+        >
+          {agent.model.split("/").pop() || "selected model"}
+        </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/agent:opacity-100 focus-within:opacity-100">
           <button
             aria-label={`Edit agent ${agent.name}`}

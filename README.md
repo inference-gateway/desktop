@@ -25,7 +25,7 @@ The gateway binary lands at `~/.infer/bin/inference-gateway` (`inference-gateway
 
 The sidebar's **Agents** filter lists your own agents: Markdown files (`<name>.md`, the Claude Code / infer format - frontmatter `name`, `description`, optional `model`, plus a desktop-only `emoji`, and the instructions as the body) under `~/.infer/agents`, or the directory set in Settings > Agents. **New agent** opens an editor for the name, description, face (every agent starts with a robot drawn from its name, and you can pick one of Microsoft's animated 3D Fluent emoji, downloaded beside the agent file, or your own GIF or picture), model and instructions, and saving drops you into a chat with that agent: its instructions become the chat's system prompt. Agents in `~/.infer/agents` can also hand work to each other through the CLI's `Agent` tool, so one agent's instructions can tell it to consult another by name.
 
-An agent can also get a computer of its own: pick a **Computer** in its editor (a workspace of the `infer` daemon, `workspace` in the frontmatter) and every new chat with it is teleported there before its first run, so its computer use drives that machine, not yours. **Computers** in the top bar shows the latest screen of each such chat side by side.
+An agent can also get a computer of its own: pick a **Computer** in its editor (a workspace of the `infer` daemon, `workspace` in the frontmatter) and every new chat with it is teleported there before its first run, so its computer use drives that machine, not yours. **Computers** in the top bar shows the latest screen of each such chat side by side. See [examples/computer-use](examples/computer-use) for three agents on Ubuntu desktops in a local Kubernetes cluster.
 
 ### Updating
 

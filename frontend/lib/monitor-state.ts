@@ -20,7 +20,7 @@ const ACTION_PREFIX = "▸ ";
 
 export type MonitorState = Record<string, MonitorSession>;
 
-export type MonitorEvent = { sessionId: string; name: string; event: AgentEvent };
+export type MonitorEvent = { sessionId: string; name: string; remote?: boolean; event: AgentEvent };
 
 export function monitorReducer(state: MonitorState, msg: MonitorEvent): MonitorState {
   const { sessionId, name, event } = msg;
