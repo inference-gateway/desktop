@@ -320,8 +320,9 @@ mod tests {
             kubeconfig_path(home, None),
             PathBuf::from("/home/me/.kube/config")
         );
+        let listed = std::env::join_paths(["/a/config", "/b/config"]).unwrap();
         assert_eq!(
-            kubeconfig_path(home, Some("/a/config:/b/config")),
+            kubeconfig_path(home, listed.to_str()),
             PathBuf::from("/a/config")
         );
     }
