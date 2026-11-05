@@ -706,7 +706,7 @@ fn thread_options(
 
 /// The directory a chat's thread runs in: its project dir, else the app's
 /// agent cwd.
-fn thread_dir(project: Option<&str>) -> PathBuf {
+pub(crate) fn thread_dir(project: Option<&str>) -> PathBuf {
     project
         .and_then(crate::projects::project_dir)
         .filter(|dir| std::fs::create_dir_all(dir).is_ok())
@@ -873,6 +873,7 @@ pub(crate) async fn send_message(
     extra_instructions: Option<String>,
     auto_mode: bool,
     project: Option<String>,
+    workspace: Option<String>,
 ) -> Result<(), String> {
     if !is_bash_command(&prompt) {
         crate::tools::await_services().await;
@@ -896,7 +897,14 @@ pub(crate) async fn send_message(
         &cwd,
     );
     let mode = options.mode.clone();
-    let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    let is_new_to_the_app = state.threads.get(&session_id).is_none();
+    let mut thread = ensure_thread(&app, &state, &session_id, &cwd, options.clone()).await?;
+    let target = workspace.filter(|name| !name.trim().is_empty());
+    if let Some(target) = target.filter(|_| is_new_to_the_app && thread.history().is_empty()) {
+        teleport_thread(&session_id, &cwd, &target, &on_event).await?;
+        state.threads.remove(&session_id);
+        thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    }
     if let Ok(mut channels) = state.channels.lock() {
         channels.insert(session_id.clone(), on_event);
     }
@@ -908,6 +916,53 @@ pub(crate) async fn send_message(
     });
     thread.select(&model, &mode)?;
     thread.run(Some(message_content(&prompt)))
+}
+
+/// Places a new chat on its agent's computer before the first run, showing
+/// each stage as startup progress. A failure is returned, never worked
+/// around, so the agent cannot fall back to driving this machine.
+async fn teleport_thread(
+    session_id: &str,
+    project_dir: &Path,
+    target: &str,
+    on_event: &Channel<AgentEvent>,
+) -> Result<(), String> {
+    let report = |state: &str, message: String| {
+        let _ = on_event.send(AgentEvent::AgentStatus {
+            name: target.to_string(),
+            state: state.to_string(),
+            message,
+            done: 0,
+            total: 0,
+        });
+    };
+    report("Teleporting", format!("Starting the computer {target}"));
+    let progress = on_event.clone();
+    let (session_id, project_dir, name) = (
+        session_id.to_string(),
+        project_dir.to_path_buf(),
+        target.to_string(),
+    );
+    let outcome = tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        crate::workspaces::teleport(&binding, &session_id, &project_dir, &name, |stage| {
+            let _ = progress.send(AgentEvent::AgentStatus {
+                name: name.clone(),
+                state: "Teleporting".into(),
+                message: format!("Moving to {name}: {stage}"),
+                done: 0,
+                total: 0,
+            });
+        })
+    })
+    .await
+    .map_err(|e| format!("teleport task failed: {e}"))
+    .and_then(|outcome| outcome);
+    report(
+        if outcome.is_ok() { "Ready" } else { "Failed" },
+        String::new(),
+    );
+    outcome
 }
 
 /// Answers a tool-call interrupt: a resume entry on the thread's next run.

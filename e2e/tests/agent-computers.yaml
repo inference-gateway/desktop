@@ -1,0 +1,20 @@
+name: agent computers - an agent with a workspace works on its own computer and shows up in Computers
+workspace_agent: e2e-pilot
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Pick the agent that has a computer of its own."
+  - "Send it a task, which teleports the new chat to its workspace first."
+  - "The agent answers from its computer."
+  - "Open the Computers view."
+  - "The agent's computer has a tile with its latest screen."
+  - "Open the tile."
+  - "It lands back in the agent's chat."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-pilot" }
+  - send: "open the docs on your computer"
+  - wait_for: { text: "The docs are open.", timeout: 30 }
+  - click: { button: "Computers" }
+  - wait_for: { button: "Open computer e2e-pilot", timeout: 10 }
+  - click: { button: "Open computer e2e-pilot" }
+  - wait_for: { text: "The docs are open.", timeout: 10 }

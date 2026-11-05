@@ -12,6 +12,7 @@ import { clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from "@/lib/sid
 const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
 const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default: m.TimelineView })));
 const ObservabilityView = lazy(() => import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })));
+const ComputersView = lazy(() => import("./ComputersView").then((m) => ({ default: m.ComputersView })));
 const AgentEditor = lazy(() => import("./AgentEditor").then((m) => ({ default: m.AgentEditor })));
 
 const CHAT_DOCK_KEY = "chatDockWidth";
@@ -40,6 +41,15 @@ export function Main() {
       <div id="main" className="flex min-h-0 flex-1">
         <Suspense>
           <ObservabilityView />
+        </Suspense>
+      </div>
+    );
+  }
+  if (currentView === "computers") {
+    return (
+      <div id="main" className="flex min-h-0 flex-1">
+        <Suspense>
+          <ComputersView />
         </Suspense>
       </div>
     );

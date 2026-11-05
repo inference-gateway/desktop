@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { ImagePlus, X } from "lucide-react";
 import { useDesktop } from "@/store";
-import { api, type MarkdownAgent } from "@/lib/tauri";
+import { api, type MarkdownAgent, type Workspace } from "@/lib/tauri";
 import { normaliseAgentName } from "@/lib/agents";
 import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl, type FluentEmoji } from "@/lib/fluent-emoji";
 import { AgentAvatar } from "./AgentAvatar";
@@ -14,6 +14,7 @@ const EMPTY: MarkdownAgent = {
   description: "",
   emoji: "",
   model: "",
+  workspace: "",
   instructions: "",
   avatar: null,
   path: "",
@@ -28,6 +29,13 @@ export function AgentEditor() {
   const [agentsDir, setAgentsDir] = useState("~/.infer/agents");
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  useEffect(() => {
+    api
+      .listWorkspaces()
+      .then((all) => setWorkspaces(all.filter((w) => w.kind !== "local")))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     api
       .getConfig()
@@ -203,6 +211,33 @@ export function AgentEditor() {
             ))}
           </select>
         </div>
+
+        {(workspaces.length > 0 || draft.workspace) && (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="agent-workspace" className="text-[0.8rem] text-muted-foreground">
+              Computer
+            </Label>
+            <select
+              id="agent-workspace"
+              value={draft.workspace}
+              onChange={(e) => set("workspace", e.target.value)}
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
+            >
+              <option value="">This computer</option>
+              {draft.workspace && !workspaces.some((w) => w.name === draft.workspace) && (
+                <option value={draft.workspace}>{draft.workspace} (not registered)</option>
+              )}
+              {workspaces.map((w) => (
+                <option key={w.name} value={w.name} disabled={!w.reachable} title={w.error ?? undefined}>
+                  {w.reachable ? w.name : `${w.name} (unreachable)`}
+                </option>
+              ))}
+            </select>
+            <span className="text-[0.72rem] text-muted-foreground/70">
+              A workspace of the infer daemon. Each chat with this agent gets a computer of its own there.
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <Label htmlFor="agent-instructions" className="text-[0.8rem] text-muted-foreground">

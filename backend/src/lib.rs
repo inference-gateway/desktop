@@ -28,6 +28,7 @@ mod timeline;
 mod tools;
 mod tts_samples;
 mod updates;
+mod workspaces;
 
 use observability::{StoredMetric, StoredSpan, start_collector};
 
@@ -249,6 +250,8 @@ pub fn run() {
             screen_records::start_screen_recording,
             screen_records::stop_screen_recording,
             screen_records::screen_recording_status,
+            workspaces::list_workspaces,
+            workspaces::screen_frame,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

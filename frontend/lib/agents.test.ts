@@ -8,6 +8,7 @@ const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   description: "Writes prose.",
   emoji: "",
   model: "",
+  workspace: "",
   instructions: "Write well.",
   avatar: null,
   path: "/tmp/writer.md",

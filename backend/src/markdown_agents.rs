@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
 /// A Markdown agent definition (`<name>.md`, Claude Code / infer format): the
-/// frontmatter is its profile, the body its system prompt. `emoji` is a
-/// desktop-only key the CLI ignores, the picture is a sibling `<name>.<ext>`.
+/// frontmatter is its profile, the body its system prompt. `emoji` and
+/// `workspace` (the computer its chats run on) are desktop-only keys the
+/// CLI ignores, the picture is a sibling `<name>.<ext>`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
@@ -13,6 +14,8 @@ pub(crate) struct MarkdownAgent {
     pub(crate) emoji: String,
     #[serde(default)]
     pub(crate) model: String,
+    #[serde(default)]
+    pub(crate) workspace: String,
     #[serde(default)]
     pub(crate) instructions: String,
     #[serde(default)]
@@ -31,6 +34,8 @@ struct Frontmatter {
     emoji: String,
     #[serde(default)]
     model: String,
+    #[serde(default)]
+    workspace: String,
 }
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
@@ -101,6 +106,7 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
         description: fm.description,
         emoji: fm.emoji,
         model: fm.model,
+        workspace: fm.workspace,
         instructions: body.trim().to_string(),
         avatar: None,
         path: path.display().to_string(),
@@ -173,6 +179,9 @@ fn render(agent: &MarkdownAgent) -> Result<String, String> {
     let model = agent.model.trim();
     if !model.is_empty() && model != "inherit" {
         front.insert("model".into(), model.into());
+    }
+    if !agent.workspace.trim().is_empty() {
+        front.insert("workspace".into(), agent.workspace.trim().into());
     }
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
     Ok(format!("---\n{yaml}---\n\n{}\n", agent.instructions.trim()))
@@ -356,6 +365,7 @@ mod tests {
             description: "Reviews diffs: finds bugs".into(),
             emoji: "🔍".into(),
             model: "inherit".into(),
+            workspace: String::new(),
             instructions: "You are a senior reviewer.\n\nReport findings by severity.".into(),
             avatar: None,
             path: String::new(),
@@ -407,6 +417,22 @@ mod tests {
         assert_eq!(listed[0].emoji, "🔍");
         assert_eq!(listed[0].instructions, sample().instructions);
         assert_eq!(listed[0].avatar, None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn workspace_round_trips_and_is_omitted_when_blank() {
+        let dir = temp_dir("workspace");
+        let path = write_in(&dir, &sample()).unwrap();
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("workspace:")
+        );
+        let mut agent = sample();
+        agent.workspace = "ubuntu-desktop".into();
+        write_in(&dir, &agent).unwrap();
+        assert_eq!(list_in(&dir)[0].workspace, "ubuntu-desktop");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

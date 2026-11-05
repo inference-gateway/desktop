@@ -116,10 +116,13 @@ export type MarkdownAgent = {
   description: string;
   emoji: string;
   model: string;
+  /** The daemon workspace the agent's chats run on, blank for this computer. */
+  workspace: string;
   instructions: string;
   avatar: string | null;
   path: string;
 };
+export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
 export type ProjectFile = { name: string; size: number };
@@ -294,6 +297,7 @@ export const api = {
     extraInstructions?: string;
     autoMode: boolean;
     project?: string;
+    workspace?: string;
   }) => invoke<void>("send_message", args),
   /** Opens (or reuses) the chat's daemon thread and returns its history. */
   openThread: (args: {
@@ -447,6 +451,8 @@ export const api = {
   addA2aAgent: (name: string, url: string) => invoke<void>("add_a2a_agent", { name, url }),
   removeA2aAgent: (name: string) => invoke<void>("remove_a2a_agent", { name }),
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
+  listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
+  screenFrame: (sessionId: string, project?: string) => invoke<string | null>("screen_frame", { sessionId, project }),
   listMarkdownAgents: () => invoke<MarkdownAgent[]>("list_markdown_agents"),
   saveMarkdownAgent: (agent: MarkdownAgent, previousName?: string) =>
     invoke<string>("save_markdown_agent", { agent, previousName }),
