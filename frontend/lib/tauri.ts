@@ -113,6 +113,8 @@ export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean
 export type VoiceSample = { name: string; path: string };
 export type Avatar = { name: string; images: string[] };
 export type Artifact = { name: string; size: number; modified_at: string };
+/** An open GitHub issue of the project, as the `#` menu offers it. */
+export type Issue = { number: number; title: string; state: string };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 /** A Markdown agent (`<name>.md` in one of the agent dirs): frontmatter profile plus its instructions. */
@@ -469,6 +471,7 @@ export const api = {
   listInstalledSkills: () => invoke<string[]>("list_installed_skills"),
   listTools: () => invoke<string[]>("list_tools"),
   listFiles: (project: string | null) => invoke<string[]>("list_files", { project }),
+  listIssues: (project: string | null) => invoke<Issue[]>("list_issues", { project }),
   listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
   a2aStatus: () => invoke<A2aStatus>("a2a_status"),

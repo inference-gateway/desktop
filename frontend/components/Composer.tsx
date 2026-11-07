@@ -21,8 +21,8 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
-import { filterFiles, insertMention, mentionAt, menuKey, type Mention } from "@/lib/mentions";
-import { api, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import { insertMention, mentionAt, menuKey, menuRows, type Mention } from "@/lib/mentions";
+import { api, type Issue, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { workspaceModel } from "@/lib/workspace-model";
 import { chatWorkspace, THIS_COMPUTER } from "@/lib/computers";
@@ -229,6 +229,7 @@ export function Composer() {
   const [toolMode, setToolMode] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<string[]>([]);
+  const [issues, setIssues] = useState<Issue[]>([]);
   const [mention, setMention] = useState<Mention | null>(null);
   const [activeMentionIdx, setActiveMentionIdx] = useState(0);
   const mentionsRef = useRef<HTMLDivElement>(null);
@@ -246,9 +247,14 @@ export function Composer() {
       .listFiles(currentProject)
       .then((listed) => current && setFiles(listed))
       .catch(() => {});
+    api
+      .listIssues(currentProject)
+      .then((listed) => current && setIssues(listed))
+      .catch(() => {});
     return () => {
       current = false;
       setFiles([]);
+      setIssues([]);
     };
   }, [ready, currentProject]);
 
@@ -412,9 +418,7 @@ export function Composer() {
 
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
-  const mentionRows = mention
-    ? filterFiles(files, mention.query).map((file) => ({ value: `@${file}`, label: file }))
-    : [];
+  const mentionRows = menuRows(mention, files, issues);
 
   const onSend = () => {
     const composer = composerRef.current;

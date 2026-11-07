@@ -243,6 +243,7 @@ pub fn run() {
             skills::list_installed_skills,
             tools::list_tools,
             composer::list_files,
+            composer::list_issues,
             tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,

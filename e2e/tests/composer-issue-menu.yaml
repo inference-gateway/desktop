@@ -1,0 +1,22 @@
+name: "typing # in the composer picks an open GitHub issue from a menu"
+narration:
+  - "Open a fresh chat."
+  - "Send a first message so the CLI is up."
+  - "The run completes - no scenario matches, the gateway fallback answers."
+  - "Type # in the composer."
+  - "A menu lists the project's open issues as #<number> <title>."
+  - "Narrow it to flaky and press Enter."
+  - "The composer now holds the picked issue as #<number>, ready to send."
+steps:
+  - new_chat
+  - send: "hi"
+  - wait_for:
+      text: "Done."
+      timeout: 30
+  - keypress: "#"
+  - wait_for:
+      button: "#57 Fix the flaky test"
+      timeout: 10
+  - type: "flaky"
+  - assert_composer:
+      text: "#57"
