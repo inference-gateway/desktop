@@ -962,6 +962,14 @@ function useDesktopStore() {
     [loadAgents],
   );
 
+  const setAgentModel = useCallback(
+    async (agent: MarkdownAgent, model: string) => {
+      await api.saveMarkdownAgent({ ...agent, model }, agent.name);
+      await loadAgents();
+    },
+    [loadAgents],
+  );
+
   const resolveApproval = useCallback(
     async (id: string, callId: string, approved: boolean, _scope?: "always") => {
       try {
@@ -1934,6 +1942,7 @@ function useDesktopStore() {
     openAgentEditor,
     closeAgentEditor,
     saveAgent,
+    setAgentModel,
     deleteAgent,
     loadAgents,
     restartBackend,

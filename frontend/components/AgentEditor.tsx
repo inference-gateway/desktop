@@ -204,6 +204,9 @@ export function AgentEditor() {
             className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
           >
             <option value="">Inherit the selected model</option>
+            {draft.model && draft.model !== "inherit" && !models.includes(draft.model) && (
+              <option value={draft.model}>{draft.model}</option>
+            )}
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
