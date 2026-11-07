@@ -1,0 +1,29 @@
+name: agent project - an agent chat opens in its default project or one picked above the composer
+content_project: e2e-agent-docs
+project_agent: e2e-docs-writer
+narration:
+  - "Create a second project from the sidebar."
+  - "Name it e2e-agent-other."
+  - "The project shows up in the sidebar."
+  - "Switch the sidebar to the Agents filter."
+  - "Select the seeded agent, whose front matter defaults it to e2e-agent-docs."
+  - "The bar above the composer names the agent and its default project."
+  - "Open the project menu above the composer."
+  - "Pick the other project for this chat."
+  - "The bar follows the pick."
+  - "Send the agent a prompt."
+  - "The reply lands."
+  - "The running chat keeps the picked project."
+steps:
+  - click: { button: "New project" }
+  - type: "e2e-agent-other"
+  - wait_for: { button: "Select project e2e-agent-other", timeout: 15 }
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-docs-writer" }
+  - wait_for: { text: "e2e-docs-writer (e2e-agent-docs)", timeout: 10 }
+  - click: { button: "Choose agent project" }
+  - click: { button: "Use project e2e-agent-other" }
+  - wait_for: { text: "e2e-docs-writer (e2e-agent-other)", timeout: 10 }
+  - send: "hi"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - wait_for: { text: "e2e-docs-writer (e2e-agent-other)", timeout: 5 }

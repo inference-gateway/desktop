@@ -172,12 +172,26 @@ fn seed_model_agent(home: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// An agent whose new chats open in `project`.
+fn seed_project_agent(home: &Path, name: &str, project: &str) -> Result<()> {
+    let agents = home.join(".infer").join("agents");
+    std::fs::create_dir_all(&agents)?;
+    std::fs::write(
+        agents.join(format!("{name}.md")),
+        format!(
+            "---\nname: {name}\ndescription: Works in a project of its own\nproject: {project}\n---\n\nYou work in your project.\n"
+        ),
+    )?;
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
     pub content_project: Option<&'a str>,
     pub workspace_agent: Option<&'a str>,
     pub model_agent: Option<&'a str>,
+    pub project_agent: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -226,6 +240,12 @@ impl AppDriver {
             }
             if let Some(name) = seeds.model_agent {
                 seed_model_agent(&home, name)?;
+            }
+            if let Some(name) = seeds.project_agent {
+                let project = seeds
+                    .content_project
+                    .context("project_agent needs a content_project to default to")?;
+                seed_project_agent(&home, name, project)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

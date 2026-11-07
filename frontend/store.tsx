@@ -33,7 +33,7 @@ import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
-import { agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
+import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import {
   loadSnippets,
@@ -745,15 +745,25 @@ function useDesktopStore() {
   );
 
   // Picking an agent works like picking a project: the next message opens a
-  // chat with it, unless the open chat is already one of its own.
+  // chat with it, unless the open chat is already one of its own. The chat
+  // opens in the agent's default project until another is picked for it.
   const selectAgent = useCallback(
-    (name: string | null) => {
+    (
+      name: string | null,
+      project = agentDefaultProject(
+        agents.find((a) => a.name === name),
+        projectNames,
+      ),
+    ) => {
       const current = activeIdRef.current;
-      if (name && current && agentOf[current] !== name) newChat();
-      if (name) setActiveProject(null);
+      const ownChatOpen = current !== null && agentOf[current] === name;
+      if (name && !ownChatOpen) {
+        if (current) newChat();
+        setActiveProject(project);
+      }
       setActiveAgent(name);
     },
-    [agentOf, newChat],
+    [agentOf, agents, projectNames, newChat],
   );
 
   const deleteConversation = useCallback(
@@ -954,10 +964,10 @@ function useDesktopStore() {
       }
       setAgentEditor(null);
       setProjectFilter("agents");
-      selectAgent(agent.name);
+      selectAgent(agent.name, agentDefaultProject(agent, projectNames));
       composerRef.current?.focus();
     },
-    [loadAgents, selectAgent],
+    [loadAgents, selectAgent, projectNames],
   );
 
   const deleteAgent = useCallback(

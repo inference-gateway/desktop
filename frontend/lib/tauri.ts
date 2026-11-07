@@ -125,6 +125,8 @@ export type MarkdownAgent = {
   model: string;
   /** The daemon workspace the agent's chats run on, blank for this computer. */
   workspace: string;
+  /** The project the agent's new chats open in, blank for none. */
+  project: string;
   instructions: string;
   avatar: string | null;
   path: string;
