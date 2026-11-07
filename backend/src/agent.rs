@@ -918,11 +918,6 @@ pub(crate) async fn send_message(
         agent.as_deref(),
     );
     let mode = options.mode.clone();
-    let switch_model = if options.agent.is_some() {
-        ""
-    } else {
-        model.as_str()
-    };
     let is_new_to_the_app = state.threads.get(&session_id).is_none();
     let mut thread = ensure_thread(&app, &state, &session_id, &cwd, options.clone()).await?;
     let target = workspace.filter(|name| !name.trim().is_empty());
@@ -945,7 +940,7 @@ pub(crate) async fn send_message(
             let _ = crate::projects::checkpoint(&dir, &commit);
         }) as Box<dyn Fn() + Send + Sync>
     });
-    thread.select(switch_model, &mode)?;
+    thread.select(&model, &mode)?;
     thread.run(Some(message_content(&prompt)))
 }
 
