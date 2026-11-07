@@ -73,7 +73,10 @@ function statusOf(running: boolean, items: TranscriptItem[]): ComputerStatus {
   return pendingInput(items) ? "awaiting" : "running";
 }
 
-/** The open chats that run on a workspace, running ones first. */
+/**
+ * The open chats that ran on a workspace, running ones first. A chat whose agent
+ * has a workspace gets its computer with its first message there, not before.
+ */
 export function computerTiles(
   workspaceOf: Record<string, string>,
   agentOf: Record<string, string>,
@@ -83,7 +86,7 @@ export function computerTiles(
 ): ComputerTile[] {
   return Object.entries(transcripts)
     .flatMap(([sessionId, chat]) => {
-      const workspace = chatWorkspace(sessionId, workspaceOf, agentOf, agents);
+      const workspace = workspaceOf[sessionId] ?? THIS_COMPUTER;
       if (workspace === THIS_COMPUTER) return [];
       return [
         {

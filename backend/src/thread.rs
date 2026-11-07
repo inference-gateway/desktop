@@ -71,9 +71,9 @@ impl Thread {
         ws.send(Message::text(open_frame(session_id, project_dir, options)))
             .map_err(|e| e.to_string())?;
 
-        let _ = ws.get_ref().set_read_timeout(Some(SNAPSHOT_TIMEOUT));
+        let deadline = Instant::now() + SNAPSHOT_TIMEOUT;
         let history = loop {
-            let text = read_text(&mut ws)?;
+            let text = read_text(&mut ws, deadline)?;
             let frame: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
             match frame.get("type").and_then(|t| t.as_str()) {
                 Some("MESSAGES_SNAPSHOT") => {
@@ -323,7 +323,7 @@ fn dial(binding: &Binding) -> Result<WebSocket<TcpStream>, String> {
         .map_err(|e| format!("infer daemon refused the connection: {e}"))?;
     ws.send(Message::text(hello_frame(&binding.token)))
         .map_err(|e| e.to_string())?;
-    let ack = read_text(&mut ws)?;
+    let ack = read_text(&mut ws, Instant::now() + HELLO_TIMEOUT)?;
     check_ack(&ack)?;
     Ok(ws)
 }
@@ -342,14 +342,7 @@ pub(crate) fn exchange<T>(
         .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + timeout;
     let answer = loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break Err("infer daemon did not answer in time".to_string());
-        }
-        ws.get_ref()
-            .set_read_timeout(Some(remaining))
-            .map_err(|e| e.to_string())?;
-        let frame: serde_json::Value = match read_text(&mut ws) {
+        let frame: serde_json::Value = match read_text(&mut ws, deadline) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
             Err(e) => break Err(e),
         };
@@ -451,8 +444,17 @@ fn extension_status(frame: &serde_json::Value) -> ExtensionStatus {
     }
 }
 
-fn read_text(ws: &mut WebSocket<TcpStream>) -> Result<String, String> {
+/// The daemon's next text frame, or an error once `deadline` passed. Its pings
+/// answer nothing, so they never stretch the wait.
+fn read_text(ws: &mut WebSocket<TcpStream>, deadline: Instant) -> Result<String, String> {
     loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("infer daemon did not answer in time".to_string());
+        }
+        ws.get_ref()
+            .set_read_timeout(Some(remaining))
+            .map_err(|e| e.to_string())?;
         match ws
             .read()
             .map_err(|e| format!("infer daemon connection failed: {e}"))?
@@ -576,6 +578,24 @@ mod tests {
             seen.lock().unwrap().push("<closed>".to_string());
         });
         (port, received)
+    }
+
+    /// A daemon that acks the hello, takes the request and then only pings.
+    fn pinging_daemon() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            ws.read().unwrap();
+            ws.send(Message::text(r#"{"type":"browser_hello_ack"}"#))
+                .unwrap();
+            ws.read().unwrap();
+            while ws.send(Message::Ping(Vec::new().into())).is_ok() {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        port
     }
 
     type Sinks = (
@@ -758,6 +778,23 @@ mod tests {
         let request: serde_json::Value =
             serde_json::from_str(&received.lock().unwrap()[1]).unwrap();
         assert_eq!(request["type"], "teleport_session");
+    }
+
+    #[test]
+    fn exchange_gives_up_on_time_while_the_daemon_only_pings() {
+        let binding = Binding {
+            port: pinging_daemon(),
+            token: "tok".into(),
+        };
+        let started = Instant::now();
+        let answer = exchange(
+            &binding,
+            serde_json::json!({"type": "read_frame", "id": "s1"}),
+            Duration::from_millis(300),
+            |frame| (frame["type"] == "frame").then_some(()),
+        );
+        assert!(answer.is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
