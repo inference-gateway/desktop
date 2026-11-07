@@ -1,11 +1,16 @@
+import type { Issue } from "./tauri";
+
 /** A menu token the cursor is in: where its trigger sits and the text typed after it. */
 export type Mention = { trigger: string; start: number; query: string };
 
-const MENTION = /(^|\s)(@)(\S*)$/;
+/** One menu row: the text it inserts and the text it shows. */
+export type MentionRow = { value: string; label: string };
+
+const MENTION = /(^|\s)([@#])(\S*)$/;
 const MAX_ROWS = 50;
 
-/** The `@` token that ends at the cursor, or null. The trigger starts the text
-    or follows whitespace, so an email address opens nothing. */
+/** The `@` or `#` token that ends at the cursor, or null. The trigger starts the
+    text or follows whitespace, so an email address, `C#` or a URL fragment opens nothing. */
 export function mentionAt(text: string, cursor: number): Mention | null {
   const match = MENTION.exec(text.slice(0, cursor));
   if (!match) return null;
@@ -17,6 +22,24 @@ export function mentionAt(text: string, cursor: number): Mention | null {
 export function filterFiles(files: string[], query: string): string[] {
   const needle = query.toLowerCase();
   return files.filter((file) => file.toLowerCase().includes(needle)).slice(0, MAX_ROWS);
+}
+
+/** The issues whose number or title contains the query, ignoring case. */
+export function filterIssues(issues: Issue[], query: string): Issue[] {
+  const needle = query.toLowerCase();
+  return issues.filter((issue) => `${issue.number} ${issue.title.toLowerCase()}`.includes(needle));
+}
+
+/** The rows the token's menu offers: `#<number> <title>` issues for `#`, project files for `@`. */
+export function menuRows(mention: Mention | null, files: string[], issues: Issue[]): MentionRow[] {
+  if (!mention) return [];
+  if (mention.trigger === "#") {
+    return filterIssues(issues, mention.query).map((issue) => ({
+      value: `#${issue.number}`,
+      label: `#${issue.number} ${issue.title}`,
+    }));
+  }
+  return filterFiles(files, mention.query).map((file) => ({ value: `@${file}`, label: file }));
 }
 
 /** The text with the token replaced by `value` and a space, and the cursor right

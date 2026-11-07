@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { filterFiles, insertMention, mentionAt, menuKey } from "./mentions";
+import { filterFiles, filterIssues, insertMention, mentionAt, menuRows, menuKey } from "./mentions";
+
+const ISSUES = [
+  { number: 57, title: "Fix the flaky test", state: "OPEN" },
+  { number: 42, title: "Add a dark mode toggle", state: "OPEN" },
+];
 
 test("mentionAt finds the @ token that ends at the cursor", () => {
   expect(mentionAt("@", 1)).toEqual({ trigger: "@", start: 0, query: "" });
@@ -12,6 +17,32 @@ test("mentionAt ignores an @ inside a word or a token the cursor left", () => {
   expect(mentionAt("mail me@example.com", 19)).toBeNull();
   expect(mentionAt("@README.md ", 11)).toBeNull();
   expect(mentionAt("no trigger", 10)).toBeNull();
+});
+
+test("mentionAt finds a # token but not one inside a word or a URL", () => {
+  expect(mentionAt("#", 1)).toEqual({ trigger: "#", start: 0, query: "" });
+  expect(mentionAt("fix #57", 7)).toEqual({ trigger: "#", start: 4, query: "57" });
+  expect(mentionAt("written in C#", 13)).toBeNull();
+  expect(mentionAt("see https://example.com/page#intro", 34)).toBeNull();
+});
+
+test("filterIssues matches the number or the title, ignoring case", () => {
+  expect(filterIssues(ISSUES, "")).toEqual(ISSUES);
+  expect(filterIssues(ISSUES, "57")).toEqual([ISSUES[0]]);
+  expect(filterIssues(ISSUES, "Dark")).toEqual([ISSUES[1]]);
+  expect(filterIssues(ISSUES, "99")).toEqual([]);
+  expect(filterIssues([], "")).toEqual([]);
+});
+
+test("menuRows offers issues for # and files for @", () => {
+  expect(menuRows({ trigger: "#", start: 0, query: "flaky" }, ["README.md"], ISSUES)).toEqual([
+    { value: "#57", label: "#57 Fix the flaky test" },
+  ]);
+  expect(menuRows({ trigger: "@", start: 0, query: "read" }, ["README.md"], ISSUES)).toEqual([
+    { value: "@README.md", label: "README.md" },
+  ]);
+  expect(menuRows({ trigger: "#", start: 0, query: "" }, ["README.md"], [])).toEqual([]);
+  expect(menuRows(null, ["README.md"], ISSUES)).toEqual([]);
 });
 
 test("filterFiles keeps the paths containing the query, ignoring case", () => {
