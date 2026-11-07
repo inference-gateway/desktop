@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { api, type Screen } from "@/lib/tauri";
 import { computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
 import { framePoint, keyInput, mouseButton, wheelInputs, type ScreenInput } from "@/lib/screen-input";
@@ -51,13 +51,16 @@ function Tile({
   project,
   onOpen,
   onTakeOver,
+  onDelete,
 }: {
   tile: ComputerTile;
   project?: string;
   onOpen: () => void;
   onTakeOver: () => void;
+  onDelete: () => void;
 }) {
   const screen = useScreen(tile.sessionId, project, tile.status !== "idle", FRAME_POLL_MS);
+  const [deleteArmed, setDeleteArmed] = useState(false);
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-primary/60">
       <button aria-label={`Open computer ${tile.agent.name}`} onClick={onOpen} className="flex flex-col text-left">
@@ -83,7 +86,25 @@ function Tile({
           </span>
         </div>
       </button>
-      <div className="flex justify-end border-t border-border px-3 py-2">
+      <div className="flex justify-end gap-2 border-t border-border px-3 py-2">
+        <button
+          aria-label={`Delete computer ${tile.agent.name}`}
+          title={
+            deleteArmed
+              ? "Click again to delete this computer and the chat that lives on it"
+              : `Delete the computer of ${tile.agent.name}`
+          }
+          onClick={() => {
+            if (deleteArmed) onDelete();
+            setDeleteArmed(!deleteArmed);
+          }}
+          onBlur={() => setDeleteArmed(false)}
+          className={`rounded-md border px-2 py-1 ${
+            deleteArmed ? "border-destructive text-destructive" : "border-border-strong hover:border-destructive/60"
+          }`}
+        >
+          <Trash2 size={14} />
+        </button>
         <button
           onClick={onTakeOver}
           title={`Drive the computer of ${tile.agent.name} yourself`}
@@ -207,6 +228,7 @@ export function ComputersView() {
     setCurrentView,
     drivenId,
     takeOver,
+    deleteMachine,
   } = useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
@@ -241,6 +263,7 @@ export function ComputersView() {
               project={projects[tile.sessionId]}
               onOpen={() => open(tile.sessionId)}
               onTakeOver={() => takeOver(tile.sessionId)}
+              onDelete={() => deleteMachine(tile.sessionId)}
             />
           ))}
         </div>

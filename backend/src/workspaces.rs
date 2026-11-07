@@ -408,6 +408,18 @@ pub(crate) async fn clean_machines(sessions: Vec<MachineSession>) -> Result<usiz
         .map_err(|e| format!("clean-up task failed: {e}"))?
 }
 
+/// Has the daemon delete the machine of one chat, with the transcript on it.
+/// The chat's next message starts it over. Answers whether a machine went.
+#[tauri::command]
+pub(crate) async fn delete_machine(session: MachineSession) -> Result<bool, String> {
+    if mock_mode() {
+        return Ok(true);
+    }
+    tokio::task::spawn_blocking(move || remove_machine(&crate::daemon::binding()?, &session))
+        .await
+        .map_err(|e| format!("delete task failed: {e}"))?
+}
+
 /// The latest screen of the computer a session runs on.
 /// ponytail: one connection per poll, keep one open if tiles outgrow a dozen.
 #[tauri::command]
