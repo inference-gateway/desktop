@@ -43,6 +43,8 @@ const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 /// Fluent's animated PNGs run up to 3.4 MB. Serve them through the asset protocol if the list gets heavy.
 const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
+/// The frontmatter keys the agent editor owns. Every other key is kept as found.
+const MANAGED_KEYS: [&str; 5] = ["name", "description", "emoji", "model", "workspace"];
 /// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
 /// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
 /// so a crafted URL cannot pull arbitrary bytes.
@@ -199,7 +201,20 @@ pub(crate) fn list_from(dirs: &[PathBuf]) -> Vec<MarkdownAgent> {
     agents
 }
 
-fn render(agent: &MarkdownAgent) -> Result<String, String> {
+/// The frontmatter of the agent file at `path` without the keys the editor
+/// manages, so a save keeps what other tools put there (`tools`,
+/// `disallowedTools`, `color`). Empty when the file is missing or unreadable.
+fn unmanaged_frontmatter(path: &Path) -> serde_norway::Mapping {
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    split_frontmatter(&text)
+        .and_then(|(front, _)| serde_norway::from_str::<serde_norway::Mapping>(front).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(key, _)| !key.as_str().is_some_and(|k| MANAGED_KEYS.contains(&k)))
+        .collect()
+}
+
+fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, String> {
     let mut front = serde_norway::Mapping::new();
     front.insert("name".into(), agent.name.clone().into());
     front.insert("description".into(), agent.description.trim().into());
@@ -213,12 +228,19 @@ fn render(agent: &MarkdownAgent) -> Result<String, String> {
     if !agent.workspace.trim().is_empty() {
         front.insert("workspace".into(), agent.workspace.trim().into());
     }
+    front.extend(kept);
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
     Ok(format!("---\n{yaml}---\n\n{}\n", agent.instructions.trim()))
 }
 
-/// Writes `<dir>/<name>.md`, creating the directory. Returns the file path.
-pub(crate) fn write_in(dir: &Path, agent: &MarkdownAgent) -> Result<PathBuf, String> {
+/// Writes `<dir>/<name>.md` in place of `<dir>/<replaced>.md`, the agent's
+/// previous name on a rename, creating the directory. The keys the editor does
+/// not manage carry over, and a cleared model or computer leaves the file.
+pub(crate) fn write_in(
+    dir: &Path,
+    agent: &MarkdownAgent,
+    replaced: &str,
+) -> Result<PathBuf, String> {
     if !valid_agent_name(&agent.name) {
         return Err(format!(
             "invalid agent name {:?}: use lowercase letters, digits, - and _ (max {NAME_MAX_LEN})",
@@ -232,8 +254,9 @@ pub(crate) fn write_in(dir: &Path, agent: &MarkdownAgent) -> Result<PathBuf, Str
         return Err("an agent needs instructions".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    let kept = unmanaged_frontmatter(&dir.join(format!("{replaced}.md")));
     let path = dir.join(format!("{}.md", agent.name));
-    std::fs::write(&path, render(agent)?)
+    std::fs::write(&path, render(agent, kept)?)
         .map_err(|e| format!("writing {}: {e}", path.display()))?;
     Ok(path)
 }
@@ -321,8 +344,9 @@ pub(crate) fn save_markdown_agent(
     agent: MarkdownAgent,
     previous_name: Option<String>,
 ) -> Result<String, String> {
-    let dir = agent_dir(previous_name.as_deref().unwrap_or(&agent.name));
-    let path = write_in(&dir, &agent)?;
+    let replaced = previous_name.as_deref().unwrap_or(&agent.name);
+    let dir = agent_dir(replaced);
+    let path = write_in(&dir, &agent, replaced)?;
     if let Some(old) = previous_name.filter(|old| *old != agent.name) {
         if let Some(picture) = avatar_path_in(&dir, &old) {
             set_avatar_in(&dir, &agent.name, &picture)?;
@@ -435,13 +459,13 @@ mod tests {
             instructions: "The project's reviewer.".into(),
             ..sample()
         };
-        write_in(&dirs[1], &shadowing).unwrap();
-        write_in(&dirs[2], &sample()).unwrap();
+        write_in(&dirs[1], &shadowing, &shadowing.name).unwrap();
+        write_in(&dirs[2], &sample(), &sample().name).unwrap();
         let only_home = MarkdownAgent {
             name: "helper".into(),
             ..sample()
         };
-        write_in(&dirs[3], &only_home).unwrap();
+        write_in(&dirs[3], &only_home, &only_home.name).unwrap();
 
         let listed = list_from(&dirs);
         assert_eq!(
@@ -458,7 +482,7 @@ mod tests {
     #[test]
     fn write_then_list_round_trips_and_omits_inherit_model() {
         let dir = temp_dir("roundtrip");
-        let path = write_in(&dir, &sample()).unwrap();
+        let path = write_in(&dir, &sample(), &sample().name).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.starts_with("---\nname: code-reviewer\n"), "{text}");
         assert!(text.contains("emoji: 🔍\n"));
@@ -479,7 +503,7 @@ mod tests {
     #[test]
     fn workspace_round_trips_and_is_omitted_when_blank() {
         let dir = temp_dir("workspace");
-        let path = write_in(&dir, &sample()).unwrap();
+        let path = write_in(&dir, &sample(), &sample().name).unwrap();
         assert!(
             !std::fs::read_to_string(&path)
                 .unwrap()
@@ -487,8 +511,53 @@ mod tests {
         );
         let mut agent = sample();
         agent.workspace = "ubuntu-desktop".into();
-        write_in(&dir, &agent).unwrap();
+        write_in(&dir, &agent, &agent.name).unwrap();
         assert_eq!(list_in(&dir)[0].workspace, "ubuntu-desktop");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_save_keeps_unmanaged_keys_and_drops_a_cleared_model() {
+        let dir = temp_dir("keep");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("researcher.md"),
+            "---\nname: researcher\ndescription: Researches\nmodel: mock/openai/gpt-4o\nworkspace: ubuntu-desktop\ntools:\n  - Read\n  - Grep\ndisallowedTools: Bash\ncolor: blue\n---\nResearch it.\n",
+        )
+        .unwrap();
+        let mut agent = list_in(&dir).remove(0);
+        agent.model = String::new();
+        agent.workspace = String::new();
+        agent.emoji = "🔎".into();
+        write_in(&dir, &agent, "researcher").unwrap();
+
+        let text = std::fs::read_to_string(dir.join("researcher.md")).unwrap();
+        assert!(!text.contains("model:"), "{text}");
+        assert!(!text.contains("workspace:"), "{text}");
+        assert!(text.contains("emoji: 🔎\n"), "{text}");
+        assert!(text.contains("tools:\n- Read\n- Grep\n"), "{text}");
+        assert!(text.contains("disallowedTools: Bash\n"), "{text}");
+        assert!(text.contains("color: blue\n"), "{text}");
+        assert_eq!(list_in(&dir)[0].model, "");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_rename_carries_the_unmanaged_keys_to_the_new_file() {
+        let dir = temp_dir("rename-keep");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("old-name.md"),
+            "---\nname: old-name\ndescription: x\ntools: Read\n---\nbody\n",
+        )
+        .unwrap();
+        let mut agent = list_in(&dir).remove(0);
+        agent.name = "new-name".into();
+        write_in(&dir, &agent, "old-name").unwrap();
+
+        let text = std::fs::read_to_string(dir.join("new-name.md")).unwrap();
+        assert!(text.starts_with("---\nname: new-name\n"), "{text}");
+        assert!(text.contains("tools: Read\n"), "{text}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -518,7 +587,7 @@ mod tests {
     #[test]
     fn avatar_is_attached_replaced_and_deleted_with_the_agent() {
         let dir = temp_dir("avatar");
-        write_in(&dir, &sample()).unwrap();
+        write_in(&dir, &sample(), &sample().name).unwrap();
         let src = dir.join("pick.gif");
         std::fs::write(&src, b"GIF89a").unwrap();
         set_avatar_in(&dir, "code-reviewer", &src).unwrap();
@@ -567,13 +636,13 @@ mod tests {
         let dir = temp_dir("reject");
         let mut agent = sample();
         agent.name = "Bad Name".into();
-        assert!(write_in(&dir, &agent).is_err());
+        assert!(write_in(&dir, &agent, &agent.name).is_err());
         let mut agent = sample();
         agent.description = " ".into();
-        assert!(write_in(&dir, &agent).is_err());
+        assert!(write_in(&dir, &agent, &agent.name).is_err());
         let mut agent = sample();
         agent.instructions = String::new();
-        assert!(write_in(&dir, &agent).is_err());
+        assert!(write_in(&dir, &agent, &agent.name).is_err());
         assert!(!dir.exists());
     }
 }
