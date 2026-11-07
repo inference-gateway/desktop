@@ -1,6 +1,7 @@
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use tauri::ipc::Channel;
 
 const WORKSPACES_KEY: &str = "workspaces";
 const KUBERNETES: &str = "kubernetes";
@@ -14,6 +15,16 @@ const ORCHESTRATORS: &str = "orchestrators.core.inference-gateway.com";
 const WORKSPACE_LABEL: &str = "inference-gateway.com/workspace";
 const READY_STATUSES: &str =
     r#"jsonpath={range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}"#;
+const LOCAL_WORKSPACE: &str = "ubuntu-desktop";
+/// A local cluster's sessions run on a pod of their own, not the user's
+/// machine, so its agents use the computer and edit files without asking.
+const COMPUTER_ENV: [(&str, &str); 5] = [
+    ("INFER_COMPUTER_USE_ENABLED", "true"),
+    ("INFER_COMPUTER_USE_APPROVAL", "never"),
+    ("INFER_TOOLS_BASH_ALLOW_APPEND", ".*"),
+    ("INFER_TOOLS_WRITE_REQUIRE_APPROVAL", "false"),
+    ("INFER_TOOLS_EDIT_REQUIRE_APPROVAL", "false"),
+];
 
 /// Something a cluster must have installed before sessions can run in it,
 /// told by the CRDs it brings.
@@ -285,10 +296,22 @@ fn namespace_prerequisites(namespace: &str, labels: Result<&str, &str>) -> Vec<P
     ]
 }
 
-fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
-    let output = crate::env::command("kubectl")
+/// kubectl for `context`. The local cluster's goes through its container, so
+/// checking it needs no kubectl on this machine.
+fn kubectl_for(context: &str) -> std::process::Command {
+    if context == crate::local_cluster::CONTEXT {
+        return crate::local_cluster::kubectl_command();
+    }
+    let mut command = crate::env::command("kubectl");
+    command
         .env("PATH", crate::env::composed_path())
-        .args(["--context", context, KUBECTL_TIMEOUT])
+        .args(["--context", context]);
+    command
+}
+
+fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
+    let output = kubectl_for(context)
+        .arg(KUBECTL_TIMEOUT)
         .args(args)
         .output()
         .map_err(|e| format!("kubectl could not run: {e}"))?;
@@ -435,12 +458,140 @@ fn merge_detected(
     Ok(merged)
 }
 
+fn installed_infer_version() -> Option<String> {
+    crate::updates::installed_version(&crate::env::infer_bin_path(), "version")
+        .filter(|version| version != "dev")
+}
+
 /// The CLI image of the installed `infer` version, so a session's pod runs
 /// the same CLI as this machine.
 fn cli_image() -> String {
-    let version = crate::updates::installed_version(&crate::env::infer_bin_path(), "version")
-        .filter(|version| version != "dev");
+    let version = installed_infer_version();
     format!("{CLI_IMAGE}:{}", version.as_deref().unwrap_or("latest"))
+}
+
+/// The names of the provider keys the user saved, for a workspace's gateway.
+fn provider_keys() -> Vec<String> {
+    crate::config::auth_env()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// The workspace of the local cluster: an Ubuntu desktop pod per chat, its
+/// gateway given every provider key the user saved.
+fn local_workspace(provider_keys: &[String]) -> WorkspaceConfig {
+    WorkspaceConfig {
+        name: LOCAL_WORKSPACE.into(),
+        kind: KUBERNETES.into(),
+        context: crate::local_cluster::CONTEXT.into(),
+        namespace: DETECTED_NAMESPACE.into(),
+        image: crate::local_cluster::COMPUTER_IMAGE.into(),
+        storage: DETECTED_STORAGE.into(),
+        gateway_env: provider_keys.to_vec(),
+        env: COMPUTER_ENV
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect(),
+        ..WorkspaceConfig::default()
+    }
+}
+
+/// The entry the local cluster's workspace replaces: its own from an earlier
+/// run, or none. A workspace of that name on another cluster is the user's,
+/// so it is never re-pointed.
+fn local_workspace_slot(existing: &[WorkspaceConfig]) -> Result<Option<&'static str>, String> {
+    match existing
+        .iter()
+        .find(|workspace| workspace.name == LOCAL_WORKSPACE)
+    {
+        None => Ok(None),
+        Some(workspace) if workspace.context == crate::local_cluster::CONTEXT => {
+            Ok(Some(LOCAL_WORKSPACE))
+        }
+        Some(workspace) => Err(format!(
+            "A workspace named {LOCAL_WORKSPACE} already runs in {} - delete it to provision the local cluster",
+            workspace.context
+        )),
+    }
+}
+
+/// Merges `addition`'s clusters, users and contexts into the user's
+/// kubeconfig, replacing entries of the same name. The current context and
+/// everything else stay. An unreadable kubeconfig is refused, never replaced.
+fn merge_kubeconfig(existing: Option<&str>, addition: &str) -> Result<String, String> {
+    let mut merged = match existing.filter(|text| !text.trim().is_empty()) {
+        Some(text) => serde_norway::from_str::<Value>(text)
+            .map_err(|e| format!("your kubeconfig is not valid YAML: {e}"))?,
+        None => Value::Mapping(Mapping::new()),
+    };
+    let addition: Value = serde_norway::from_str(addition).map_err(|e| e.to_string())?;
+    let root = merged
+        .as_mapping_mut()
+        .ok_or("your kubeconfig is not a mapping")?;
+    for (key, default) in [("apiVersion", "v1"), ("kind", "Config")] {
+        root.entry(key.into()).or_insert_with(|| default.into());
+    }
+    for list in ["clusters", "users", "contexts"] {
+        let added = addition
+            .get(list)
+            .and_then(Value::as_sequence)
+            .cloned()
+            .unwrap_or_default();
+        let entries = root
+            .entry(list.into())
+            .or_insert_with(|| Value::Sequence(Vec::new()));
+        if entries.is_null() {
+            *entries = Value::Sequence(Vec::new());
+        }
+        let entries = entries
+            .as_sequence_mut()
+            .ok_or_else(|| format!("your kubeconfig's {list} is not a list"))?;
+        entries.retain(|entry| !added.iter().any(|new| new.get("name") == entry.get("name")));
+        entries.extend(added);
+    }
+    serde_norway::to_string(&merged).map_err(|e| e.to_string())
+}
+
+/// Creates `namespace` if it is missing and labels it for the operator.
+fn managed_namespace(context: &str, namespace: &str) -> Result<(), String> {
+    match kubectl(context, &["create", "namespace", namespace]) {
+        Err(error) if !error.contains("AlreadyExists") => return Err(error),
+        _ => {}
+    }
+    let label = format!("{MANAGED_LABEL}=true");
+    kubectl(
+        context,
+        &["label", "namespace", namespace, &label, "--overwrite"],
+    )
+    .map(drop)
+}
+
+fn user_kubeconfig() -> PathBuf {
+    let kubeconfig_env = std::env::var("KUBECONFIG").ok();
+    kubeconfig_path(&crate::env::home_dir(), kubeconfig_env.as_deref())
+}
+
+/// Provisions the local cluster, adds it to the user's kubeconfig and
+/// registers its workspace. A workspace of the same name elsewhere stops it
+/// before anything is created. Mock mode registers the workspace only.
+fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
+    let slot = local_workspace_slot(&workspace_configs())?;
+    if !crate::env::mock_mode() {
+        let kubeconfig =
+            crate::local_cluster::provision(installed_infer_version().as_deref(), &stage)?;
+        stage("Creating the workspace namespace...");
+        managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
+        stage("Adding the cluster to your kubeconfig...");
+        crate::config::update_file(&user_kubeconfig(), |existing| {
+            merge_kubeconfig(existing, &kubeconfig)
+        })?;
+    }
+    stage("Registering the workspace...");
+    crate::config::update_file(&crate::daemon::config_path(), |existing| {
+        merge_workspace(existing, &local_workspace(&provider_keys()), slot)
+    })?;
+    Ok(LOCAL_WORKSPACE.into())
 }
 
 fn kubeconfig_path(home: &Path, kubeconfig_env: Option<&str>) -> PathBuf {
@@ -499,9 +650,7 @@ pub(crate) fn delete_workspace(name: String) -> Result<(), String> {
 /// workspace runs in.
 #[tauri::command]
 pub(crate) fn kube_contexts() -> Vec<String> {
-    let kubeconfig_env = std::env::var("KUBECONFIG").ok();
-    let path = kubeconfig_path(&crate::env::home_dir(), kubeconfig_env.as_deref());
-    std::fs::read_to_string(path)
+    std::fs::read_to_string(user_kubeconfig())
         .map(|kubeconfig| parse_contexts(&kubeconfig))
         .unwrap_or_default()
 }
@@ -511,15 +660,11 @@ pub(crate) fn kube_contexts() -> Vec<String> {
 /// by name, for its gateway.
 #[tauri::command]
 pub(crate) fn detect_workspaces() -> Result<Vec<String>, String> {
-    let provider_keys: Vec<String> = crate::config::auth_env()
-        .into_iter()
-        .map(|(name, _)| name)
-        .collect();
     let detected = detected_workspaces(
         &workspace_configs(),
         &kube_contexts(),
         &cli_image(),
-        &provider_keys,
+        &provider_keys(),
     );
     if detected.is_empty() {
         return Ok(Vec::new());
@@ -548,6 +693,28 @@ pub(crate) async fn check_workspace(context: String, namespace: String) -> Clust
     tokio::task::spawn_blocking(move || check_cluster(&context, &namespace))
         .await
         .unwrap_or_else(|e| unreachable(&e.to_string()))
+}
+
+/// Whether Docker answers, which is all provisioning a local cluster needs.
+#[tauri::command]
+pub(crate) async fn docker_available() -> bool {
+    crate::env::mock_mode()
+        || tokio::task::spawn_blocking(crate::local_cluster::docker_running)
+            .await
+            .unwrap_or(false)
+}
+
+/// Provisions a k3s cluster in Docker and registers its Ubuntu desktop
+/// workspace, reporting each step. Answers the workspace's name.
+#[tauri::command]
+pub(crate) async fn provision_local_cluster(on_stage: Channel<String>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        provision_local(|stage| {
+            let _ = on_stage.send(stage.to_owned());
+        })
+    })
+    .await
+    .map_err(|e| format!("provisioning stopped: {e}"))?
 }
 
 #[cfg(test)]
@@ -722,5 +889,53 @@ mod tests {
             kubeconfig_path(home, listed.to_str()),
             PathBuf::from("/a/config")
         );
+    }
+
+    #[test]
+    fn the_local_workspace_runs_the_desktop_image_with_the_saved_keys() {
+        let workspace = local_workspace(&["OLLAMA_CLOUD_API_KEY".into()]);
+        assert_eq!(workspace.name, "ubuntu-desktop");
+        assert_eq!(workspace.context, crate::local_cluster::CONTEXT);
+        assert_eq!(workspace.image, crate::local_cluster::COMPUTER_IMAGE);
+        assert_eq!(workspace.gateway_env, ["OLLAMA_CLOUD_API_KEY"]);
+        assert_eq!(workspace.env["INFER_COMPUTER_USE_ENABLED"], "true");
+    }
+
+    #[test]
+    fn the_local_workspace_replaces_only_its_own_entry() {
+        assert_eq!(local_workspace_slot(&[kubernetes("build")]), Ok(None));
+        let own = local_workspace(&[]);
+        assert_eq!(local_workspace_slot(&[own]), Ok(Some("ubuntu-desktop")));
+        let elsewhere = WorkspaceConfig {
+            context: "k3d-computer-use".into(),
+            ..local_workspace(&[])
+        };
+        let refused = local_workspace_slot(&[elsewhere]).unwrap_err();
+        assert!(refused.contains("k3d-computer-use"), "{refused}");
+    }
+
+    #[test]
+    fn a_kubeconfig_merge_replaces_same_named_entries_and_keeps_the_rest() {
+        let existing = "apiVersion: v1\nkind: Config\ncurrent-context: prod\nclusters:\n  - name: prod\n    cluster: {server: https://prod}\n  - name: infer-k3s\n    cluster: {server: https://127.0.0.1:1}\ncontexts:\n  - name: prod\n    context: {cluster: prod, user: prod}\nusers:\n  - name: prod\n    user: {token: t}\n";
+        let addition = "clusters:\n  - name: infer-k3s\n    cluster: {server: https://127.0.0.1:2}\ncontexts:\n  - name: infer-k3s\n    context: {cluster: infer-k3s, user: infer-k3s}\nusers:\n  - name: infer-k3s\n    user: {token: k}\n";
+        let merged: Value =
+            serde_norway::from_str(&merge_kubeconfig(Some(existing), addition).unwrap()).unwrap();
+        assert_eq!(merged["current-context"], "prod");
+        let clusters = merged["clusters"].as_sequence().unwrap();
+        assert_eq!(clusters.len(), 2);
+        assert_eq!(clusters[0]["name"], "prod");
+        assert_eq!(clusters[1]["cluster"]["server"], "https://127.0.0.1:2");
+        assert_eq!(merged["contexts"].as_sequence().unwrap().len(), 2);
+        assert_eq!(merged["users"][0]["user"]["token"], "t");
+    }
+
+    #[test]
+    fn a_kubeconfig_merge_starts_a_missing_file_and_refuses_a_broken_one() {
+        let addition = "clusters:\n  - name: infer-k3s\n    cluster: {}\n";
+        let fresh: Value =
+            serde_norway::from_str(&merge_kubeconfig(None, addition).unwrap()).unwrap();
+        assert_eq!(fresh["kind"], "Config");
+        assert_eq!(fresh["clusters"][0]["name"], "infer-k3s");
+        assert!(merge_kubeconfig(Some("clusters: [unclosed"), addition).is_err());
     }
 }

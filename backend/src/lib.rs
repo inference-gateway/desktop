@@ -14,6 +14,7 @@ mod env;
 mod export;
 mod gateway;
 mod input_capture;
+mod local_cluster;
 mod markdown_agents;
 mod observability;
 mod permissions;
@@ -272,6 +273,8 @@ pub fn run() {
             workspace_settings::kube_contexts,
             workspace_settings::detect_workspaces,
             workspace_settings::check_workspace,
+            workspace_settings::docker_available,
+            workspace_settings::provision_local_cluster,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
