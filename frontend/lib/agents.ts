@@ -44,6 +44,16 @@ export function agentPinsModel(agent: Pick<MarkdownAgent, "model"> | undefined):
   return agentThreadModel(agent, "") !== "";
 }
 
+/** The project a new chat with the agent opens in: its frontmatter project
+ * while that project still exists, else none. */
+export function agentDefaultProject(
+  agent: Pick<MarkdownAgent, "project"> | undefined,
+  projectNames: string[],
+): string | null {
+  const project = agent?.project.trim() ?? "";
+  return projectNames.includes(project) ? project : null;
+}
+
 /** Turns free text into a valid agent name: lowercase, `-` for spaces, only
  * letters, digits, `-` and `_`, at most 64 characters. */
 export function normaliseAgentName(input: string): string {

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { agentFace, agentInstructionsPreamble, agentPinsModel, agentThreadModel, normaliseAgentName } from "./agents";
+import {
+  agentDefaultProject,
+  agentFace,
+  agentInstructionsPreamble,
+  agentPinsModel,
+  agentThreadModel,
+  normaliseAgentName,
+} from "./agents";
 import type { MarkdownAgent } from "./tauri";
 import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl } from "./fluent-emoji";
 
@@ -9,6 +16,7 @@ const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   emoji: "",
   model: "",
   workspace: "",
+  project: "",
   instructions: "Write well.",
   avatar: null,
   path: "/tmp/writer.md",
@@ -35,6 +43,13 @@ test("agentThreadModel uses a provider-prefixed frontmatter model, else the sele
   expect(agentThreadModel(agent({ model: "inherit" }), "openai/gpt-4o")).toBe("openai/gpt-4o");
   expect(agentThreadModel(agent({ model: "sonnet" }), "openai/gpt-4o")).toBe("openai/gpt-4o");
   expect(agentThreadModel(undefined, "openai/gpt-4o")).toBe("openai/gpt-4o");
+});
+
+test("agentDefaultProject opens the agent's project only while it still exists", () => {
+  expect(agentDefaultProject(agent({ project: "desktop" }), ["cli", "desktop"])).toBe("desktop");
+  expect(agentDefaultProject(agent({ project: "renamed" }), ["cli", "desktop"])).toBeNull();
+  expect(agentDefaultProject(agent({}), ["cli", "desktop"])).toBeNull();
+  expect(agentDefaultProject(undefined, ["cli", "desktop"])).toBeNull();
 });
 
 test("only a provider-prefixed frontmatter model pins an agent's model", () => {

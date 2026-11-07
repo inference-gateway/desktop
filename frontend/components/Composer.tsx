@@ -169,6 +169,49 @@ function MoveToWorkspace({
   );
 }
 
+// Picks the project a new agent chat opens in, or none. The first message
+// fixes it, since the project is the folder the chat's thread runs in.
+function AgentProjectMenu() {
+  const { projectNames, currentProject, setActiveProject } = useDesktop();
+  const [open, setOpen] = useState(false);
+
+  const choice = (project: string | null, label: string) => (
+    <button
+      key={label}
+      aria-label={label}
+      aria-pressed={currentProject === project}
+      onClick={() => {
+        setOpen(false);
+        setActiveProject(project);
+      }}
+      className={MENU_ITEM}
+    >
+      <Check size={13} className={currentProject === project ? "shrink-0" : "invisible shrink-0"} aria-hidden="true" />
+      <span className="truncate">{project ?? "No project"}</span>
+    </button>
+  );
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        aria-label="Choose agent project"
+        aria-expanded={open}
+        title="Choose the project this chat opens in"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
+      >
+        <Folder size={13} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-10 mb-1 flex max-h-[18rem] w-[16rem] flex-col overflow-y-auto rounded-md border border-border bg-card p-1 shadow-md">
+          {choice(null, "No project")}
+          {projectNames.map((name) => choice(name, `Use project ${name}`))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Composer() {
   const {
     composerRef,
@@ -567,9 +610,10 @@ export function Composer() {
             size={18}
           />
           <span className="min-w-0 flex-1 truncate">
-            {currentAgent}
+            {currentProject ? `${currentAgent} (${currentProject})` : currentAgent}
             {driving && " - you are driving its computer"}
           </span>
+          {sessionId === null && <AgentProjectMenu />}
           {onOwnComputer && sessionId !== null && (
             <button
               onClick={() => (driving ? handBack() : takeOver(sessionId))}

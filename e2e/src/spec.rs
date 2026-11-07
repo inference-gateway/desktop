@@ -5,8 +5,9 @@
 //! optional `record` flag (screen-record the run into artifacts/<slug>.mov), an
 //! optional `narration` list (one line per step index, printed by the runner so
 //! the file reads top to bottom as a walkthrough of the feature it demos), an
-//! optional `content_project` name, an optional `workspace_agent` name and an
-//! optional `model_agent` name (all seeded into the fresh HOME before launch),
+//! optional `content_project` name, an optional `workspace_agent` name, an
+//! optional `model_agent` name and an optional `project_agent` name (all
+//! seeded into the fresh HOME before launch),
 //! and a list of steps. Steps are either a bare verb (`- new_chat`) or a
 //! single-key map (`- send: "..."`).
 
@@ -39,6 +40,10 @@ pub struct Test {
     /// own. The model picker is a native `<select>`, which the UI cannot set.
     #[serde(default)]
     pub model_agent: Option<String>,
+    /// Seed this agent into the fresh HOME defaulting to `content_project`.
+    /// The project picker in the agent editor is a native `<select>` too.
+    #[serde(default)]
+    pub project_agent: Option<String>,
     pub steps: Vec<Step>,
 }
 

@@ -190,6 +190,7 @@ fn run_test(
             content_project: test.content_project.as_deref(),
             workspace_agent: test.workspace_agent.as_deref(),
             model_agent: test.model_agent.as_deref(),
+            project_agent: test.project_agent.as_deref(),
         },
     )?;
     clean(&app, &test.cleanup);

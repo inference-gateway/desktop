@@ -15,6 +15,7 @@ const EMPTY: MarkdownAgent = {
   emoji: "",
   model: "",
   workspace: "",
+  project: "",
   instructions: "",
   avatar: null,
   path: "",
@@ -29,7 +30,7 @@ function agentFolder(agent: MarkdownAgent | null): string {
 }
 
 export function AgentEditor() {
-  const { agentEditor, closeAgentEditor, saveAgent, models, setError } = useDesktop();
+  const { agentEditor, closeAgentEditor, saveAgent, models, projectNames, setError } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [saving, setSaving] = useState(false);
@@ -237,6 +238,33 @@ export function AgentEditor() {
             </select>
             <span className="text-[0.72rem] text-muted-foreground/70">
               A workspace of the infer daemon. Each chat with this agent gets a computer of its own there.
+            </span>
+          </div>
+        )}
+
+        {(projectNames.length > 0 || draft.project) && (
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="agent-project" className="text-[0.8rem] text-muted-foreground">
+              Project
+            </Label>
+            <select
+              id="agent-project"
+              value={draft.project}
+              onChange={(e) => set("project", e.target.value)}
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
+            >
+              <option value="">No project</option>
+              {draft.project && !projectNames.includes(draft.project) && (
+                <option value={draft.project}>{draft.project} (missing)</option>
+              )}
+              {projectNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <span className="text-[0.72rem] text-muted-foreground/70">
+              The project new chats with this agent open in. Pick another above the composer.
             </span>
           </div>
         )}

@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
 /// A Markdown agent definition (`<name>.md`, Claude Code / infer format): the
-/// frontmatter is its profile, the body its system prompt. `emoji` and
-/// `workspace` (the computer its chats run on) are desktop-only keys the
-/// CLI ignores, the picture is a sibling `<name>.<ext>`.
+/// frontmatter is its profile, the body its system prompt. `emoji`,
+/// `workspace` (the computer its chats run on) and `project` (the project its
+/// new chats open in) are desktop-only keys the CLI ignores, the picture is a
+/// sibling `<name>.<ext>`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
@@ -16,6 +17,8 @@ pub(crate) struct MarkdownAgent {
     pub(crate) model: String,
     #[serde(default)]
     pub(crate) workspace: String,
+    #[serde(default)]
+    pub(crate) project: String,
     #[serde(default)]
     pub(crate) instructions: String,
     #[serde(default)]
@@ -36,6 +39,8 @@ struct Frontmatter {
     model: String,
     #[serde(default)]
     workspace: String,
+    #[serde(default)]
+    project: String,
 }
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
@@ -44,7 +49,14 @@ const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
 /// The frontmatter keys the agent editor owns. Every other key is kept as found.
-const MANAGED_KEYS: [&str; 5] = ["name", "description", "emoji", "model", "workspace"];
+const MANAGED_KEYS: [&str; 6] = [
+    "name",
+    "description",
+    "emoji",
+    "model",
+    "workspace",
+    "project",
+];
 /// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
 /// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
 /// so a crafted URL cannot pull arbitrary bytes.
@@ -127,6 +139,7 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
         emoji: fm.emoji,
         model: fm.model,
         workspace: fm.workspace,
+        project: fm.project,
         instructions: body.trim().to_string(),
         avatar: None,
         path: path.display().to_string(),
@@ -228,6 +241,9 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
     if !agent.workspace.trim().is_empty() {
         front.insert("workspace".into(), agent.workspace.trim().into());
     }
+    if !agent.project.trim().is_empty() {
+        front.insert("project".into(), agent.project.trim().into());
+    }
     front.extend(kept);
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
     Ok(format!("---\n{yaml}---\n\n{}\n", agent.instructions.trim()))
@@ -235,7 +251,7 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
 
 /// Writes `<dir>/<name>.md` in place of `<dir>/<replaced>.md`, the agent's
 /// previous name on a rename, creating the directory. The keys the editor does
-/// not manage carry over, and a cleared model or computer leaves the file.
+/// not manage carry over, and a cleared model, computer or project leaves the file.
 pub(crate) fn write_in(
     dir: &Path,
     agent: &MarkdownAgent,
@@ -420,6 +436,7 @@ mod tests {
             emoji: "🔍".into(),
             model: "inherit".into(),
             workspace: String::new(),
+            project: String::new(),
             instructions: "You are a senior reviewer.\n\nReport findings by severity.".into(),
             avatar: None,
             path: String::new(),
@@ -501,18 +518,19 @@ mod tests {
     }
 
     #[test]
-    fn workspace_round_trips_and_is_omitted_when_blank() {
-        let dir = temp_dir("workspace");
+    fn desktop_keys_round_trip_and_are_omitted_when_blank() {
+        let dir = temp_dir("desktop-keys");
         let path = write_in(&dir, &sample(), &sample().name).unwrap();
-        assert!(
-            !std::fs::read_to_string(&path)
-                .unwrap()
-                .contains("workspace:")
-        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("workspace:"), "{text}");
+        assert!(!text.contains("project:"), "{text}");
         let mut agent = sample();
         agent.workspace = "ubuntu-desktop".into();
+        agent.project = "desktop".into();
         write_in(&dir, &agent, &agent.name).unwrap();
-        assert_eq!(list_in(&dir)[0].workspace, "ubuntu-desktop");
+        let listed = &list_in(&dir)[0];
+        assert_eq!(listed.workspace, "ubuntu-desktop");
+        assert_eq!(listed.project, "desktop");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
