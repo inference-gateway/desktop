@@ -36,10 +36,10 @@ const approval: TranscriptItem = {
   status: "pending",
 };
 
-test("only chats of agents with a workspace get a tile, running ones first", () => {
+test("only chats that ran on a workspace get a tile, running ones first", () => {
   const agents = [agent("pilot", "ubuntu-desktop"), agent("local", "")];
   const tiles = computerTiles(
-    {},
+    { idle: "ubuntu-desktop", busy: "ubuntu-desktop", unopened: "ubuntu-desktop" },
     { idle: "pilot", busy: "pilot", here: "local", unopened: "pilot" },
     agents,
     { idle: chat([click]), busy: chat([click, approval]), here: chat([]) },
@@ -53,10 +53,21 @@ test("only chats of agents with a workspace get a tile, running ones first", () 
 });
 
 test("a chat that has not used its computer yet has no last action", () => {
-  const tiles = computerTiles({}, { s1: "pilot" }, [agent("pilot", "k8s")], { s1: chat([]) }, new Set(["s1"]));
+  const tiles = computerTiles(
+    { s1: "k8s" },
+    { s1: "pilot" },
+    [agent("pilot", "k8s")],
+    { s1: chat([]) },
+    new Set(["s1"]),
+  );
   expect(tiles).toEqual([
     { sessionId: "s1", agent: agent("pilot", "k8s"), workspace: "k8s", status: "running", lastAction: null },
   ]);
+});
+
+test("a chat whose agent has a workspace has no computer before it ran there", () => {
+  const tiles = computerTiles({}, { s1: "pilot" }, [agent("pilot", "k8s")], { s1: chat([]) }, new Set());
+  expect(tiles).toEqual([]);
 });
 
 test("a moved chat runs where it was moved, whatever its agent says", () => {
