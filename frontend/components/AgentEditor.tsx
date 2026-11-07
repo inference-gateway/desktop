@@ -22,11 +22,16 @@ const EMPTY: MarkdownAgent = {
 
 // Creating or editing an agent takes over the chat column, Grok Bot style:
 // profile on top, instructions below, and Save drops you into a chat with it.
+/** The folder an agent's file is saved in: where it already lives, else
+ * ~/.infer/agents for a new one. */
+function agentFolder(agent: MarkdownAgent | null): string {
+  return agent?.path ? agent.path.slice(0, agent.path.lastIndexOf("/")) : "~/.infer/agents";
+}
+
 export function AgentEditor() {
   const { agentEditor, closeAgentEditor, saveAgent, models, setError } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
-  const [agentsDir, setAgentsDir] = useState("~/.infer/agents");
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -34,12 +39,6 @@ export function AgentEditor() {
     api
       .listWorkspaces()
       .then((all) => setWorkspaces(all.filter((w) => w.kind !== "local")))
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => setAgentsDir(cfg.agents_dir || "~/.infer/agents"))
       .catch(() => {});
   }, []);
 
@@ -176,7 +175,7 @@ export function AgentEditor() {
             onChange={(e) => set("name", normaliseAgentName(e.target.value))}
           />
           <span className="text-[0.72rem] text-muted-foreground/70">
-            {agentsDir}/{draft.name || "<name>"}.md
+            {agentFolder(existing)}/{draft.name || "<name>"}.md
           </span>
         </div>
 
@@ -204,6 +203,9 @@ export function AgentEditor() {
             className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-[0.85rem] text-foreground outline-none focus-visible:border-ring"
           >
             <option value="">Inherit the selected model</option>
+            {draft.model && draft.model !== "inherit" && !models.includes(draft.model) && (
+              <option value={draft.model}>{draft.model}</option>
+            )}
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}

@@ -31,6 +31,15 @@ test("a model of a provider the gateway lacks falls back to the workspace's own 
   expect("note" in moved && moved.note).toContain("no anthropic key");
 });
 
+test("a fixed model never falls back to the workspace's own model", () => {
+  const fixed = workspaceModel(
+    "anthropic/claude-haiku-5-5",
+    workspace(["OLLAMA_CLOUD_API_KEY"], "ollama_cloud/glm-5.3-flash"),
+    true,
+  );
+  expect("problem" in fixed && fixed.problem).toContain("ANTHROPIC_API_KEY");
+});
+
 test("without a model the gateway serves, the problem names the key to add", () => {
   const stuck = workspaceModel("anthropic/claude-haiku-5-5", workspace(["OLLAMA_CLOUD_API_KEY"]));
   expect("problem" in stuck && stuck.problem).toContain("ANTHROPIC_API_KEY");

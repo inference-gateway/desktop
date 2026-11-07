@@ -33,7 +33,7 @@ import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
-import { agentInstructionsPreamble, agentThreadModel } from "@/lib/agents";
+import { agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import {
   loadSnippets,
@@ -672,7 +672,7 @@ function useDesktopStore() {
           : undefined;
       const projectType = projectName && projectTypes[projectName] === "content" ? CONTENT_GUIDANCE : undefined;
       return {
-        systemPrompt: agent?.instructions || cfg.system_prompt || undefined,
+        systemPrompt: agent ? undefined : cfg.system_prompt || undefined,
         extraInstructions:
           [cfg.extra_instructions, agentPreamble, projectGroup, projectType, projectContext, extraInstruction]
             .filter(Boolean)
@@ -716,6 +716,7 @@ function useDesktopStore() {
           ...(await threadPrompts(projectName, undefined, agentName)),
           autoMode: autoModes[id] ?? autoMode,
           project: projectName,
+          agent: agentName,
         });
         dispatchTo(id, { type: "loadHistory", messages });
       } catch (err) {
@@ -1071,12 +1072,11 @@ function useDesktopStore() {
           setWorkspaceTitles((prev) => ({ ...prev, [runId]: text.slice(0, 200) }));
         }
         const workspaces = runsOn ? await api.workspaceConfigs().catch(() => []) : [];
+        const agent = agents.find((a) => a.name === agentName);
         const onWorkspace = workspaceModel(
-          agentThreadModel(
-            agents.find((a) => a.name === agentName),
-            model,
-          ),
+          agentThreadModel(agent, model),
           workspaces.find((workspace) => workspace.name === runsOn),
+          agentPinsModel(agent),
         );
         if ("problem" in onWorkspace) throw onWorkspace.problem;
         if (onWorkspace.note) setStatus(onWorkspace.note);
@@ -1089,6 +1089,7 @@ function useDesktopStore() {
           autoMode: isInit || (autoModes[runId] ?? autoMode),
           project: projectName,
           workspace: runsOn || undefined,
+          agent: agentName,
         });
         refreshConversations();
         loadProjects();

@@ -397,7 +397,6 @@ const DEFAULT_CONFIG: DesktopConfig = {
   status_bar_enabled: true,
   next_step_suggestions_enabled: false,
   vision_annotator_model: "",
-  agents_dir: "~/.infer/agents",
 };
 
 // Text inputs for the github scheduling backend; the repository picker and
@@ -1453,60 +1452,21 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
-// The Markdown agents (`<agents_dir>/<name>.md`) the sidebar lists, and
-// where they live. The CLI's Agent tool only reads ~/.infer/agents and a
-// project's .infer/agents, so a custom directory is desktop-only for now.
+// The Markdown agents the sidebar lists, from the dirs the CLI reads them
+// from: .infer/agents and .agents/agents, then ~/.infer/agents and
+// ~/.agents/agents. A new agent is saved to ~/.infer/agents.
 function MarkdownAgentsCard() {
-  const { agents, openAgentEditor, deleteAgent, loadAgents, setError } = useDesktop();
-  const [agentsDir, setAgentsDir] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => setAgentsDir(cfg.agents_dir))
-      .catch(() => {});
-  }, []);
-  const apply = async () => {
-    setSaving(true);
-    try {
-      const cfg = await api.getConfig();
-      await api.setConfig({ ...cfg, agents_dir: agentsDir.trim() });
-      setDirty(false);
-      await loadAgents();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { agents, openAgentEditor, deleteAgent, setError } = useDesktop();
   return (
     <>
       <h3 className="text-[0.9rem] font-semibold">Your agents</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
         Markdown agents you chat with from the sidebar's Agents filter, one <code>&lt;name&gt;.md</code> per agent
-        (Claude Code format). Each gets a robot face drawn from its name until you pick an animated emoji or a picture.
-        Agents in <code>~/.infer/agents</code> can also delegate to each other through the Agent tool.
+        (Claude Code format), read from <code>.infer/agents</code>, <code>.agents/agents</code>,{" "}
+        <code>~/.infer/agents</code> and <code>~/.agents/agents</code> - the same places the CLI looks. New agents go to{" "}
+        <code>~/.infer/agents</code>. Each gets a robot face drawn from its name until you pick an animated emoji or a
+        picture, and agents can delegate to each other through the Agent tool.
       </p>
-      <div className="mb-3 flex flex-col gap-1">
-        <Label htmlFor="agents-dir" className="text-[0.8rem] text-muted-foreground">
-          Agents directory
-        </Label>
-        <div className="flex gap-2">
-          <Input
-            id="agents-dir"
-            value={agentsDir}
-            placeholder="~/.infer/agents"
-            onChange={(e) => {
-              setAgentsDir(e.target.value);
-              setDirty(true);
-            }}
-          />
-          <Button size="sm" disabled={!dirty || saving} onClick={apply}>
-            Save
-          </Button>
-        </div>
-      </div>
       <div className="mb-6 flex flex-col gap-1.5">
         {agents.map((agent) => (
           <div key={agent.name} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">

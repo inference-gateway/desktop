@@ -31,11 +31,17 @@ export function agentFace(agent: Pick<MarkdownAgent, "name" | "emoji" | "avatar"
   return { kind: "initial", letter: "?" };
 }
 
-/** The model an agent chat launches with: a provider-prefixed frontmatter
- * model wins, anything else (empty, `inherit`, a bare alias) inherits. */
+/** The model an agent chat runs on, the rule the CLI applies to the agent
+ * file: a provider-prefixed frontmatter model wins, anything else (empty,
+ * `inherit`, a bare alias) inherits the selected one. */
 export function agentThreadModel(agent: Pick<MarkdownAgent, "model"> | undefined, selected: string): string {
   const model = agent?.model.trim() ?? "";
   return model.includes("/") ? model : selected;
+}
+
+/** Whether the agent fixes its chats' model, so no picker may change it. */
+export function agentPinsModel(agent: Pick<MarkdownAgent, "model"> | undefined): boolean {
+  return agentThreadModel(agent, "") !== "";
 }
 
 /** Turns free text into a valid agent name: lowercase, `-` for spaces, only

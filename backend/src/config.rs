@@ -110,8 +110,6 @@ pub(crate) struct DesktopConfig {
     /// When both are set, override replaces the default and extra_instructions are
     /// appended after it.
     pub(crate) system_prompt: String,
-    /// Directory holding the Markdown agents (`<name>.md`) the sidebar lists.
-    pub(crate) agents_dir: String,
     /// Enable local scheduling via `infer daemon`.
     pub(crate) schedule_enabled: bool,
     /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
@@ -229,7 +227,6 @@ pub(crate) fn default_config() -> DesktopConfig {
         status_bar_enabled: true,
         next_step_suggestions_enabled: false,
         vision_annotator_model: String::new(),
-        agents_dir: "~/.infer/agents".into(),
     }
 }
 
@@ -295,7 +292,6 @@ pub(crate) fn config_from_value(
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
         extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
         system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
-        agents_dir: str_at(&["agents_dir"]).unwrap_or(d.agents_dir),
         schedule_enabled: val
             .get("tools")
             .and_then(|t| t.get("schedule"))
@@ -519,7 +515,7 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         cfg.extra_instructions.clone().into(),
     );
     map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
-    map.insert("agents_dir".into(), cfg.agents_dir.clone().into());
+    map.remove("agents_dir");
 
     let tools = map
         .entry("tools".into())
@@ -1127,15 +1123,10 @@ mod tests {
     }
 
     #[test]
-    fn merge_config_round_trips_agents_dir() {
-        let defaults = config_from_value(&parse_yaml("{}"), std::path::Path::new("/home/tester"));
-        assert_eq!(defaults.agents_dir, "~/.infer/agents");
-        let mut cfg = default_config();
-        cfg.agents_dir = "~/.agents/agents".into();
-        let val = parse_yaml(&merge_config(None, &cfg).unwrap());
-        assert_eq!(str_field(&val, &["agents_dir"]), Some("~/.agents/agents"));
-        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
-        assert_eq!(cfg2.agents_dir, "~/.agents/agents");
+    fn merge_config_drops_the_retired_agents_dir() {
+        let existing = "agents_dir: /srv/agents\n";
+        let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
+        assert_eq!(str_field(&val, &["agents_dir"]), None);
     }
 
     #[test]

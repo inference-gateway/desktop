@@ -60,22 +60,40 @@ pub(crate) fn valid_agent_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
 }
 
-/// The configured agents directory with a leading `~` expanded, defaulting
-/// to `~/.infer/agents` when the setting is blank.
-pub(crate) fn agents_dir_from(setting: &str, home: &Path) -> PathBuf {
-    let trimmed = setting.trim();
-    if trimmed.is_empty() {
-        return home.join(".infer").join("agents");
-    }
-    match trimmed.strip_prefix("~/") {
-        Some(rest) => home.join(rest),
-        None if trimmed == "~" => home.to_path_buf(),
-        None => PathBuf::from(trimmed),
-    }
+/// Where agents live, first match winning on a name - the CLI's layout for a
+/// chat run in `chat_dir`: its `.infer/agents` and `.agents/agents`, then the
+/// home dir's. The first home dir, `~/.infer/agents`, takes new agents.
+pub(crate) fn agent_dirs_for(chat_dir: &Path, home: &Path) -> Vec<PathBuf> {
+    [chat_dir, home]
+        .into_iter()
+        .flat_map(|root| {
+            [
+                root.join(".infer").join("agents"),
+                root.join(".agents").join("agents"),
+            ]
+        })
+        .collect()
 }
 
-fn agents_dir() -> PathBuf {
-    agents_dir_from(&crate::config::read_config().agents_dir, &home_dir())
+fn agent_dirs() -> Vec<PathBuf> {
+    agent_dirs_for(&crate::env::agent_cwd(), &home_dir())
+}
+
+/// The directory holding agent `name`'s file and picture: the first of `dirs`
+/// with `<name>.md`, else `new_agents` for an agent not saved yet.
+pub(crate) fn dir_of(name: &str, dirs: &[PathBuf], new_agents: PathBuf) -> PathBuf {
+    dirs.iter()
+        .find(|dir| dir.join(format!("{name}.md")).is_file())
+        .cloned()
+        .unwrap_or(new_agents)
+}
+
+fn agent_dir(name: &str) -> PathBuf {
+    dir_of(
+        name,
+        &agent_dirs(),
+        home_dir().join(".infer").join("agents"),
+    )
 }
 
 fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
@@ -164,6 +182,18 @@ pub(crate) fn list_in(dir: &Path) -> Vec<MarkdownAgent> {
                 }
             }
         })
+        .collect();
+    agents.sort_by(|a, b| a.name.cmp(&b.name));
+    agents
+}
+
+/// Every agent in `dirs`, the first one found winning on a name, sorted by name.
+pub(crate) fn list_from(dirs: &[PathBuf]) -> Vec<MarkdownAgent> {
+    let mut seen = std::collections::HashSet::new();
+    let mut agents: Vec<MarkdownAgent> = dirs
+        .iter()
+        .flat_map(|dir| list_in(dir))
+        .filter(|agent| seen.insert(agent.name.clone()))
         .collect();
     agents.sort_by(|a, b| a.name.cmp(&b.name));
     agents
@@ -281,7 +311,7 @@ fn fetch_animated_emoji(url: &str) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 pub(crate) fn list_markdown_agents() -> Vec<MarkdownAgent> {
-    list_in(&agents_dir())
+    list_from(&agent_dirs())
 }
 
 /// Creates or overwrites an agent. A rename passes `previous_name`, whose
@@ -291,7 +321,7 @@ pub(crate) fn save_markdown_agent(
     agent: MarkdownAgent,
     previous_name: Option<String>,
 ) -> Result<String, String> {
-    let dir = agents_dir();
+    let dir = agent_dir(previous_name.as_deref().unwrap_or(&agent.name));
     let path = write_in(&dir, &agent)?;
     if let Some(old) = previous_name.filter(|old| *old != agent.name) {
         if let Some(picture) = avatar_path_in(&dir, &old) {
@@ -304,7 +334,7 @@ pub(crate) fn save_markdown_agent(
 
 #[tauri::command]
 pub(crate) fn delete_markdown_agent(name: String) -> Result<(), String> {
-    delete_in(&agents_dir(), &name)
+    delete_in(&agent_dir(&name), &name)
 }
 
 /// Lets the user pick a picture for the agent. Returns false when they cancel.
@@ -322,7 +352,7 @@ pub(crate) async fn pick_agent_avatar(app: tauri::AppHandle, name: String) -> Re
         let Some(picture) = picked.and_then(|fp| fp.into_path().ok()) else {
             return Ok(false);
         };
-        set_avatar_in(&agents_dir(), &name, &picture).map(|_| true)
+        set_avatar_in(&agent_dir(&name), &name, &picture).map(|_| true)
     })
     .await
     .map_err(|e| format!("avatar task failed: {e}"))?
@@ -334,7 +364,7 @@ pub(crate) async fn set_agent_avatar_from_url(name: String, url: String) -> Resu
     let ext = avatar_extension(&url)?;
     tokio::task::spawn_blocking(move || {
         let bytes = fetch_animated_emoji(&url)?;
-        store_avatar_in(&agents_dir(), &name, &ext, &bytes).map(|_| ())
+        store_avatar_in(&agent_dir(&name), &name, &ext, &bytes).map(|_| ())
     })
     .await
     .map_err(|e| format!("avatar task failed: {e}"))?
@@ -345,7 +375,7 @@ pub(crate) fn remove_agent_avatar(name: String) -> Result<(), String> {
     if !valid_agent_name(&name) {
         return Err(format!("invalid agent name: {name}"));
     }
-    remove_avatar_in(&agents_dir(), &name);
+    remove_avatar_in(&agent_dir(&name), &name);
     Ok(())
 }
 
@@ -383,20 +413,46 @@ mod tests {
     }
 
     #[test]
-    fn agents_dir_expands_tilde_and_defaults() {
-        let home = Path::new("/Users/x");
+    fn agent_dirs_follow_the_cli_layout() {
+        let dirs = agent_dirs_for(Path::new("/work/proj"), Path::new("/Users/x"));
         assert_eq!(
-            agents_dir_from("", home),
-            PathBuf::from("/Users/x/.infer/agents")
+            dirs,
+            [
+                "/work/proj/.infer/agents",
+                "/work/proj/.agents/agents",
+                "/Users/x/.infer/agents",
+                "/Users/x/.agents/agents",
+            ]
+            .map(PathBuf::from)
         );
+    }
+
+    #[test]
+    fn the_first_dir_with_an_agent_wins_and_holds_its_files() {
+        let root = temp_dir("layout");
+        let dirs = agent_dirs_for(&root.join("proj"), &root.join("home"));
+        let shadowing = MarkdownAgent {
+            instructions: "The project's reviewer.".into(),
+            ..sample()
+        };
+        write_in(&dirs[1], &shadowing).unwrap();
+        write_in(&dirs[2], &sample()).unwrap();
+        let only_home = MarkdownAgent {
+            name: "helper".into(),
+            ..sample()
+        };
+        write_in(&dirs[3], &only_home).unwrap();
+
+        let listed = list_from(&dirs);
         assert_eq!(
-            agents_dir_from("~/.agents/agents", home),
-            PathBuf::from("/Users/x/.agents/agents")
+            listed.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+            ["code-reviewer", "helper"]
         );
-        assert_eq!(
-            agents_dir_from("/srv/agents", home),
-            PathBuf::from("/srv/agents")
-        );
+        assert_eq!(listed[0].instructions, "The project's reviewer.");
+        assert_eq!(dir_of("code-reviewer", &dirs, dirs[2].clone()), dirs[1]);
+        assert_eq!(dir_of("helper", &dirs, dirs[2].clone()), dirs[3]);
+        assert_eq!(dir_of("unsaved", &dirs, dirs[2].clone()), dirs[2]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
