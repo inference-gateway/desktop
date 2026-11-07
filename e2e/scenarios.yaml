@@ -64,6 +64,18 @@ scenarios:
       - tool_calls:
           - { name: Write, args: { file_path: "denied.txt", content: "should never land" } }
 
+  # A Write that pauses at approval, so the run can be stopped before the
+  # call ever runs (used by stop-pending-tool).
+  - name: write-stopped
+    match: '(?i)create a file named stopped\.txt'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "stopped.txt"
+              content: "should never land"
+      - content: "The file was written."
+
   - name: todo-batched-with-write
     match: '(?i)plan and create a file named todo-batch\.txt'
     turns:

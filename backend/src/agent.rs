@@ -67,6 +67,17 @@ pub(crate) enum AgentEvent {
         cost: f64,
     },
     Cancelled,
+    /// A tool call the CLI cancelled before it ran.
+    ToolCancelled {
+        tool_call_id: String,
+    },
+    /// The CLI optimized the conversation to fit the context window, from
+    /// `original_count` messages down to `optimized_count`.
+    ConversationOptimized {
+        message: String,
+        original_count: u64,
+        optimized_count: u64,
+    },
     AgentStatus {
         name: String,
         state: String,
@@ -628,7 +639,9 @@ impl AgentParser {
     }
 
     /// Maps an ACTIVITY_SNAPSHOT: a computer-use action in screen coordinates,
-    /// or a local agent's startup progress.
+    /// a local agent's startup progress, a tool call cancelled before it ran,
+    /// or a finished conversation optimization. Every other tool progress
+    /// status is ignored.
     fn activity(&self, val: &serde_json::Value) -> Option<AgentEvent> {
         let content = val.get("content")?;
         let text = |k: &str| {
@@ -638,6 +651,7 @@ impl AgentParser {
                 .unwrap_or("")
                 .to_string()
         };
+        let count = |k: &str| content.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
         match val.get("activityType").and_then(|v| v.as_str())? {
             "computer_use" => {
                 let num = |k: &str| content.get(k).and_then(|v| v.as_f64());
@@ -650,16 +664,21 @@ impl AgentParser {
                     screen_height: num("screenHeight").unwrap_or(0.0),
                 })
             }
-            "agent_status" => {
-                let num = |k: &str| content.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-                Some(AgentEvent::AgentStatus {
-                    name: text("name"),
-                    state: text("state"),
-                    message: text("message"),
-                    done: num("done"),
-                    total: num("total"),
-                })
-            }
+            "agent_status" => Some(AgentEvent::AgentStatus {
+                name: text("name"),
+                state: text("state"),
+                message: text("message"),
+                done: count("done"),
+                total: count("total"),
+            }),
+            "tool_progress" if text("status") == "cancelled" => Some(AgentEvent::ToolCancelled {
+                tool_call_id: text("toolCallId"),
+            }),
+            "optimization_status" => Some(AgentEvent::ConversationOptimized {
+                message: text("message"),
+                original_count: count("originalCount"),
+                optimized_count: count("optimizedCount"),
+            }),
             _ => None,
         }
     }
@@ -2178,6 +2197,45 @@ mod tests {
             matches!(&events[0], AgentEvent::AgentStatus { name, state, done: 3, total: 10, .. }
             if name == "browser-agent" && state == "PullingImage")
         );
+    }
+
+    #[test]
+    fn test_parse_tool_progress_maps_only_cancelled() {
+        let frames: Vec<String> = [
+            "queued",
+            "starting",
+            "running",
+            "saving",
+            "completed",
+            "failed",
+            "cancelled",
+        ]
+        .iter()
+        .map(|status| {
+            format!(
+                r#"{{"type":"ACTIVITY_SNAPSHOT","messageId":"tool:tc1","activityType":"tool_progress","content":{{"toolCallId":"tc1","toolName":"Bash","status":"{status}","message":""}}}}"#
+            )
+        })
+        .collect();
+        let lines: Vec<&str> = frames.iter().map(String::as_str).collect();
+        let (events, _) = parse_all(&lines);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AgentEvent::ToolCancelled { tool_call_id } if tool_call_id == "tc1")
+        );
+    }
+
+    #[test]
+    fn test_parse_optimization_status_activity() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"ACTIVITY_SNAPSHOT","messageId":"optimization","activityType":"optimization_status","content":{"message":"Conversation optimized","originalCount":40,"optimizedCount":12}}"#,
+        ]);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            AgentEvent::ConversationOptimized { message, original_count: 40, optimized_count: 12 }
+                if message == "Conversation optimized"
+        ));
     }
 
     #[test]

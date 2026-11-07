@@ -12,7 +12,7 @@ import type {
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
-export type ToolState = "running" | "done" | "failed";
+export type ToolState = "running" | "done" | "failed" | "cancelled";
 
 export type TranscriptItem =
   | { kind: "user"; id: string; text: string }
@@ -48,6 +48,7 @@ export type TranscriptItem =
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
   | { kind: "cancelled"; id: string }
+  | { kind: "info"; id: string; text: string }
   | { kind: "task_result"; id: string; text: string };
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
@@ -354,6 +355,17 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyAssistant(state, event);
     case "ToolResult":
       return applyToolResult(state, event.tool_call_id, event.content);
+    case "ToolCancelled":
+      return {
+        ...state,
+        items: state.items.map((it) =>
+          it.kind === "tool" && it.callId === event.tool_call_id ? { ...it, state: "cancelled", skeleton: false } : it,
+        ),
+      };
+    case "ConversationOptimized": {
+      const text = `Conversation optimized - ${event.original_count} to ${event.optimized_count} messages`;
+      return { ...state, items: [...state.items, { kind: "info", id: String(state.seq), text }], seq: state.seq + 1 };
+    }
     case "ApprovalRequest":
       return insertBeforeErrors(state, {
         kind: "approval",
@@ -419,7 +431,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return { ...state, recording: undefined };
     case "Done":
       return {
-        ...finalizeTools(state),
+        ...finalizeTools(state, "done"),
         typing: false,
         currentAssistantId: null,
         currentAssistantMessageId: null,
@@ -443,7 +455,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       };
     }
     case "Cancelled": {
-      const finalized = finalizeTools(state);
+      const finalized = finalizeTools(state, "cancelled");
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
       return {
@@ -626,12 +638,15 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
   return { ...state, items, seq, seenImages, usage };
 }
 
-function finalizeTools(state: ChatState): ChatState {
+/** Closes a run's open items: a tool call still running takes `unfinished` -
+ * done when the run ended, cancelled when the user stopped it before the call
+ * got a result - and a pending approval or question expires. */
+function finalizeTools(state: ChatState, unfinished: ToolState): ChatState {
   let changed = false;
   const items = state.items.map((it) => {
     if (it.kind === "tool" && (it.state === "running" || it.skeleton)) {
       changed = true;
-      return { ...it, state: it.state === "running" ? "done" : it.state, skeleton: false };
+      return { ...it, state: it.state === "running" ? unfinished : it.state, skeleton: false };
     }
     if ((it.kind === "approval" || it.kind === "question") && it.status === "pending") {
       changed = true;

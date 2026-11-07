@@ -1,0 +1,23 @@
+name: stop during approval - the pending tool call reads cancelled
+cleanup:
+  - stopped.txt
+narration:
+  - "Open a fresh chat."
+  - "Ask for a file - the Write tool call pauses for approval."
+  - "The approval card waits for a decision."
+  - "Stop the run instead of answering it."
+  - "The Write card reads (cancelled) instead of done - the tool never ran."
+  - "stopped.txt was never created."
+steps:
+  - new_chat
+  - send: "create a file named stopped.txt"
+  - wait_for:
+      button: Approve
+      timeout: 30
+  - click:
+      button: Stop
+  - wait_for:
+      text: "(cancelled)"
+      timeout: 15
+  - assert_absent:
+      file: stopped.txt

@@ -15,6 +15,7 @@ import {
   SANDBOX_ACCESS_TOOL,
   backgroundNoteHeader,
   followsBottom,
+  type ToolState,
   type TranscriptItem,
 } from "@/lib/transcript";
 
@@ -118,8 +119,21 @@ function useRecordingOwnerTitle(item: Extract<TranscriptItem, { kind: "tool" }>)
   return conversations.find((c) => c.id === recordingOwner)?.title || recordingOwner.slice(0, 5);
 }
 
+const TOOL_OK = { card: "border-tool-border border-l-tool bg-tool-bg", name: "text-tool", body: "bg-tool-bg" };
+
+const TOOL_TONE: Record<ToolState, typeof TOOL_OK> = {
+  running: TOOL_OK,
+  done: TOOL_OK,
+  failed: { card: "border-err-border border-l-destructive bg-err-bg", name: "text-err", body: "bg-err-bg" },
+  cancelled: {
+    card: "border-border border-l-muted-foreground bg-secondary",
+    name: "text-muted-foreground",
+    body: "bg-secondary",
+  },
+};
+
 function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> }) {
-  const failed = item.state === "failed";
+  const tone = TOOL_TONE[item.state];
   const recordingOwnerTitle = useRecordingOwnerTitle(item);
   const pre = [prettyJson(item.args), item.output ?? ""].filter(Boolean).join("\n\n");
   return (
@@ -127,11 +141,12 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
       <details
         className={cn(
           "disclosure overflow-hidden rounded-md border border-l-[3px] font-mono text-[0.82rem]",
-          failed ? "border-err-border border-l-destructive bg-err-bg" : "border-tool-border border-l-tool bg-tool-bg",
+          tone.card,
         )}
       >
         <summary className="overflow-hidden text-ellipsis whitespace-nowrap px-[0.65rem] py-[0.35rem]">
-          <span className={cn("font-bold", failed ? "text-err" : "text-tool")}>{item.name}</span>
+          <span className={cn("font-bold", tone.name)}>{item.name}</span>
+          {item.state === "cancelled" && <span className="ml-[0.4rem] italic text-muted-foreground">(cancelled)</span>}
           <span className="ml-[0.4rem] text-muted-foreground">{item.args}</span>
           {item.state === "running" && <span className="ml-[0.4rem] animate-pulse text-muted-foreground">…</span>}
         </summary>
@@ -139,7 +154,7 @@ function ToolCard({ item }: { item: Extract<TranscriptItem, { kind: "tool" }> })
         <pre
           className={cn(
             "m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words px-[0.65rem] py-[0.55rem] leading-[1.45] text-foreground",
-            failed ? "bg-err-bg" : "bg-tool-bg",
+            tone.body,
           )}
         >
           {pre}
@@ -434,6 +449,8 @@ function Item({
           Cancelled
         </div>
       );
+    case "info":
+      return <div className="self-center text-[0.8rem] text-muted-foreground">{item.text}</div>;
   }
 }
 
