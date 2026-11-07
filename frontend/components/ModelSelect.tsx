@@ -7,17 +7,14 @@ export function ModelSelect() {
   const { models, model, setModel, enabled, agents, currentAgent } = useDesktop();
   const agent = agents.find((a) => a.name === currentAgent);
   const shown = agentThreadModel(agent, model);
+  const ownModel = agentPinsModel(agent);
   const options = models.includes(shown) || !shown ? models : [shown, ...models];
   return (
     <select
       id="model-select"
       value={shown}
-      disabled={!enabled || agent !== undefined}
-      title={
-        agent
-          ? `${agent.name} runs on ${agentPinsModel(agent) ? "its own model" : "the default model"} - change it with Edit agent`
-          : undefined
-      }
+      disabled={!enabled || ownModel}
+      title={ownModel ? `${agent?.name} runs on its own model - change it with Edit agent` : undefined}
       onChange={(e) => setModel(e.target.value)}
       className="max-w-[260px] rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-[0.85rem] text-foreground disabled:opacity-60"
     >
