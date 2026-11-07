@@ -1,0 +1,22 @@
+name: computer delete - a person deletes one computer from the Computers view
+workspace_agent: e2e-pilot
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Pick the agent that has a computer of its own."
+  - "Send it a task, which teleports the new chat to its workspace first."
+  - "The agent answers from its computer."
+  - "Open the Computers view."
+  - "The agent's computer has a tile with a trash button."
+  - "Arm the trash button."
+  - "Click it again to delete the computer."
+  - "No chat runs on a workspace any more."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-pilot" }
+  - send: "open the docs on your computer"
+  - wait_for: { text: "The docs are open.", timeout: 30 }
+  - click: { button: "Computers" }
+  - wait_for: { button: "Delete computer e2e-pilot", timeout: 10 }
+  - click: { button: "Delete computer e2e-pilot" }
+  - click: { button: "Delete computer e2e-pilot" }
+  - wait_for: { text: "No chat runs on a workspace yet.", timeout: 10 }

@@ -1444,6 +1444,20 @@ function useDesktopStore() {
     return removed;
   }, [workspaceOf, projects]);
 
+  // Removes the machine of one chat, with the transcript that lives on it. The
+  // chat's next message starts it over on its agent's workspace or here.
+  const deleteMachine = useCallback(
+    async (sessionId: string) => {
+      try {
+        await api.deleteMachine({ id: sessionId, project: projects[sessionId] });
+        setWorkspaceOf(({ [sessionId]: _, ...rest }) => rest);
+      } catch (e) {
+        setError(`Failed to delete the computer: ${e}`);
+      }
+    },
+    [projects, setError],
+  );
+
   const takeOver = useCallback(
     async (sessionId: string) => {
       if (drivenId && drivenId !== sessionId) await handBack();
@@ -1979,6 +1993,7 @@ function useDesktopStore() {
     moving,
     moveChat,
     cleanMachines,
+    deleteMachine,
     transcripts,
     promptProject,
     runningIds,

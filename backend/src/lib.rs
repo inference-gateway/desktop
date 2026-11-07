@@ -265,6 +265,7 @@ pub fn run() {
             workspaces::list_artifacts,
             workspaces::save_artifact,
             workspaces::clean_machines,
+            workspaces::delete_machine,
             workspaces::screen_control,
             workspaces::screen_input,
             workspace_settings::workspace_configs,
