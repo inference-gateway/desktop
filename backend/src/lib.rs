@@ -6,6 +6,7 @@ mod agent;
 mod avatars;
 mod binaries;
 mod cli_install;
+mod composer;
 mod config;
 mod daemon;
 mod download;
@@ -241,6 +242,7 @@ pub fn run() {
             skills::uninstall_skill,
             skills::list_installed_skills,
             tools::list_tools,
+            composer::list_files,
             tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,
