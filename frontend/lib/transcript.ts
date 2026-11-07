@@ -12,7 +12,7 @@ import type {
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 
-export type ToolState = "running" | "done" | "failed";
+export type ToolState = "running" | "done" | "failed" | "cancelled";
 
 export type TranscriptItem =
   | { kind: "user"; id: string; text: string }
@@ -48,6 +48,7 @@ export type TranscriptItem =
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
   | { kind: "error"; id: string; text: string }
   | { kind: "cancelled"; id: string }
+  | { kind: "info"; id: string; text: string }
   | { kind: "task_result"; id: string; text: string };
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
@@ -354,6 +355,17 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return applyAssistant(state, event);
     case "ToolResult":
       return applyToolResult(state, event.tool_call_id, event.content);
+    case "ToolCancelled":
+      return {
+        ...state,
+        items: state.items.map((it) =>
+          it.kind === "tool" && it.callId === event.tool_call_id ? { ...it, state: "cancelled", skeleton: false } : it,
+        ),
+      };
+    case "ConversationOptimized": {
+      const text = `Conversation optimized - ${event.original_count} to ${event.optimized_count} messages`;
+      return { ...state, items: [...state.items, { kind: "info", id: String(state.seq), text }], seq: state.seq + 1 };
+    }
     case "ApprovalRequest":
       return insertBeforeErrors(state, {
         kind: "approval",

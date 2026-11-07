@@ -51,6 +51,8 @@ export type AgentEvent =
       cost: number;
     }
   | { kind: "Cancelled" }
+  | { kind: "ToolCancelled"; tool_call_id: string }
+  | { kind: "ConversationOptimized"; message: string; original_count: number; optimized_count: number }
   | { kind: "ComputerUsePaused" }
   | { kind: "ComputerUseResumed" }
   | { kind: "AgentStatus"; name: string; state: string; message: string; done: number; total: number }
