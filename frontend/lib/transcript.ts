@@ -431,7 +431,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return { ...state, recording: undefined };
     case "Done":
       return {
-        ...finalizeTools(state),
+        ...finalizeTools(state, "done"),
         typing: false,
         currentAssistantId: null,
         currentAssistantMessageId: null,
@@ -455,7 +455,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       };
     }
     case "Cancelled": {
-      const finalized = finalizeTools(state);
+      const finalized = finalizeTools(state, "cancelled");
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
       return {
@@ -638,12 +638,15 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
   return { ...state, items, seq, seenImages, usage };
 }
 
-function finalizeTools(state: ChatState): ChatState {
+/** Closes a run's open items: a tool call still running takes `unfinished` -
+ * done when the run ended, cancelled when the user stopped it before the call
+ * got a result - and a pending approval or question expires. */
+function finalizeTools(state: ChatState, unfinished: ToolState): ChatState {
   let changed = false;
   const items = state.items.map((it) => {
     if (it.kind === "tool" && (it.state === "running" || it.skeleton)) {
       changed = true;
-      return { ...it, state: it.state === "running" ? "done" : it.state, skeleton: false };
+      return { ...it, state: it.state === "running" ? unfinished : it.state, skeleton: false };
     }
     if ((it.kind === "approval" || it.kind === "question") && it.status === "pending") {
       changed = true;

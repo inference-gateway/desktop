@@ -356,6 +356,30 @@ test("a conversation optimization lands as an info line with both counts", () =>
   expect(new Set(s.items.map((i) => i.id)).size).toBe(3);
 });
 
+test("stopping a run marks a tool call still waiting for its result cancelled, not done", () => {
+  const s = run([
+    { type: "userSend", text: "x" },
+    ev({
+      kind: "AssistantMessage",
+      content: "",
+      reasoning_content: null,
+      tool_calls: [
+        { id: "c1", name: "Read", args: "{}" },
+        { id: "c2", name: "Write", args: "{}" },
+      ],
+    }),
+    ev({ kind: "ToolResult", tool_call_id: "c1", content: "ok" }),
+    ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: "{}", tool_call_id: "c2" }),
+    ev({ kind: "Cancelled" }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  expect(s.items.filter((i) => i.kind === "tool").map((i) => i.kind === "tool" && i.state)).toEqual([
+    "done",
+    "cancelled",
+  ]);
+  expect(s.items.find((i) => i.kind === "approval")).toMatchObject({ status: "expired" });
+});
+
 test("max_turns_reached is rendered as a recoverable message", () => {
   const s = run([ev({ kind: "AgentError", message: "max_turns_reached" })]);
   expect(s.items[0]).toMatchObject({
