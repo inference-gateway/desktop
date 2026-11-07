@@ -1,0 +1,15 @@
+name: tab accepts the next-step suggestion shown in the empty composer
+narration:
+  - "Open a fresh chat."
+  - "Send a prompt whose scenario ends with a suggested next step."
+  - "The assistant replies."
+  - "The run finishes - the suggestion lands just before it, as ghost text in the empty composer."
+  - "Tab accepts the suggestion."
+  - "The composer now holds the suggested next step, ready to send."
+steps:
+  - new_chat
+  - send: "suggest my next step"
+  - wait_for: { text: "Here is the plan.", timeout: 30 }
+  - wait_for: { button: "Send", timeout: 30 }
+  - keypress: "tab"
+  - assert_composer: { text: "Run the test suite next" }

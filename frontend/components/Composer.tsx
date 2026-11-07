@@ -191,6 +191,8 @@ export function Composer() {
     cancelInitSelection,
     tools,
     shortcuts,
+    suggestion,
+    dismissSuggestion,
   } = useDesktop();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
@@ -278,6 +280,7 @@ export function Composer() {
 
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
+    if (suggestion) dismissSuggestion();
     if ((e.nativeEvent as InputEvent).inputType === "insertText") {
       if (el.value === "!") el.value = "! ";
       else if (el.value === "! !") el.value = "!! ";
@@ -425,6 +428,15 @@ export function Composer() {
         setShowSkills(false);
         return;
       }
+    }
+    if (suggestion && el.value === "" && (e.key === "Tab" || e.key === "Escape")) {
+      e.preventDefault();
+      if (e.key === "Tab") {
+        el.value = suggestion;
+        autoGrow(el);
+      }
+      dismissSuggestion();
+      return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -755,11 +767,13 @@ export function Composer() {
             placeholder={
               broadcasting
                 ? `Message ${selCount} selected project${selCount === 1 ? "" : "s"}...`
-                : running
-                  ? "Write a follow-up..."
-                  : currentAgent
-                    ? `Message ${currentAgent}...`
-                    : "Message the orchestrator..."
+                : suggestion
+                  ? suggestion
+                  : running
+                    ? "Write a follow-up..."
+                    : currentAgent
+                      ? `Message ${currentAgent}...`
+                      : "Message the orchestrator..."
             }
             disabled={!ready}
             onPaste={onPaste}

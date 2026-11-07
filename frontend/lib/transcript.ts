@@ -76,6 +76,7 @@ export type ChatState = {
   backgroundJobs: BackgroundJob[];
   agentStartup: Record<string, { message: string; done: number; total: number }>;
   recording?: AgentRecording;
+  suggestion: string;
 };
 
 /** The agent recording this session's process owns, from RecordingStarted until
@@ -247,6 +248,7 @@ export const initialChatState: ChatState = {
   seenImages: [],
   backgroundJobs: [],
   agentStartup: {},
+  suggestion: "",
 };
 
 export type ChatAction =
@@ -257,6 +259,7 @@ export type ChatAction =
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
   | { type: "setQuestion"; callId: string; answers: UserQuestionAnswer[] | null }
+  | { type: "dismissSuggestion" }
   | { type: "error"; text: string };
 
 const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
@@ -287,8 +290,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentAssistantMessageId: null,
         currentReasoningId: null,
         currentReasoningMessageId: null,
+        suggestion: "",
       };
     }
+    case "dismissSuggestion":
+      return state.suggestion ? { ...state, suggestion: "" } : state;
     case "error": {
       let seq = state.seq;
       const items = [...state.items, { kind: "error", id: String(seq++), text: action.text } as TranscriptItem];
@@ -401,6 +407,8 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
     }
     case "BackgroundTasks":
       return { ...state, backgroundJobs: Array.isArray(event.jobs) ? event.jobs : [] };
+    case "NextStepSuggestion":
+      return { ...state, suggestion: event.text };
     case "RecordingStarted":
       return { ...state, recording: { inputs: [], area: event.area, path: event.path } };
     case "RecordingInput":

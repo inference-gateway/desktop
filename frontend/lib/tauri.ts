@@ -57,6 +57,7 @@ export type AgentEvent =
   | { kind: "UserMessage"; content: string }
   | { kind: "BackgroundNote"; content: string }
   | { kind: "BackgroundTasks"; running: number; jobs: BackgroundJob[] }
+  | { kind: "NextStepSuggestion"; text: string }
   | { kind: "RecordingStarted"; path: string; area: RecordedArea }
   | {
       kind: "ComputerUseAction";
@@ -199,6 +200,7 @@ export type DesktopConfig = {
   text_to_speech_enabled: boolean;
   text_to_video_enabled: boolean;
   status_bar_enabled: boolean;
+  next_step_suggestions_enabled: boolean;
   vision_annotator_model: string;
   agents_dir: string;
 };

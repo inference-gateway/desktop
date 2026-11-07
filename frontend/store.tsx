@@ -682,11 +682,19 @@ function useDesktopStore() {
     [agents, projectContexts, projectGroups, projectTypes],
   );
 
-  const leaveConversation = useCallback((nextId: string | null) => {
-    const previous = activeIdRef.current;
-    if (!previous || previous === nextId || runningIdsRef.current.has(previous)) return;
-    api.closeThread(previous).catch((e) => console.error("Close thread failed:", e));
-  }, []);
+  const leaveConversation = useCallback(
+    (nextId: string | null) => {
+      const previous = activeIdRef.current;
+      if (previous && previous !== nextId) dispatchTo(previous, { type: "dismissSuggestion" });
+      if (!previous || previous === nextId || runningIdsRef.current.has(previous)) return;
+      api.closeThread(previous).catch((e) => console.error("Close thread failed:", e));
+    },
+    [dispatchTo],
+  );
+
+  const dismissSuggestion = useCallback(() => {
+    if (activeIdRef.current) dispatchTo(activeIdRef.current, { type: "dismissSuggestion" });
+  }, [dispatchTo]);
 
   const openConversation = useCallback(
     async (id: string) => {
@@ -993,6 +1001,7 @@ function useDesktopStore() {
       try {
         const ch = new Channel<AgentEvent>();
         ch.onmessage = (event) => {
+          if (event.kind === "NextStepSuggestion" && runId !== activeIdRef.current) return;
           dispatchTo(runId, { type: "event", event });
           switch (event.kind) {
             case "AssistantMessage":
@@ -1888,6 +1897,8 @@ function useDesktopStore() {
     items: active.items,
     recording: active.recording,
     typing: active.typing,
+    suggestion: active.suggestion,
+    dismissSuggestion,
     statusText,
     statusError,
     ready,

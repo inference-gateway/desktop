@@ -19,6 +19,25 @@ fallback:
   content: "Done."
 
 scenarios:
+  # The runner turns on the CLI's next-step suggestion for every test. Its
+  # request quotes the dialog after "Recent conversation:", so these two must
+  # come first or the prompt's own scenario would answer it. The catch-all
+  # empty reply is dropped by the CLI, so other tests show no suggestion.
+  - name: next-step-suggestion
+    match: '(?s)^Recent conversation:.*suggest my next step'
+    turns:
+      - content: "Run the test suite next"
+
+  - name: no-next-step-suggestion
+    match: '^Recent conversation:'
+    turns:
+      - content: ""
+
+  - name: suggest-next-step
+    match: '(?i)suggest my next step'
+    turns:
+      - content: "Here is the plan."
+
   - name: write-approved
     match: '(?i)create a file named approved\.txt'
     turns:

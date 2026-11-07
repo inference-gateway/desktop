@@ -81,6 +81,10 @@ pub(crate) enum AgentEvent {
         running: u64,
         jobs: Vec<BackgroundJob>,
     },
+    /// The one-line next step the CLI suggests after a turn - empty means none.
+    NextStepSuggestion {
+        text: String,
+    },
     RecordingStarted {
         path: String,
         area: RecordedArea,
@@ -554,8 +558,9 @@ impl AgentParser {
     }
 
     /// Follows the run's state keys: `screenRecording` starting or stopping a
-    /// recording, `usage` streaming the token totals, and `backgroundTasks`.
-    /// A snapshot reports the first of them it carries something for.
+    /// recording, `usage` streaming the token totals, `backgroundTasks`, and
+    /// `nextStepSuggestion`. A snapshot reports the first of them it carries
+    /// something for, so the suggestion only lands through its own delta.
     fn state(&mut self, state: &serde_json::Value) -> Option<AgentEvent> {
         if let Some(recording) = state.get("screenRecording") {
             if let Some((path, area)) = recording_area(recording) {
@@ -572,14 +577,19 @@ impl AgentParser {
         {
             return Some(usage_event(Some(usage), None, &mut self.last_total_input));
         }
-        let tasks = state.get("backgroundTasks")?;
-        let running = tasks.get("running").and_then(|v| v.as_u64()).unwrap_or(0);
-        let jobs = tasks
-            .get("jobs")
-            .cloned()
-            .and_then(|j| serde_json::from_value(j).ok())
-            .unwrap_or_default();
-        Some(AgentEvent::BackgroundTasks { running, jobs })
+        if let Some(tasks) = state.get("backgroundTasks") {
+            let running = tasks.get("running").and_then(|v| v.as_u64()).unwrap_or(0);
+            let jobs = tasks
+                .get("jobs")
+                .cloned()
+                .and_then(|j| serde_json::from_value(j).ok())
+                .unwrap_or_default();
+            return Some(AgentEvent::BackgroundTasks { running, jobs });
+        }
+        let text = state.get("nextStepSuggestion")?.as_str()?;
+        Some(AgentEvent::NextStepSuggestion {
+            text: text.to_owned(),
+        })
     }
 
     /// Maps the interrupt a run suspended on: an approval for the tool call
@@ -2017,12 +2027,25 @@ mod tests {
     #[test]
     fn test_parse_state_snapshot_without_usage_reports_only_the_tasks() {
         let (events, _) = parse_all(&[
-            r#"{"type":"STATE_SNAPSHOT","snapshot":{"todos":[{"id":"1","content":"test"}],"usage":[],"backgroundTasks":{"running":0,"jobs":[]},"screenRecording":{"active":false}}}"#,
+            r#"{"type":"STATE_SNAPSHOT","snapshot":{"todos":[{"id":"1","content":"test"}],"usage":[],"backgroundTasks":{"running":0,"jobs":[]},"nextStepSuggestion":"","screenRecording":{"active":false}}}"#,
         ]);
         assert_eq!(events.len(), 1);
         assert!(
             matches!(&events[0], AgentEvent::BackgroundTasks { running: 0, jobs } if jobs.is_empty())
         );
+    }
+
+    #[test]
+    fn test_parse_state_next_step_suggestion_delta() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/nextStepSuggestion","value":"run the failing test"}]}"#,
+            r#"{"type":"STATE_DELTA","delta":[{"op":"add","path":"/nextStepSuggestion","value":""}]}"#,
+        ]);
+        assert_eq!(events.len(), 2);
+        assert!(
+            matches!(&events[0], AgentEvent::NextStepSuggestion { text } if text == "run the failing test")
+        );
+        assert!(matches!(&events[1], AgentEvent::NextStepSuggestion { text } if text.is_empty()));
     }
 
     #[test]
