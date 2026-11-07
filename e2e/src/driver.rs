@@ -223,6 +223,8 @@ impl AppDriver {
                     .arg("--env")
                     .arg("INFER_COMPUTER_USE_ENABLED=true")
                     .arg("--env")
+                    .arg("INFER_CHAT_SUGGESTIONS_ENABLED=true")
+                    .arg("--env")
                     .arg(format!(
                         "INFER_GATEWAY_MOCK_SCENARIOS={}",
                         scenarios.display()
@@ -246,6 +248,7 @@ impl AppDriver {
             if mock {
                 cmd.env("DESKTOP_MOCK", "true")
                     .env("INFER_COMPUTER_USE_ENABLED", "true")
+                    .env("INFER_CHAT_SUGGESTIONS_ENABLED", "true")
                     .env("INFER_COMPUTER_USE_RECORDING_ENABLED", "true")
                     .env("INFER_GATEWAY_MOCK_SCENARIOS", scenarios)
                     .env("HOME", &home);
@@ -487,11 +490,13 @@ print(bounds["X"]!, bounds["Y"]!, bounds["Width"]!, bounds["Height"]!,
 
     /// Send a single keystroke to the focused element - a named key by AX key
     /// code, or any single ASCII character. Used by e2e tests that need to
-    /// exercise keyboard shortcuts (ArrowUp/Down, letter keys).
+    /// exercise keyboard shortcuts (ArrowUp/Down, Tab, Escape, letter keys).
     pub fn keypress(&self, key: &str) -> Result<()> {
         let stroke = match key {
             "up" => "keystroke (key code 126)".to_string(),
             "down" => "keystroke (key code 125)".to_string(),
+            "tab" => "keystroke (key code 48)".to_string(),
+            "escape" => "keystroke (key code 53)".to_string(),
             k if k.chars().count() == 1 && k.is_ascii() => format!("keystroke \"{}\"", escape(k)),
             _ => bail!("unsupported keypress key: {key:?}"),
         };

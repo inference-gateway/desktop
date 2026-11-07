@@ -395,6 +395,7 @@ const DEFAULT_CONFIG: DesktopConfig = {
   text_to_speech_enabled: false,
   text_to_video_enabled: false,
   status_bar_enabled: true,
+  next_step_suggestions_enabled: false,
   vision_annotator_model: "",
   agents_dir: "~/.infer/agents",
 };
@@ -748,6 +749,25 @@ function GeneralTab() {
         />
         <Label htmlFor="status-bar-enabled" className="cursor-pointer text-[0.8rem] font-medium">
           Show status bar
+        </Label>
+      </div>
+
+      {/* Next-step suggestions */}
+      <h3 className="mt-5 text-[0.9rem] font-semibold">Next-step suggestions</h3>
+      <p className="mb-3 text-[0.75rem] text-muted-foreground">
+        After each reply, the CLI suggests a one-line next step in the empty composer. Tab accepts it, typing or Escape
+        dismisses it. Each suggestion is one extra model call (chat.suggestions.enabled).
+      </p>
+      <div className="mb-5 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="next-step-suggestions-enabled"
+          checked={config.next_step_suggestions_enabled}
+          onChange={(e) => set("next_step_suggestions_enabled", e.target.checked)}
+          className="h-4 w-4 accent-primary"
+        />
+        <Label htmlFor="next-step-suggestions-enabled" className="cursor-pointer text-[0.8rem] font-medium">
+          Suggest a next step after each reply
         </Label>
       </div>
 

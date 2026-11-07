@@ -31,6 +31,15 @@ test("userSend adds a user bubble and starts the typing indicator", () => {
   expect(s.typing).toBe(true);
 });
 
+test("a next-step suggestion lasts until the user sends or dismisses it", () => {
+  const suggested = run([ev({ kind: "NextStepSuggestion", text: "run the failing test" })]);
+  expect(suggested.suggestion).toBe("run the failing test");
+  expect(chatReducer(suggested, { type: "userSend", text: "next" }).suggestion).toBe("");
+  expect(chatReducer(suggested, { type: "dismissSuggestion" }).suggestion).toBe("");
+  expect(chatReducer(suggested, { type: "newChat" }).suggestion).toBe("");
+  expect(chatReducer(suggested, ev({ kind: "NextStepSuggestion", text: "" })).suggestion).toBe("");
+});
+
 test("assistant content chunks accumulate into one bubble, then reset on tool call", () => {
   const s = run([
     { type: "userSend", text: "hi" },

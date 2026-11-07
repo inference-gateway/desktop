@@ -161,6 +161,10 @@ pub(crate) struct DesktopConfig {
     /// CLI config, shared with the CLI's own status bar).
     #[serde(default = "default_true")]
     pub(crate) status_bar_enabled: bool,
+    /// Offer a one-line next step after each reply (chat.suggestions.enabled
+    /// in the CLI config). Off by default, like the CLI.
+    #[serde(default)]
+    pub(crate) next_step_suggestions_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -223,6 +227,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         text_to_speech_enabled: false,
         text_to_video_enabled: false,
         status_bar_enabled: true,
+        next_step_suggestions_enabled: false,
         vision_annotator_model: String::new(),
         agents_dir: "~/.infer/agents".into(),
     }
@@ -368,6 +373,8 @@ pub(crate) fn config_from_value(
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
         text_to_video_enabled: bool_at(&["text_to_video", "enabled"]).unwrap_or(false),
         status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
+        next_step_suggestions_enabled: bool_at(&["chat", "suggestions", "enabled"])
+            .unwrap_or(false),
         vision_annotator_model: if bool_at(&["vision", "annotator", "enabled"]).unwrap_or(false) {
             str_at(&["vision", "annotator", "model"]).unwrap_or_default()
         } else {
@@ -544,6 +551,11 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
             cmap,
             "status_bar",
             vec![("enabled", cfg.status_bar_enabled.into())],
+        );
+        set_section(
+            cmap,
+            "suggestions",
+            vec![("enabled", cfg.next_step_suggestions_enabled.into())],
         );
     }
 
@@ -901,6 +913,21 @@ mod tests {
         let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
         let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
         assert!(!cfg2.status_bar_enabled);
+    }
+
+    #[test]
+    fn merge_config_round_trips_next_step_suggestions_and_keeps_their_model() {
+        let existing = "chat:\n  suggestions:\n    model: openai/gpt-4o-mini\n";
+        let mut cfg = default_config();
+        cfg.next_step_suggestions_enabled = true;
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["chat", "suggestions", "model"]),
+            Some("openai/gpt-4o-mini")
+        );
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert!(cfg2.next_step_suggestions_enabled);
+        assert!(!default_config().next_step_suggestions_enabled);
     }
 
     #[test]
