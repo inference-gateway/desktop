@@ -128,19 +128,23 @@ fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
         "aarch64" => "infer-darwin-arm64",
         _ => "infer-darwin-amd64",
     };
-    let url = format!("https://github.com/inference-gateway/cli/releases/latest/download/{asset}");
+    let url =
+        format!("https://github.com/inference-gateway/cli/releases/latest/download/{asset}.tar.gz");
     let dir = artifacts.join("infer-latest");
+    let tarball = dir.join(format!("{asset}.tar.gz"));
     let bin = dir.join("infer");
     let downloaded = std::fs::create_dir_all(&dir).is_ok()
         && Command::new("curl")
             .args(["-fsSL", "--retry", "2", "-o"])
-            .arg(&bin)
+            .arg(&tarball)
             .arg(&url)
             .status()
             .is_ok_and(|s| s.success())
-        && Command::new("chmod")
-            .arg("+x")
-            .arg(&bin)
+        && Command::new("tar")
+            .arg("-xzf")
+            .arg(&tarball)
+            .arg("-C")
+            .arg(&dir)
             .status()
             .is_ok_and(|s| s.success());
     if downloaded {
