@@ -491,6 +491,13 @@ export const api = {
   deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),
   kubeContexts: () => invoke<string[]>("kube_contexts"),
   detectWorkspaces: () => invoke<string[]>("detect_workspaces"),
+  dockerAvailable: () => invoke<boolean>("docker_available"),
+  /** Provisions a k3s cluster in Docker with an Ubuntu desktop workspace and answers the workspace's name. */
+  provisionLocalCluster: (onStage: (stage: string) => void) => {
+    const stages = new Channel<string>();
+    stages.onmessage = onStage;
+    return invoke<string>("provision_local_cluster", { onStage: stages });
+  },
   checkWorkspace: (context: string, namespace: string) =>
     invoke<ClusterCheck>("check_workspace", { context, namespace }),
   moveSession: (

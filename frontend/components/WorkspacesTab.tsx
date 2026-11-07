@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Check, CircleCheck, Eraser, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleCheck, Container, Eraser, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -343,6 +343,8 @@ export function WorkspacesTab() {
   const [problem, setProblem] = useState("");
   const [stale, setStale] = useState(false);
   const [notice, setNotice] = useState("");
+  const [docker, setDocker] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
 
   const loadKnown = useCallback((retries: number) => {
     api
@@ -367,6 +369,10 @@ export function WorkspacesTab() {
     api
       .kubeContexts()
       .then(setContexts)
+      .catch(() => {});
+    api
+      .dockerAvailable()
+      .then(setDocker)
       .catch(() => {});
   }, [reload]);
 
@@ -404,6 +410,21 @@ export function WorkspacesTab() {
       setNotice(`Added ${added.join(", ")}.`);
     } catch (e) {
       setProblem(String(e));
+    }
+  };
+
+  const provision = async () => {
+    setProblem("");
+    setProvisioning(true);
+    try {
+      const name = await api.provisionLocalCluster(setNotice);
+      changed();
+      setNotice(`Provisioned ${name} on a local k3s cluster in Docker.`);
+    } catch (e) {
+      setNotice("");
+      setProblem(String(e));
+    } finally {
+      setProvisioning(false);
     }
   };
 
@@ -493,6 +514,18 @@ export function WorkspacesTab() {
             >
               Detect clusters
             </Button>
+            {docker && (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Provision local cluster"
+                title="Provision a local k3s cluster in Docker with an ubuntu-desktop workspace"
+                disabled={provisioning}
+                onClick={provision}
+              >
+                <Container size={14} className={provisioning ? "animate-pulse" : ""} />
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -510,7 +543,10 @@ export function WorkspacesTab() {
             </Button>
             <span className={HINT_CLASS}>
               Detecting adds every kubeconfig context as a Kubernetes workspace in the infer-workspaces namespace, with
-              the names of your saved API keys for its gateway.
+              the names of your saved API keys for its gateway.{" "}
+              {docker
+                ? "The container button runs a k3s cluster in Docker and adds an ubuntu-desktop workspace on it."
+                : "Install and start Docker to provision a local cluster with one click."}
             </span>
           </div>
         )}
