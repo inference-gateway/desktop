@@ -21,6 +21,7 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
+import { filterFiles, insertMention, mentionAt, menuKey, type Mention } from "@/lib/mentions";
 import { api, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import { agentThreadModel } from "@/lib/agents";
 import { workspaceModel } from "@/lib/workspace-model";
@@ -216,12 +217,29 @@ export function Composer() {
   const [bashMode, setBashMode] = useState(false);
   const [toolMode, setToolMode] = useState(false);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const [files, setFiles] = useState<string[]>([]);
+  const [mention, setMention] = useState<Mention | null>(null);
+  const [activeMentionIdx, setActiveMentionIdx] = useState(0);
+  const mentionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    for (const list of [toolsRef.current, skillsRef.current]) {
+    for (const list of [toolsRef.current, skillsRef.current, mentionsRef.current]) {
       list?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
     }
-  }, [activeToolIdx, activeSkillIdx]);
+  }, [activeToolIdx, activeSkillIdx, activeMentionIdx]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let current = true;
+    api
+      .listFiles(currentProject)
+      .then((listed) => current && setFiles(listed))
+      .catch(() => {});
+    return () => {
+      current = false;
+      setFiles([]);
+    };
+  }, [ready, currentProject]);
 
   const loadSkills = useCallback(async () => {
     try {
@@ -290,12 +308,14 @@ export function Composer() {
     if (isBashCommand(el.value)) {
       setShowSkills(false);
       setShowTools(false);
+      setMention(null);
       setBashMode(true);
       return;
     }
     setBashMode(false);
     if (el.value.startsWith("!!")) {
       setShowSkills(false);
+      setMention(null);
       if (!el.value.slice(2).includes("(")) {
         setToolQuery(el.value.slice(2).trimStart().toLowerCase());
         setShowTools(true);
@@ -303,6 +323,13 @@ export function Composer() {
       } else {
         setShowTools(false);
       }
+      return;
+    }
+    const found = mentionAt(el.value, el.selectionStart);
+    setMention(found);
+    setActiveMentionIdx(0);
+    if (found) {
+      setShowSkills(false);
       return;
     }
     const pos = el.selectionStart;
@@ -335,6 +362,17 @@ export function Composer() {
     }
   };
 
+  const selectMention = (value: string) => {
+    const el = composerRef.current;
+    if (!el || !mention) return;
+    const next = insertMention(el.value, el.selectionStart, mention, value);
+    el.value = next.text;
+    el.focus();
+    el.setSelectionRange(next.cursor, next.cursor);
+    autoGrow(el);
+    setMention(null);
+  };
+
   const selectTool = (tool: string) => {
     const el = composerRef.current;
     if (!el) return;
@@ -363,6 +401,10 @@ export function Composer() {
 
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
+  const mentionRows = mention
+    ? filterFiles(files, mention.query).map((file) => ({ value: `@${file}`, label: file }))
+    : [];
+
   const onSend = () => {
     const composer = composerRef.current;
     if (composer && composer.value.trimStart().startsWith("!!")) {
@@ -381,6 +423,7 @@ export function Composer() {
     send();
     setBashMode(false);
     setToolMode(false);
+    setMention(null);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -404,6 +447,16 @@ export function Composer() {
       if (e.key === "Escape") {
         e.preventDefault();
         setShowTools(false);
+        return;
+      }
+    }
+    if (mentionRows.length > 0) {
+      const action = menuKey(e.key, activeMentionIdx, mentionRows.length);
+      if (action !== null) {
+        e.preventDefault();
+        if (action === "pick") selectMention(mentionRows[activeMentionIdx].value);
+        else if (action === "close") setMention(null);
+        else setActiveMentionIdx(action);
         return;
       }
     }
@@ -646,6 +699,28 @@ export function Composer() {
                 )}
               >
                 <span className="min-w-0 flex-1 truncate font-medium">{t}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {mentionRows.length > 0 && (
+          <div
+            ref={mentionsRef}
+            className="mx-2 mb-2 max-h-[40vh] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
+          >
+            {mentionRows.map((row, i) => (
+              <button
+                key={row.value}
+                aria-selected={i === activeMentionIdx}
+                onClick={() => selectMention(row.value)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.82rem]",
+                  i === activeMentionIdx
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate font-medium">{row.label}</span>
               </button>
             ))}
           </div>
