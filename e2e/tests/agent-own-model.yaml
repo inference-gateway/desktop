@@ -1,0 +1,14 @@
+name: an agent chat runs on the model its front matter fixes
+model_agent: e2e-sonnet
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Select the seeded agent, whose front matter fixes anthropic/claude-sonnet-4-5."
+  - "The top-bar picker shows the agent's model, read-only - it is changed with Edit agent."
+  - "Ask which model answers."
+  - "Only a request on the agent's model gets this reply - the app's default model would get the fallback."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-sonnet" }
+  - assert_model: "anthropic/claude-sonnet-4-5"
+  - send: "which model are you running on"
+  - wait_for: { text: "Answered on the agent's own model.", timeout: 30 }

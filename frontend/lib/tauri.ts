@@ -113,7 +113,7 @@ export type Avatar = { name: string; images: string[] };
 export type Artifact = { name: string; size: number; modified_at: string };
 export type Conversation = { id: string; title?: string | null; project?: string | null };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
-/** A Markdown agent (`<agents_dir>/<name>.md`): frontmatter profile plus its instructions. */
+/** A Markdown agent (`<name>.md` in one of the agent dirs): frontmatter profile plus its instructions. */
 export type MarkdownAgent = {
   name: string;
   description: string;
@@ -202,7 +202,6 @@ export type DesktopConfig = {
   status_bar_enabled: boolean;
   next_step_suggestions_enabled: boolean;
   vision_annotator_model: string;
-  agents_dir: string;
 };
 export type Timelines = { dir: string; names: string[] };
 export type UndoResult = { popped: string; base: string; canUndo: boolean };
@@ -322,6 +321,7 @@ export const api = {
     autoMode: boolean;
     project?: string;
     workspace?: string;
+    agent?: string;
   }) => invoke<void>("send_message", args),
   /** Opens (or reuses) the chat's daemon thread and returns its history. */
   openThread: (args: {
@@ -331,6 +331,7 @@ export const api = {
     extraInstructions?: string;
     autoMode: boolean;
     project?: string;
+    agent?: string;
   }) => invoke<string>("open_thread", args).then((json) => JSON.parse(json) as SnapshotMessage[]),
   /** Stops following a chat the user left, so the daemon may idle its worker out. */
   closeThread: (sessionId: string) => invoke<void>("close_thread", { sessionId }),

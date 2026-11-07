@@ -156,11 +156,28 @@ fn seed_workspace_agent(home: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The model the seeded model agent's front matter fixes - a mock model the
+/// default (`openai/gpt-4o`) is not, so a scenario can tell the two apart.
+const AGENT_MODEL: &str = "anthropic/claude-sonnet-4-5";
+
+fn seed_model_agent(home: &Path, name: &str) -> Result<()> {
+    let agents = home.join(".infer").join("agents");
+    std::fs::create_dir_all(&agents)?;
+    std::fs::write(
+        agents.join(format!("{name}.md")),
+        format!(
+            "---\nname: {name}\ndescription: Answers on a model of its own\nmodel: {AGENT_MODEL}\n---\n\nYou answer on your own model.\n"
+        ),
+    )?;
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
     pub content_project: Option<&'a str>,
     pub workspace_agent: Option<&'a str>,
+    pub model_agent: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -206,6 +223,9 @@ impl AppDriver {
             }
             if let Some(name) = seeds.workspace_agent {
                 seed_workspace_agent(&home, name)?;
+            }
+            if let Some(name) = seeds.model_agent {
+                seed_model_agent(&home, name)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

@@ -699,6 +699,7 @@ fn thread_options(
     system_prompt: Option<&str>,
     extra_instructions: Option<&str>,
     cwd: &Path,
+    agent: Option<&str>,
 ) -> ThreadOptions {
     ThreadOptions {
         model: model.to_string(),
@@ -711,6 +712,7 @@ fn thread_options(
             .map(|dirs| dirs.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         max_turns: 500,
+        agent: agent.filter(|a| !a.trim().is_empty()).map(str::to_owned),
     }
 }
 
@@ -831,6 +833,7 @@ pub(crate) async fn open_thread(
     extra_instructions: Option<String>,
     auto_mode: bool,
     project: Option<String>,
+    agent: Option<String>,
 ) -> Result<String, String> {
     let cwd = thread_dir(project.as_deref());
     let options = thread_options(
@@ -839,6 +842,7 @@ pub(crate) async fn open_thread(
         system_prompt.as_deref(),
         extra_instructions.as_deref(),
         &cwd,
+        agent.as_deref(),
     );
     let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
     serde_json::to_string(thread.history()).map_err(|e| e.to_string())
@@ -889,6 +893,7 @@ pub(crate) async fn send_message(
     auto_mode: bool,
     project: Option<String>,
     workspace: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
     if !is_bash_command(&prompt) {
         crate::tools::await_services().await;
@@ -910,6 +915,7 @@ pub(crate) async fn send_message(
         system_prompt.as_deref(),
         extra_instructions.as_deref(),
         &cwd,
+        agent.as_deref(),
     );
     let mode = options.mode.clone();
     let is_new_to_the_app = state.threads.get(&session_id).is_none();

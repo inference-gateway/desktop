@@ -31,6 +31,8 @@ pub(crate) struct ThreadOptions {
     pub(crate) custom_instructions: Option<String>,
     pub(crate) sandbox_directories: Vec<String>,
     pub(crate) max_turns: u32,
+    /// The Markdown agent the CLI runs the thread as: its model, body and tools.
+    pub(crate) agent: Option<String>,
 }
 
 pub(crate) type Sink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
@@ -432,6 +434,7 @@ fn open_frame(session_id: &str, project_dir: &str, options: &ThreadOptions) -> S
     if !options.sandbox_directories.is_empty() {
         frame["sandbox_directories"] = options.sandbox_directories.clone().into();
     }
+    set(&mut frame, "agent", options.agent.clone().map(Into::into));
     frame.to_string()
 }
 
@@ -623,6 +626,7 @@ mod tests {
             custom_instructions: None,
             sandbox_directories: vec![".".into(), "/tmp".into()],
             max_turns: 500,
+            agent: Some("reviewer".into()),
         };
         let binding = Binding {
             port,
@@ -654,6 +658,7 @@ mod tests {
             serde_json::json!([".", "/tmp"])
         );
         assert_eq!(open["max_turns"], 500);
+        assert_eq!(open["agent"], "reviewer");
     }
 
     #[test]

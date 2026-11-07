@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentFace, agentInstructionsPreamble, agentThreadModel, normaliseAgentName } from "./agents";
+import { agentFace, agentInstructionsPreamble, agentPinsModel, agentThreadModel, normaliseAgentName } from "./agents";
 import type { MarkdownAgent } from "./tauri";
 import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl } from "./fluent-emoji";
 
@@ -35,6 +35,13 @@ test("agentThreadModel uses a provider-prefixed frontmatter model, else the sele
   expect(agentThreadModel(agent({ model: "inherit" }), "openai/gpt-4o")).toBe("openai/gpt-4o");
   expect(agentThreadModel(agent({ model: "sonnet" }), "openai/gpt-4o")).toBe("openai/gpt-4o");
   expect(agentThreadModel(undefined, "openai/gpt-4o")).toBe("openai/gpt-4o");
+});
+
+test("only a provider-prefixed frontmatter model pins an agent's model", () => {
+  expect(agentPinsModel(agent({ model: "deepseek/deepseek-v4-pro" }))).toBe(true);
+  expect(agentPinsModel(agent({ model: "inherit" }))).toBe(false);
+  expect(agentPinsModel(agent({ model: "sonnet" }))).toBe(false);
+  expect(agentPinsModel(undefined)).toBe(false);
 });
 
 test("normaliseAgentName produces a CLI-valid name", () => {

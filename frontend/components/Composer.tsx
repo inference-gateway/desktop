@@ -22,7 +22,7 @@ import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
 import { api, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
-import { agentThreadModel } from "@/lib/agents";
+import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { workspaceModel } from "@/lib/workspace-model";
 import { chatWorkspace, THIS_COMPUTER } from "@/lib/computers";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -66,7 +66,17 @@ const MENU_ITEM =
 // Moves the open chat to a workspace of the daemon or back to this computer.
 // The workspaces are asked for when the menu opens, so it shows what the
 // daemon can reach right now.
-function MoveToWorkspace({ sessionId, runsOn, model }: { sessionId: string; runsOn: string; model: string }) {
+function MoveToWorkspace({
+  sessionId,
+  runsOn,
+  model,
+  fixed,
+}: {
+  sessionId: string;
+  runsOn: string;
+  model: string;
+  fixed: boolean;
+}) {
   const { moveChat, moving } = useDesktop();
   const [open, setOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -91,6 +101,7 @@ function MoveToWorkspace({ sessionId, runsOn, model }: { sessionId: string; runs
     const there = workspaceModel(
       model,
       configs.find((config) => config.name === name),
+      fixed,
     );
     return "problem" in there ? there.problem : there.note;
   };
@@ -746,6 +757,7 @@ export function Composer() {
                 agents.find((a) => a.name === agentOf[sessionId]),
                 model,
               )}
+              fixed={agentPinsModel(agents.find((a) => a.name === agentOf[sessionId]))}
             />
           )}
           <button
