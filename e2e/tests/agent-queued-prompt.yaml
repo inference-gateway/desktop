@@ -1,0 +1,22 @@
+name: agent queued prompt - a follow-up queued in an agent chat is sent as the agent
+model_agent: e2e-sonnet
+cleanup:
+  - queue-first.txt
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Select the seeded agent, whose front matter fixes anthropic/claude-sonnet-4-5."
+  - "Send a first prompt; it pauses at the Write approval."
+  - "The agent's run is waiting."
+  - "Ask which model answers while the run is still going."
+  - "The prompt is queued, not sent."
+  - "Approve the Write."
+  - "The queued prompt runs as the agent, on its model - the app's default model would get the fallback."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-sonnet" }
+  - send: "create a file named queue-first.txt"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - send: "which model are you running on"
+  - wait_for: { text: "Queued:", timeout: 10 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Answered on the agent's own model.", timeout: 30 }

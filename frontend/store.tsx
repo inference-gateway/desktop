@@ -995,8 +995,12 @@ function useDesktopStore() {
     [dispatchTo],
   );
 
+  // A chat keeps its agent: a send into an existing chat (a queued prompt, the
+  // monitor) runs as the agent it was assigned. Only a chat whose assignment
+  // has not landed in state yet needs its agent passed in.
   const sendPrompt = useCallback(
-    async (runId: string, text: string, projectName?: string, extraInstruction?: string, agentName?: string) => {
+    async (runId: string, text: string, projectName?: string, extraInstruction?: string, newChatAgent?: string) => {
+      const agentName = newChatAgent ?? agentOf[runId];
       if (runningIds.has(runId) || runningIdsRef.current.has(runId)) return;
       if (!model && !isBashCommand(text)) {
         setError("Please select a model first");
@@ -1119,6 +1123,7 @@ function useDesktopStore() {
       runningIds,
       model,
       agents,
+      agentOf,
       autoMode,
       autoModes,
       threadPrompts,
