@@ -7,7 +7,7 @@ use crate::env::{
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
 use crate::thread::{Sink, Thread, ThreadOptions};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -730,8 +730,6 @@ fn thread_options(
             .unwrap_or_default(),
         max_turns: 500,
         agent: agent.filter(|a| !a.trim().is_empty()).map(str::to_owned),
-        mcp_servers: Vec::new(),
-        env: BTreeMap::new(),
     }
 }
 
@@ -799,7 +797,7 @@ async fn ensure_thread(
     state: &AppState,
     session_id: &str,
     project_dir: &Path,
-    mut options: ThreadOptions,
+    options: ThreadOptions,
 ) -> Result<Arc<Thread>, String> {
     if let Some(thread) = state.threads.get(session_id) {
         return Ok(thread);
@@ -808,7 +806,7 @@ async fn ensure_thread(
     let session_id = session_id.to_string();
     let project_dir = project_dir.to_string_lossy().into_owned();
     tokio::task::spawn_blocking(move || {
-        crate::agent_mail::attach(&mut options);
+        crate::agent_mail::resync_allowlist(&options);
         let state = app.state::<AppState>();
         let binding = crate::daemon::ensure_running(&state)?;
         let status_app = app.clone();

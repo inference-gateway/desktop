@@ -72,9 +72,7 @@ export function agentInstructionsPreamble(agent: MarkdownAgent, all: MarkdownAge
   const lines = [`You are running as the agent "${agent.name}": ${agent.description.trim()}`];
   const email = agent.email.trim();
   if (email) {
-    lines.push(
-      `Your email address is ${email}. People and other agents can write to you there, and you can send mail as it.`,
-    );
+    lines.push(`Your email address is ${email}. People and other agents can write to you there.`);
     const recipients = agent.allowed_recipients.map((r) => r.trim()).filter(Boolean);
     if (recipients.length > 0) {
       lines.push(`You may only send mail to these addresses: ${recipients.join(", ")}.`);

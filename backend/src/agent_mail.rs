@@ -1,54 +1,21 @@
 use crate::config;
 use crate::env::{home_dir, mock_mode};
 use crate::markdown_agents::{self, MarkdownAgent};
-use crate::thread::{ThreadMcpServer, ThreadOptions};
+use crate::thread::ThreadOptions;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-
-/// The hosted MCP server a thread with an agent inbox gets, authenticated by
-/// the thread's key in the `x-api-key` header.
-pub(crate) const MCP_SERVER_URL: &str = "https://mcp.agentmail.to/mcp";
-
-/// The name the thread's worker knows the AgentMail MCP server by.
-pub(crate) const MCP_SERVER_NAME: &str = "agentmail";
+use std::time::Duration;
 
 const API_BASE: &str = "https://api.agentmail.to";
 
 /// How long one AgentMail call may take before the editor or thread gives up.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// The rights a thread's key gets in its own inbox: read and send mail, read
-/// its allowlist. Changing the allowlist, inboxes or keys needs the owner key.
-const THREAD_KEY_PERMISSIONS: [&str; 11] = [
-    "inbox_read",
-    "message_read",
-    "message_send",
-    "message_reply",
-    "message_update",
-    "draft_read",
-    "draft_create",
-    "draft_update",
-    "draft_delete",
-    "draft_send",
-    "list_entry_read",
-];
-
-/// How many days a thread's key lives.
-/// ponytail: a thread open longer loses mail until it is reopened, and every
-/// thread open leaves one key alive until then. Store and revoke keys if that bites.
-const THREAD_KEY_DAYS: u64 = 7;
-
 #[derive(Deserialize)]
 struct Inbox {
     email: String,
-}
-
-#[derive(Deserialize)]
-struct MintedKey {
-    api_key: String,
 }
 
 #[derive(Deserialize)]
@@ -130,34 +97,6 @@ impl Client {
         Ok(())
     }
 
-    /// Mints a key for `agent`'s threads, scoped to `inbox` with
-    /// `THREAD_KEY_PERMISSIONS` and expiring `THREAD_KEY_DAYS` from today.
-    fn mint_thread_key(&self, inbox: &str, agent: &str) -> Result<String, String> {
-        let permissions: serde_json::Map<String, serde_json::Value> = THREAD_KEY_PERMISSIONS
-            .iter()
-            .map(|permission| (permission.to_string(), true.into()))
-            .collect();
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_secs())
-            .unwrap_or_default();
-        let minted: MintedKey = self
-            .http
-            .post(format!(
-                "{API_BASE}/v0/inboxes/{}/api-keys",
-                escape_segment(inbox)
-            ))
-            .header("Authorization", &self.authorization)
-            .send_json(json!({
-                "name": format!("desktop thread {agent}"),
-                "expires_at": thread_key_expiry(now),
-                "permissions": permissions,
-            }))
-            .and_then(|mut resp| resp.body_mut().read_json())
-            .map_err(|e| format!("minting a thread key for {inbox}: {e}"))?;
-        Ok(minted.api_key)
-    }
-
     fn disallow(&self, inbox: &str, entry: &str) -> Result<(), String> {
         self.http
             .delete(format!(
@@ -170,13 +109,6 @@ impl Client {
             .map_err(|e| format!("removing {entry} from the send allowlist of {inbox}: {e}"))?;
         Ok(())
     }
-}
-
-/// Midnight UTC `THREAD_KEY_DAYS` after the day of `unix_secs`, as RFC 3339.
-fn thread_key_expiry(unix_secs: u64) -> String {
-    let days = (unix_secs / 86_400 + THREAD_KEY_DAYS) as i64;
-    let (year, month, day) = crate::screen_records::civil_from_days(days);
-    format!("{year:04}-{month:02}-{day:02}T00:00:00Z")
 }
 
 /// The send allowlist of one inbox, never the organization's, so agents
@@ -283,46 +215,20 @@ fn mail_agent_in(dirs: &[PathBuf], name: &str) -> Option<MarkdownAgent> {
     markdown_agents::by_name_in(dirs, name).filter(|agent| !agent.email.trim().is_empty())
 }
 
-/// Gives a thread run as an agent with an inbox the AgentMail MCP server and
-/// `AGENTMAIL_API_KEY`, both holding a key scoped to that inbox. The owner key
-/// never reaches the worker. A thread whose mail cannot be prepared opens without it.
-pub(crate) fn attach(options: &mut ThreadOptions) {
-    let Some(name) = options.agent.clone() else {
+/// Re-syncs the inbox allowlist of the agent a thread runs as from its agent
+/// file, so a hand edit is enforced before the agent mails. An agent without an
+/// inbox or owner key is left alone, and a failed sync never blocks the open.
+pub(crate) fn resync_allowlist(options: &ThreadOptions) {
+    let Some(name) = options.agent.as_deref() else {
         return;
     };
-    match thread_key_in(&markdown_agents::agent_dirs(), &home_dir(), &name) {
-        Ok(Some(key)) => wire(options, key),
-        Ok(None) => {}
-        Err(e) => eprintln!("agent {name} opens without mail: {e}"),
+    let (dirs, home) = (markdown_agents::agent_dirs(), home_dir());
+    if mail_agent_in(&dirs, name).is_none() || config::agent_api_key_in(&home, name).is_empty() {
+        return;
     }
-}
-
-/// The key a thread of agent `name` mails with, None without an inbox or owner
-/// key. It re-syncs the allowlist from the agent file first, so hand edits count,
-/// then mints an inbox-scoped key. Mock mode answers a placeholder offline.
-fn thread_key_in(dirs: &[PathBuf], home: &Path, name: &str) -> Result<Option<String>, String> {
-    let Some(agent) = mail_agent_in(dirs, name) else {
-        return Ok(None);
-    };
-    let owner_key = config::agent_api_key_in(home, name);
-    if owner_key.is_empty() {
-        return Ok(None);
+    if let Err(e) = sync_agent_mail_in(&dirs, &home, name) {
+        eprintln!("agent {name} opens with its allowlist unsynced: {e}");
     }
-    if mock_mode() {
-        return Ok(Some("am_mock_thread_key".into()));
-    }
-    let client = Client::new(&owner_key);
-    sync_allowlist(&client, &agent, &config::agent_mail_cap_in(home))?;
-    client.mint_thread_key(agent.email.trim(), name).map(Some)
-}
-
-fn wire(options: &mut ThreadOptions, key: String) {
-    options.mcp_servers.push(ThreadMcpServer {
-        name: MCP_SERVER_NAME.into(),
-        url: MCP_SERVER_URL.into(),
-        headers: BTreeMap::from([("x-api-key".into(), key.clone())]),
-    });
-    options.env.insert("AGENTMAIL_API_KEY".into(), key);
 }
 
 /// `sync_agent_mail` rooted at explicit agent directories and home.
@@ -531,42 +437,6 @@ mod tests {
         assert!(mail_agent_in(&dirs, "other").is_none());
         assert!(mail_agent_in(&dirs, "../agents/code-reviewer").is_none());
         assert!(mail_agent_in(&dirs, "").is_none());
-    }
-
-    #[test]
-    fn a_thread_without_an_inbox_or_owner_key_gets_no_mail() {
-        let home = TempDir::new("thread");
-        let dirs = agent_dirs_of(&home);
-        assert_eq!(thread_key_in(&dirs, &home, "code-reviewer"), Ok(None));
-        seed_agent(&home);
-        assert_eq!(thread_key_in(&dirs, &home, "code-reviewer"), Ok(None));
-    }
-
-    #[test]
-    fn a_wired_thread_carries_the_mcp_server_and_env_with_one_key() {
-        let mut options = ThreadOptions::default();
-        wire(&mut options, "am_thread".into());
-        assert_eq!(
-            options.mcp_servers,
-            vec![ThreadMcpServer {
-                name: "agentmail".into(),
-                url: "https://mcp.agentmail.to/mcp".into(),
-                headers: BTreeMap::from([("x-api-key".into(), "am_thread".into())]),
-            }]
-        );
-        assert_eq!(
-            options.env,
-            BTreeMap::from([("AGENTMAIL_API_KEY".into(), "am_thread".into())])
-        );
-    }
-
-    #[test]
-    fn a_thread_key_expires_at_midnight_a_week_out() {
-        assert_eq!(thread_key_expiry(0), "1970-01-08T00:00:00Z");
-        assert_eq!(
-            thread_key_expiry(1_798_675_200 + 3_600),
-            "2027-01-07T00:00:00Z"
-        );
     }
 
     #[test]
