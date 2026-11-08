@@ -32,3 +32,9 @@ test("a kubernetes workspace needs a name, a context and a namespace", () => {
   expect(draftProblem({ ...draft, name: "dev", context: "k3d-dev" })).toContain("namespace");
   expect(draftProblem({ ...draft, name: "dev", context: "k3d-dev", namespace: "agents" })).toBeNull();
 });
+
+test("a workspace on a cluster needs only a name, since the cluster gives it its connection", () => {
+  const draft = { ...draftOf(EMPTY_WORKSPACE), name: "reviewer", compute: "k3d" };
+  expect(draftProblem(draft)).toBeNull();
+  expect(configOf(draft).compute).toBe("k3d");
+});

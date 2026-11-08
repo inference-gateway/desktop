@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
-import { Check, CircleCheck, Container, Eraser, Pencil, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eraser, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type ClusterCheck, type Prerequisite, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import { api, type ClusterConfig, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import {
   configOf,
   draftOf,
@@ -12,27 +12,27 @@ import {
   WORKSPACE_KINDS,
   type WorkspaceDraft,
 } from "@/lib/workspace-form";
+import {
+  advanceOnEnter,
+  FIELD_CLASS,
+  HINT_CLASS,
+  Prerequisites,
+  RestartNotice,
+  RunningBadge,
+  useCheck,
+} from "./ClusterParts";
 import { useDesktop } from "@/store";
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
 
 const DAEMON_RETRIES = 3;
 const DAEMON_RETRY_MS = 4000;
-const FIELD_CLASS = "flex flex-col gap-1";
-const HINT_CLASS = "text-[0.72rem] text-muted-foreground";
 const AREA_CLASS =
   "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-[0.8rem] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const SELECT_CLASS = "rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-[0.85rem] text-foreground";
 
 const kindLabel = (kind: string) => WORKSPACE_KINDS.find((k) => k.id === kind)?.label ?? kind;
 const editable = (kind: string) => WORKSPACE_KINDS.some((k) => k.id === kind);
-
-function advanceOnEnter(nextId: string) {
-  return (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    document.getElementById(nextId)?.focus();
-  };
-}
 
 function reachability(
   config: WorkspaceConfig,
@@ -45,77 +45,10 @@ function reachability(
   return { label: known.error || `${kindLabel(config.kind)} is unreachable`, dot: "bg-destructive" };
 }
 
-/** The cluster prerequisites of a Kubernetes workspace, checked when the row shows and again on demand. */
-function useClusterCheck(config: WorkspaceConfig): { check: ClusterCheck | null; recheck: () => void } {
-  const [check, setCheck] = useState<ClusterCheck | null>(null);
-  const { kind, context, namespace } = config;
-  const recheck = useCallback(() => {
-    if (kind !== "kubernetes" || !context) return;
-    setCheck(null);
-    api
-      .checkWorkspace(context, namespace)
-      .then(setCheck)
-      .catch((e) =>
-        setCheck({
-          prerequisites: [{ name: "Cluster reachable", met: false, detail: String(e) }],
-          running: null,
-          suspended: null,
-        }),
-      );
-  }, [kind, context, namespace]);
-  useEffect(recheck, [recheck]);
-  return { check, recheck };
-}
-
-function RunningBadge({ check }: { check: ClusterCheck | null }) {
-  if (!check || check.running === null) return null;
-  const active = check.running > 0;
-  return (
-    <span
-      title={`${check.suspended ?? 0} suspended`}
-      className={`ml-2 rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${
-        active ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-foreground/5 text-muted-foreground"
-      }`}
-    >
-      {`${check.running} running`}
-    </span>
-  );
-}
-
-function Prerequisites({ checks }: { checks: Prerequisite[] | null }) {
-  if (!checks) return <span className={HINT_CLASS}>Checking the cluster...</span>;
-  const missing = checks.filter((check) => !check.met);
-  if (missing.length === 0) {
-    return (
-      <span className="flex items-center gap-1.5 text-[0.75rem] text-emerald-600 dark:text-emerald-400">
-        <CircleCheck size={13} aria-hidden="true" />
-        Cluster has everything it needs
-      </span>
-    );
-  }
-  return (
-    <div role="alert" className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-      <span className="flex items-center gap-1.5 text-[0.75rem] font-medium">
-        <TriangleAlert size={13} className="text-amber-500" aria-hidden="true" />
-        {`Cluster is missing: ${missing.map((check) => check.name).join(", ")}`}
-      </span>
-      <ul className="flex flex-col gap-0.5">
-        {checks.map((check) => (
-          <li key={check.name} className="flex items-start gap-1.5 text-[0.72rem] text-muted-foreground">
-            {check.met ? (
-              <Check size={12} className="mt-0.5 shrink-0 text-emerald-500" aria-label="Met" />
-            ) : (
-              <X size={12} className="mt-0.5 shrink-0 text-destructive" aria-label="Missing" />
-            )}
-            <span className="min-w-0 break-words">
-              {check.name}
-              {check.detail && ` - ${check.detail}`}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+/** Where a workspace runs: its cluster when it names one, else its own context and namespace. */
+function placement(config: WorkspaceConfig): string {
+  const where = [config.context, config.namespace].filter(Boolean).join(" / ");
+  return config.compute ? `on ${config.compute}${where ? ` - ${where}` : ""}` : where;
 }
 
 function WorkspaceRow({
@@ -132,10 +65,15 @@ function WorkspaceRow({
   onDelete: () => void;
 }) {
   const [armed, setArmed] = useState(false);
-  const { check, recheck } = useClusterCheck(config);
-  const state = reachability(config, known, stale);
-  const where = [config.context, config.namespace].filter(Boolean).join(" / ");
   const checkable = config.kind === "kubernetes" && Boolean(config.context);
+  const { name, context, namespace } = config;
+  const run = useMemo(
+    () => (checkable ? () => api.checkWorkspace(context, namespace, name) : null),
+    [checkable, context, namespace, name],
+  );
+  const { check, recheck } = useCheck(run);
+  const state = reachability(config, known, stale);
+  const where = placement(config);
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3">
       <div className="flex items-center gap-3">
@@ -189,12 +127,14 @@ function WorkspaceRow({
 
 function WorkspaceForm({
   editing,
+  clusters,
   contexts,
   onChange,
   onSave,
   onCancel,
 }: {
   editing: Editing;
+  clusters: ClusterConfig[];
   contexts: string[];
   onChange: (draft: WorkspaceDraft) => void;
   onSave: () => void;
@@ -203,25 +143,43 @@ function WorkspaceForm({
   const { draft } = editing;
   const set = (key: keyof WorkspaceDraft) => (event: { target: { value: string } }) =>
     onChange({ ...draft, [key]: event.target.value });
+  const cluster = clusters.find((c) => c.name === draft.compute);
+  const ownConnection = !draft.compute;
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
       <h3 className="text-[0.9rem] font-semibold">{editing.previous ? `Edit ${editing.previous}` : "New workspace"}</h3>
-      <div className="grid grid-cols-2 gap-3">
+      {(clusters.length > 0 || draft.compute) && (
         <div className={FIELD_CLASS}>
-          <Label htmlFor="workspace-kind">Type</Label>
-          <select
-            id="workspace-kind"
-            value={draft.kind}
-            onChange={set("kind")}
-            className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-[0.85rem] text-foreground"
-          >
-            {WORKSPACE_KINDS.map((kind) => (
-              <option key={kind.id} value={kind.id}>
-                {kind.label}
+          <Label htmlFor="workspace-compute">Cluster</Label>
+          <select id="workspace-compute" value={draft.compute} onChange={set("compute")} className={SELECT_CLASS}>
+            {clusters.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name}
               </option>
             ))}
+            {draft.compute && !cluster && <option value={draft.compute}>{`${draft.compute} (missing)`}</option>}
+            <option value="">Its own connection</option>
           </select>
+          <span className={HINT_CLASS}>
+            {cluster
+              ? `Runs in ${cluster.context || "the current context"} / ${cluster.namespace}, sharing the cluster's gateway. Clusters are configured under Compute.`
+              : "Carries its own context, namespace and provider keys instead of a cluster's."}
+          </span>
         </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        {ownConnection && (
+          <div className={FIELD_CLASS}>
+            <Label htmlFor="workspace-kind">Type</Label>
+            <select id="workspace-kind" value={draft.kind} onChange={set("kind")} className={SELECT_CLASS}>
+              {WORKSPACE_KINDS.map((kind) => (
+                <option key={kind.id} value={kind.id}>
+                  {kind.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className={FIELD_CLASS}>
           <Label htmlFor="workspace-name">Name</Label>
           <Input
@@ -229,36 +187,40 @@ function WorkspaceForm({
             autoFocus
             value={draft.name}
             onChange={set("name")}
-            onKeyDown={advanceOnEnter("workspace-context")}
+            onKeyDown={advanceOnEnter(ownConnection ? "workspace-context" : "workspace-image")}
             placeholder="ubuntu-desktop"
           />
         </div>
-        <div className={FIELD_CLASS}>
-          <Label htmlFor="workspace-context">Kubernetes context</Label>
-          <Input
-            id="workspace-context"
-            list="workspace-contexts"
-            value={draft.context}
-            onChange={set("context")}
-            onKeyDown={advanceOnEnter("workspace-namespace")}
-            placeholder="k3d-computer-use"
-          />
-          <datalist id="workspace-contexts">
-            {contexts.map((context) => (
-              <option key={context} value={context} />
-            ))}
-          </datalist>
-        </div>
-        <div className={FIELD_CLASS}>
-          <Label htmlFor="workspace-namespace">Namespace</Label>
-          <Input
-            id="workspace-namespace"
-            value={draft.namespace}
-            onChange={set("namespace")}
-            onKeyDown={advanceOnEnter("workspace-image")}
-            placeholder="infer-workspaces"
-          />
-        </div>
+        {ownConnection && (
+          <>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="workspace-context">Kubernetes context</Label>
+              <Input
+                id="workspace-context"
+                list="workspace-contexts"
+                value={draft.context}
+                onChange={set("context")}
+                onKeyDown={advanceOnEnter("workspace-namespace")}
+                placeholder="k3d-computer-use"
+              />
+              <datalist id="workspace-contexts">
+                {contexts.map((context) => (
+                  <option key={context} value={context} />
+                ))}
+              </datalist>
+            </div>
+            <div className={FIELD_CLASS}>
+              <Label htmlFor="workspace-namespace">Namespace</Label>
+              <Input
+                id="workspace-namespace"
+                value={draft.namespace}
+                onChange={set("namespace")}
+                onKeyDown={advanceOnEnter("workspace-image")}
+                placeholder="infer-workspaces"
+              />
+            </div>
+          </>
+        )}
       </div>
       <div className={FIELD_CLASS}>
         <Label htmlFor="workspace-image">Image</Label>
@@ -284,19 +246,21 @@ function WorkspaceForm({
           <Input id="workspace-retention" value={draft.retention} onChange={set("retention")} placeholder="24h" />
         </div>
       </div>
-      <div className={FIELD_CLASS}>
-        <Label htmlFor="workspace-gateway-env">Provider keys</Label>
-        <Input
-          id="workspace-gateway-env"
-          value={draft.gateway_env}
-          onChange={set("gateway_env")}
-          placeholder="OLLAMA_CLOUD_API_KEY"
-        />
-        <span className={HINT_CLASS}>
-          Names only, separated by commas. The values come from API Keys and go to the workspace's gateway, never into
-          the agent's pod.
-        </span>
-      </div>
+      {ownConnection && (
+        <div className={FIELD_CLASS}>
+          <Label htmlFor="workspace-gateway-env">Provider keys</Label>
+          <Input
+            id="workspace-gateway-env"
+            value={draft.gateway_env}
+            onChange={set("gateway_env")}
+            placeholder="OLLAMA_CLOUD_API_KEY"
+          />
+          <span className={HINT_CLASS}>
+            Names only, separated by commas. The values come from API Keys and go to the workspace's gateway, never into
+            the agent's pod.
+          </span>
+        </div>
+      )}
       <div className={FIELD_CLASS}>
         <Label htmlFor="workspace-forward-env">Forwarded variables</Label>
         <Input
@@ -331,20 +295,20 @@ function WorkspaceForm({
   );
 }
 
-// The computers sessions can run on: the workspaces of ~/.infer/daemon.yaml.
-// The daemon reads them when it starts, so a change asks for a CLI restart.
+// The computers sessions can run on: the workspaces of ~/.infer/daemon.yaml, each on a cluster of the Compute tab or
+// with its own connection. The daemon reads them when it starts, so a change asks for a CLI restart.
 export function WorkspacesTab() {
   const { restartBackend, cleanMachines } = useDesktop();
   const [cleanArmed, setCleanArmed] = useState(false);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
+  const [clusters, setClusters] = useState<ClusterConfig[]>([]);
+  const [image, setImage] = useState("");
   const [known, setKnown] = useState<Record<string, Workspace>>({});
   const [contexts, setContexts] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [stale, setStale] = useState(false);
   const [notice, setNotice] = useState("");
-  const [docker, setDocker] = useState(false);
-  const [provisioning, setProvisioning] = useState(false);
 
   const loadKnown = useCallback((retries: number) => {
     api
@@ -361,6 +325,10 @@ export function WorkspacesTab() {
       .workspaceConfigs()
       .then(setConfigs)
       .catch((e) => setProblem(String(e)));
+    api
+      .clusterConfigs()
+      .then(setClusters)
+      .catch(() => {});
     loadKnown(DAEMON_RETRIES);
   }, [loadKnown]);
 
@@ -371,8 +339,8 @@ export function WorkspacesTab() {
       .then(setContexts)
       .catch(() => {});
     api
-      .dockerAvailable()
-      .then(setDocker)
+      .defaultWorkspaceImage()
+      .then(setImage)
       .catch(() => {});
   }, [reload]);
 
@@ -401,33 +369,6 @@ export function WorkspacesTab() {
       .then(changed)
       .catch((e) => setProblem(String(e)));
 
-  const detect = async () => {
-    setNotice("");
-    try {
-      const added = await api.detectWorkspaces();
-      if (added.length === 0) return setNotice("Every cluster in your kubeconfig already has a workspace.");
-      changed();
-      setNotice(`Added ${added.join(", ")}.`);
-    } catch (e) {
-      setProblem(String(e));
-    }
-  };
-
-  const provision = async () => {
-    setProblem("");
-    setProvisioning(true);
-    try {
-      const name = await api.provisionLocalCluster(setNotice);
-      changed();
-      setNotice(`Provisioned ${name} on a local k3s cluster in Docker.`);
-    } catch (e) {
-      setNotice("");
-      setProblem(String(e));
-    } finally {
-      setProvisioning(false);
-    }
-  };
-
   const clean = async () => {
     setCleanArmed(!cleanArmed);
     if (!cleanArmed) return;
@@ -447,22 +388,20 @@ export function WorkspacesTab() {
     reload();
   };
 
+  const startNew = () =>
+    setEditing({
+      previous: null,
+      draft: draftOf({ ...EMPTY_WORKSPACE, compute: clusters[0]?.name ?? "", image }),
+    });
+
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">Workspaces</h2>
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
-        The compute your agents can run on. Give an agent a workspace in its editor and every new chat with it runs on a
-        computer of its own there. A Kubernetes workspace needs the Inference Gateway operator and agent-sandbox in the
-        cluster.
+        The computers your agents can run on. Give an agent a workspace in its editor and every new chat with it runs on
+        a computer of its own there. A workspace runs on a cluster you configure under Compute.
       </p>
-      {stale && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[0.8rem]">
-          <span className="flex-1">Restart the CLI so the daemon loads your changes. Running chats are stopped.</span>
-          <Button variant="outline" size="xs" onClick={restart}>
-            Restart CLI now
-          </Button>
-        </div>
-      )}
+      {stale && <RestartNotice onRestart={restart} />}
       {notice && (
         <p aria-live="polite" className="mb-4 text-[0.8rem] text-muted-foreground">
           {notice}
@@ -489,6 +428,7 @@ export function WorkspacesTab() {
           <WorkspaceForm
             key={editing.previous ?? "new"}
             editing={editing}
+            clusters={clusters}
             contexts={contexts}
             onChange={(draft) => setEditing({ ...editing, draft })}
             onSave={save}
@@ -499,33 +439,9 @@ export function WorkspacesTab() {
           />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing({ previous: null, draft: draftOf(EMPTY_WORKSPACE) })}
-            >
+            <Button variant="outline" size="sm" onClick={startNew}>
               New workspace
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={detect}
-              title="Add a workspace for every cluster in your kubeconfig that has none yet"
-            >
-              Detect clusters
-            </Button>
-            {docker && (
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Provision local cluster"
-                title="Provision a local k3s cluster in Docker with an ubuntu-desktop workspace"
-                disabled={provisioning}
-                onClick={provision}
-              >
-                <Container size={14} className={provisioning ? "animate-pulse" : ""} />
-              </Button>
-            )}
             <Button
               variant="outline"
               size="sm"
@@ -542,11 +458,7 @@ export function WorkspacesTab() {
               <Eraser size={14} />
             </Button>
             <span className={HINT_CLASS}>
-              Detecting adds every kubeconfig context as a Kubernetes workspace in the infer-workspaces namespace, with
-              the names of your saved API keys for its gateway.{" "}
-              {docker
-                ? "The container button runs a k3s cluster in Docker and adds an ubuntu-desktop workspace on it."
-                : "Install and start Docker to provision a local cluster with one click."}
+              Clusters, Detect clusters and the one-click local cluster live under Compute.
             </span>
           </div>
         )}

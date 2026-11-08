@@ -1,3 +1,4 @@
+use crate::compute_settings::ClusterConfig;
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -6,7 +7,7 @@ use tauri::ipc::Channel;
 const WORKSPACES_KEY: &str = "workspaces";
 const KUBERNETES: &str = "kubernetes";
 const CLI_IMAGE: &str = "ghcr.io/inference-gateway/cli";
-const DETECTED_NAMESPACE: &str = "infer-workspaces";
+pub(crate) const DETECTED_NAMESPACE: &str = "infer-workspaces";
 const DETECTED_STORAGE: &str = "5Gi";
 const KUBECTL_TIMEOUT: &str = "--request-timeout=5s";
 const MANAGED_LABEL: &str = "inference-gateway.com/managed";
@@ -88,8 +89,12 @@ fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite {
 #[serde(default)]
 pub(crate) struct WorkspaceConfig {
     name: String,
+    /// The cluster of `compute.yaml` the workspace runs on, which then gives it
+    /// its kind, context, namespace and provider keys. Empty when the workspace
+    /// carries its own connection.
+    pub(crate) compute: String,
     kind: String,
-    context: String,
+    pub(crate) context: String,
     namespace: String,
     image: String,
     storage: String,
@@ -109,11 +114,11 @@ fn scalar(value: &Value) -> Option<String> {
     }
 }
 
-fn text(entry: &Value, key: &str) -> String {
+pub(crate) fn text(entry: &Value, key: &str) -> String {
     entry.get(key).and_then(scalar).unwrap_or_default()
 }
 
-fn names(entry: &Value, key: &str) -> Vec<String> {
+pub(crate) fn names(entry: &Value, key: &str) -> Vec<String> {
     entry
         .get(key)
         .and_then(Value::as_sequence)
@@ -133,13 +138,17 @@ fn environment(entry: &Value) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-fn config_of(entry: &Value) -> Option<WorkspaceConfig> {
+/// A workspace entry as the tab shows it. One on a cluster reads that cluster's
+/// kind, context, namespace and provider keys, so every check and clean-up
+/// reaches the cluster the CLI resolves it to.
+fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfig> {
     let name = text(entry, "name");
     if name.is_empty() {
         return None;
     }
-    Some(WorkspaceConfig {
+    let config = WorkspaceConfig {
         name,
+        compute: text(entry, "compute"),
         kind: text(entry, "kind"),
         context: text(entry, "context"),
         namespace: text(entry, "namespace"),
@@ -150,18 +159,40 @@ fn config_of(entry: &Value) -> Option<WorkspaceConfig> {
         gateway_env: names(entry, "gateway_env"),
         forward_env: names(entry, "forward_env"),
         env: environment(entry),
-    })
+    };
+    Some(on_cluster(config, clusters))
 }
 
-fn parse_configs(daemon_yaml: Option<&str>) -> Vec<WorkspaceConfig> {
+fn on_cluster(config: WorkspaceConfig, clusters: &[ClusterConfig]) -> WorkspaceConfig {
+    match clusters
+        .iter()
+        .find(|cluster| !config.compute.is_empty() && cluster.name == config.compute)
+    {
+        Some(cluster) => WorkspaceConfig {
+            kind: KUBERNETES.into(),
+            context: cluster.context.clone(),
+            namespace: cluster.namespace.clone(),
+            gateway_env: cluster.gateway_env.clone(),
+            ..config
+        },
+        None => config,
+    }
+}
+
+fn parse_configs(daemon_yaml: Option<&str>, clusters: &[ClusterConfig]) -> Vec<WorkspaceConfig> {
     crate::config::config_mapping(daemon_yaml)
         .get(WORKSPACES_KEY)
         .and_then(Value::as_sequence)
-        .map(|entries| entries.iter().filter_map(config_of).collect())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| config_of(entry, clusters))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn set_or_remove(entry: &mut Mapping, key: &str, value: Option<Value>) {
+pub(crate) fn set_or_remove(entry: &mut Mapping, key: &str, value: Option<Value>) {
     match value {
         Some(value) => {
             entry.insert(key.into(), value);
@@ -172,12 +203,12 @@ fn set_or_remove(entry: &mut Mapping, key: &str, value: Option<Value>) {
     }
 }
 
-fn filled(text: &str) -> Option<Value> {
+pub(crate) fn filled(text: &str) -> Option<Value> {
     let text = text.trim();
     (!text.is_empty()).then(|| text.into())
 }
 
-fn listed(names: &[String]) -> Option<Value> {
+pub(crate) fn listed(names: &[String]) -> Option<Value> {
     let names: Vec<Value> = names.iter().filter_map(|name| filled(name)).collect();
     (!names.is_empty()).then_some(Value::Sequence(names))
 }
@@ -191,8 +222,20 @@ fn mapped(vars: &BTreeMap<String, String>) -> Option<Value> {
     (!vars.is_empty()).then_some(Value::Mapping(vars))
 }
 
+/// The keys a cluster gives a workspace on it, which the CLI refuses to see
+/// repeated on the workspace.
+const CLUSTER_KEYS: [&str; 6] = [
+    "kind",
+    "kubeconfig",
+    "context",
+    "namespace",
+    "mode",
+    "gateway_env",
+];
+
 fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "name", filled(&config.name));
+    set_or_remove(entry, "compute", filled(&config.compute));
     set_or_remove(entry, "kind", filled(&config.kind));
     set_or_remove(entry, "context", filled(&config.context));
     set_or_remove(entry, "namespace", filled(&config.namespace));
@@ -203,6 +246,11 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "gateway_env", listed(&config.gateway_env));
     set_or_remove(entry, "forward_env", listed(&config.forward_env));
     set_or_remove(entry, "env", mapped(&config.env));
+    if !config.compute.trim().is_empty() {
+        for key in CLUSTER_KEYS {
+            entry.remove(key);
+        }
+    }
 }
 
 fn named(entry: &Value, name: &str) -> bool {
@@ -373,7 +421,7 @@ fn session_counts(ready_statuses: &str) -> (usize, usize) {
     (running, sessions - running)
 }
 
-fn unreachable(error: &str) -> ClusterCheck {
+pub(crate) fn unreachable(error: &str) -> ClusterCheck {
     ClusterCheck {
         prerequisites: vec![prerequisite(REACHABLE, false, error)],
         running: None,
@@ -383,7 +431,9 @@ fn unreachable(error: &str) -> ClusterCheck {
 
 /// ponytail: CRDs and the namespace only, not whether the controllers run.
 /// Check their deployments once a cluster with stale CRDs shows up.
-fn check_cluster(context: &str, namespace: &str) -> ClusterCheck {
+/// What the cluster in `context` has of what sessions need, and how many of
+/// the sessions `selector` picks in `namespace` run and are suspended.
+fn check_cluster(context: &str, namespace: &str, selector: &str) -> ClusterCheck {
     let crds = match kubectl(context, &["get", "crd", "-o", "name"]) {
         Ok(listing) => listing,
         Err(error) => return unreachable(&error),
@@ -400,7 +450,16 @@ fn check_cluster(context: &str, namespace: &str) -> ClusterCheck {
     );
     let counts = kubectl(
         context,
-        &["get", ORCHESTRATORS, "-n", namespace, "-o", READY_STATUSES],
+        &[
+            "get",
+            ORCHESTRATORS,
+            "-n",
+            namespace,
+            "-l",
+            selector,
+            "-o",
+            READY_STATUSES,
+        ],
     )
     .ok()
     .map(|statuses| session_counts(&statuses));
@@ -417,78 +476,45 @@ fn check_cluster(context: &str, namespace: &str) -> ClusterCheck {
     }
 }
 
-/// A Kubernetes workspace for every context that no workspace runs in yet,
-/// named after its context. A context whose name a workspace already has is
-/// skipped, so nothing the user configured is replaced.
-fn detected_workspaces(
-    existing: &[WorkspaceConfig],
-    contexts: &[String],
-    image: &str,
-    provider_keys: &[String],
-) -> Vec<WorkspaceConfig> {
-    let known = |context: &str| {
-        existing
-            .iter()
-            .any(|workspace| workspace.context == context || workspace.name == context)
-    };
-    contexts
-        .iter()
-        .filter(|context| !known(context))
-        .map(|context| WorkspaceConfig {
-            name: context.clone(),
-            kind: KUBERNETES.into(),
-            context: context.clone(),
-            namespace: DETECTED_NAMESPACE.into(),
-            image: image.into(),
-            storage: DETECTED_STORAGE.into(),
-            gateway_env: provider_keys.to_vec(),
-            ..WorkspaceConfig::default()
-        })
-        .collect()
-}
-
-fn merge_detected(
-    daemon_yaml: Option<&str>,
-    detected: &[WorkspaceConfig],
-) -> Result<String, String> {
-    let mut merged = daemon_yaml.unwrap_or_default().to_owned();
-    for workspace in detected {
-        merged = merge_workspace(Some(&merged), workspace, None)?;
-    }
-    Ok(merged)
-}
-
 fn installed_infer_version() -> Option<String> {
     crate::updates::installed_version(&crate::env::infer_bin_path(), "version")
         .filter(|version| version != "dev")
 }
 
 /// The CLI image of the installed `infer` version, so a session's pod runs
-/// the same CLI as this machine.
-fn cli_image() -> String {
+/// the same CLI as this machine. The workspace form starts from it.
+#[tauri::command]
+pub(crate) fn default_workspace_image() -> String {
     let version = installed_infer_version();
     format!("{CLI_IMAGE}:{}", version.as_deref().unwrap_or("latest"))
 }
 
 /// The names of the provider keys the user saved, for a workspace's gateway.
-fn provider_keys() -> Vec<String> {
+pub(crate) fn provider_keys() -> Vec<String> {
     crate::config::auth_env()
         .into_iter()
         .map(|(name, _)| name)
         .collect()
 }
 
-/// The workspace of the local cluster: an Ubuntu desktop pod per chat, its
-/// gateway given every provider key the user saved.
-fn local_workspace(provider_keys: &[String]) -> WorkspaceConfig {
-    WorkspaceConfig {
-        name: LOCAL_WORKSPACE.into(),
-        kind: KUBERNETES.into(),
+/// The local cluster as `compute.yaml` registers it, its gateway given every
+/// provider key the user saved.
+fn local_cluster(provider_keys: &[String]) -> ClusterConfig {
+    ClusterConfig {
+        name: crate::local_cluster::CONTEXT.into(),
         context: crate::local_cluster::CONTEXT.into(),
         namespace: DETECTED_NAMESPACE.into(),
+        gateway_env: provider_keys.to_vec(),
+    }
+}
+
+/// The workspace of the local cluster: an Ubuntu desktop pod per chat on it.
+fn local_workspace() -> WorkspaceConfig {
+    WorkspaceConfig {
+        name: LOCAL_WORKSPACE.into(),
+        compute: crate::local_cluster::CONTEXT.into(),
         image: crate::local_cluster::COMPUTER_IMAGE.into(),
         storage: DETECTED_STORAGE.into(),
-        gateway_env: provider_keys.to_vec(),
         env: COMPUTER_ENV
             .iter()
             .map(|(name, value)| (name.to_string(), value.to_string()))
@@ -576,6 +602,7 @@ fn user_kubeconfig() -> PathBuf {
 /// registers its workspace. A workspace of the same name elsewhere stops it
 /// before anything is created. Mock mode registers the workspace only.
 fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
+    crate::compute_settings::require_compute()?;
     let slot = local_workspace_slot(&workspace_configs())?;
     if !crate::env::mock_mode() {
         let kubeconfig =
@@ -587,9 +614,20 @@ fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
             merge_kubeconfig(existing, &kubeconfig)
         })?;
     }
-    stage("Registering the workspace...");
+    stage("Registering the cluster and its workspace...");
+    let cluster = local_cluster(&provider_keys());
+    let registered = crate::compute_settings::read_clusters()
+        .iter()
+        .any(|existing| existing.name == cluster.name);
+    crate::config::update_file(&crate::compute_settings::compute_path(), |existing| {
+        crate::compute_settings::merge_cluster(
+            existing,
+            &cluster,
+            registered.then_some(cluster.name.as_str()),
+        )
+    })?;
     crate::config::update_file(&crate::daemon::config_path(), |existing| {
-        merge_workspace(existing, &local_workspace(&provider_keys()), slot)
+        merge_workspace(existing, &local_workspace(), slot)
     })?;
     Ok(LOCAL_WORKSPACE.into())
 }
@@ -624,6 +662,7 @@ pub(crate) fn workspace_configs() -> Vec<WorkspaceConfig> {
         std::fs::read_to_string(crate::daemon::config_path())
             .ok()
             .as_deref(),
+        &crate::compute_settings::read_clusters(),
     )
 }
 
@@ -655,34 +694,20 @@ pub(crate) fn kube_contexts() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Adds a Kubernetes workspace for every kubeconfig context that has none
-/// yet and answers their names. Each gets the provider keys the user saved,
-/// by name, for its gateway.
-#[tauri::command]
-pub(crate) fn detect_workspaces() -> Result<Vec<String>, String> {
-    let detected = detected_workspaces(
-        &workspace_configs(),
-        &kube_contexts(),
-        &cli_image(),
-        &provider_keys(),
-    );
-    if detected.is_empty() {
-        return Ok(Vec::new());
-    }
-    crate::config::update_file(&crate::daemon::config_path(), |existing| {
-        merge_detected(existing, &detected)
-    })?;
-    Ok(detected
-        .into_iter()
-        .map(|workspace| workspace.name)
-        .collect())
-}
-
 /// What the cluster of a Kubernetes workspace has of what sessions need -
 /// agent-sandbox, the Gateway API, the operator and a managed namespace - and
-/// how many sessions run there.
+/// how many of the workspace's own sessions run there.
 #[tauri::command]
-pub(crate) async fn check_workspace(context: String, namespace: String) -> ClusterCheck {
+pub(crate) async fn check_workspace(
+    context: String,
+    namespace: String,
+    name: String,
+) -> ClusterCheck {
+    check(context, namespace, format!("{WORKSPACE_LABEL}={name}")).await
+}
+
+/// Checks the cluster in `context`, counting the sessions `selector` picks.
+pub(crate) async fn check(context: String, namespace: String, selector: String) -> ClusterCheck {
     if crate::env::mock_mode() {
         return ClusterCheck {
             prerequisites: vec![prerequisite(REACHABLE, true, "")],
@@ -690,7 +715,7 @@ pub(crate) async fn check_workspace(context: String, namespace: String) -> Clust
             suspended: Some(0),
         };
     }
-    tokio::task::spawn_blocking(move || check_cluster(&context, &namespace))
+    tokio::task::spawn_blocking(move || check_cluster(&context, &namespace, &selector))
         .await
         .unwrap_or_else(|e| unreachable(&e.to_string()))
 }
@@ -704,7 +729,7 @@ pub(crate) async fn docker_available() -> bool {
             .unwrap_or(false)
 }
 
-/// Provisions a k3s cluster in Docker and registers its Ubuntu desktop
+/// Provisions a k3s cluster in Docker and registers it and its Ubuntu desktop
 /// workspace, reporting each step. Answers the workspace's name.
 #[tauri::command]
 pub(crate) async fn provision_local_cluster(on_stage: Channel<String>) -> Result<String, String> {
@@ -735,32 +760,32 @@ mod tests {
 
     #[test]
     fn configs_read_every_named_entry_with_env_values_as_text() {
-        let configs = parse_configs(Some(DAEMON_YAML));
+        let configs = parse_configs(Some(DAEMON_YAML), &[]);
         assert_eq!(configs.len(), 2);
         assert_eq!(configs[0].kind, "local");
         assert_eq!(configs[1].context, "build-cluster");
         assert_eq!(configs[1].gateway_env, vec!["OPENAI_API_KEY"]);
         assert_eq!(configs[1].env["INFER_COMPUTER_USE_ENABLED"], "true");
-        assert!(parse_configs(None).is_empty());
-        assert!(parse_configs(Some("workspaces: nope")).is_empty());
+        assert!(parse_configs(None, &[]).is_empty());
+        assert!(parse_configs(Some("workspaces: nope"), &[]).is_empty());
     }
 
     #[test]
     fn a_new_workspace_is_appended_and_the_rest_of_the_file_stays() {
         let merged = merge_workspace(Some(DAEMON_YAML), &kubernetes("dev"), None).unwrap();
-        let configs = parse_configs(Some(&merged));
+        let configs = parse_configs(Some(&merged), &[]);
         assert_eq!(configs.len(), 3);
         assert_eq!(configs[2], kubernetes("dev"));
         assert!(merged.contains("token: secret"));
         let first = merge_workspace(None, &kubernetes("dev"), None).unwrap();
-        assert_eq!(parse_configs(Some(&first)), vec![kubernetes("dev")]);
+        assert_eq!(parse_configs(Some(&first), &[]), vec![kubernetes("dev")]);
     }
 
     #[test]
     fn an_edit_replaces_its_entry_keeps_unknown_keys_and_drops_emptied_ones() {
         let merged =
             merge_workspace(Some(DAEMON_YAML), &kubernetes("build-2"), Some("build")).unwrap();
-        let configs = parse_configs(Some(&merged));
+        let configs = parse_configs(Some(&merged), &[]);
         assert_eq!(configs.len(), 2);
         assert_eq!(configs[1], kubernetes("build-2"));
         assert!(merged.contains("mode: all-in-one"));
@@ -779,30 +804,10 @@ mod tests {
     #[test]
     fn removing_a_workspace_leaves_the_others() {
         let removed = remove_workspace(Some(DAEMON_YAML), "build").unwrap();
-        let configs = parse_configs(Some(&removed));
+        let configs = parse_configs(Some(&removed), &[]);
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].name, "laptop");
         assert!(removed.contains("token: secret"));
-    }
-
-    #[test]
-    fn detection_adds_a_workspace_per_context_that_has_none() {
-        let existing = parse_configs(Some(DAEMON_YAML));
-        let contexts = ["build-cluster", "laptop", "k3d-dev"].map(String::from);
-        let keys = ["OPENAI_API_KEY".to_string()];
-        let detected = detected_workspaces(&existing, &contexts, "cli:1.2.3", &keys);
-        assert_eq!(detected.len(), 1);
-        assert_eq!(detected[0].name, "k3d-dev");
-        assert_eq!(detected[0].context, "k3d-dev");
-        assert_eq!(detected[0].kind, "kubernetes");
-        assert_eq!(detected[0].image, "cli:1.2.3");
-        assert_eq!(detected[0].gateway_env, keys);
-
-        let merged = merge_detected(Some(DAEMON_YAML), &detected).unwrap();
-        let after = parse_configs(Some(&merged));
-        assert_eq!(after.len(), 3);
-        assert!(merged.contains("token: secret"));
-        assert!(detected_workspaces(&after, &contexts, "cli:1.2.3", &keys).is_empty());
     }
 
     #[test]
@@ -892,26 +897,60 @@ mod tests {
     }
 
     #[test]
-    fn the_local_workspace_runs_the_desktop_image_with_the_saved_keys() {
-        let workspace = local_workspace(&["OLLAMA_CLOUD_API_KEY".into()]);
+    fn the_local_workspace_runs_the_desktop_image_on_the_local_cluster() {
+        let cluster = local_cluster(&["OLLAMA_CLOUD_API_KEY".into()]);
+        assert_eq!(cluster.name, crate::local_cluster::CONTEXT);
+        assert_eq!(cluster.context, crate::local_cluster::CONTEXT);
+        assert_eq!(cluster.gateway_env, ["OLLAMA_CLOUD_API_KEY"]);
+        let workspace = local_workspace();
         assert_eq!(workspace.name, "ubuntu-desktop");
-        assert_eq!(workspace.context, crate::local_cluster::CONTEXT);
+        assert_eq!(workspace.compute, cluster.name);
         assert_eq!(workspace.image, crate::local_cluster::COMPUTER_IMAGE);
-        assert_eq!(workspace.gateway_env, ["OLLAMA_CLOUD_API_KEY"]);
         assert_eq!(workspace.env["INFER_COMPUTER_USE_ENABLED"], "true");
     }
 
     #[test]
     fn the_local_workspace_replaces_only_its_own_entry() {
         assert_eq!(local_workspace_slot(&[kubernetes("build")]), Ok(None));
-        let own = local_workspace(&[]);
+        let own = on_cluster(local_workspace(), &[local_cluster(&[])]);
         assert_eq!(local_workspace_slot(&[own]), Ok(Some("ubuntu-desktop")));
         let elsewhere = WorkspaceConfig {
+            compute: String::new(),
             context: "k3d-computer-use".into(),
-            ..local_workspace(&[])
+            ..local_workspace()
         };
         let refused = local_workspace_slot(&[elsewhere]).unwrap_err();
         assert!(refused.contains("k3d-computer-use"), "{refused}");
+    }
+
+    #[test]
+    fn a_workspace_on_a_cluster_reads_its_connection_and_saves_only_its_own_keys() {
+        let cluster = ClusterConfig {
+            name: "k3d".into(),
+            context: "k3d-agents".into(),
+            namespace: "agents".into(),
+            gateway_env: vec!["ANTHROPIC_API_KEY".into()],
+        };
+        let daemon = "workspaces:\n  - name: reviewer\n    compute: k3d\n    image: infer:1\n";
+        let read = parse_configs(Some(daemon), std::slice::from_ref(&cluster));
+        assert_eq!(read[0].kind, "kubernetes");
+        assert_eq!(read[0].context, "k3d-agents");
+        assert_eq!(read[0].namespace, "agents");
+        assert_eq!(read[0].gateway_env, ["ANTHROPIC_API_KEY"]);
+
+        let legacy = "workspaces:\n  - name: reviewer\n    kind: kubernetes\n    context: old\n    namespace: infer\n    mode: all-in-one\n    gateway_env:\n      - OPENAI_API_KEY\n";
+        let moved = WorkspaceConfig {
+            compute: "k3d".into(),
+            ..parse_configs(Some(legacy), &[])[0].clone()
+        };
+        let saved = merge_workspace(Some(legacy), &moved, Some("reviewer")).unwrap();
+        for key in CLUSTER_KEYS {
+            assert!(
+                !saved.contains(&format!("{key}:")),
+                "{key} stays on a workspace on a cluster: {saved}"
+            );
+        }
+        assert!(saved.contains("compute: k3d"), "{saved}");
     }
 
     #[test]
