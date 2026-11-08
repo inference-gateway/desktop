@@ -141,9 +141,11 @@ export type Screen = { src: string; width: number; height: number };
 export type Prerequisite = { name: string; met: boolean; detail: string };
 /** The state of a Kubernetes workspace's cluster. The session counts are null when it cannot list sessions. */
 export type ClusterCheck = { prerequisites: Prerequisite[]; running: number | null; suspended: number | null };
-/** A workspace entry of ~/.infer/daemon.yaml as Settings edits it. */
+/** A workspace entry of ~/.infer/daemon.yaml as Settings edits it. One that names a cluster in `compute` reads that
+ * cluster's kind, context, namespace and provider keys. */
 export type WorkspaceConfig = {
   name: string;
+  compute: string;
   kind: string;
   context: string;
   namespace: string;
@@ -156,6 +158,9 @@ export type WorkspaceConfig = {
   env: Record<string, string>;
 };
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
+/** A cluster of ~/.infer/compute.yaml as the Compute tab edits it. Every workspace on it shares its namespace and
+ * gateway. */
+export type ClusterConfig = { name: string; context: string; namespace: string; gateway_env: string[] };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
 export type ProjectFile = { name: string; size: number };
@@ -495,16 +500,24 @@ export const api = {
     invoke<void>("save_workspace", { config, previousName }),
   deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),
   kubeContexts: () => invoke<string[]>("kube_contexts"),
-  detectWorkspaces: () => invoke<string[]>("detect_workspaces"),
+  defaultWorkspaceImage: () => invoke<string>("default_workspace_image"),
+  clusterConfigs: () => invoke<ClusterConfig[]>("cluster_configs"),
+  saveCluster: (config: ClusterConfig, previousName?: string) => invoke<void>("save_cluster", { config, previousName }),
+  deleteCluster: (name: string) => invoke<void>("delete_cluster", { name }),
+  checkCluster: (name: string) => invoke<ClusterCheck>("check_cluster", { name }),
+  /** Whether the installed infer reads compute.yaml, which every cluster action needs. */
+  computeSupported: () => invoke<boolean>("compute_supported"),
+  detectClusters: () => invoke<string[]>("detect_clusters"),
   dockerAvailable: () => invoke<boolean>("docker_available"),
-  /** Provisions a k3s cluster in Docker with an Ubuntu desktop workspace and answers the workspace's name. */
+  /** Provisions a k3s cluster in Docker, registers it with an Ubuntu desktop workspace and answers the workspace's
+   * name. */
   provisionLocalCluster: (onStage: (stage: string) => void) => {
     const stages = new Channel<string>();
     stages.onmessage = onStage;
     return invoke<string>("provision_local_cluster", { onStage: stages });
   },
-  checkWorkspace: (context: string, namespace: string) =>
-    invoke<ClusterCheck>("check_workspace", { context, namespace }),
+  checkWorkspace: (context: string, namespace: string, name: string) =>
+    invoke<ClusterCheck>("check_workspace", { context, namespace, name }),
   moveSession: (
     sessionId: string,
     project: string | undefined,

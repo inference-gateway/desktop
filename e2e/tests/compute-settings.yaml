@@ -1,0 +1,23 @@
+name: compute settings - a cluster is added under Compute and lands in compute.yaml
+narration:
+  - "Open Settings."
+  - "Switch to the Compute tab."
+  - "Start a new cluster."
+  - "Name it."
+  - "Name its Kubernetes context - the namespace keeps the infer-workspaces default."
+  - "Save the cluster."
+  - "It shows up in the list, ready to be edited."
+  - "The cluster is checked once for what sessions need."
+  - "compute.yaml holds it, in the default namespace."
+  - "Settings asks for a CLI restart so the daemon loads it."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Compute" }
+  - click: { button: "New cluster" }
+  - type: "e2e-k3d"
+  - type: "k3d-e2e"
+  - click: { button: "Save cluster" }
+  - wait_for: { button: "Edit cluster e2e-k3d", timeout: 10 }
+  - wait_for: { text: "Cluster has everything it needs", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/compute.yaml", contains: "namespace: infer-workspaces", timeout: 10 }
+  - wait_for: { button: "Restart CLI now", timeout: 5 }

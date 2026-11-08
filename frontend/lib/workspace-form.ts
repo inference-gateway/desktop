@@ -11,6 +11,7 @@ export const WORKSPACE_KINDS = [{ id: "kubernetes", label: "Kubernetes" }] as co
 
 export const EMPTY_WORKSPACE: WorkspaceConfig = {
   name: "",
+  compute: "",
   kind: "kubernetes",
   context: "",
   namespace: "",
@@ -65,6 +66,7 @@ export function configOf(draft: WorkspaceDraft): WorkspaceConfig {
 /** Why a draft cannot be saved yet, or null when it can. */
 export function draftProblem(draft: WorkspaceDraft): string | null {
   if (!draft.name.trim()) return "Give the workspace a name.";
+  if (draft.compute) return null;
   if (draft.kind === "kubernetes" && !draft.context.trim()) return "Pick the Kubernetes context of the cluster.";
   if (draft.kind === "kubernetes" && !draft.namespace.trim()) return "Name the namespace the sessions run in.";
   return null;

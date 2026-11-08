@@ -8,6 +8,7 @@ mod avatars;
 mod binaries;
 mod cli_install;
 mod composer;
+mod compute_settings;
 mod config;
 mod daemon;
 mod download;
@@ -279,8 +280,14 @@ pub fn run() {
             workspace_settings::save_workspace,
             workspace_settings::delete_workspace,
             workspace_settings::kube_contexts,
-            workspace_settings::detect_workspaces,
+            compute_settings::cluster_configs,
+            compute_settings::save_cluster,
+            compute_settings::delete_cluster,
+            compute_settings::check_cluster,
+            compute_settings::compute_supported,
+            compute_settings::detect_clusters,
             workspace_settings::check_workspace,
+            workspace_settings::default_workspace_image,
             workspace_settings::docker_available,
             workspace_settings::provision_local_cluster,
         ])

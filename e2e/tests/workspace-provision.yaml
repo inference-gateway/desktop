@@ -1,17 +1,19 @@
-name: workspace provisioning - one click runs a local k3s cluster with an ubuntu-desktop workspace
+name: workspace provisioning - one click runs a local k3s cluster with an ubuntu-desktop workspace on it
 narration:
   - "Open Settings."
-  - "Switch to the Workspaces tab."
+  - "Switch to the Compute tab."
   - "With Docker running, the tab offers a local cluster."
-  - "Provision it with one click - mock mode skips Docker and only registers the workspace."
-  - "The ubuntu-desktop workspace shows up in the list."
-  - "The daemon's configuration file holds it, on the local cluster's context."
-  - "Settings asks for a CLI restart so the daemon loads it."
+  - "Provision it with one click - mock mode skips Docker and only registers the cluster and its workspace."
+  - "The infer-k3s cluster shows up in the list."
+  - "compute.yaml holds the cluster on the local cluster's context."
+  - "The ubuntu-desktop workspace in daemon.yaml runs on it."
+  - "Settings asks for a CLI restart so the daemon loads them."
 steps:
   - click: { button: "Settings" }
-  - click: { button: "Workspaces" }
+  - click: { button: "Compute" }
   - wait_for: { button: "Provision local cluster", timeout: 10 }
   - click: { button: "Provision local cluster" }
-  - wait_for: { button: "Edit workspace ubuntu-desktop", timeout: 15 }
-  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "context: infer-k3s", timeout: 10 }
+  - wait_for: { button: "Edit cluster infer-k3s", timeout: 15 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/compute.yaml", contains: "context: infer-k3s", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "compute: infer-k3s", timeout: 10 }
   - wait_for: { button: "Restart CLI now", timeout: 5 }
