@@ -44,9 +44,8 @@ pub(crate) enum AgentEvent {
         tool_call_id: String,
         questions: serde_json::Value,
     },
-    Info {
-        message: String,
-    },
+    /// The thread started a run, whichever client or worker started it.
+    RunStarted,
     AgentError {
         message: String,
     },
@@ -372,9 +371,7 @@ impl AgentParser {
                 if !sid.is_empty() && self.session_id.is_none() {
                     self.session_id = Some(sid.to_string());
                 }
-                Some(AgentEvent::Info {
-                    message: "Session started".into(),
-                })
+                Some(AgentEvent::RunStarted)
             }
             "MESSAGES_SNAPSHOT" => None,
             "STATE_SNAPSHOT" => self.state(val.get("snapshot")?),
@@ -840,12 +837,14 @@ fn thread_for(state: &AppState, session_id: &str) -> Result<Arc<Thread>, String>
 }
 
 /// Opens (or reuses) a chat's thread and returns its history as the AG-UI
-/// messages of the worker's MESSAGES_SNAPSHOT.
+/// messages of the worker's MESSAGES_SNAPSHOT. `on_event` streams the runs
+/// the app did not send, unless the chat already streams on a channel.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn open_thread(
     session_id: String,
     model: String,
+    on_event: Channel<AgentEvent>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
@@ -864,6 +863,9 @@ pub(crate) async fn open_thread(
         agent.as_deref(),
     );
     let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    if let Ok(mut channels) = state.channels.lock() {
+        channels.entry(session_id).or_insert(on_event);
+    }
     serde_json::to_string(thread.history()).map_err(|e| e.to_string())
 }
 
@@ -1830,9 +1832,9 @@ mod tests {
         assert_eq!(
             events.len(),
             4,
-            "expected Info + UserMessage + AssistantMessage + TokenUsage"
+            "expected RunStarted + UserMessage + AssistantMessage + TokenUsage"
         );
-        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(matches!(&events[0], AgentEvent::RunStarted));
         assert!(
             matches!(&events[1], AgentEvent::UserMessage { content } if content == "what is up?"),
             "the user echo is what another client of the thread sent"
@@ -1864,9 +1866,9 @@ mod tests {
         assert_eq!(
             events.len(),
             4,
-            "expected Info + UserMessage + AssistantMessage + TokenUsage"
+            "expected RunStarted + UserMessage + AssistantMessage + TokenUsage"
         );
-        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(matches!(&events[0], AgentEvent::RunStarted));
         assert!(matches!(&events[1], AgentEvent::UserMessage { content } if content == "and now?"));
         assert!(
             matches!(&events[2], AgentEvent::AssistantMessage { content, .. } if content == "Here is more."),
@@ -1888,7 +1890,7 @@ mod tests {
             r#"{"type":"RUN_FINISHED","threadId":"sess-1","runId":"run-1","outcome":{"type":"cancelled"}}"#,
         ];
         let (events, _) = parse_all(lines);
-        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(matches!(&events[0], AgentEvent::RunStarted));
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, .. } if content == "partial")
         );
@@ -2316,7 +2318,7 @@ mod tests {
             .collect();
 
         assert_eq!(events.len(), 5);
-        assert!(matches!(&events[0], AgentEvent::Info { message } if message == "Session started"));
+        assert!(matches!(&events[0], AgentEvent::RunStarted));
         // Streamed text emits on TEXT_MESSAGE_START, before the tool call.
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. }

@@ -347,7 +347,7 @@ function insertBeforeErrors(state: ChatState, item: TranscriptItem): ChatState {
 function applyEvent(state: ChatState, event: AgentEvent): ChatState {
   switch (event.kind) {
     case "SessionId":
-    case "Info":
+    case "RunStarted":
     case "RawLine":
     case "ComputerUseAction":
       return state;

@@ -682,6 +682,117 @@ function useDesktopStore() {
     [agents, projectContexts, projectGroups, projectTypes],
   );
 
+  const resolveApproval = useCallback(
+    async (id: string, callId: string, approved: boolean, _scope?: "always") => {
+      try {
+        await api.sendApproval(id, callId, approved);
+        const status = approved ? "approved" : "denied";
+        dispatchTo(id, { type: "setApproval", callId, status });
+        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
+      }
+    },
+    [dispatchTo],
+  );
+
+  // The channel a chat's events stream on. Any run its thread starts marks
+  // the chat running, also one its worker starts on its own. A send passes
+  // the project an /init run logs its activity for.
+  const chatEvents = useCallback(
+    (runId: string, initProject?: string) => {
+      const ch = new Channel<AgentEvent>();
+      ch.onmessage = (event) => {
+        if (event.kind === "NextStepSuggestion" && runId !== activeIdRef.current) return;
+        dispatchTo(runId, { type: "event", event });
+        switch (event.kind) {
+          case "RunStarted":
+            setRunningIds((prev) => (prev.has(runId) ? prev : new Set(prev).add(runId)));
+            break;
+          case "AssistantMessage":
+            if (event.tool_calls.some((tc) => tc.name === "Agent")) setTimeout(refreshConversations, 1000);
+            break;
+          case "BackgroundTasks":
+            refreshConversations();
+            break;
+          case "ApprovalRequest":
+            if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
+              resolveApproval(runId, event.tool_call_id, true);
+              break;
+            }
+            if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
+              computerApprovalsRef.current.set(event.tool_call_id, runId);
+            }
+            if (!document.hasFocus()) notifyApproval(event.tool_name);
+            break;
+          case "Done":
+            refreshStatus();
+            refreshConversations();
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              return next;
+            });
+            for (const [callId, sessionId] of computerApprovalsRef.current) {
+              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+            }
+            recordTerminal(
+              runId,
+              {
+                label: event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`,
+                error: event.exit_code !== 0,
+              },
+              true,
+            );
+            if (initProject)
+              logActivity(
+                initProject,
+                "Init",
+                event.exit_code === 0 ? "done" : "failed",
+                event.exit_code === 0 ? "AGENTS.md ready" : `Exited with code ${event.exit_code}`,
+              );
+            break;
+          case "Cancelled":
+            setRunningIds((prev) => {
+              const next = new Set(prev);
+              next.delete(runId);
+              return next;
+            });
+            for (const [callId, sessionId] of computerApprovalsRef.current) {
+              if (sessionId === runId) computerApprovalsRef.current.delete(callId);
+            }
+            recordTerminal(runId, { label: "Stopped", error: false });
+            if (initProject) logActivity(initProject, "Init", "skipped", "stopped");
+            break;
+        }
+      };
+      return ch;
+    },
+    [dispatchTo, refreshStatus, refreshConversations, resolveApproval, recordTerminal, logActivity],
+  );
+
+  // Opens or reuses a chat's thread with a channel for its events, so the app
+  // follows the chat and returns its history.
+  const followThread = useCallback(
+    async (id: string) => {
+      const projectName = projects[id];
+      const agentName = agentOf[id];
+      return api.openThread({
+        sessionId: id,
+        model: agentThreadModel(
+          agents.find((a) => a.name === agentName),
+          model,
+        ),
+        onEvent: chatEvents(id),
+        ...(await threadPrompts(projectName, undefined, agentName)),
+        autoMode: autoModes[id] ?? autoMode,
+        project: projectName,
+        agent: agentName,
+      });
+    },
+    [projects, agentOf, agents, model, autoModes, autoMode, threadPrompts, chatEvents],
+  );
+
   const leaveConversation = useCallback(
     (nextId: string | null) => {
       const previous = activeIdRef.current;
@@ -705,25 +816,12 @@ function useDesktopStore() {
       setActiveAgent(agentOf[id] ?? null);
       if (transcripts[id]) return;
       try {
-        const projectName = projects[id];
-        const agentName = agentOf[id];
-        const messages = await api.openThread({
-          sessionId: id,
-          model: agentThreadModel(
-            agents.find((a) => a.name === agentName),
-            model,
-          ),
-          ...(await threadPrompts(projectName, undefined, agentName)),
-          autoMode: autoModes[id] ?? autoMode,
-          project: projectName,
-          agent: agentName,
-        });
-        dispatchTo(id, { type: "loadHistory", messages });
+        dispatchTo(id, { type: "loadHistory", messages: await followThread(id) });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, agentOf, agents, model, autoModes, autoMode, threadPrompts, dispatchTo, leaveConversation],
+    [transcripts, projects, agentOf, followThread, dispatchTo, leaveConversation],
   );
 
   const newChat = useCallback(() => {
@@ -981,20 +1079,6 @@ function useDesktopStore() {
     [loadAgents],
   );
 
-  const resolveApproval = useCallback(
-    async (id: string, callId: string, approved: boolean, _scope?: "always") => {
-      try {
-        await api.sendApproval(id, callId, approved);
-        const status = approved ? "approved" : "denied";
-        dispatchTo(id, { type: "setApproval", callId, status });
-        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
-      } catch (err) {
-        dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
-      }
-    },
-    [dispatchTo],
-  );
-
   // A chat keeps its agent: a send into an existing chat (a queued prompt, the
   // monitor) runs as the agent it was assigned. Only a chat whose assignment
   // has not landed in state yet needs its agent passed in.
@@ -1014,68 +1098,7 @@ function useDesktopStore() {
       setRunningIds((prev) => new Set(prev).add(runId));
       if (isInit && projectName) logActivity(projectName, "Init", "running");
       try {
-        const ch = new Channel<AgentEvent>();
-        ch.onmessage = (event) => {
-          if (event.kind === "NextStepSuggestion" && runId !== activeIdRef.current) return;
-          dispatchTo(runId, { type: "event", event });
-          switch (event.kind) {
-            case "AssistantMessage":
-              if (event.tool_calls.some((tc) => tc.name === "Agent")) setTimeout(refreshConversations, 1000);
-              break;
-            case "BackgroundTasks":
-              refreshConversations();
-              break;
-            case "ApprovalRequest":
-              if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
-                resolveApproval(runId, event.tool_call_id, true);
-                break;
-              }
-              if (COMPUTER_USE_TOOLS.has(event.tool_name)) {
-                computerApprovalsRef.current.set(event.tool_call_id, runId);
-              }
-              if (!document.hasFocus()) notifyApproval(event.tool_name);
-              break;
-            case "Done":
-              refreshStatus();
-              refreshConversations();
-              setRunningIds((prev) => {
-                const next = new Set(prev);
-                next.delete(runId);
-                return next;
-              });
-              for (const [callId, sessionId] of computerApprovalsRef.current) {
-                if (sessionId === runId) computerApprovalsRef.current.delete(callId);
-              }
-              recordTerminal(
-                runId,
-                {
-                  label: event.exit_code === 0 ? "Done" : `Exited with code ${event.exit_code}`,
-                  error: event.exit_code !== 0,
-                },
-                true,
-              );
-              if (isInit && projectName)
-                logActivity(
-                  projectName,
-                  "Init",
-                  event.exit_code === 0 ? "done" : "failed",
-                  event.exit_code === 0 ? "AGENTS.md ready" : `Exited with code ${event.exit_code}`,
-                );
-              break;
-            case "Cancelled":
-              setRunningIds((prev) => {
-                const next = new Set(prev);
-                next.delete(runId);
-                return next;
-              });
-              for (const [callId, sessionId] of computerApprovalsRef.current) {
-                if (sessionId === runId) computerApprovalsRef.current.delete(callId);
-              }
-              recordTerminal(runId, { label: "Stopped", error: false });
-              if (isInit && projectName) logActivity(projectName, "Init", "skipped", "stopped");
-              break;
-          }
-        };
+        const ch = chatEvents(runId, isInit ? projectName : undefined);
         if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
         const runsOn =
           runId in workspaceOfRef.current
@@ -1134,7 +1157,7 @@ function useDesktopStore() {
       dispatchTo,
       clearTerminal,
       recordTerminal,
-      resolveApproval,
+      chatEvents,
     ],
   );
 
@@ -1399,13 +1422,17 @@ function useDesktopStore() {
 
   const [drivenId, setDrivenId] = useState<string | null>(null);
 
+  // The worker answers a hand-back with a run of its own, so the app follows
+  // the chat first: a chat left or never opened would not show that run.
   const handBack = useCallback(async () => {
     if (!drivenId) return;
     setDrivenId(null);
+    const messages = await followThread(drivenId).catch(() => null);
+    if (messages && !transcripts[drivenId]) dispatchTo(drivenId, { type: "loadHistory", messages });
     await api
       .screenControl(drivenId, projects[drivenId], false)
       .catch((e) => setError(`Failed to hand the screen back: ${e}`));
-  }, [drivenId, projects, setError]);
+  }, [drivenId, followThread, transcripts, dispatchTo, projects, setError]);
 
   // A chat moves between turns: an open run stops first, and a chat on one
   // workspace comes home before it goes to another.

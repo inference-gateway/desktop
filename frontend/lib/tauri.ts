@@ -36,7 +36,7 @@ export type AgentEvent =
   | { kind: "ToolResult"; content: string; tool_call_id: string }
   | { kind: "ApprovalRequest"; tool_name: string; tool_args: string; tool_call_id: string }
   | { kind: "UserQuestionRequest"; tool_call_id: string; questions: UserQuestion[] }
-  | { kind: "Info"; message: string }
+  | { kind: "RunStarted" }
   | { kind: "AgentError"; message: string }
   | { kind: "RawLine"; line: string }
   | { kind: "Done"; exit_code: number; stderr: string }
@@ -333,6 +333,7 @@ export const api = {
   openThread: (args: {
     sessionId: string;
     model: string;
+    onEvent: Channel<AgentEvent>;
     systemPrompt?: string;
     extraInstructions?: string;
     autoMode: boolean;
