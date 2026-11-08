@@ -42,7 +42,7 @@ fn timestamp_dir_name(unix_secs: u64) -> String {
 }
 
 /// Howard Hinnant's days-to-civil-date algorithm (day 0 = 1970-01-01).
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
+pub(crate) fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

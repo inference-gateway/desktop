@@ -17,6 +17,8 @@ const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   model: "",
   workspace: "",
   project: "",
+  email: "",
+  allowed_recipients: [],
   instructions: "Write well.",
   avatar: null,
   path: "/tmp/writer.md",
@@ -76,6 +78,29 @@ test("agentInstructionsPreamble names the agent and lists the others", () => {
     ].join("\n"),
   );
   expect(agentInstructionsPreamble(me, [me])).toBe('You are running as the agent "writer": Writes prose.');
+});
+
+test("the preamble carries the mail identity, the send whitelist and the others' addresses", () => {
+  const me = agent({
+    name: "writer",
+    email: "writer@agentmail.to",
+    allowed_recipients: [" human@example.com ", "", "reviewer@agentmail.to"],
+  });
+  const reviewer = agent({ name: "reviewer", description: "Reviews drafts.", email: "reviewer@agentmail.to" });
+  expect(agentInstructionsPreamble(me, [me, reviewer])).toBe(
+    [
+      'You are running as the agent "writer": Writes prose.',
+      "Your email address is writer@agentmail.to. People and other agents can write to you there, and you can send mail as it.",
+      "You may only send mail to these addresses: human@example.com, reviewer@agentmail.to.",
+      "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
+      "- reviewer: Reviews drafts. (email: reviewer@agentmail.to)",
+    ].join("\n"),
+  );
+  const addressless = agent({ name: "writer", allowed_recipients: ["nobody@example.com"] });
+  expect(agentInstructionsPreamble(addressless, [addressless])).toBe(
+    'You are running as the agent "writer": Writes prose.',
+    "a whitelist without an address says nothing about mail",
+  );
 });
 
 test("fluent emoji entries are unique and resolve to the static and animated asset URLs", () => {

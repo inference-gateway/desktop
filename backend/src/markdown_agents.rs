@@ -4,9 +4,10 @@ use tauri_plugin_dialog::DialogExt;
 
 /// A Markdown agent definition (`<name>.md`, Claude Code / infer format): the
 /// frontmatter is its profile, the body its system prompt. `emoji`,
-/// `workspace` (the computer its chats run on) and `project` (the project its
-/// new chats open in) are desktop-only keys the CLI ignores, the picture is a
-/// sibling `<name>.<ext>`.
+/// `workspace` (the computer its chats run on), `project` (the project its
+/// new chats open in), `email` (its AgentMail inbox address) and
+/// `allowed_recipients` (the addresses or domains it may mail) are desktop-only
+/// keys the CLI ignores, the picture is a sibling `<name>.<ext>`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
@@ -19,6 +20,10 @@ pub(crate) struct MarkdownAgent {
     pub(crate) workspace: String,
     #[serde(default)]
     pub(crate) project: String,
+    #[serde(default)]
+    pub(crate) email: String,
+    #[serde(default)]
+    pub(crate) allowed_recipients: Vec<String>,
     #[serde(default)]
     pub(crate) instructions: String,
     #[serde(default)]
@@ -41,6 +46,10 @@ struct Frontmatter {
     workspace: String,
     #[serde(default)]
     project: String,
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    allowed_recipients: Vec<String>,
 }
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
@@ -49,13 +58,15 @@ const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
 /// The frontmatter keys the agent editor owns. Every other key is kept as found.
-const MANAGED_KEYS: [&str; 6] = [
+const MANAGED_KEYS: [&str; 8] = [
     "name",
     "description",
     "emoji",
     "model",
     "workspace",
     "project",
+    "email",
+    "allowed_recipients",
 ];
 /// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
 /// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
@@ -89,7 +100,7 @@ pub(crate) fn agent_dirs_for(chat_dir: &Path, home: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn agent_dirs() -> Vec<PathBuf> {
+pub(crate) fn agent_dirs() -> Vec<PathBuf> {
     agent_dirs_for(&crate::env::agent_cwd(), &home_dir())
 }
 
@@ -140,6 +151,8 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
         model: fm.model,
         workspace: fm.workspace,
         project: fm.project,
+        email: fm.email,
+        allowed_recipients: fm.allowed_recipients,
         instructions: body.trim().to_string(),
         avatar: None,
         path: path.display().to_string(),
@@ -214,6 +227,17 @@ pub(crate) fn list_from(dirs: &[PathBuf]) -> Vec<MarkdownAgent> {
     agents
 }
 
+/// The agent `name`: the first matching file wins like `list_from`. Its
+/// picture is left unattached, an address lookup never needs it.
+pub(crate) fn by_name_in(dirs: &[PathBuf], name: &str) -> Option<MarkdownAgent> {
+    let path = dirs
+        .iter()
+        .find(|dir| dir.join(format!("{name}.md")).is_file())?;
+    let path = path.join(format!("{name}.md"));
+    let text = std::fs::read_to_string(&path).ok()?;
+    parse_agent(&path, &text).ok()
+}
+
 /// The frontmatter of the agent file at `path` without the keys the editor
 /// manages, so a save keeps what other tools put there (`tools`,
 /// `disallowedTools`, `color`). Empty when the file is missing or unreadable.
@@ -243,6 +267,18 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
     }
     if !agent.project.trim().is_empty() {
         front.insert("project".into(), agent.project.trim().into());
+    }
+    if !agent.email.trim().is_empty() {
+        front.insert("email".into(), agent.email.trim().into());
+    }
+    let recipients: Vec<&str> = agent
+        .allowed_recipients
+        .iter()
+        .map(|recipient| recipient.trim())
+        .filter(|recipient| !recipient.is_empty())
+        .collect();
+    if !recipients.is_empty() {
+        front.insert("allowed_recipients".into(), recipients.into());
     }
     front.extend(kept);
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
@@ -372,9 +408,12 @@ pub(crate) fn save_markdown_agent(
     Ok(path.display().to_string())
 }
 
+/// Removes the agent and its AgentMail API key, so a later agent of the same
+/// name starts without the old inbox's key.
 #[tauri::command]
 pub(crate) fn delete_markdown_agent(name: String) -> Result<(), String> {
-    delete_in(&agent_dir(&name), &name)
+    delete_in(&agent_dir(&name), &name)?;
+    crate::config::set_agent_api_key_in(&home_dir(), &name, "")
 }
 
 /// Lets the user pick a picture for the agent. Returns false when they cancel.
@@ -437,6 +476,8 @@ mod tests {
             model: "inherit".into(),
             workspace: String::new(),
             project: String::new(),
+            email: String::new(),
+            allowed_recipients: Vec::new(),
             instructions: "You are a senior reviewer.\n\nReport findings by severity.".into(),
             avatar: None,
             path: String::new(),
@@ -531,6 +572,43 @@ mod tests {
         let listed = &list_in(&dir)[0];
         assert_eq!(listed.workspace, "ubuntu-desktop");
         assert_eq!(listed.project, "desktop");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_address_and_allowed_recipients_round_trip_as_a_block_list() {
+        let dir = temp_dir("email");
+        let path = write_in(&dir, &sample(), &sample().name).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("email"), "{text}");
+        assert!(!text.contains("allowed_recipients"), "{text}");
+        let mut agent = sample();
+        agent.email = " code-reviewer@agentmail.to ".into();
+        agent.allowed_recipients = vec![
+            " human@example.com ".into(),
+            " ".into(),
+            "other-agent@agentmail.to".into(),
+        ];
+        write_in(&dir, &agent, &agent.name).unwrap();
+
+        let text = std::fs::read_to_string(dir.join("code-reviewer.md")).unwrap();
+        assert!(
+            text.contains("email: code-reviewer@agentmail.to\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("allowed_recipients:\n- human@example.com\n- other-agent@agentmail.to\n"),
+            "{text}"
+        );
+        let listed = &list_in(&dir)[0];
+        assert_eq!(listed.email, "code-reviewer@agentmail.to");
+        assert_eq!(
+            listed.allowed_recipients,
+            vec!["human@example.com", "other-agent@agentmail.to"]
+        );
+        let by_name = by_name_in(std::slice::from_ref(&dir), "code-reviewer").unwrap();
+        assert_eq!(by_name.email, "code-reviewer@agentmail.to");
+        assert!(by_name_in(std::slice::from_ref(&dir), "ghost").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

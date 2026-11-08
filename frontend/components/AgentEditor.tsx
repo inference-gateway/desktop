@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, Mail, X } from "lucide-react";
 import { useDesktop } from "@/store";
 import { api, type MarkdownAgent, type Workspace } from "@/lib/tauri";
 import { normaliseAgentName } from "@/lib/agents";
@@ -16,6 +16,8 @@ const EMPTY: MarkdownAgent = {
   model: "",
   workspace: "",
   project: "",
+  email: "",
+  allowed_recipients: [],
   instructions: "",
   avatar: null,
   path: "",
@@ -33,6 +35,9 @@ export function AgentEditor() {
   const { agentEditor, closeAgentEditor, saveAgent, models, projectNames, setError } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
+  const [emailKey, setEmailKey] = useState("");
+  const [recipients, setRecipients] = useState((existing?.allowed_recipients ?? []).join(", "));
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -88,11 +93,42 @@ export function AgentEditor() {
     }
   };
 
+  const createInbox = async () => {
+    const key = emailKey.trim();
+    if (!draft.name || !key || creating) return;
+    setCreating(true);
+    try {
+      set("email", (await api.createAgentInbox(draft.name, key)).trim());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const save = async () => {
     if (!complete || saving) return;
     setSaving(true);
     try {
-      await saveAgent(draft, existing?.name, animatedPick ? fluentAnimatedUrl(animatedPick) : undefined);
+      const agent = {
+        ...draft,
+        allowed_recipients: recipients
+          .split(",")
+          .map((r) => r.trim())
+          .filter(Boolean),
+      };
+      await saveAgent(agent, existing?.name, animatedPick ? fluentAnimatedUrl(animatedPick) : undefined);
+      if (existing?.name && existing.name !== agent.name) {
+        await api.moveAgentEmailKey(existing.name, agent.name);
+      }
+      const key = emailKey.trim();
+      if (key) await api.setAgentEmailKey(agent.name, key);
+      if (agent.email.trim()) {
+        const dropped = await api.syncAgentMail(agent.name);
+        if (dropped.length > 0) {
+          setError(`Not allowed by agent_mail.allowed_recipients in config.yaml: ${dropped.join(", ")}`);
+        }
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -281,6 +317,61 @@ export function AgentEditor() {
             onChange={(e) => set("instructions", e.target.value)}
             className="min-h-[12rem] resize-y rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-[0.82rem] leading-relaxed text-foreground outline-none focus-visible:border-ring"
           />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="agent-email" className="text-[0.8rem] text-muted-foreground">
+            Email
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="agent-email"
+              value={draft.email}
+              placeholder="code-reviewer@agentmail.to"
+              onKeyDown={advanceOnEnter("agent-email-key")}
+              onChange={(e) => set("email", e.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!draft.name || !emailKey.trim() || creating}
+              title={emailKey.trim() ? "Provision the inbox through AgentMail" : "Type the AgentMail API key first"}
+              onClick={createInbox}
+            >
+              <Mail />
+              {creating ? "Creating..." : "Create inbox"}
+            </Button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="agent-email-key" className="text-[0.8rem] text-muted-foreground">
+              AgentMail API key
+            </Label>
+            <Input
+              id="agent-email-key"
+              type="password"
+              autoComplete="off"
+              value={emailKey}
+              placeholder="am_us_..."
+              onKeyDown={advanceOnEnter("agent-email-recipients")}
+              onChange={(e) => setEmailKey(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="agent-email-recipients" className="text-[0.8rem] text-muted-foreground">
+              Allowed recipients
+            </Label>
+            <Input
+              id="agent-email-recipients"
+              value={recipients}
+              placeholder="you@example.com, other-agent@agentmail.to"
+              onChange={(e) => setRecipients(e.target.value)}
+            />
+          </div>
+          <span className="text-[0.72rem] text-muted-foreground/70">
+            Comma-separated addresses or domains the agent may mail - with none it can only mail itself, and
+            agent_mail.allowed_recipients in config.yaml caps every agent. The address travels with the agent's file,
+            the API key stays in the credential store and never in the file.
+          </span>
         </div>
 
         <div className="flex items-center justify-end gap-2">

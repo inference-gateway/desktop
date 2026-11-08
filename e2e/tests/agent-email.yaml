@@ -1,0 +1,29 @@
+name: agents - creating an agent with an email in mock mode
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Start a new agent."
+  - "Name it e2e-mailer."
+  - "Describe what it is for."
+  - "Give it its instructions - Enter is a newline there."
+  - "Tab out of the instructions into the address field."
+  - "Tab past the address - Create inbox fills it in."
+  - "Type an AgentMail API key."
+  - "Allow it to mail you@example.com - with none it could only mail itself."
+  - "Create the inbox - mock mode answers e2e-mailer@agentmail.to without AgentMail."
+  - "Save the agent."
+  - "The composer chip shows the agent's address."
+  - "Leave the agent."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "New agent" }
+  - type: "e2e-mailer"
+  - type: "Mails status reports as a demo"
+  - type: "You are the e2e mailer. Answer with your address."
+  - keypress: "tab"
+  - keypress: "tab"
+  - type: "am_us_mock-key-for-e2e"
+  - type: "you@example.com"
+  - click: { button: "Create inbox" }
+  - click: { button: "Save agent" }
+  - wait_for: { text: "e2e-mailer@agentmail.to", timeout: 15 }
+  - click: { button: "Leave agent e2e-mailer" }

@@ -6,7 +6,7 @@
 
 use crate::agent::{AgentEvent, AgentParser, run_outcome};
 use crate::daemon::{Binding, ExtensionStatus, lock};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +33,21 @@ pub(crate) struct ThreadOptions {
     pub(crate) max_turns: u32,
     /// The Markdown agent the CLI runs the thread as: its model, body and tools.
     pub(crate) agent: Option<String>,
+    /// MCP servers only this thread brings up on top of the configured ones,
+    /// such as the AgentMail server of the agent it runs as.
+    pub(crate) mcp_servers: Vec<ThreadMcpServer>,
+    /// Extra environment variables the worker launches with, such as an
+    /// agent's API key for its own MCP server.
+    pub(crate) env: BTreeMap<String, String>,
+}
+
+/// One MCP server a thread's worker adds at launch, identified by `name` and
+/// reached at `url` with static `headers`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct ThreadMcpServer {
+    pub(crate) name: String,
+    pub(crate) url: String,
+    pub(crate) headers: BTreeMap<String, String>,
 }
 
 pub(crate) type Sink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
@@ -428,6 +443,12 @@ fn open_frame(session_id: &str, project_dir: &str, options: &ThreadOptions) -> S
         frame["sandbox_directories"] = options.sandbox_directories.clone().into();
     }
     set(&mut frame, "agent", options.agent.clone().map(Into::into));
+    if !options.mcp_servers.is_empty() {
+        frame["mcp_servers"] = serde_json::json!(options.mcp_servers);
+    }
+    if !options.env.is_empty() {
+        frame["env"] = serde_json::json!(options.env);
+    }
     frame.to_string()
 }
 
@@ -647,6 +668,8 @@ mod tests {
             sandbox_directories: vec![".".into(), "/tmp".into()],
             max_turns: 500,
             agent: Some("reviewer".into()),
+            mcp_servers: Vec::new(),
+            env: BTreeMap::new(),
         };
         let binding = Binding {
             port,
@@ -679,6 +702,46 @@ mod tests {
         );
         assert_eq!(open["max_turns"], 500);
         assert_eq!(open["agent"], "reviewer");
+        assert!(open.get("mcp_servers").is_none());
+        assert!(open.get("env").is_none());
+    }
+
+    #[test]
+    fn an_agent_inbox_thread_carries_its_mcp_server_and_env() {
+        let (port, received) = fake_daemon(
+            r#"{"type":"browser_hello_ack"}"#,
+            vec![r#"{"type":"MESSAGES_SNAPSHOT","messages":[]}"#],
+        );
+        let binding = Binding {
+            port,
+            token: "t".into(),
+        };
+        let (sink, _, status, _) = sinks();
+        let mut headers = BTreeMap::new();
+        headers.insert("x-api-key".to_owned(), "am_us_secret".to_owned());
+        let options = ThreadOptions {
+            agent: Some("code-reviewer".into()),
+            mcp_servers: vec![ThreadMcpServer {
+                name: "agentmail".into(),
+                url: "https://mcp.agentmail.to/mcp".into(),
+                headers,
+            }],
+            env: BTreeMap::from([("AGENTMAIL_API_KEY".to_owned(), "am_us_secret".to_owned())]),
+            ..Default::default()
+        };
+        Thread::open(&binding, "s1", "/proj", &options, sink, status).unwrap();
+        wait_for(&received, 2);
+        let open: serde_json::Value = serde_json::from_str(&received.lock().unwrap()[1]).unwrap();
+        assert_eq!(open["mcp_servers"][0]["name"], "agentmail");
+        assert_eq!(
+            open["mcp_servers"][0]["url"],
+            "https://mcp.agentmail.to/mcp"
+        );
+        assert_eq!(
+            open["mcp_servers"][0]["headers"]["x-api-key"],
+            "am_us_secret"
+        );
+        assert_eq!(open["env"]["AGENTMAIL_API_KEY"], "am_us_secret");
     }
 
     #[test]
