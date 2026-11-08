@@ -108,7 +108,15 @@ export type ProgressEvent =
   | { kind: "Ready" }
   | { kind: "Error"; message: string };
 
-export type UpdateInfo = { name: string; current: string; latest: string | null; outdated: boolean };
+export type UpdateInfo = {
+  name: string;
+  current: string;
+  latest: string | null;
+  outdated: boolean;
+  /** Raw release tags of the component's repo, newest first and capped at 5.
+   * Absent in cached updates from before this became a field. */
+  versions?: string[];
+};
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type VoiceSample = { name: string; path: string };
 export type Avatar = { name: string; images: string[] };
@@ -361,8 +369,8 @@ const hexEncode = (value: string) =>
   Array.from(new TextEncoder().encode(value), (b) => b.toString(16).padStart(2, "0")).join("");
 
 export const api = {
-  checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false, restart = false) =>
-    invoke<void>("check_and_install_cli", { onEvent, force, restart }),
+  checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false, restart = false, tag: string | null = null) =>
+    invoke<void>("check_and_install_cli", { onEvent, force, restart, tag }),
   sendMessage: (args: {
     prompt: string;
     model: string;
@@ -417,7 +425,8 @@ export const api = {
   importDesktopFile: (path?: string | null) => invoke<ImportReport>("import_desktop_file", { path: path ?? null }),
   importDesktopGithub: (repo: string, token: string) =>
     invoke<ImportReport>("import_desktop_github", { repo, token: token || null }),
-  startGateway: (force = false, restart = false) => invoke<void>("start_gateway", { force, restart }),
+  startGateway: (force = false, restart = false, tag: string | null = null) =>
+    invoke<void>("start_gateway", { force, restart, tag }),
   startScheduler: () => invoke<void>("start_scheduler"),
   stopScheduler: () => invoke<void>("stop_scheduler"),
   getSchedulerStatus: () => invoke<boolean>("get_scheduler_status"),
@@ -453,7 +462,7 @@ export const api = {
     invoke<string>("github_run_task_issue", { repo, number, body }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
-  installDesktopUpdate: () => invoke<void>("install_desktop_update"),
+  installDesktopUpdate: (tag: string | null = null) => invoke<void>("install_desktop_update", { tag }),
   sttStatus: () => invoke<SttStatus>("stt_status"),
   prepareStt: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_stt", { onEvent }),
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),

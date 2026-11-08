@@ -53,6 +53,7 @@ import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
+import { selectableVersions, stripV, versionAction } from "@/lib/updates";
 import { safeAudioSrc, safeImageSrc } from "@/lib/tools";
 import { encodeWav, mergeChunks } from "@/lib/audio";
 import {
@@ -112,6 +113,9 @@ export function SettingsView() {
     saveSettings,
     getAuth,
     updates,
+    selectedVersions,
+    selectVersion,
+    installUpdate,
     checkForUpdates,
     applyUpdates,
     showUpdateBanner,
@@ -265,9 +269,45 @@ export function SettingsView() {
               <div>
                 {updates.map((u) => {
                   const latest = u.latest ? (u.outdated ? `→ ${u.latest}` : "up to date") : "unknown";
+                  const versions = selectableVersions(u);
+                  const selected = selectedVersions[u.name] ?? null;
+                  const action = selected ? versionAction(u.current, selected) : null;
                   return (
-                    <div key={u.name} className="mb-[0.3rem] text-[0.8rem] text-muted-foreground">
-                      {`${u.name} ${u.current} ${latest}`}
+                    <div
+                      key={u.name}
+                      className="mb-[0.3rem] flex items-center gap-2 text-[0.8rem] text-muted-foreground"
+                    >
+                      <span>{`${u.name} ${u.current} ${latest}`}</span>
+                      {versions.length > 0 && (
+                        <select
+                          id={`update-${u.name.toLowerCase()}`}
+                          aria-label={`Select ${u.name} version`}
+                          value={selected ?? ""}
+                          onChange={(e) => selectVersion(u.name, e.target.value || null)}
+                          className="w-36 rounded border border-border bg-secondary px-2 py-0.5 text-[0.8rem] text-foreground"
+                        >
+                          <option value="">Pick a version</option>
+                          {versions.map((v) => {
+                            const version = stripV(v);
+                            return (
+                              <option key={v} value={v}>
+                                {`${version}${version === u.current ? " (installed)" : ""}`}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      {action && (
+                        <Button
+                          size="sm"
+                          aria-label={`${action} ${u.name}`}
+                          onClick={() => {
+                            installUpdate(u.name);
+                          }}
+                        >
+                          {action}
+                        </Button>
+                      )}
                     </div>
                   );
                 })}
