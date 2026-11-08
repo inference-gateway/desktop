@@ -1,5 +1,5 @@
 use crate::agent::run_infer;
-use crate::env::home_dir;
+use crate::env::{home_dir, infer_dir_in};
 
 /// True when `name` is safe to pass to `infer skills install/uninstall`.
 pub(crate) fn valid_name(name: &str) -> bool {
@@ -13,7 +13,7 @@ pub(crate) fn valid_name(name: &str) -> bool {
 /// Names of the skills installed under `<home>/.infer/skills` (an entry owns a
 /// SKILL.md), rooted at an arbitrary home so tests can use a temp dir.
 pub(crate) fn installed_skills_in(home: &std::path::Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(home.join(".infer").join("skills")) else {
+    let Ok(entries) = std::fs::read_dir(infer_dir_in(home).join("skills")) else {
         return Vec::new();
     };
     entries
@@ -39,7 +39,7 @@ const BUNDLED_SKILLS: [(&str, &str); 2] = [
 /// Write `<home>/.infer/skills/<name>/SKILL.md`, rewriting only when the
 /// content differs from the bundled copy.
 fn install_bundled_in(home: &std::path::Path, name: &str, contents: &str) -> Result<(), String> {
-    let dir = home.join(".infer").join("skills").join(name);
+    let dir = infer_dir_in(home).join("skills").join(name);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("SKILL.md");
     if std::fs::read_to_string(&path).ok().as_deref() != Some(contents) {
@@ -84,7 +84,9 @@ pub(crate) async fn uninstall_skill(name: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BUNDLED_SKILLS, install_bundled_in, installed_skills_in, valid_name};
+    use super::{
+        BUNDLED_SKILLS, infer_dir_in, install_bundled_in, installed_skills_in, valid_name,
+    };
     use crate::test_support::TempDir;
 
     #[test]
@@ -106,7 +108,10 @@ mod tests {
         let mut names = installed_skills_in(&home);
         names.sort();
         assert_eq!(names, ["desktop-projects", "video-editing"]);
-        let path = home.join(".infer/skills/desktop-projects/SKILL.md");
+        let path = infer_dir_in(&home)
+            .join("skills")
+            .join("desktop-projects")
+            .join("SKILL.md");
         assert!(
             std::fs::read_to_string(&path)
                 .unwrap()

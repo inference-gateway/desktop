@@ -91,13 +91,12 @@ pub(crate) fn gh_bin() -> &'static std::path::Path {
     GH.get_or_init(|| {
         crate::stt::find_on_path("gh")
             .or_else(|| {
-                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
                 [
                     std::path::PathBuf::from("/opt/homebrew/bin/gh"),
                     std::path::PathBuf::from("/usr/local/bin/gh"),
                 ]
                 .into_iter()
-                .chain(home.map(|h| h.join(".local/bin/gh")))
+                .chain([crate::env::home_dir().join(".local/bin/gh")])
                 .find(|p| p.is_file())
             })
             .unwrap_or_else(|| "gh".into())

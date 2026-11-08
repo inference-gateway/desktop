@@ -1,7 +1,8 @@
 use crate::AppState;
 use crate::config::read_config;
 use crate::env::{
-    agent_cwd, compose_extras, home_dir, infer_bin_path, infer_env, mock_mode, uploads_dir,
+    agent_cwd, compose_extras, home_dir, infer_bin_path, infer_dir, infer_env, mock_mode,
+    uploads_dir,
 };
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
@@ -1263,8 +1264,7 @@ pub(crate) fn conversation_store_dir(cwd: &Path) -> PathBuf {
     let slug = cwd
         .to_string_lossy()
         .replace(std::path::MAIN_SEPARATOR, "-");
-    home_dir()
-        .join(".infer")
+    infer_dir()
         .join("projects")
         .join(slug)
         .join("conversations")
@@ -1389,7 +1389,7 @@ pub(crate) fn append_bash_history(line: String) -> Result<(), String> {
 /// `~/.infer/history/history` when that path is a directory (some CLI
 /// versions nest the file there).
 fn prompt_history_path() -> PathBuf {
-    let base = home_dir().join(".infer").join("history");
+    let base = infer_dir().join("history");
     if base.is_dir() {
         base.join("history")
     } else {
@@ -1400,7 +1400,7 @@ fn prompt_history_path() -> PathBuf {
 /// The desktop's own bash-command history (issue #185), a sibling file of
 /// the CLI's prompt history.
 fn bash_history_path() -> PathBuf {
-    home_dir().join(".infer").join("bash_history")
+    infer_dir().join("bash_history")
 }
 
 /// Read the lines of a history file. Returns an empty vec when the file

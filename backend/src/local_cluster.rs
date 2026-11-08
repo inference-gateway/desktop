@@ -157,10 +157,7 @@ fn install(manifest: &str, namespace: &str) -> Result<(), String> {
 }
 
 fn build_desktop_image(infer_version: Option<&str>) -> Result<(), String> {
-    let dir = crate::env::home_dir()
-        .join(".infer")
-        .join("tmp")
-        .join("agent-computer");
+    let dir = crate::env::infer_dir().join("tmp").join("agent-computer");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     for (name, text) in DESKTOP_BUILD {
         std::fs::write(dir.join(name), text).map_err(|e| e.to_string())?;

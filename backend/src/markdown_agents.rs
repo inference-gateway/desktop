@@ -1,4 +1,4 @@
-use crate::env::home_dir;
+use crate::env::{home_dir, infer_dir, infer_dir_in};
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
@@ -93,7 +93,7 @@ pub(crate) fn agent_dirs_for(chat_dir: &Path, home: &Path) -> Vec<PathBuf> {
         .into_iter()
         .flat_map(|root| {
             [
-                root.join(".infer").join("agents"),
+                infer_dir_in(root).join("agents"),
                 root.join(".agents").join("agents"),
             ]
         })
@@ -114,11 +114,7 @@ pub(crate) fn dir_of(name: &str, dirs: &[PathBuf], new_agents: PathBuf) -> PathB
 }
 
 fn agent_dir(name: &str) -> PathBuf {
-    dir_of(
-        name,
-        &agent_dirs(),
-        home_dir().join(".infer").join("agents"),
-    )
+    dir_of(name, &agent_dirs(), infer_dir().join("agents"))
 }
 
 fn split_frontmatter(text: &str) -> Option<(&str, &str)> {

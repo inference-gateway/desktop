@@ -3,17 +3,13 @@
 // ~/.infer/models/tts/). Upload is a native file picker + std::fs::copy; the
 // CLI's TextToSpeech tool resolves bare `voice_sample` names here after the
 // working directory (cli internal/agent/tools/text_to_speech.go).
-use crate::env::home_dir;
+use crate::env::infer_dir;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
 /// The samples directory (created on first use).
 pub(crate) fn samples_dir() -> PathBuf {
-    let dir = home_dir()
-        .join(".infer")
-        .join("models")
-        .join("tts")
-        .join("samples");
+    let dir = infer_dir().join("models").join("tts").join("samples");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

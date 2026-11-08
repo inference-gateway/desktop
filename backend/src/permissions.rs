@@ -1,4 +1,4 @@
-use crate::env::{agent_cwd, home_dir, mock_mode};
+use crate::env::{agent_cwd, home_dir, infer_dir_in, mock_mode};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -54,11 +54,11 @@ fn enabled_from_yaml(text: &str) -> bool {
 }
 
 fn effective_computer_use_config(agent_dir: &Path, home: &Path) -> PathBuf {
-    let project_config = agent_dir.join(".infer").join(COMPUTER_USE_CONFIG_FILE);
+    let project_config = infer_dir_in(agent_dir).join(COMPUTER_USE_CONFIG_FILE);
     if project_config.is_file() {
         return project_config;
     }
-    home.join(".infer").join(COMPUTER_USE_CONFIG_FILE)
+    infer_dir_in(home).join(COMPUTER_USE_CONFIG_FILE)
 }
 
 fn computer_use_enabled(agent_dir: &Path, home: &Path, env_override: Option<&str>) -> bool {
@@ -298,10 +298,10 @@ mod tests {
         let root = TempDir::new("permissions");
         let agent_dir = root.join("project");
         let home = root.join("home");
-        std::fs::create_dir_all(agent_dir.join(".infer")).unwrap();
-        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&agent_dir)).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
         std::fs::write(
-            home.join(".infer").join(COMPUTER_USE_CONFIG_FILE),
+            infer_dir_in(&home).join(COMPUTER_USE_CONFIG_FILE),
             "enabled: true\n",
         )
         .unwrap();
@@ -309,7 +309,7 @@ mod tests {
         assert!(computer_use_enabled(&agent_dir, &home, None));
 
         std::fs::write(
-            agent_dir.join(".infer").join(COMPUTER_USE_CONFIG_FILE),
+            infer_dir_in(&agent_dir).join(COMPUTER_USE_CONFIG_FILE),
             "enabled: false\n",
         )
         .unwrap();
