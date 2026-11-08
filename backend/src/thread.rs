@@ -43,7 +43,7 @@ pub(crate) struct ThreadOptions {
 
 /// One MCP server a thread's worker adds at launch, identified by `name` and
 /// reached at `url` with static `headers`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct ThreadMcpServer {
     pub(crate) name: String,
     pub(crate) url: String,
@@ -444,21 +444,10 @@ fn open_frame(session_id: &str, project_dir: &str, options: &ThreadOptions) -> S
     }
     set(&mut frame, "agent", options.agent.clone().map(Into::into));
     if !options.mcp_servers.is_empty() {
-        frame["mcp_servers"] = options
-            .mcp_servers
-            .iter()
-            .map(|s| {
-                serde_json::json!({
-                    "name": s.name,
-                    "url": s.url,
-                    "headers": s.headers,
-                })
-            })
-            .collect::<Vec<_>>()
-            .into();
+        frame["mcp_servers"] = serde_json::json!(options.mcp_servers);
     }
     if !options.env.is_empty() {
-        frame["env"] = serde_json::to_value(&options.env).unwrap_or_default();
+        frame["env"] = serde_json::json!(options.env);
     }
     frame.to_string()
 }

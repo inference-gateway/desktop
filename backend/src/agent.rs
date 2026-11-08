@@ -5,7 +5,7 @@ use crate::env::{
 };
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
-use crate::thread::{Sink, Thread, ThreadMcpServer, ThreadOptions};
+use crate::thread::{Sink, Thread, ThreadOptions};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -801,7 +801,7 @@ async fn ensure_thread(
     state: &AppState,
     session_id: &str,
     project_dir: &Path,
-    options: ThreadOptions,
+    mut options: ThreadOptions,
 ) -> Result<Arc<Thread>, String> {
     if let Some(thread) = state.threads.get(session_id) {
         return Ok(thread);
@@ -810,6 +810,7 @@ async fn ensure_thread(
     let session_id = session_id.to_string();
     let project_dir = project_dir.to_string_lossy().into_owned();
     tokio::task::spawn_blocking(move || {
+        crate::agent_mail::attach(&mut options);
         let state = app.state::<AppState>();
         let binding = crate::daemon::ensure_running(&state)?;
         let status_app = app.clone();
@@ -857,7 +858,7 @@ pub(crate) async fn open_thread(
     agent: Option<String>,
 ) -> Result<String, String> {
     let cwd = thread_dir(project.as_deref());
-    let mut options = thread_options(
+    let options = thread_options(
         &model,
         auto_mode,
         system_prompt.as_deref(),
@@ -865,16 +866,6 @@ pub(crate) async fn open_thread(
         &cwd,
         agent.as_deref(),
     );
-    if let Some(api_key) = crate::agent_mail::thread_key(agent.as_deref()) {
-        let mut headers = BTreeMap::new();
-        headers.insert("x-api-key".to_owned(), api_key.clone());
-        options.mcp_servers.push(ThreadMcpServer {
-            name: crate::agent_mail::MCP_SERVER_NAME.to_owned(),
-            url: crate::agent_mail::MCP_SERVER_URL.to_owned(),
-            headers,
-        });
-        options.env.insert("AGENTMAIL_API_KEY".to_owned(), api_key);
-    }
     let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
     serde_json::to_string(thread.history()).map_err(|e| e.to_string())
 }
