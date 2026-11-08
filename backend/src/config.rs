@@ -24,7 +24,7 @@ fn read_auth() -> BTreeMap<String, String> {
 }
 
 /// Non-empty (KEY, value) pairs to inject as environment variables. An agent's
-/// AgentMail key stays out - it rides its own thread's frame to its worker.
+/// AgentMail owner key stays out, so no worker can change its allowlist, inboxes or keys.
 pub(crate) fn auth_env() -> Vec<(String, String)> {
     read_auth()
         .into_iter()
@@ -39,7 +39,7 @@ const AGENT_KEY_PREFIX: &str = "AGENTMAIL_API_KEY_";
 
 /// The auth.yaml key holding agent `name`'s AgentMail API key: a secret
 /// beside the provider keys, keyed by its full name and only read back by
-/// the desktop, which injects it to that agent's own worker.
+/// the desktop, which provisions and syncs that agent's inbox with it.
 pub(crate) fn agent_key_name(agent: &str) -> String {
     format!("{AGENT_KEY_PREFIX}{agent}")
 }

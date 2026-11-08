@@ -90,7 +90,7 @@ test("the preamble carries the mail identity, the send whitelist and the others'
   expect(agentInstructionsPreamble(me, [me, reviewer])).toBe(
     [
       'You are running as the agent "writer": Writes prose.',
-      "Your email address is writer@agentmail.to. People and other agents can write to you there, and you can send mail as it.",
+      "Your email address is writer@agentmail.to. People and other agents can write to you there.",
       "You may only send mail to these addresses: human@example.com, reviewer@agentmail.to.",
       "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
       "- reviewer: Reviews drafts. (email: reviewer@agentmail.to)",
