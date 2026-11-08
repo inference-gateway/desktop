@@ -117,24 +117,30 @@ pub(crate) fn gh_authenticated() -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-/// Try to download a release asset using `gh` CLI (authenticated).
+/// Try to download a release asset using `gh` CLI (authenticated), from
+/// `tag` when given and `latest` otherwise.
 /// Returns `Ok(true)` if downloaded, `Ok(false)` to fall back to ureq.
-pub(crate) fn try_gh_download(asset: &str, dest: &std::path::Path) -> Result<bool, String> {
+pub(crate) fn try_gh_download(
+    asset: &str,
+    dest: &std::path::Path,
+    tag: Option<&str>,
+) -> Result<bool, String> {
     if !gh_available() || !gh_authenticated() {
         return Ok(false);
     }
+    let mut args = vec!["release", "download"];
+    args.extend(tag);
+    args.extend([
+        "--repo",
+        "inference-gateway/cli",
+        "--pattern",
+        asset,
+        "--output",
+        dest.to_str().unwrap_or(""),
+        "--clobber",
+    ]);
     let output = crate::env::command(gh_bin())
-        .args([
-            "release",
-            "download",
-            "--repo",
-            "inference-gateway/cli",
-            "--pattern",
-            asset,
-            "--output",
-            dest.to_str().unwrap_or(""),
-            "--clobber",
-        ])
+        .args(args)
         .output()
         .map_err(|e| format!("gh release download failed: {}", e))?;
     if !output.status.success() {

@@ -76,7 +76,11 @@ impl ProcessSupervisor {
         }
     }
 
-    pub(crate) fn start_gateway(&self, mode: GatewayStart) -> Result<(), String> {
+    pub(crate) fn start_gateway(
+        &self,
+        mode: GatewayStart,
+        tag: Option<&str>,
+    ) -> Result<(), String> {
         if !self.gateway_enabled {
             return Ok(());
         }
@@ -116,7 +120,7 @@ impl ProcessSupervisor {
             return Ok(());
         }
 
-        let bin = crate::gateway::ensure_gateway_binary(mode)?;
+        let bin = crate::gateway::ensure_gateway_binary(mode, tag)?;
         self.ensure_running()?;
         let mut child = crate::gateway::spawn_gateway(&bin)?;
 
