@@ -878,7 +878,7 @@ mod tests {
             matches!(&seen[2], AgentEvent::ApprovalRequest { tool_call_id, tool_name, tool_args }
             if tool_call_id == "c1" && tool_name == "Bash" && tool_args == "{\"command\":\"ls\"}")
         );
-        assert!(matches!(&seen[3], AgentEvent::Info { .. }));
+        assert!(matches!(&seen[3], AgentEvent::RunStarted));
         assert!(matches!(&seen[4], AgentEvent::Cancelled));
         assert!(matches!(&seen[5], AgentEvent::Done { exit_code: 0, .. }));
         assert_eq!(seen.len(), 7, "a RUN_ERROR without a runId ends no run");
