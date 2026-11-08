@@ -161,6 +161,17 @@ export type Workspace = { name: string; kind: string; reachable: boolean; error:
 /** A cluster of ~/.infer/compute.yaml as the Compute tab edits it. Every workspace on it shares its namespace and
  * gateway. */
 export type ClusterConfig = { name: string; context: string; namespace: string; gateway_env: string[] };
+/** A secret of Settings > Secrets: its label, the variable it becomes, and where it goes. Its value never comes back
+ * from the backend. `mcp_servers` names the mcp.yaml servers whose headers expand the variable. */
+export type Secret = {
+  label: string;
+  variable: string;
+  computer: boolean;
+  workspaces: string[];
+  mcp_servers: string[];
+};
+/** The secret an agent's inbox key was saved as, where it went, and the clusters it could not reach. */
+export type InboxSecret = { label: string; workspaces: string[]; failures: string[] };
 export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
 export type A2aStatus = { total_agents: number; ready_agents: number };
 export type ProjectFile = { name: string; size: number };
@@ -496,6 +507,11 @@ export const api = {
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
   workspaceConfigs: () => invoke<WorkspaceConfig[]>("workspace_configs"),
+  listSecrets: () => invoke<Secret[]>("list_secrets"),
+  saveSecret: (secret: Secret, value: string, isNew: boolean) =>
+    invoke<string[]>("save_secret", { secret, value, isNew }),
+  deleteSecret: (label: string) => invoke<string[]>("delete_secret", { label }),
+  saveInboxSecret: (name: string, ownerKey: string) => invoke<InboxSecret>("save_inbox_secret", { name, ownerKey }),
   saveWorkspace: (config: WorkspaceConfig, previousName?: string) =>
     invoke<void>("save_workspace", { config, previousName }),
   deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),

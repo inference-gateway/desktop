@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ComputeTab } from "./ComputeTab";
+import { SecretsTab } from "./SecretsTab";
 import { WorkspacesTab } from "./WorkspacesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +65,7 @@ import {
 type Tab =
   | "general"
   | "keys"
+  | "secrets"
   | "prompt"
   | "updates"
   | "agents"
@@ -87,6 +89,7 @@ const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
+  { id: "secrets", label: "Secrets" },
   { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
   { id: "compute", label: "Compute" },
@@ -295,6 +298,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
+          {tab === "secrets" && <SecretsTab />}
           {tab === "compute" && <ComputeTab />}
           {tab === "workspaces" && <WorkspacesTab />}
           {tab === "github" && <GithubTab sub={githubSub} />}

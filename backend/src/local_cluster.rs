@@ -69,10 +69,10 @@ fn docker(args: &[&str]) -> Result<String, String> {
 }
 
 /// kubectl inside the cluster's container, so the cluster needs nothing but
-/// Docker on this machine.
+/// Docker on this machine. Its stdin stays open for a manifest to apply.
 pub(crate) fn kubectl_command() -> Command {
     let mut command = docker_command();
-    command.args(["exec", CONTAINER, "kubectl"]);
+    command.args(["exec", "-i", CONTAINER, "kubectl"]);
     command
 }
 

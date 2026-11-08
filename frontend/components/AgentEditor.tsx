@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { ImagePlus, Mail, X } from "lucide-react";
+import { ImagePlus, KeyRound, Mail, X } from "lucide-react";
 import { useDesktop } from "@/store";
 import { api, type MarkdownAgent, type Workspace } from "@/lib/tauri";
 import { normaliseAgentName } from "@/lib/agents";
@@ -38,6 +38,8 @@ export function AgentEditor() {
   const [emailKey, setEmailKey] = useState("");
   const [recipients, setRecipients] = useState((existing?.allowed_recipients ?? []).join(", "));
   const [creating, setCreating] = useState(false);
+  const [savingInbox, setSavingInbox] = useState(false);
+  const [inboxNotice, setInboxNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -103,6 +105,25 @@ export function AgentEditor() {
       setError(String(e));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const saveInboxSecret = async () => {
+    if (!existing?.email.trim() || savingInbox) return;
+    setSavingInbox(true);
+    setInboxNotice("");
+    try {
+      const saved = await api.saveInboxSecret(existing.name, emailKey.trim());
+      setInboxNotice(
+        saved.workspaces.length > 0
+          ? `Saved as the secret ${saved.label} for workspace ${saved.workspaces.join(", ")}. Restart the CLI so the daemon loads it.`
+          : `Saved as the secret ${saved.label}. Assign it to the agent's computer under Settings > Secrets.`,
+      );
+      if (saved.failures.length > 0) setError(`Not every cluster took the inbox key: ${saved.failures.join("; ")}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingInbox(false);
     }
   };
 
@@ -356,6 +377,27 @@ export function AgentEditor() {
               onChange={(e) => setEmailKey(e.target.value)}
             />
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!existing?.email.trim() || savingInbox}
+              title={
+                existing?.email.trim()
+                  ? "Mint a key that can only use this inbox and keep it as AGENTMAIL_API_KEY for the agent's computer"
+                  : "Save the agent with its inbox address first"
+              }
+              onClick={saveInboxSecret}
+            >
+              <KeyRound />
+              {savingInbox ? "Saving..." : "Save inbox key as secret"}
+            </Button>
+            {inboxNotice && (
+              <span aria-live="polite" className="text-[0.72rem] text-muted-foreground">
+                {inboxNotice}
+              </span>
+            )}
+          </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="agent-email-recipients" className="text-[0.8rem] text-muted-foreground">
               Allowed recipients
@@ -370,7 +412,8 @@ export function AgentEditor() {
           <span className="text-[0.72rem] text-muted-foreground/70">
             Comma-separated addresses or domains the agent may mail - with none it can only mail itself, and
             agent_mail.allowed_recipients in config.yaml caps every agent. The address travels with the agent's file,
-            the API key stays in the credential store and never in the file.
+            the API key stays in the credential store and never in the file. The inbox key saved as a secret can only
+            use this inbox, so the agent's computer never holds the API key.
           </span>
         </div>
 
