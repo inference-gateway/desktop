@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
 
 const WORKSPACES_KEY: &str = "workspaces";
-const KUBERNETES: &str = "kubernetes";
+pub(crate) const KUBERNETES: &str = "kubernetes";
 const CLI_IMAGE: &str = "ghcr.io/inference-gateway/cli";
 pub(crate) const DETECTED_NAMESPACE: &str = "infer-workspaces";
 const DETECTED_STORAGE: &str = "5Gi";
@@ -88,14 +88,14 @@ fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite {
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct WorkspaceConfig {
-    name: String,
+    pub(crate) name: String,
     /// The cluster of `compute.yaml` the workspace runs on, which then gives it
     /// its kind, context, namespace and provider keys. Empty when the workspace
     /// carries its own connection.
     pub(crate) compute: String,
-    kind: String,
+    pub(crate) kind: String,
     pub(crate) context: String,
-    namespace: String,
+    pub(crate) namespace: String,
     image: String,
     storage: String,
     idle_ttl: String,
@@ -103,6 +103,10 @@ pub(crate) struct WorkspaceConfig {
     gateway_env: Vec<String>,
     forward_env: Vec<String>,
     env: BTreeMap<String, String>,
+    /// The Kubernetes Secrets the pod daemon reads, which Settings > Secrets
+    /// lists and the tab never edits.
+    #[serde(skip)]
+    pub(crate) secrets: Vec<String>,
 }
 
 fn scalar(value: &Value) -> Option<String> {
@@ -159,6 +163,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         gateway_env: names(entry, "gateway_env"),
         forward_env: names(entry, "forward_env"),
         env: environment(entry),
+        secrets: names(entry, "secrets"),
     };
     Some(on_cluster(config, clusters))
 }
@@ -298,6 +303,31 @@ fn merge_workspace(
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
+/// `daemon.yaml` with the Secret `secret` listed under `secrets` by exactly the
+/// workspaces `on` names. A workspace whose list ends up empty loses the key.
+pub(crate) fn list_secret(
+    daemon_yaml: Option<&str>,
+    secret: &str,
+    on: &[String],
+) -> Result<String, String> {
+    let mut yaml = crate::config::config_mapping(daemon_yaml);
+    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    for entry in workspaces_of(root)?.iter_mut() {
+        let wanted = on.contains(&text(entry, "name"));
+        let mut secrets: Vec<String> = names(entry, "secrets")
+            .into_iter()
+            .filter(|name| name != secret)
+            .collect();
+        if wanted {
+            secrets.push(secret.to_owned());
+        }
+        if let Some(entry) = entry.as_mapping_mut() {
+            set_or_remove(entry, "secrets", listed(&secrets));
+        }
+    }
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
 fn remove_workspace(daemon_yaml: Option<&str>, name: &str) -> Result<String, String> {
     let mut yaml = crate::config::config_mapping(daemon_yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
@@ -357,12 +387,46 @@ fn kubectl_for(context: &str) -> std::process::Command {
     command
 }
 
-fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
     let output = kubectl_for(context)
         .arg(KUBECTL_TIMEOUT)
         .args(args)
         .output()
         .map_err(|e| format!("kubectl could not run: {e}"))?;
+    outcome(output)
+}
+
+/// kubectl reading `input` on stdin, so a manifest holding a secret value
+/// never shows on a command line.
+pub(crate) fn kubectl_with_input(
+    context: &str,
+    args: &[&str],
+    input: &str,
+) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = kubectl_for(context)
+        .arg(KUBECTL_TIMEOUT)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("kubectl could not run: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("kubectl has no stdin")?
+        .write_all(input.as_bytes())
+        .map_err(|e| format!("writing to kubectl: {e}"))?;
+    outcome(
+        child
+            .wait_with_output()
+            .map_err(|e| format!("kubectl did not finish: {e}"))?,
+    )
+}
+
+fn outcome(output: std::process::Output) -> Result<String, String> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {
@@ -756,6 +820,29 @@ mod tests {
             namespace: "agents".into(),
             ..WorkspaceConfig::default()
         }
+    }
+
+    #[test]
+    fn a_secret_is_listed_on_exactly_the_workspaces_named() {
+        let daemon_yaml = "workspaces:\n  - name: reviewer\n    kind: kubernetes\n    secrets:\n      - team-tokens\n  - name: writer\n    kind: kubernetes\n    secrets:\n      - infer-secret-inbox\n";
+        let listed = list_secret(
+            Some(daemon_yaml),
+            "infer-secret-inbox",
+            &["reviewer".into()],
+        )
+        .unwrap();
+        let configs = parse_configs(Some(&listed), &[]);
+        assert_eq!(
+            configs[0].secrets,
+            vec!["team-tokens", "infer-secret-inbox"]
+        );
+        assert!(configs[1].secrets.is_empty());
+        assert!(!listed.contains("writer\n    kind: kubernetes\n    secrets"));
+        let saved = merge_workspace(Some(&listed), &configs[0], Some("reviewer")).unwrap();
+        assert_eq!(
+            parse_configs(Some(&saved), &[])[0].secrets,
+            configs[0].secrets
+        );
     }
 
     #[test]

@@ -1,8 +1,9 @@
 use crate::config;
 use crate::env::{home_dir, mock_mode};
 use crate::markdown_agents::{self, MarkdownAgent};
+use crate::secrets::{self, Secret};
 use crate::thread::ThreadOptions;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -13,9 +14,42 @@ const API_BASE: &str = "https://api.agentmail.to";
 /// How long one AgentMail call may take before the editor or thread gives up.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// The rights an agent's inbox key gets in its own inbox: read and send mail,
+/// read its allowlist. Changing the allowlist, inboxes or keys needs the owner key.
+const INBOX_KEY_PERMISSIONS: [&str; 11] = [
+    "inbox_read",
+    "message_read",
+    "message_send",
+    "message_reply",
+    "message_update",
+    "draft_read",
+    "draft_create",
+    "draft_update",
+    "draft_delete",
+    "draft_send",
+    "list_entry_read",
+];
+
+/// The variable the hosted AgentMail MCP server's header reads the inbox key from.
+const INBOX_KEY_VARIABLE: &str = "AGENTMAIL_API_KEY";
+
 #[derive(Deserialize)]
 struct Inbox {
     email: String,
+}
+
+#[derive(Deserialize)]
+struct MintedKey {
+    api_key: String,
+}
+
+/// The secret an agent's inbox key was saved as, the workspaces it is assigned
+/// to, and the clusters it could not reach.
+#[derive(Debug, Serialize)]
+pub(crate) struct InboxSecret {
+    label: String,
+    workspaces: Vec<String>,
+    failures: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +96,29 @@ impl Client {
             .and_then(|mut resp| resp.body_mut().read_json())
             .map_err(|e| format!("creating the AgentMail inbox: {e}"))?;
         Ok(inbox.email)
+    }
+
+    /// Mints a key scoped to `inbox` with `INBOX_KEY_PERMISSIONS`, named after
+    /// the secret that keeps it.
+    fn mint_inbox_key(&self, inbox: &str, label: &str) -> Result<String, String> {
+        let permissions: serde_json::Map<String, serde_json::Value> = INBOX_KEY_PERMISSIONS
+            .iter()
+            .map(|permission| (permission.to_string(), true.into()))
+            .collect();
+        let minted: MintedKey = self
+            .http
+            .post(format!(
+                "{API_BASE}/v0/inboxes/{}/api-keys",
+                escape_segment(inbox)
+            ))
+            .header("Authorization", &self.authorization)
+            .send_json(json!({
+                "name": format!("desktop secret {label}"),
+                "permissions": permissions,
+            }))
+            .and_then(|mut resp| resp.body_mut().read_json())
+            .map_err(|e| format!("minting an inbox key for {inbox}: {e}"))?;
+        Ok(minted.api_key)
     }
 
     /// Every entry of `inbox`'s send allowlist, across all pages.
@@ -296,6 +353,74 @@ pub(crate) fn move_agent_email_key_in(home: &Path, from: &str, to: &str) -> Resu
     config::set_agent_api_key_in(home, from, "")
 }
 
+/// The label of agent `name`'s inbox key among the secrets.
+fn inbox_secret_label(name: &str) -> String {
+    format!("{}-inbox", name.replace('_', "-"))
+}
+
+/// The agent's workspace when it is a Kubernetes one, the only kind a secret
+/// can be assigned to.
+fn kubernetes_workspace(name: &str) -> Vec<String> {
+    crate::workspace_settings::workspace_configs()
+        .into_iter()
+        .filter(|w| w.name == name && w.kind == crate::workspace_settings::KUBERNETES)
+        .map(|w| w.name)
+        .collect()
+}
+
+/// Mints a key scoped to agent `name`'s inbox with its owner key and keeps it
+/// as a secret for AGENTMAIL_API_KEY. A new secret goes to the agent's
+/// Kubernetes workspace, an existing one keeps its assignments.
+/// ponytail: a re-save leaves the previous inbox key alive in AgentMail until
+/// revoked there. Store key ids and revoke them here if that bites.
+fn save_inbox_secret_blocking(name: &str, owner_key: &str) -> Result<InboxSecret, String> {
+    let (dirs, home) = (markdown_agents::agent_dirs(), home_dir());
+    let agent = mail_agent_in(&dirs, name)
+        .ok_or_else(|| format!("Save agent {name} with its inbox address first."))?;
+    let owner_key = match owner_key.trim() {
+        "" => config::agent_api_key_in(&home, name),
+        typed => typed.to_owned(),
+    };
+    if owner_key.is_empty() {
+        return Err(format!("agent {name} has no AgentMail API key"));
+    }
+    let label = inbox_secret_label(name);
+    let existing = secrets::list_secrets()
+        .into_iter()
+        .find(|secret| secret.label == label);
+    let is_new = existing.is_none();
+    let secret = existing.unwrap_or_else(|| Secret {
+        label: label.clone(),
+        variable: INBOX_KEY_VARIABLE.into(),
+        workspaces: kubernetes_workspace(&agent.workspace),
+        ..Secret::default()
+    });
+    secrets::check(&secret, is_new)?;
+    let key = if mock_mode() {
+        "am_mock_inbox_key".to_owned()
+    } else {
+        Client::new(&owner_key).mint_inbox_key(agent.email.trim(), &label)?
+    };
+    let failures = secrets::save_blocking(secret.clone(), key, is_new)?;
+    Ok(InboxSecret {
+        label,
+        workspaces: secret.workspaces,
+        failures,
+    })
+}
+
+/// Saves a key scoped to agent `name`'s inbox as a secret, minted with
+/// `owner_key` or, when blank, the saved one. The owner key never leaves auth.yaml.
+#[tauri::command]
+pub(crate) async fn save_inbox_secret(
+    name: String,
+    owner_key: String,
+) -> Result<InboxSecret, String> {
+    tokio::task::spawn_blocking(move || save_inbox_secret_blocking(&name, &owner_key))
+        .await
+        .map_err(|e| format!("inbox key task failed: {e}"))?
+}
+
 /// Pushes agent `name`'s allowed recipients to its inbox's AgentMail allowlist.
 /// Answers the entries `agent_mail.allowed_recipients` in config.yaml dropped.
 #[tauri::command]
@@ -312,6 +437,12 @@ mod tests {
     use super::*;
     use crate::env::infer_dir_in;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn an_inbox_secret_is_labelled_for_kubernetes() {
+        assert_eq!(inbox_secret_label("code-reviewer"), "code-reviewer-inbox");
+        assert_eq!(inbox_secret_label("release_bot"), "release-bot-inbox");
+    }
 
     /// A home whose agent has an address on file, read straight from the file
     /// to prove what the split stores where.

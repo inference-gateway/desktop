@@ -24,6 +24,7 @@ mod processes;
 mod projects;
 mod scheduler;
 mod screen_records;
+mod secrets;
 mod skills;
 mod stt;
 mod tasks;
@@ -160,6 +161,10 @@ pub fn run() {
             agent::list_models,
             config::get_auth,
             config::set_auth,
+            secrets::list_secrets,
+            secrets::save_secret,
+            secrets::delete_secret,
+            agent_mail::save_inbox_secret,
             config::get_config,
             config::set_config,
             config::set_default_model,

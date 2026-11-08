@@ -25,12 +25,36 @@ fn read_auth() -> BTreeMap<String, String> {
 
 /// Non-empty (KEY, value) pairs to inject as environment variables. An agent's
 /// AgentMail owner key stays out, so no worker can change its allowlist, inboxes or keys.
+/// A secret stays out too, since it goes only where Settings > Secrets assigns it.
 pub(crate) fn auth_env() -> Vec<(String, String)> {
-    read_auth()
-        .into_iter()
+    api_keys_in(read_auth())
+}
+
+fn api_keys_in(auth: BTreeMap<String, String>) -> Vec<(String, String)> {
+    auth.into_iter()
         .filter(|(_, v)| !v.is_empty())
-        .filter(|(k, _)| !k.starts_with(AGENT_KEY_PREFIX))
+        .filter(|(k, _)| !k.starts_with(AGENT_KEY_PREFIX) && !k.starts_with(SECRET_KEY_PREFIX))
         .collect()
+}
+
+/// The auth.yaml key prefix of a secret's value. It is no environment variable
+/// name, so neither the CLI nor `auth_env` ever reads one as a provider key.
+const SECRET_KEY_PREFIX: &str = "secret/";
+
+fn secret_key_name(label: &str) -> String {
+    format!("{SECRET_KEY_PREFIX}{label}")
+}
+
+/// The value of the secret `label`, empty when it has none.
+pub(crate) fn secret_value_in(home: &Path, label: &str) -> String {
+    read_auth_in(home)
+        .remove(&secret_key_name(label))
+        .unwrap_or_default()
+}
+
+/// Saves the value of the secret `label`. A blank value clears it.
+pub(crate) fn set_secret_value_in(home: &Path, label: &str, value: &str) -> Result<(), String> {
+    set_auth_key_in(home, &secret_key_name(label), value)
 }
 
 /// The auth.yaml key prefix that scopes store entries to one agent: an AgentMail
@@ -52,17 +76,28 @@ pub(crate) fn agent_api_key_in(home: &Path, agent: &str) -> String {
         .to_owned()
 }
 
-/// Saves one agent's AgentMail API key, leaving every other auth.yaml
-/// entry alone. A blank value clears the entry.
+/// Saves one agent's AgentMail API key. A blank value clears the entry.
 pub(crate) fn set_agent_api_key_in(home: &Path, agent: &str, key: &str) -> Result<(), String> {
-    let mut keys = read_auth_in(home);
-    let entry = agent_key_name(agent);
-    if key.trim().is_empty() {
-        keys.remove(&entry);
-    } else {
-        keys.insert(entry, key.trim().to_owned());
+    set_auth_key_in(home, &agent_key_name(agent), key)
+}
+
+/// Saves one auth.yaml entry, leaving every other one alone. A blank value
+/// clears the entry.
+fn set_auth_key_in(home: &Path, key: &str, value: &str) -> Result<(), String> {
+    merge_auth_in(home, BTreeMap::from([(key.to_owned(), value.to_owned())]))
+}
+
+/// Saves `keys` over the stored ones and keeps every other entry, so saving
+/// the API Keys never drops an agent's key or a secret. A blank value clears its key.
+fn merge_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
+    let mut stored = read_auth_in(home);
+    for (key, value) in keys {
+        match value.trim() {
+            "" => stored.remove(&key),
+            value => stored.insert(key, value.to_owned()),
+        };
     }
-    write_auth_in(home, keys.into_iter().collect())
+    write_auth_in(home, stored)
 }
 
 /// The cap `agent_mail.allowed_recipients` in config.yaml puts on every agent's
@@ -85,14 +120,11 @@ pub(crate) fn agent_mail_cap_in(home: &Path) -> Vec<String> {
         .collect()
 }
 
-/// `set_auth` rooted at an arbitrary home. Blank values are dropped rather than
-/// written; the file is chmod 0600 on unix, which the CLI warns about when it
+/// Writes `keys` as the whole auth.yaml. Blank values are dropped rather than
+/// written. The file is chmod 0600 on unix, which the CLI warns about when it
 /// is broader. Permissions are set after the write rather than at creation so
 /// an existing file is re-tightened too.
-fn write_auth_in(
-    home: &Path,
-    keys: std::collections::HashMap<String, String>,
-) -> Result<(), String> {
+fn write_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
     let path = auth_path(home);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -122,10 +154,10 @@ pub(crate) async fn get_auth() -> Result<BTreeMap<String, String>, String> {
 
 #[tauri::command]
 pub(crate) async fn set_auth(
-    keys: std::collections::HashMap<String, String>,
+    keys: BTreeMap<String, String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
-    write_auth_in(&home_dir(), keys)?;
+    merge_auth_in(&home_dir(), keys)?;
     crate::daemon::restart(&state)
 }
 
@@ -794,7 +826,7 @@ mod tests {
 
         write_auth_in(
             &home,
-            std::collections::HashMap::from([
+            BTreeMap::from([
                 ("OPENAI_API_KEY".to_string(), "sk-test".to_string()),
                 ("GROQ_API_KEY".to_string(), "  ".to_string()),
             ]),
@@ -818,10 +850,7 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
             write_auth_in(
                 &home,
-                std::collections::HashMap::from([(
-                    "OPENAI_API_KEY".to_string(),
-                    "sk-test".to_string(),
-                )]),
+                BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-test".to_string())]),
             )
             .unwrap();
             assert_eq!(
@@ -829,6 +858,29 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn saving_the_api_keys_keeps_agent_keys_and_secrets() {
+        let home = TempDir::new("auth-merge");
+        set_agent_api_key_in(&home, "code-reviewer", "am_us_owner").unwrap();
+        set_secret_value_in(&home, "code-reviewer-inbox", "am_inbox").unwrap();
+        merge_auth_in(
+            &home,
+            BTreeMap::from([
+                ("OPENAI_API_KEY".to_string(), " sk-test ".to_string()),
+                ("GROQ_API_KEY".to_string(), "".to_string()),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(agent_api_key_in(&home, "code-reviewer"), "am_us_owner");
+        assert_eq!(secret_value_in(&home, "code-reviewer-inbox"), "am_inbox");
+        assert_eq!(
+            api_keys_in(read_auth_in(&home)),
+            vec![("OPENAI_API_KEY".to_string(), "sk-test".to_string())]
+        );
+        set_secret_value_in(&home, "code-reviewer-inbox", " ").unwrap();
+        assert_eq!(secret_value_in(&home, "code-reviewer-inbox"), "");
     }
 
     fn parse_yaml(text: &str) -> serde_norway::Value {

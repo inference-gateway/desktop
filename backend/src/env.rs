@@ -121,13 +121,15 @@ pub(crate) fn absolute_storage_path(configured: &str, home: &Path) -> String {
     }
 }
 
-/// Extra env vars for spawned infer processes: provider keys, the jsonl
+/// Extra env vars for spawned infer processes: provider keys, the secrets
+/// assigned to this computer, the jsonl
 /// storage path resolved from storage.jsonl.path when one is set (an unset
 /// path lets the CLI use its home-anchored default,
 /// ~/.infer/projects/<slug>/conversations), plus the CLI mock switch when
 /// the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
+    env.extend(crate::secrets::computer_env());
     env.extend(collector_env());
     #[cfg(unix)]
     env.push(("PATH".into(), composed_path()));
