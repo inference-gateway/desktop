@@ -3,7 +3,7 @@
 //! extension behind it, and the extension's state the daemon reports.
 //! Wire contract: cli/docs/browser-extension-protocol.md.
 
-use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_env};
+use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env};
 use serde::Serialize;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -71,13 +71,13 @@ pub(crate) fn binding() -> Result<Binding, String> {
 
 /// Where the daemon's own configuration lives, `~/.infer/daemon.yaml`.
 pub(crate) fn config_path() -> PathBuf {
-    home_dir().join(".infer").join(DAEMON_FILE)
+    infer_dir().join(DAEMON_FILE)
 }
 
 fn binding_in(home: &Path) -> Result<Binding, String> {
-    let daemon_path = home.join(".infer").join(DAEMON_FILE);
+    let daemon_path = infer_dir_in(home).join(DAEMON_FILE);
     let daemon = read_yaml(&daemon_path).and_then(|v| v.get("binding").cloned());
-    let browser = read_yaml(&home.join(".infer").join(BROWSER_USE_FILE))
+    let browser = read_yaml(&infer_dir_in(home).join(BROWSER_USE_FILE))
         .and_then(|v| v.get("extension").cloned());
     let port = port_of(daemon.as_ref())
         .or_else(|| port_of(browser.as_ref()))
@@ -190,7 +190,7 @@ impl Settings {
 }
 
 fn browser_use_path(home: &Path) -> PathBuf {
-    home.join(".infer").join(BROWSER_USE_FILE)
+    infer_dir_in(home).join(BROWSER_USE_FILE)
 }
 
 fn parse_settings(text: &str) -> Settings {
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn binding_prefers_daemon_yaml_then_browser_use_then_seeds() {
         let home = TempDir::new("daemon-binding");
-        let infer = home.join(".infer");
+        let infer = infer_dir_in(&home);
         std::fs::create_dir_all(&infer).unwrap();
 
         let seeded = binding_in(&home).unwrap();

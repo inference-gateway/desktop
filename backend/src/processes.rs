@@ -49,8 +49,7 @@ impl ProcessSupervisor {
     pub(crate) fn new() -> Self {
         Self::with_options(
             !crate::env::mock_mode(),
-            crate::env::home_dir()
-                .join(".infer")
+            crate::env::infer_dir()
                 .join("run")
                 .join("desktop-gateway.json"),
             GATEWAY_READY_TIMEOUT,

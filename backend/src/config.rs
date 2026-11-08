@@ -1,4 +1,4 @@
-use crate::env::{config_path, home_dir};
+use crate::env::{config_path, home_dir, infer_dir_in};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// the project .env; the desktop additionally injects the pairs as env vars
 /// when spawning `infer`.
 fn auth_path(home: &Path) -> PathBuf {
-    home.join(".infer").join("auth.yaml")
+    infer_dir_in(home).join("auth.yaml")
 }
 
 /// A missing or malformed file yields no keys, matching the CLI's own reader.
@@ -69,7 +69,7 @@ pub(crate) fn set_agent_api_key_in(home: &Path, agent: &str, key: &str) -> Resul
 /// allowed recipients: addresses or whole domains, empty for no cap.
 /// ponytail: an unreadable config.yaml means no cap, like every other config key.
 pub(crate) fn agent_mail_cap_in(home: &Path) -> Vec<String> {
-    std::fs::read_to_string(home.join(".infer").join("config.yaml"))
+    std::fs::read_to_string(infer_dir_in(home).join("config.yaml"))
         .ok()
         .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
         .and_then(|config| {
@@ -440,7 +440,7 @@ pub(crate) fn read_config() -> DesktopConfig {
 /// `read_config` rooted at an arbitrary home so export/import can run
 /// against a temp directory in tests.
 pub(crate) fn read_config_in(home: &std::path::Path) -> DesktopConfig {
-    match std::fs::read_to_string(home.join(".infer").join("config.yaml"))
+    match std::fs::read_to_string(infer_dir_in(home).join("config.yaml"))
         .ok()
         .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
     {
@@ -767,9 +767,9 @@ mod tests {
     fn the_agent_mail_cap_reads_a_block_list_and_defaults_to_none() {
         let home = TempDir::new("mail-cap");
         assert!(agent_mail_cap_in(&home).is_empty());
-        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
         std::fs::write(
-            home.join(".infer").join("config.yaml"),
+            infer_dir_in(&home).join("config.yaml"),
             "gateway:\n  url: http://localhost:8080\nagent_mail:\n  allowed_recipients:\n    - example.com\n    - boss@corp.example\n",
         )
         .unwrap();
@@ -784,9 +784,9 @@ mod tests {
         let home = TempDir::new("auth");
         assert!(read_auth_in(&home).is_empty());
 
-        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
         std::fs::write(
-            home.join(".infer").join("auth.json"),
+            infer_dir_in(&home).join("auth.json"),
             r#"{"OPENAI_API_KEY": "from-json"}"#,
         )
         .unwrap();

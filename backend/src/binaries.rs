@@ -187,7 +187,9 @@ llama-tts    missing  /home/u/.infer/bin/tools/llama-tts
     fn ensure_upgrades_a_stale_binary_and_keeps_a_current_one() {
         use std::os::unix::fs::PermissionsExt;
         let home = TempDir::new("binaries");
-        let tools = home.join(".infer").join("bin").join("tools");
+        let tools = crate::env::infer_dir_in(home.path())
+            .join("bin")
+            .join("tools");
         std::fs::create_dir_all(&tools).unwrap();
         unsafe { std::env::set_var("HOME", home.path()) };
         let ffmpeg = tools.join("ffmpeg");

@@ -69,7 +69,7 @@ pub(crate) struct ScheduleJob {
 #[tauri::command]
 pub(crate) async fn list_schedules() -> Result<Vec<ScheduleJob>, String> {
     Ok(read_schedules_dir(
-        &crate::env::home_dir().join(".infer").join("schedules"),
+        &crate::env::infer_dir().join("schedules"),
     ))
 }
 

@@ -111,7 +111,7 @@ fn assign_dirs(
 /// a chat landed in the wrong project, and the CLI carves it out of the agent
 /// sandbox so the agent can edit it on the user's behalf.
 fn projects_path(home: &Path) -> PathBuf {
-    home.join(".infer").join("projects.yaml")
+    crate::env::infer_dir_in(home).join("projects.yaml")
 }
 
 /// Raw projects.yaml as a JSON value (the shape the sidebar and the export

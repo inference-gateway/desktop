@@ -404,12 +404,13 @@ pub(crate) async fn sync_agent_mail(name: String) -> Result<Vec<String>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::infer_dir_in;
     use crate::test_support::TempDir;
 
     /// A home whose agent has an address on file, read straight from the file
     /// to prove what the split stores where.
     fn seed_agent(home: &Path) {
-        let dir = home.join(".infer").join("agents");
+        let dir = infer_dir_in(home).join("agents");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("code-reviewer.md"),
@@ -419,7 +420,7 @@ mod tests {
     }
 
     fn auth_of(home: &Path) -> BTreeSet<(String, String)> {
-        let text = std::fs::read_to_string(home.join(".infer").join("auth.yaml")).unwrap();
+        let text = std::fs::read_to_string(infer_dir_in(home).join("auth.yaml")).unwrap();
         serde_norway::from_str::<std::collections::BTreeMap<String, String>>(&text)
             .unwrap()
             .into_iter()
@@ -427,7 +428,7 @@ mod tests {
     }
 
     fn agent_dirs_of(home: &Path) -> Vec<PathBuf> {
-        vec![home.join(".infer").join("agents")]
+        vec![infer_dir_in(home).join("agents")]
     }
 
     fn strings(items: &[&str]) -> Vec<String> {
@@ -448,7 +449,8 @@ mod tests {
         seed_agent(&home);
         config::set_agent_api_key_in(&home, "code-reviewer", " am_us_secret ").unwrap();
 
-        let text = std::fs::read_to_string(home.join(".infer/agents/code-reviewer.md")).unwrap();
+        let text =
+            std::fs::read_to_string(infer_dir_in(&home).join("agents/code-reviewer.md")).unwrap();
         assert_eq!(
             text.lines()
                 .filter(|l| *l == "email: code-reviewer@agentmail.to")
@@ -476,9 +478,9 @@ mod tests {
     #[test]
     fn a_new_key_replaces_and_a_blank_one_clears_leaving_the_rest() {
         let home = TempDir::new("replace");
-        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
         std::fs::write(
-            home.join(".infer/auth.yaml"),
+            infer_dir_in(&home).join("auth.yaml"),
             "OPENAI_API_KEY: sk-provider\n",
         )
         .unwrap();

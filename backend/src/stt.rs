@@ -1,6 +1,6 @@
 use crate::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
-use crate::env::{home_dir, mock_mode};
+use crate::env::{infer_dir, mock_mode};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::ipc::Channel;
@@ -17,8 +17,7 @@ pub(crate) const WHISPER_MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
 
 pub(crate) fn whisper_model_path() -> PathBuf {
-    home_dir()
-        .join(".infer")
+    infer_dir()
         .join("models")
         .join("whisper")
         .join(WHISPER_MODEL_FILE)

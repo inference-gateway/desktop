@@ -41,6 +41,22 @@ pub(crate) fn home_dir() -> PathBuf {
     PathBuf::from(home)
 }
 
+/// The infer home directory's name: config, auth, skills, agents, avatars,
+/// bin, history, tmp, schedules and the daemon file all live under
+/// `~/.infer` (per-project stores root at the project cwd under the same
+/// name).
+pub(crate) const INFER_DIR_NAME: &str = ".infer";
+
+/// The infer home directory rooted at an arbitrary base.
+pub(crate) fn infer_dir_in(home: &Path) -> PathBuf {
+    home.join(INFER_DIR_NAME)
+}
+
+/// The infer home directory, `~/.infer`.
+pub(crate) fn infer_dir() -> PathBuf {
+    infer_dir_in(&home_dir())
+}
+
 /// Path of the infer binary to spawn. INFER_BIN overrides the installed one
 /// so test harnesses can point at a specific build without touching
 /// ~/.infer/bin.
@@ -148,7 +164,7 @@ pub(crate) fn composed_path() -> String {
     format!(
         "/opt/homebrew/bin:/usr/local/bin:{}:{}:{base}",
         home.join(".local/bin").display(),
-        home.join(".infer/bin").display()
+        infer_dir_in(&home).join("bin").display()
     )
 }
 
@@ -166,12 +182,12 @@ pub(crate) fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> St
 }
 
 pub(crate) fn config_path() -> PathBuf {
-    home_dir().join(".infer").join("config.yaml")
+    infer_dir().join("config.yaml")
 }
 
 /// Install directory for the CLI, the gateway binary and desktop tools (`~/.infer/bin`).
 pub(crate) fn bin_dir() -> PathBuf {
-    home_dir().join(".infer").join("bin")
+    infer_dir().join("bin")
 }
 
 /// Pure core of `agent_cwd`, split out so the fallback is testable.
@@ -179,7 +195,7 @@ pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> Path
     match current {
         Some(dir) if dir.ends_with("backend") => dir.parent().map(Path::to_path_buf).unwrap_or(dir),
         Some(dir) if dir.as_path() != std::path::Path::new("/") => dir,
-        _ => home.join(".infer").join("workspace"),
+        _ => infer_dir_in(&home).join("workspace"),
     }
 }
 
@@ -198,7 +214,7 @@ pub(crate) fn agent_cwd() -> PathBuf {
 
 /// Directory for user-uploaded/pasted images (`~/.infer/tmp/uploads`), created on first access.
 pub(crate) fn uploads_dir() -> PathBuf {
-    let dir = home_dir().join(".infer").join("tmp").join("uploads");
+    let dir = infer_dir().join("tmp").join("uploads");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

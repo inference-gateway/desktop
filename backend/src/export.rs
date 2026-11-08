@@ -1,6 +1,6 @@
 use crate::agent::{A2aAgent, add_a2a_agent, list_a2a_agents, set_a2a_agent_model};
 use crate::config::{DesktopConfig, merge_config, merge_default_model};
-use crate::env::home_dir;
+use crate::env::{home_dir, infer_dir_in};
 use base64::Engine as _;
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -134,7 +134,7 @@ fn expand_tilde(raw: &str, home: &Path) -> String {
 /// Scheduled job files verbatim (filename -> parsed YAML) so CLI-written
 /// fields the desktop does not model still survive the trip.
 fn read_schedules_in(home: &Path) -> BTreeMap<String, serde_norway::Value> {
-    let Ok(entries) = std::fs::read_dir(home.join(".infer").join("schedules")) else {
+    let Ok(entries) = std::fs::read_dir(infer_dir_in(home).join("schedules")) else {
         return BTreeMap::new();
     };
     entries
@@ -278,14 +278,14 @@ fn serialize_export(export: &DesktopExport, format: ExportFormat) -> Result<Stri
 // --- ~/.infer/desktop.yaml ----------------------------------------------------
 
 fn read_desktop_data_in(home: &Path) -> DesktopData {
-    std::fs::read_to_string(home.join(".infer").join("desktop.yaml"))
+    std::fs::read_to_string(infer_dir_in(home).join("desktop.yaml"))
         .ok()
         .and_then(|text| serde_norway::from_str(&text).ok())
         .unwrap_or_default()
 }
 
 fn write_desktop_data(data: &DesktopData, home: &Path) -> Result<(), String> {
-    let path = home.join(".infer").join("desktop.yaml");
+    let path = infer_dir_in(home).join("desktop.yaml");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -363,7 +363,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
         cfg.scheduler_github_app_private_key_secret =
             local.scheduler_github_app_private_key_secret.clone();
     }
-    crate::config::update_file(&home.join(".infer").join("config.yaml"), |existing| {
+    crate::config::update_file(&infer_dir_in(home).join("config.yaml"), |existing| {
         merge_default_model(Some(&merge_config(existing, &cfg)?), &cfg.default_model)
     })?;
     imported.push("Settings (config.yaml)".into());
@@ -374,7 +374,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     imported.push("Projects (projects.yaml)".into());
 
     if !export.schedules.is_empty() {
-        let dir = home.join(".infer").join("schedules");
+        let dir = infer_dir_in(home).join("schedules");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let mut n = 0;
         for (name, val) in &export.schedules {
@@ -808,7 +808,7 @@ mod tests {
     /// Markdown agent and an auth.yaml with provider and agent keys to prove
     /// the export leaves secrets of both kinds behind.
     fn seed_home(home: &Path) {
-        let infer = home.join(".infer");
+        let infer = infer_dir_in(home);
         std::fs::create_dir_all(infer.join("schedules")).unwrap();
         std::fs::create_dir_all(infer.join("skills").join("code-review")).unwrap();
         std::fs::create_dir_all(infer.join("agents")).unwrap();
@@ -871,10 +871,10 @@ mod tests {
                 report.warnings
             );
             assert_eq!(report.imported.len(), 4);
-            std::fs::create_dir_all(home.join(".infer").join("skills").join("code-review"))
+            std::fs::create_dir_all(infer_dir_in(&home).join("skills").join("code-review"))
                 .unwrap();
             std::fs::write(
-                home.join(".infer")
+                infer_dir_in(&home)
                     .join("skills")
                     .join("code-review")
                     .join("SKILL.md"),
@@ -891,14 +891,14 @@ mod tests {
         seed_home(&home_source);
         let export = build_export(&home_source, vec![]);
         let home = TempDir::new("tgt");
-        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
         std::fs::write(
-            home.join(".infer").join("config.yaml"),
+            infer_dir_in(&home).join("config.yaml"),
             "gateway:\n  run: true\n  standalone_binary: /x\nother_top: keep\nstorage:\n  type: jsonl\n  postgres:\n    password: keepme\n  redis:\n    password: keepredis\n  d1:\n    api_token: keepd1\n",
         )
         .unwrap();
         apply_export_files(&export, &home).unwrap();
-        let text = std::fs::read_to_string(home.join(".infer").join("config.yaml")).unwrap();
+        let text = std::fs::read_to_string(infer_dir_in(&home).join("config.yaml")).unwrap();
         assert!(text.contains("other_top: keep"));
         assert!(text.contains("run: true"));
         assert!(text.contains("standalone_binary: /x"));
@@ -927,7 +927,7 @@ mod tests {
     #[test]
     fn git_projects_export_as_remotes_without_contexts() {
         let home = TempDir::new("gitproj");
-        let infer = home.join(".infer");
+        let infer = infer_dir_in(&home);
         std::fs::create_dir_all(&infer).unwrap();
         std::fs::write(
             infer.join("config.yaml"),
@@ -1004,9 +1004,14 @@ mod tests {
         };
         scrub_credentials(&mut export.config);
         let report = apply_export_files(&export, &home).unwrap();
-        assert!(home.join(".infer/schedules/ok.yaml").exists());
+        assert!(
+            infer_dir_in(&home)
+                .join("schedules")
+                .join("ok.yaml")
+                .exists()
+        );
         assert!(!home.join("evil.yaml").exists());
-        assert!(!home.join(".infer/schedules/sub").exists());
+        assert!(!infer_dir_in(&home).join("schedules").join("sub").exists());
         assert_eq!(
             report
                 .warnings

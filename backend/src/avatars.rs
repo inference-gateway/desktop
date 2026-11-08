@@ -4,7 +4,7 @@
 // `infer avatars` (cli cmd/avatars), which also generates the extra angles
 // through the gateway's image edit API.
 use crate::agent::{infer_command, run_infer};
-use crate::env::{agent_cwd, home_dir};
+use crate::env::{agent_cwd, infer_dir};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -18,7 +18,7 @@ pub(crate) struct Avatar {
 }
 
 fn avatars_dir() -> PathBuf {
-    home_dir().join(".infer").join("avatars")
+    infer_dir().join("avatars")
 }
 
 /// Avatars from an `infer avatars list --format json` dump, with each image
