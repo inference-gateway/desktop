@@ -429,10 +429,3 @@ scenarios:
     match: '(?i)open the docs on your computer'
     turns:
       - content: "The docs are open."
-
-  # The agent-email test asks an agent whose preamble named its AgentMail
-  # identity, so the answer pins the address the worker knows.
-  - name: agent-email-identity
-    match: '(?i)what is your mail address'
-    turns:
-      - content: "Your email address is e2e-mailer@agentmail.to."

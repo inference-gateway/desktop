@@ -310,7 +310,6 @@ export function AgentEditor() {
             value={draft.instructions}
             rows={12}
             placeholder="You are a senior reviewer. Read the changed files and report findings ordered by severity."
-            onKeyDown={advanceOnEnter("agent-email")}
             onChange={(e) => set("instructions", e.target.value)}
             className="min-h-[12rem] resize-y rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-[0.82rem] leading-relaxed text-foreground outline-none focus-visible:border-ring"
           />
