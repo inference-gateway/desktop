@@ -696,9 +696,6 @@ function useDesktopStore() {
     [dispatchTo],
   );
 
-  // The channel a chat's events stream on. Any run its thread starts marks
-  // the chat running, also one its worker starts on its own. A send passes
-  // the project an /init run logs its activity for.
   const chatEvents = useCallback(
     (runId: string, initProject?: string) => {
       const ch = new Channel<AgentEvent>();
