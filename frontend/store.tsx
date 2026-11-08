@@ -768,8 +768,6 @@ function useDesktopStore() {
     [dispatchTo, refreshStatus, refreshConversations, resolveApproval, recordTerminal, logActivity],
   );
 
-  // Opens or reuses a chat's thread with a channel for its events, so the app
-  // follows the chat and returns its history.
   const followThread = useCallback(
     async (id: string) => {
       const projectName = projects[id];
