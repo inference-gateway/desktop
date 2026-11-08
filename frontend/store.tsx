@@ -1422,8 +1422,6 @@ function useDesktopStore() {
 
   const [drivenId, setDrivenId] = useState<string | null>(null);
 
-  // The worker answers a hand-back with a run of its own, so the app follows
-  // the chat first: a chat left or never opened would not show that run.
   const handBack = useCallback(async () => {
     if (!drivenId) return;
     setDrivenId(null);
