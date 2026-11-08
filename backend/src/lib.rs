@@ -18,6 +18,7 @@ mod gateway;
 mod input_capture;
 mod local_cluster;
 mod markdown_agents;
+mod mcp_settings;
 mod observability;
 mod permissions;
 mod processes;
@@ -164,6 +165,10 @@ pub fn run() {
             secrets::list_secrets,
             secrets::save_secret,
             secrets::delete_secret,
+            mcp_settings::mcp_settings,
+            mcp_settings::save_mcp_server,
+            mcp_settings::delete_mcp_server,
+            mcp_settings::set_mcp_enabled,
             agent_mail::save_inbox_secret,
             config::get_config,
             config::set_config,

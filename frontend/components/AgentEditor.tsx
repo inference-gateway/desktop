@@ -18,6 +18,7 @@ const EMPTY: MarkdownAgent = {
   project: "",
   email: "",
   allowed_recipients: [],
+  mcp_servers: [],
   instructions: "",
   avatar: null,
   path: "",
@@ -43,7 +44,12 @@ export function AgentEditor() {
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [mcpServers, setMcpServers] = useState<string[]>([]);
   useEffect(() => {
+    api
+      .mcpSettings()
+      .then((settings) => setMcpServers(settings.servers.map((server) => server.name)))
+      .catch(() => {});
     api
       .listWorkspaces()
       .then((all) => setWorkspaces(all.filter((w) => w.kind !== "local")))
@@ -325,6 +331,39 @@ export function AgentEditor() {
             </span>
           </div>
         )}
+
+        <fieldset className="flex flex-col gap-1">
+          <legend className="mb-1 text-[0.8rem] text-muted-foreground">MCP servers</legend>
+          {mcpServers.length === 0 && draft.mcp_servers.length === 0 ? (
+            <span className="text-[0.72rem] text-muted-foreground/70">
+              No MCP server yet. Add one under Settings &gt; MCPs.
+            </span>
+          ) : (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {[...new Set([...mcpServers, ...draft.mcp_servers])].map((name) => (
+                <label key={name} className="flex items-center gap-2 text-[0.82rem]">
+                  <input
+                    type="checkbox"
+                    id={`agent-mcp-${name}`}
+                    checked={draft.mcp_servers.includes(name)}
+                    onChange={(e) =>
+                      set(
+                        "mcp_servers",
+                        e.target.checked ? [...draft.mcp_servers, name] : draft.mcp_servers.filter((s) => s !== name),
+                      )
+                    }
+                    className="h-4 w-4 accent-primary"
+                  />
+                  {mcpServers.includes(name) ? name : `${name} (missing)`}
+                </label>
+              ))}
+            </div>
+          )}
+          <span className="text-[0.72rem] text-muted-foreground/70">
+            With none picked, the agent uses every server of its computer. A pick is honoured by an infer CLI that
+            supports mcpServers.
+          </span>
+        </fieldset>
 
         <div className="flex flex-col gap-1">
           <Label htmlFor="agent-instructions" className="text-[0.8rem] text-muted-foreground">
