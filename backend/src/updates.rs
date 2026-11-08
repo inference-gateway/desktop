@@ -202,12 +202,17 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
         },
         Err(_) => String::new(),
     };
+    // `recent_tags` shells out to `gh` / blocks on HTTP, so it stays off the
+    // async executor like the CLI and gateway lookups above.
+    let versions = tokio::task::spawn_blocking(|| recent_tags(DESKTOP_REPO))
+        .await
+        .unwrap_or_default();
     UpdateInfo {
         outdated: is_outdated(&current, &latest),
         name: "Desktop".to_string(),
         current,
         latest,
-        versions: recent_tags(DESKTOP_REPO),
+        versions,
     }
 }
 
