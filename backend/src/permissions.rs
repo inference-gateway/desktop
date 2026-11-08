@@ -249,6 +249,7 @@ pub(crate) fn request_screen_recording_permission() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn parses_computer_use_enabled() {
@@ -260,14 +261,12 @@ mod tests {
 
     #[test]
     fn writes_enabled_flag_readable_by_parser() {
-        let path = std::env::temp_dir()
-            .join(format!("inference-gateway-cu-write-{}", std::process::id()))
-            .join(COMPUTER_USE_CONFIG_FILE);
+        let dir = TempDir::new("cu-write");
+        let path = dir.join(COMPUTER_USE_CONFIG_FILE);
         write_computer_use_enabled(&path, true).unwrap();
         assert!(enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
         write_computer_use_enabled(&path, false).unwrap();
         assert!(!enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -296,10 +295,7 @@ mod tests {
 
     #[test]
     fn environment_and_project_config_take_precedence() {
-        let root = std::env::temp_dir().join(format!(
-            "inference-gateway-permissions-test-{}",
-            std::process::id()
-        ));
+        let root = TempDir::new("permissions");
         let agent_dir = root.join("project");
         let home = root.join("home");
         std::fs::create_dir_all(agent_dir.join(".infer")).unwrap();
@@ -320,6 +316,5 @@ mod tests {
 
         assert!(!computer_use_enabled(&agent_dir, &home, None));
         assert!(computer_use_enabled(&agent_dir, &home, Some("true")));
-        std::fs::remove_dir_all(root).unwrap();
     }
 }

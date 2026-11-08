@@ -890,6 +890,7 @@ pub(crate) fn delete_project_file(project: String, name: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn all_under_git_only_for_pure_git_events() {
@@ -914,15 +915,13 @@ mod tests {
 
     #[test]
     fn media_listing_prefixes_the_media_folder_and_keeps_root_files() {
-        let dir = std::env::temp_dir().join(format!("infer-media-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new("media");
         std::fs::create_dir_all(dir.join("media")).unwrap();
         std::fs::write(dir.join("media/a.mp4"), b"x").unwrap();
         std::fs::write(dir.join("old.mov"), b"y").unwrap();
         let names: Vec<String> = media_listing(&dir).into_iter().map(|f| f.name).collect();
         assert_eq!(names, ["media/a.mp4", "old.mov"]);
         assert!(media_dest(&dir, "../x.wav").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -957,9 +956,7 @@ mod tests {
 
     #[test]
     fn export_plan_pipes_raw_frames_and_mixes_every_clip() {
-        let dir = std::env::temp_dir().join(format!("infer-export-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("export");
         for f in ["demo.mov", "b.mov", "s1.wav", "music.mp3"] {
             std::fs::write(dir.join(f), b"x").unwrap();
         }
@@ -1039,14 +1036,11 @@ mod tests {
             )
             .is_err()
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn export_plan_retimes_kept_audio_to_match_a_sped_clip() {
-        let dir = std::env::temp_dir().join(format!("infer-export-speed-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("export-speed");
         std::fs::write(dir.join("demo.mov"), b"x").unwrap();
 
         let fast = r#"{"duration":4,"source_audio":"keep","tracks":[
@@ -1078,14 +1072,11 @@ mod tests {
             {"kind":"video","clips":[{"start":0,"end":4,"src":"demo.mov"}]}]}"#;
         let joined = export_plan(&dir, "demo", still).unwrap().0.join(" ");
         assert!(!joined.contains("atempo"), "{joined}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn export_plan_stages_an_srt_next_to_the_output() {
-        let dir = std::env::temp_dir().join(format!("infer-captions-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("captions");
         std::fs::write(dir.join("demo.mov"), b"x").unwrap();
         let json = r#"{"duration":6,"resolution":"1080x1920","tracks":[
             {"kind":"video","clips":[{"start":0,"end":6,"src":"demo.mov"}]},
@@ -1105,7 +1096,6 @@ mod tests {
 
         let none = r#"{"duration":6,"tracks":[{"kind":"video","clips":[{"start":0,"end":6,"src":"demo.mov"}]}]}"#;
         assert!(export_plan(&dir, "demo", none).unwrap().2.is_none());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1141,15 +1131,12 @@ mod tests {
 
     #[test]
     fn list_in_returns_sorted_timeline_files_only() {
-        let dir = std::env::temp_dir().join(format!("infer-timelines-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("timelines");
         std::fs::write(dir.join("b.timeline.json"), "{}").unwrap();
         std::fs::write(dir.join("a.timeline.json"), "{}").unwrap();
         std::fs::write(dir.join("a.mov"), "x").unwrap();
         std::fs::create_dir(dir.join("c.timeline.json")).unwrap();
         assert_eq!(list_in(&dir), vec!["a.timeline.json", "b.timeline.json"]);
         assert!(list_in(&dir.join("missing")).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

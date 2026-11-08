@@ -85,6 +85,7 @@ pub(crate) async fn uninstall_skill(name: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{BUNDLED_SKILLS, install_bundled_in, installed_skills_in, valid_name};
+    use crate::test_support::TempDir;
 
     #[test]
     fn name_validation() {
@@ -98,7 +99,7 @@ mod tests {
 
     #[test]
     fn bundled_skills_install_and_refresh() {
-        let home = std::env::temp_dir().join(format!("bundled-skills-{}", std::process::id()));
+        let home = TempDir::new("bundled-skills");
         for (name, contents) in BUNDLED_SKILLS {
             install_bundled_in(&home, name, contents).unwrap();
         }
@@ -114,6 +115,5 @@ mod tests {
         std::fs::write(&path, "stale").unwrap();
         install_bundled_in(&home, "desktop-projects", "fresh").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh");
-        std::fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -792,19 +792,7 @@ pub(crate) fn save_skills_registry_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_home(tag: &str) -> PathBuf {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static SEQ: AtomicU32 = AtomicU32::new(0);
-        let dir = std::env::temp_dir().join(format!(
-            "desktop-export-{}-{}-{tag}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::test_support::TempDir;
 
     fn agent() -> A2aAgent {
         A2aAgent {
@@ -868,12 +856,12 @@ mod tests {
 
     #[test]
     fn round_trip_reproduces_equivalent_state_in_all_formats() {
-        let home_a = temp_home("a");
+        let home_a = TempDir::new("a");
         seed_home(&home_a);
 
         let export = build_export(&home_a, vec![agent()]);
         for format in [ExportFormat::Json, ExportFormat::Yaml, ExportFormat::Toml] {
-            let home = temp_home(&format!("b-{}", format.ext()));
+            let home = TempDir::new(&format!("b-{}", format.ext()));
             let text = serialize_export(&export, format).unwrap();
             let parsed = parse_export(&text).unwrap();
             let report = apply_export_files(&parsed, &home).unwrap();
@@ -894,17 +882,15 @@ mod tests {
             )
             .unwrap();
             assert_eq!(build_export(&home, vec![agent()]), parsed);
-            let _ = std::fs::remove_dir_all(&home);
         }
-        let _ = std::fs::remove_dir_all(&home_a);
     }
 
     #[test]
     fn config_import_preserves_keys_and_defaults() {
-        let home_source = temp_home("src");
+        let home_source = TempDir::new("src");
         seed_home(&home_source);
         let export = build_export(&home_source, vec![]);
-        let home = temp_home("tgt");
+        let home = TempDir::new("tgt");
         std::fs::create_dir_all(home.join(".infer")).unwrap();
         std::fs::write(
             home.join(".infer").join("config.yaml"),
@@ -919,14 +905,11 @@ mod tests {
         assert!(text.contains("keepme"));
         assert!(text.contains("keepredis"));
         assert!(text.contains("keepd1"));
-        for tag in [&home_source, &home] {
-            let _ = std::fs::remove_dir_all(tag);
-        }
     }
 
     #[test]
     fn exported_file_carries_no_secrets() {
-        let home = temp_home("secrets");
+        let home = TempDir::new("secrets");
         seed_home(&home);
         let text = serialize_export(&build_export(&home, vec![]), ExportFormat::Json).unwrap();
         assert!(!text.contains("hunter2"));
@@ -939,12 +922,11 @@ mod tests {
             !text.contains("am_us_secret"),
             "an agent's AgentMail key never travels"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn git_projects_export_as_remotes_without_contexts() {
-        let home = temp_home("gitproj");
+        let home = TempDir::new("gitproj");
         let infer = home.join(".infer");
         std::fs::create_dir_all(&infer).unwrap();
         std::fs::write(
@@ -983,13 +965,12 @@ mod tests {
         let text = serialize_export(&export, ExportFormat::Json).unwrap();
         assert!(!text.contains("stale snapshot"), "no AGENTS.md embedded");
         assert!(text.contains("local notes"), "local context kept");
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn parse_rejects_garbage_and_wrong_version() {
         assert!(parse_export("hello, world").is_err());
-        let home = temp_home("ver");
+        let home = TempDir::new("ver");
         seed_home(&home);
         let export = build_export(&home, vec![]);
         let text = serialize_export(&export, ExportFormat::Json).unwrap();
@@ -997,12 +978,11 @@ mod tests {
         raw["version"] = 99.into();
         let err = parse_export(&serde_json::to_string(&raw).unwrap()).unwrap_err();
         assert!(err.contains("unsupported export version 99"), "{err}");
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn schedule_import_rejects_traversal_names() {
-        let home = temp_home("trav");
+        let home = TempDir::new("trav");
         let mut export = DesktopExport {
             version: EXPORT_VERSION,
             config: crate::config::default_config(),
@@ -1035,7 +1015,6 @@ mod tests {
                 .count(),
             3
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]

@@ -761,11 +761,11 @@ pub(crate) async fn set_default_model(model: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn the_agent_mail_cap_reads_a_block_list_and_defaults_to_none() {
-        let home = std::env::temp_dir().join(format!("infer-mail-cap-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
+        let home = TempDir::new("mail-cap");
         assert!(agent_mail_cap_in(&home).is_empty());
         std::fs::create_dir_all(home.join(".infer")).unwrap();
         std::fs::write(
@@ -777,13 +777,11 @@ mod tests {
             agent_mail_cap_in(&home),
             vec!["example.com".to_owned(), "boss@corp.example".to_owned()]
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn auth_round_trips_yaml_and_ignores_legacy_json() {
-        let home = std::env::temp_dir().join(format!("infer-auth-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
+        let home = TempDir::new("auth");
         assert!(read_auth_in(&home).is_empty());
 
         std::fs::create_dir_all(home.join(".infer")).unwrap();
@@ -831,8 +829,6 @@ mod tests {
                 0o600
             );
         }
-
-        std::fs::remove_dir_all(&home).unwrap();
     }
 
     fn parse_yaml(text: &str) -> serde_norway::Value {

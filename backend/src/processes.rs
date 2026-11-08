@@ -720,26 +720,21 @@ fn with_cleanup_errors(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
-    use std::sync::atomic::AtomicU64;
     use std::sync::mpsc;
     use std::sync::{Arc, Barrier};
 
-    static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn test_supervisor(name: &str) -> ProcessSupervisor {
-        let path = std::env::temp_dir().join(format!(
-            "desktop-process-supervisor-{name}-{}-{}.json",
-            std::process::id(),
-            TEST_PATH_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        ProcessSupervisor::with_options(
+    fn test_supervisor(name: &str) -> (TempDir, ProcessSupervisor) {
+        let dir = TempDir::new(&format!("supervisor-{name}"));
+        let supervisor = ProcessSupervisor::with_options(
             true,
-            path,
+            dir.join("gateway.json"),
             Duration::from_secs(1),
             Duration::from_millis(250),
-        )
+        );
+        (dir, supervisor)
     }
 
     #[cfg(unix)]
@@ -767,7 +762,7 @@ mod tests {
 
     #[test]
     fn ownership_metadata_round_trips() {
-        let supervisor = test_supervisor("round-trip");
+        let (_dir, supervisor) = test_supervisor("round-trip");
         let ownership = GatewayOwnership {
             pid: 42,
             executable: PathBuf::from("/tmp/gateway"),
@@ -790,7 +785,7 @@ mod tests {
 
     #[test]
     fn invalid_ownership_metadata_is_removed() {
-        let supervisor = test_supervisor("invalid");
+        let (_dir, supervisor) = test_supervisor("invalid");
         let parent = supervisor
             .ownership_path
             .parent()
@@ -810,7 +805,8 @@ mod tests {
 
     #[test]
     fn gateway_lifecycle_is_serialized() {
-        let supervisor = Arc::new(test_supervisor("serialized"));
+        let (_dir, supervisor) = test_supervisor("serialized");
+        let supervisor = Arc::new(supervisor);
         let barrier = Arc::new(Barrier::new(2));
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -854,7 +850,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn recovered_gateway_gets_sigterm_and_metadata_is_removed() {
-        let supervisor = Arc::new(test_supervisor("recover"));
+        let (_dir, supervisor) = test_supervisor("recover");
+        let supervisor = Arc::new(supervisor);
         let mut child = spawn_signal_child("exit 0");
         let ownership = ownership_for_child(&child).expect("child identity should be available");
         let executable = ownership.executable.clone();
@@ -902,7 +899,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn shutdown_is_idempotent() {
-        let supervisor = test_supervisor("idempotent");
+        let (_dir, supervisor) = test_supervisor("idempotent");
         let child = spawn_signal_child("exit 0");
         let ownership = ownership_for_child(&child).expect("child identity should be available");
         let pid = ownership.pid;

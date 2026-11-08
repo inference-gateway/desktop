@@ -297,18 +297,11 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_root(tag: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("screen-records-test-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        root
-    }
+    use crate::test_support::TempDir;
 
     #[test]
     fn prune_keeps_newest_directories_and_ignores_files() {
-        let root = temp_root("prune");
+        let root = TempDir::new("prune");
         for name in [
             "2026-01-01T00-00-00",
             "2026-01-02T00-00-00",
@@ -327,16 +320,14 @@ mod tests {
         assert!(!root.join("2026-01-02T00-00-00").exists());
         assert!(!root.join("2026-01-01T00-00-00").exists());
         assert!(root.join("not-a-recording.txt").is_file());
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn prune_with_keep_one_removes_all_old_recordings() {
-        let root = temp_root("prune-keep-1");
+        let root = TempDir::new("prune-keep-1");
         std::fs::create_dir_all(root.join("2026-01-01T00-00-00")).unwrap();
         prune_records(&root, 1).unwrap();
         assert!(!root.join("2026-01-01T00-00-00").exists());
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

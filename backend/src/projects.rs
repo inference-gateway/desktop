@@ -1430,6 +1430,7 @@ fn save_to_github(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn sanitize_strips_separators_and_reserved_chars() {
@@ -1455,9 +1456,8 @@ mod tests {
 
     #[test]
     fn watcher_fires_on_checkout() {
-        let repo = std::env::temp_dir().join(format!("igd-watch-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
-        std::fs::create_dir_all(&repo).unwrap();
+        let dir = TempDir::new("watch");
+        let repo = dir.path().to_path_buf();
         let git = |args: &[&str]| {
             assert!(
                 crate::env::command("git")
@@ -1481,13 +1481,11 @@ mod tests {
         git(&["checkout", "-q", "-b", "feat"]);
         assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
         assert_eq!(read_head_branch(&repo).as_deref(), Some("feat"));
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
     fn ensure_content_repo_is_idempotent() {
-        let repo = std::env::temp_dir().join(format!("igd-content-init-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
+        let repo = TempDir::new("content-init");
         ensure_content_repo(&repo).unwrap();
         ensure_content_repo(&repo).unwrap();
         assert!(repo.join(".git").is_dir());
@@ -1500,26 +1498,22 @@ mod tests {
         assert!(gitignore.starts_with("media/\nnotes.txt\n*.mp4\n"));
         assert!(gitignore.ends_with("export/\ntmp/\n"));
         assert_eq!(gitignore.matches("media/").count(), 1);
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
     fn checkpoint_commits_changes_then_skips_a_clean_tree() {
-        let repo = std::env::temp_dir().join(format!("igd-content-ckpt-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
+        let repo = TempDir::new("content-ckpt");
         ensure_content_repo(&repo).unwrap();
         assert!(checkpoint(&repo, "init").unwrap().is_some());
         assert_eq!(checkpoint(&repo, "again").unwrap(), None);
         std::fs::write(repo.join("a.timeline.json"), "1").unwrap();
         assert!(checkpoint(&repo, "edit").unwrap().is_some());
         assert_eq!(checkpoint(&repo, "again").unwrap(), None);
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
     fn undo_and_redo_walk_one_commit() {
-        let repo = std::env::temp_dir().join(format!("igd-content-undo-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
+        let repo = TempDir::new("content-undo");
         let file = repo.join("main.timeline.json");
         ensure_content_repo(&repo).unwrap();
         std::fs::write(&file, "v1").unwrap();
@@ -1538,7 +1532,6 @@ mod tests {
 
         git_output(&repo, &["reset", "--hard", &popped]).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "v2");
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
@@ -1560,18 +1553,16 @@ mod tests {
 
     #[test]
     fn git_dir_follows_worktree_gitfile() {
-        let root = std::env::temp_dir().join(format!("git-dir-test-{}", std::process::id()));
+        let root = TempDir::new("git-dir");
         let wt = root.join("wt");
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(wt.join(".git"), "gitdir: ../repo/.git/worktrees/wt\n").unwrap();
         assert_eq!(git_dir(&wt), Some(wt.join("../repo/.git/worktrees/wt")));
-        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn projects_state_round_trips_yaml() {
-        let home = std::env::temp_dir().join(format!("igd-projects-yaml-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
+        let home = TempDir::new("projects-yaml");
 
         assert_eq!(read_projects_in(&home), serde_json::json!({}));
 
@@ -1598,8 +1589,6 @@ mod tests {
             read_projects_in(&home)["names"],
             serde_json::json!(["solo"])
         );
-
-        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]
@@ -1772,13 +1761,11 @@ mod tests {
 
     #[test]
     fn list_local_files_lists_regular_files_sorted_with_sizes() {
-        let dir = std::env::temp_dir().join(format!("igd-list-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new("list");
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("b.txt"), "hey").unwrap();
         std::fs::write(dir.join("a.pdf"), [0u8; 5]).unwrap();
         let files = list_local_files(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
         let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["a.pdf", "b.txt"], "dirs skipped, sorted by name");
         assert_eq!(files[0].size, 5);
@@ -1787,8 +1774,7 @@ mod tests {
 
     #[test]
     fn scan_finds_nested_repos_and_skips_junk() {
-        let root = std::env::temp_dir().join(format!("igd-scan-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("scan");
         std::fs::create_dir_all(root.join("repo-a/.git")).unwrap();
         std::fs::write(root.join("repo-a/AGENTS.md"), "agents rules").unwrap();
         std::fs::write(root.join("repo-a/CLAUDE.md"), "claude rules").unwrap();
@@ -1802,7 +1788,6 @@ mod tests {
         std::fs::create_dir_all(root.join("d1/d2/d3/d4/too-deep/.git")).unwrap();
         std::fs::create_dir_all(root.join("plain")).unwrap();
         let repos = scan_git_repos_in(&root);
-        let _ = std::fs::remove_dir_all(&root);
         let names: Vec<&str> = repos.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["repo-a", "repo-b", "worktree"], "{repos:?}");
         assert!(
@@ -1849,8 +1834,7 @@ mod tests {
 
     #[test]
     fn ensure_clone_skips_an_existing_checkout() {
-        let root = std::env::temp_dir().join(format!("igd-clone-skip-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("clone-skip");
         let dest = clone_dest(&root, "owner/repo-a");
         fake_checkout(&dest, "owner/repo-a");
         std::fs::write(dest.join("AGENTS.md"), "agents rules").unwrap();
@@ -1864,7 +1848,6 @@ mod tests {
             "owner/repo-a",
         )
         .unwrap();
-        let _ = std::fs::remove_dir_all(&root);
         assert!(!cloned, "existing checkout must not be re-cloned");
         assert_eq!(repo.name, "repo-a");
         assert_eq!(repo.path, dest.to_string_lossy());
@@ -1874,8 +1857,7 @@ mod tests {
 
     #[test]
     fn ensure_clone_refuses_a_checkout_of_a_different_repo() {
-        let root = std::env::temp_dir().join(format!("igd-clone-other-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("clone-other");
         let dest = clone_dest(&root, "owner/desktop");
 
         for squatter in ["someone-else/desktop", "owner/desktop-legacy"] {
@@ -1903,13 +1885,11 @@ mod tests {
             ensure_clone(|| Ok(()), &dest, "owner/desktop").is_ok(),
             "the ssh remote form is the same repo"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn ensure_clone_clones_missing_and_surfaces_failures() {
-        let root = std::env::temp_dir().join(format!("igd-clone-new-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("clone-new");
         let dest = clone_dest(&root, "owner/repo-b");
         let err = ensure_clone(
             || {
@@ -1937,16 +1917,13 @@ mod tests {
         assert!(dest.join(".git").exists());
         assert_eq!(repo.name, "repo-b");
         assert_eq!(repo.context, None);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The dirty check follows `git status`: untracked, modified and staged
     /// files count, .gitignore is honored, and anything unreadable is clean.
     #[test]
     fn uncommitted_change_detection_follows_git_status() {
-        let root = std::env::temp_dir().join(format!("igd-dirty-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = TempDir::new("dirty");
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         let git = |args: &[&str]| {
@@ -1991,14 +1968,11 @@ mod tests {
             !has_uncommitted_changes(&root.join("missing-dir")),
             "a missing directory is not dirty"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn cleanup_keeps_only_the_default_branch() {
-        let root = std::env::temp_dir().join(format!("igd-cleanup-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        let root = TempDir::new("cleanup");
         let git = |dir: &Path, args: &[&str]| {
             assert!(
                 crate::env::command("git")
@@ -2052,14 +2026,12 @@ mod tests {
             .unwrap(),
             "main"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn cleanup_skips_repo_without_remote() {
-        let repo = std::env::temp_dir().join(format!("igd-cleanup-local-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&repo);
-        std::fs::create_dir_all(&repo).unwrap();
+        let dir = TempDir::new("cleanup-local");
+        let repo = dir.path().to_path_buf();
         let git = |args: &[&str]| {
             assert!(
                 crate::env::command("git")
@@ -2079,7 +2051,6 @@ mod tests {
 
         assert_eq!(cleanup_repo(&repo).unwrap(), "no remote - skipped");
         assert!(git_output(&repo, &["rev-parse", "--verify", "feat-a"]).is_ok());
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
@@ -2098,8 +2069,7 @@ mod tests {
         );
         assert_eq!(parse_github_owner_name("https://gitlab.com/o/r.git"), None);
 
-        let root = std::env::temp_dir().join(format!("igd-remote-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("remote");
         let dest = root.join("repo");
         fake_checkout(&dest, "owner/repo");
         assert_eq!(git_remote_repo(&dest).as_deref(), Some("owner/repo"));
@@ -2119,7 +2089,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(git_remote_repo(&gl), None);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The status sweep reports GitHub remotes only for checkouts whose remote
@@ -2127,8 +2096,7 @@ mod tests {
     /// hosts are absent from the map.
     #[test]
     fn sweep_collects_github_remotes_only_for_github_checkouts() {
-        let root = std::env::temp_dir().join(format!("igd-remotes-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("remotes");
         let gh = root.join("gh");
         fake_checkout(&gh, "owner/repo");
         let ssh = root.join("ssh");
@@ -2146,7 +2114,6 @@ mod tests {
             ("plain".to_string(), plain),
         ]);
         let (status, git_dirs) = sweep_git_projects(&dirs);
-        let _ = std::fs::remove_dir_all(&root);
         assert_eq!(
             status.remotes.get("gh").map(String::as_str),
             Some("owner/repo"),
@@ -2164,8 +2131,7 @@ mod tests {
 
     #[test]
     fn ensure_clone_keeps_a_directory_it_did_not_create() {
-        let root = std::env::temp_dir().join(format!("igd-clone-keep-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = TempDir::new("clone-keep");
         let dest = clone_dest(&root, "owner/repo-c");
         std::fs::create_dir_all(&dest).unwrap();
         std::fs::write(dest.join("notes.txt"), "the user's own file").unwrap();
@@ -2174,6 +2140,5 @@ mod tests {
             dest.join("notes.txt").exists(),
             "a pre-existing directory must never be removed"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -400,6 +400,7 @@ pub(crate) async fn get_scheduler_log(
 #[cfg(test)]
 mod tests {
     use super::{Entries, GH_TTL, cached, read_schedules_dir, valid_repo, valid_secret_name};
+    use crate::test_support::TempDir;
     use std::cell::Cell;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -429,8 +430,7 @@ mod tests {
 
     #[test]
     fn read_schedules_dir_parses_job_yaml() {
-        let dir = std::env::temp_dir().join(format!("sched-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("sched");
         std::fs::write(
             dir.join("test-job.yaml"),
             "id: test-job\nname: fixture\ncron_expression: '@every 3m'\nprompt: say hello\nrun_once: true\ncreated_at: 2026-08-12T09:49:30Z\nupdated_at: 2026-08-12T09:49:30Z\n",
@@ -439,7 +439,6 @@ mod tests {
         std::fs::write(dir.join("ignored.txt"), "not yaml").unwrap();
 
         let jobs = read_schedules_dir(&dir);
-        std::fs::remove_dir_all(&dir).unwrap();
 
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].id, "test-job");

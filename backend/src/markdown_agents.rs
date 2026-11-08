@@ -461,12 +461,7 @@ pub(crate) fn remove_agent_avatar(name: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("md-agents-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
+    use crate::test_support::TempDir;
 
     fn sample() -> MarkdownAgent {
         MarkdownAgent {
@@ -511,7 +506,7 @@ mod tests {
 
     #[test]
     fn the_first_dir_with_an_agent_wins_and_holds_its_files() {
-        let root = temp_dir("layout");
+        let root = TempDir::new("layout");
         let dirs = agent_dirs_for(&root.join("proj"), &root.join("home"));
         let shadowing = MarkdownAgent {
             instructions: "The project's reviewer.".into(),
@@ -534,12 +529,11 @@ mod tests {
         assert_eq!(dir_of("code-reviewer", &dirs, dirs[2].clone()), dirs[1]);
         assert_eq!(dir_of("helper", &dirs, dirs[2].clone()), dirs[3]);
         assert_eq!(dir_of("unsaved", &dirs, dirs[2].clone()), dirs[2]);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn write_then_list_round_trips_and_omits_inherit_model() {
-        let dir = temp_dir("roundtrip");
+        let dir = TempDir::new("roundtrip");
         let path = write_in(&dir, &sample(), &sample().name).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.starts_with("---\nname: code-reviewer\n"), "{text}");
@@ -555,12 +549,11 @@ mod tests {
         assert_eq!(listed[0].emoji, "🔍");
         assert_eq!(listed[0].instructions, sample().instructions);
         assert_eq!(listed[0].avatar, None);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn desktop_keys_round_trip_and_are_omitted_when_blank() {
-        let dir = temp_dir("desktop-keys");
+        let dir = TempDir::new("desktop-keys");
         let path = write_in(&dir, &sample(), &sample().name).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("workspace:"), "{text}");
@@ -572,12 +565,11 @@ mod tests {
         let listed = &list_in(&dir)[0];
         assert_eq!(listed.workspace, "ubuntu-desktop");
         assert_eq!(listed.project, "desktop");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn the_address_and_allowed_recipients_round_trip_as_a_block_list() {
-        let dir = temp_dir("email");
+        let dir = TempDir::new("email");
         let path = write_in(&dir, &sample(), &sample().name).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("email"), "{text}");
@@ -606,16 +598,15 @@ mod tests {
             listed.allowed_recipients,
             vec!["human@example.com", "other-agent@agentmail.to"]
         );
-        let by_name = by_name_in(std::slice::from_ref(&dir), "code-reviewer").unwrap();
+        let agent_dirs = [PathBuf::from(dir.path())];
+        let by_name = by_name_in(&agent_dirs, "code-reviewer").unwrap();
         assert_eq!(by_name.email, "code-reviewer@agentmail.to");
-        assert!(by_name_in(std::slice::from_ref(&dir), "ghost").is_none());
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(by_name_in(&agent_dirs, "ghost").is_none());
     }
 
     #[test]
     fn a_save_keeps_unmanaged_keys_and_drops_a_cleared_model() {
-        let dir = temp_dir("keep");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("keep");
         std::fs::write(
             dir.join("researcher.md"),
             "---\nname: researcher\ndescription: Researches\nmodel: mock/openai/gpt-4o\nworkspace: ubuntu-desktop\ntools:\n  - Read\n  - Grep\ndisallowedTools: Bash\ncolor: blue\n---\nResearch it.\n",
@@ -635,13 +626,11 @@ mod tests {
         assert!(text.contains("disallowedTools: Bash\n"), "{text}");
         assert!(text.contains("color: blue\n"), "{text}");
         assert_eq!(list_in(&dir)[0].model, "");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn a_rename_carries_the_unmanaged_keys_to_the_new_file() {
-        let dir = temp_dir("rename-keep");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("rename-keep");
         std::fs::write(
             dir.join("old-name.md"),
             "---\nname: old-name\ndescription: x\ntools: Read\n---\nbody\n",
@@ -654,13 +643,11 @@ mod tests {
         let text = std::fs::read_to_string(dir.join("new-name.md")).unwrap();
         assert!(text.starts_with("---\nname: new-name\n"), "{text}");
         assert!(text.contains("tools: Read\n"), "{text}");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn invalid_files_are_skipped_and_claude_files_load() {
-        let dir = temp_dir("skip");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("skip");
         std::fs::write(dir.join("broken.md"), "no frontmatter here").unwrap();
         std::fs::write(
             dir.join("Upper.md"),
@@ -677,12 +664,11 @@ mod tests {
         assert_eq!(listed[0].name, "planner");
         assert_eq!(listed[0].model, "sonnet");
         assert_eq!(listed[0].instructions, "Plan it.");
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn avatar_is_attached_replaced_and_deleted_with_the_agent() {
-        let dir = temp_dir("avatar");
+        let dir = TempDir::new("avatar");
         write_in(&dir, &sample(), &sample().name).unwrap();
         let src = dir.join("pick.gif");
         std::fs::write(&src, b"GIF89a").unwrap();
@@ -704,7 +690,6 @@ mod tests {
         delete_in(&dir, "code-reviewer").unwrap();
         assert!(list_in(&dir).is_empty());
         assert!(!dir.join("code-reviewer.png").exists());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -729,7 +714,8 @@ mod tests {
 
     #[test]
     fn write_rejects_incomplete_agents() {
-        let dir = temp_dir("reject");
+        let dir = TempDir::new("reject");
+        std::fs::remove_dir_all(&dir).unwrap();
         let mut agent = sample();
         agent.name = "Bad Name".into();
         assert!(write_in(&dir, &agent, &agent.name).is_err());
