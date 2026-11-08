@@ -131,6 +131,8 @@ export type MarkdownAgent = {
   email: string;
   /** Addresses or domains the agent may mail. Empty lets it mail only itself. */
   allowed_recipients: string[];
+  /** The MCP servers the agent uses, by name. Empty uses every server of its computer. */
+  mcp_servers: string[];
   instructions: string;
   avatar: string | null;
   path: string;
@@ -172,7 +174,31 @@ export type Secret = {
 };
 /** The secret an agent's inbox key was saved as, where it went, and the clusters it could not reach. */
 export type InboxSecret = { label: string; workspaces: string[]; failures: string[] };
-export type McpStatus = { enabled: boolean; total_servers: number; connected_servers: number; total_tools: number };
+/** One server's row of `infer mcp status`. */
+export type McpServerStatus = { name: string; connected: boolean; tools: number; error: string };
+export type McpStatus = {
+  enabled: boolean;
+  total_servers: number;
+  connected_servers: number;
+  total_tools: number;
+  servers: McpServerStatus[];
+};
+/** A hosted server's header, written as `<prefix>${<variable>}`. A header written otherwise in mcp.yaml reads back as
+ * `literal`, without its value. */
+export type McpHeader = { name: string; prefix: string; variable: string; literal: boolean };
+/** A server of ~/.infer/mcp.yaml as the MCPs tab edits it. `enabled` is whether this computer connects to it, and
+ * `workspaces` the Kubernetes workspaces whose pods get it. */
+export type McpServerConfig = {
+  name: string;
+  enabled: boolean;
+  run: boolean;
+  url: string;
+  headers: McpHeader[];
+  image: string;
+  port: number;
+  workspaces: string[];
+};
+export type McpSettings = { enabled: boolean; servers: McpServerConfig[] };
 export type A2aStatus = { total_agents: number; ready_agents: number };
 export type ProjectFile = { name: string; size: number };
 export type GitRepo = { name: string; path: string; group: string; context: string | null };
@@ -507,6 +533,12 @@ export const api = {
   setA2aAgentModel: (name: string, model: string) => invoke<void>("set_a2a_agent_model", { name, model }),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
   workspaceConfigs: () => invoke<WorkspaceConfig[]>("workspace_configs"),
+  mcpSettings: () => invoke<McpSettings>("mcp_settings"),
+  /** Answers whether daemon.yaml changed, beside the container start or stop that failed. */
+  saveMcpServer: (server: McpServerConfig, isNew: boolean) =>
+    invoke<[boolean, string[]]>("save_mcp_server", { server, isNew }),
+  deleteMcpServer: (name: string) => invoke<[boolean, string[]]>("delete_mcp_server", { name }),
+  setMcpEnabled: (enabled: boolean) => invoke<void>("set_mcp_enabled", { enabled }),
   listSecrets: () => invoke<Secret[]>("list_secrets"),
   saveSecret: (secret: Secret, value: string, isNew: boolean) =>
     invoke<string[]>("save_secret", { secret, value, isNew }),

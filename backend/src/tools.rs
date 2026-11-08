@@ -82,13 +82,27 @@ pub(crate) async fn list_tools() -> Result<Vec<String>, String> {
     Ok(enabled_tools_in(&dump))
 }
 
-/// Counts from `infer mcp status --format json`; per-server rows are ignored.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// `infer mcp status --format json`: the counts the status bar shows and the
+/// per-server rows the MCPs tab shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct McpStatus {
     pub(crate) enabled: bool,
     pub(crate) total_servers: u64,
     pub(crate) connected_servers: u64,
     pub(crate) total_tools: u64,
+    #[serde(default)]
+    pub(crate) servers: Vec<McpServerStatus>,
+}
+
+/// One server's row of `infer mcp status`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct McpServerStatus {
+    pub(crate) name: String,
+    pub(crate) connected: bool,
+    #[serde(default)]
+    pub(crate) tools: u64,
+    #[serde(default)]
+    pub(crate) error: String,
 }
 
 /// Counts from `infer agents status --format json`; per-agent rows are ignored.
@@ -164,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn status_reports_keep_the_counts_and_drop_the_rows() {
+    fn status_reports_keep_the_counts_and_the_server_rows() {
         let mcp: McpStatus = serde_json::from_str(
             r#"{"enabled":true,"total_servers":2,"connected_servers":1,"total_tools":14,
                 "servers":[{"name":"fs","connected":true,"tools":14}]}"#,
@@ -176,7 +190,13 @@ mod tests {
                 enabled: true,
                 total_servers: 2,
                 connected_servers: 1,
-                total_tools: 14
+                total_tools: 14,
+                servers: vec![McpServerStatus {
+                    name: "fs".into(),
+                    connected: true,
+                    tools: 14,
+                    error: String::new(),
+                }],
             }
         );
 

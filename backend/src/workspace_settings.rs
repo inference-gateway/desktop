@@ -107,6 +107,9 @@ pub(crate) struct WorkspaceConfig {
     /// lists and the tab never edits.
     #[serde(skip)]
     pub(crate) secrets: Vec<String>,
+    /// The servers of `mcp.yaml` the pod gets, which Settings > MCPs lists.
+    #[serde(skip)]
+    pub(crate) mcp_servers: Vec<String>,
 }
 
 fn scalar(value: &Value) -> Option<String> {
@@ -164,6 +167,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         forward_env: names(entry, "forward_env"),
         env: environment(entry),
         secrets: names(entry, "secrets"),
+        mcp_servers: names(entry, "mcp_servers"),
     };
     Some(on_cluster(config, clusters))
 }
@@ -303,26 +307,28 @@ fn merge_workspace(
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
-/// `daemon.yaml` with the Secret `secret` listed under `secrets` by exactly the
-/// workspaces `on` names. A workspace whose list ends up empty loses the key.
-pub(crate) fn list_secret(
+/// `daemon.yaml` with `item` listed under `key` by exactly the workspaces `on`
+/// names, such as a Secret under `secrets`. A workspace whose list ends up
+/// empty loses the key.
+pub(crate) fn list_on(
     daemon_yaml: Option<&str>,
-    secret: &str,
+    key: &str,
+    item: &str,
     on: &[String],
 ) -> Result<String, String> {
     let mut yaml = crate::config::config_mapping(daemon_yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     for entry in workspaces_of(root)?.iter_mut() {
         let wanted = on.contains(&text(entry, "name"));
-        let mut secrets: Vec<String> = names(entry, "secrets")
+        let mut items: Vec<String> = names(entry, key)
             .into_iter()
-            .filter(|name| name != secret)
+            .filter(|name| name != item)
             .collect();
         if wanted {
-            secrets.push(secret.to_owned());
+            items.push(item.to_owned());
         }
         if let Some(entry) = entry.as_mapping_mut() {
-            set_or_remove(entry, "secrets", listed(&secrets));
+            set_or_remove(entry, key, listed(&items));
         }
     }
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
@@ -825,8 +831,9 @@ mod tests {
     #[test]
     fn a_secret_is_listed_on_exactly_the_workspaces_named() {
         let daemon_yaml = "workspaces:\n  - name: reviewer\n    kind: kubernetes\n    secrets:\n      - team-tokens\n  - name: writer\n    kind: kubernetes\n    secrets:\n      - infer-secret-inbox\n";
-        let listed = list_secret(
+        let listed = list_on(
             Some(daemon_yaml),
+            "secrets",
             "infer-secret-inbox",
             &["reviewer".into()],
         )

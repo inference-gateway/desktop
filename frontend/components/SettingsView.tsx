@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ComputeTab } from "./ComputeTab";
 import { SecretsTab } from "./SecretsTab";
+import { McpTab } from "./McpTab";
 import { WorkspacesTab } from "./WorkspacesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -66,6 +67,7 @@ type Tab =
   | "general"
   | "keys"
   | "secrets"
+  | "mcps"
   | "prompt"
   | "updates"
   | "agents"
@@ -90,6 +92,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "keys", label: "API Keys" },
   { id: "secrets", label: "Secrets" },
+  { id: "mcps", label: "MCPs" },
   { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
   { id: "compute", label: "Compute" },
@@ -299,6 +302,7 @@ export function SettingsView() {
 
           {tab === "agents" && <AgentsTab />}
           {tab === "secrets" && <SecretsTab />}
+          {tab === "mcps" && <McpTab />}
           {tab === "compute" && <ComputeTab />}
           {tab === "workspaces" && <WorkspacesTab />}
           {tab === "github" && <GithubTab sub={githubSub} />}

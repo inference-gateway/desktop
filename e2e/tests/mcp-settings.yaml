@@ -1,0 +1,21 @@
+name: mcp settings - a hosted server is added under MCPs and lands in mcp.yaml
+narration:
+  - "Open Settings."
+  - "Switch to the MCPs tab."
+  - "Start a new hosted server."
+  - "Name it."
+  - "Give it its URL."
+  - "Save the server."
+  - "It shows up in the list, ready to be edited."
+  - "It goes to this computer."
+  - "mcp.yaml holds it as written."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "MCPs" }
+  - click: { button: "New hosted server" }
+  - type: "e2e-docs"
+  - type: "https://mcp.example.com/mcp"
+  - click: { button: "Save server" }
+  - wait_for: { button: "Edit server e2e-docs", timeout: 10 }
+  - wait_for: { text: "Goes to this computer", timeout: 5 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/mcp.yaml", contains: "url: https://mcp.example.com/mcp", timeout: 10 }

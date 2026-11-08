@@ -19,6 +19,7 @@ const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   project: "",
   email: "",
   allowed_recipients: [],
+  mcp_servers: [],
   instructions: "Write well.",
   avatar: null,
   path: "/tmp/writer.md",

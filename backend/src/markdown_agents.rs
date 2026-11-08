@@ -7,7 +7,8 @@ use tauri_plugin_dialog::DialogExt;
 /// `workspace` (the computer its chats run on), `project` (the project its
 /// new chats open in), `email` (its AgentMail inbox address) and
 /// `allowed_recipients` (the addresses or domains it may mail) are desktop-only
-/// keys the CLI ignores, the picture is a sibling `<name>.<ext>`.
+/// keys the CLI ignores, the picture is a sibling `<name>.<ext>`. `mcpServers`
+/// names the MCP servers it uses, every one of its computer's when empty.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
@@ -24,6 +25,8 @@ pub(crate) struct MarkdownAgent {
     pub(crate) email: String,
     #[serde(default)]
     pub(crate) allowed_recipients: Vec<String>,
+    #[serde(default)]
+    pub(crate) mcp_servers: Vec<String>,
     #[serde(default)]
     pub(crate) instructions: String,
     #[serde(default)]
@@ -50,6 +53,10 @@ struct Frontmatter {
     email: String,
     #[serde(default)]
     allowed_recipients: Vec<String>,
+    /// Server names. An inline server definition, which Claude Code also
+    /// accepts, is no name and is left out.
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Vec<serde_norway::Value>,
 }
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
@@ -58,7 +65,7 @@ const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
 /// The frontmatter keys the agent editor owns. Every other key is kept as found.
-const MANAGED_KEYS: [&str; 8] = [
+const MANAGED_KEYS: [&str; 9] = [
     "name",
     "description",
     "emoji",
@@ -67,6 +74,7 @@ const MANAGED_KEYS: [&str; 8] = [
     "project",
     "email",
     "allowed_recipients",
+    "mcpServers",
 ];
 /// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
 /// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
@@ -149,6 +157,11 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
         project: fm.project,
         email: fm.email,
         allowed_recipients: fm.allowed_recipients,
+        mcp_servers: fm
+            .mcp_servers
+            .iter()
+            .filter_map(|server| server.as_str().map(str::to_owned))
+            .collect(),
         instructions: body.trim().to_string(),
         avatar: None,
         path: path.display().to_string(),
@@ -275,6 +288,15 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
         .collect();
     if !recipients.is_empty() {
         front.insert("allowed_recipients".into(), recipients.into());
+    }
+    let servers: Vec<&str> = agent
+        .mcp_servers
+        .iter()
+        .map(|server| server.trim())
+        .filter(|server| !server.is_empty())
+        .collect();
+    if !servers.is_empty() {
+        front.insert("mcpServers".into(), servers.into());
     }
     front.extend(kept);
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
@@ -469,6 +491,7 @@ mod tests {
             project: String::new(),
             email: String::new(),
             allowed_recipients: Vec::new(),
+            mcp_servers: Vec::new(),
             instructions: "You are a senior reviewer.\n\nReport findings by severity.".into(),
             avatar: None,
             path: String::new(),
@@ -561,6 +584,30 @@ mod tests {
         let listed = &list_in(&dir)[0];
         assert_eq!(listed.workspace, "ubuntu-desktop");
         assert_eq!(listed.project, "desktop");
+    }
+
+    #[test]
+    fn mcp_servers_round_trip_as_names_and_an_inline_server_is_left_out() {
+        let dir = TempDir::new("mcp-servers");
+        std::fs::write(
+            dir.join("code-reviewer.md"),
+            "---\nname: code-reviewer\ndescription: Reviews diffs\nmcpServers:\n- agentmail\n- github:\n    type: http\n    url: https://example.com/mcp\n---\n\nReview.\n",
+        )
+        .unwrap();
+        let mut agent = list_in(&dir).remove(0);
+        assert_eq!(agent.mcp_servers, vec!["agentmail"]);
+        agent.mcp_servers = vec![" github ".into(), "agentmail".into()];
+        write_in(&dir, &agent, &agent.name).unwrap();
+        let text = std::fs::read_to_string(dir.join("code-reviewer.md")).unwrap();
+        assert!(
+            text.contains("mcpServers:\n- github\n- agentmail\n"),
+            "{text}"
+        );
+        assert!(!text.contains("https://example.com/mcp"), "{text}");
+        agent.mcp_servers.clear();
+        write_in(&dir, &agent, &agent.name).unwrap();
+        let text = std::fs::read_to_string(dir.join("code-reviewer.md")).unwrap();
+        assert!(!text.contains("mcpServers"), "{text}");
     }
 
     #[test]

@@ -753,12 +753,19 @@ pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
+/// Serializes every `update_file`, so two edits of one file at once never drop
+/// each other's change. `f` must not call `update_file` itself.
+static FILE_EDITS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Read `path`, apply `f` to its text (`None` when missing), and write the
 /// result back, creating the parent dir as needed.
 pub(crate) fn update_file(
     path: &Path,
     f: impl FnOnce(Option<&str>) -> Result<String, String>,
 ) -> Result<(), String> {
+    let _edit = FILE_EDITS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
