@@ -138,14 +138,7 @@ pub(crate) async fn delete_voice_sample(name: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_dir(tag: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("infer-tts-samples-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::test_support::TempDir;
 
     #[test]
     fn sample_path_rejects_traversal_and_accepts_bare_names() {
@@ -158,7 +151,7 @@ mod tests {
 
     #[test]
     fn list_wavs_returns_only_wav_files_sorted() {
-        let dir = temp_dir("list");
+        let dir = TempDir::new("list");
         std::fs::write(dir.join("b.wav"), b"x").unwrap();
         std::fs::write(dir.join("a.WAV"), b"x").unwrap();
         std::fs::write(dir.join("notes.txt"), b"x").unwrap();
@@ -173,7 +166,7 @@ mod tests {
 
     #[test]
     fn write_sample_writes_wav_and_rejects_bad_names() {
-        let dir = temp_dir("write");
+        let dir = TempDir::new("write");
         let saved = write_sample(&dir, "rec.wav", b"RIFF").unwrap();
         assert_eq!(saved.name, "rec.wav");
         assert_eq!(std::fs::read(dir.join("rec.wav")).unwrap(), b"RIFF");
@@ -185,8 +178,8 @@ mod tests {
 
     #[test]
     fn copy_sample_copies_wav_under_base_name_and_rejects_other_extensions() {
-        let src_dir = temp_dir("src");
-        let samples = temp_dir("dst");
+        let src_dir = TempDir::new("src");
+        let samples = TempDir::new("dst");
         let src = src_dir.join("voice.wav");
         std::fs::write(&src, b"RIFF").unwrap();
 

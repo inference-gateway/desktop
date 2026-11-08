@@ -286,10 +286,11 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn binding_prefers_daemon_yaml_then_browser_use_then_seeds() {
-        let home = tempfile_dir();
+        let home = TempDir::new("daemon-binding");
         let infer = home.join(".infer");
         std::fs::create_dir_all(&infer).unwrap();
 
@@ -327,7 +328,6 @@ mod tests {
                 token: "dae".into()
             }
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -349,15 +349,5 @@ mod tests {
         let v: serde_norway::Value = serde_norway::from_str(&off).unwrap();
         assert_eq!(v["enabled"].as_bool(), Some(false));
         assert_eq!(v["extension"]["token"].as_str(), Some("seed"));
-    }
-
-    fn tempfile_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "desktop-daemon-{}-{}",
-            std::process::id(),
-            rand::random::<u32>()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
     }
 }

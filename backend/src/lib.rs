@@ -308,3 +308,61 @@ pub fn run() {
         }
     });
 }
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::ops::Deref;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+    /// Scratch directory under the system temp dir, removed on Drop so a
+    /// failing assertion cannot leak it. The name carries the pid plus a
+    /// counter so tests never share or collide on one.
+    pub(crate) struct TempDir(PathBuf);
+
+    impl TempDir {
+        pub(crate) fn new(tag: &str) -> Self {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("igd-{tag}-{}-{id}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("temp test dir should be creatable");
+            Self(dir)
+        }
+
+        pub(crate) fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Deref for TempDir {
+        type Target = Path;
+
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for TempDir {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn drop_removes_the_directory_and_its_files() {
+        let dir = TempDir::new("guard");
+        let path = dir.path().to_path_buf();
+        std::fs::write(path.join("file.txt"), b"x").unwrap();
+        std::fs::create_dir(path.join("nested")).unwrap();
+        assert!(path.is_dir());
+        drop(dir);
+        assert!(!path.exists());
+    }
+}

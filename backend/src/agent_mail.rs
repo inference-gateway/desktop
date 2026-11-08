@@ -404,12 +404,7 @@ pub(crate) async fn sync_agent_mail(name: String) -> Result<Vec<String>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn temp_home(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("agent-mail-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
+    use crate::test_support::TempDir;
 
     /// A home whose agent has an address on file, read straight from the file
     /// to prove what the split stores where.
@@ -449,7 +444,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_address_travels_in_the_agent_file_and_the_key_only_in_auth_yaml() {
-        let home = temp_home("split");
+        let home = TempDir::new("split");
         seed_agent(&home);
         config::set_agent_api_key_in(&home, "code-reviewer", " am_us_secret ").unwrap();
 
@@ -475,13 +470,12 @@ mod tests {
             config::agent_api_key_in(&home, "code-reviewer"),
             "am_us_secret"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]
     #[test]
     fn a_new_key_replaces_and_a_blank_one_clears_leaving_the_rest() {
-        let home = temp_home("replace");
+        let home = TempDir::new("replace");
         std::fs::create_dir_all(home.join(".infer")).unwrap();
         std::fs::write(
             home.join(".infer/auth.yaml"),
@@ -508,13 +502,12 @@ mod tests {
                 .into_iter()
                 .collect()
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]
     #[test]
     fn a_move_renames_the_key_and_a_move_without_one_is_a_no_op() {
-        let home = temp_home("move");
+        let home = TempDir::new("move");
         config::set_agent_api_key_in(&home, "old-name", "am_us_secret").unwrap();
         move_agent_email_key_in(&home, "old-name", "new-name").unwrap();
         assert_eq!(config::agent_api_key_in(&home, "new-name"), "am_us_secret");
@@ -522,12 +515,11 @@ mod tests {
 
         move_agent_email_key_in(&home, "ghost", "other").unwrap();
         assert!(config::agent_api_key_in(&home, "other").is_empty());
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn only_a_valid_agent_with_an_address_has_mail() {
-        let home = temp_home("mail-agent");
+        let home = TempDir::new("mail-agent");
         seed_agent(&home);
         let dirs = agent_dirs_of(&home);
         assert_eq!(
@@ -537,17 +529,15 @@ mod tests {
         assert!(mail_agent_in(&dirs, "other").is_none());
         assert!(mail_agent_in(&dirs, "../agents/code-reviewer").is_none());
         assert!(mail_agent_in(&dirs, "").is_none());
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
     fn a_thread_without_an_inbox_or_owner_key_gets_no_mail() {
-        let home = temp_home("thread");
+        let home = TempDir::new("thread");
         let dirs = agent_dirs_of(&home);
         assert_eq!(thread_key_in(&dirs, &home, "code-reviewer"), Ok(None));
         seed_agent(&home);
         assert_eq!(thread_key_in(&dirs, &home, "code-reviewer"), Ok(None));
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

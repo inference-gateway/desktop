@@ -491,6 +491,7 @@ pub(crate) async fn screen_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn an_artifacts_answer_lists_the_files_and_an_artifact_answer_carries_one() {
@@ -650,9 +651,7 @@ mod tests {
 
     #[test]
     fn ensure_commit_gives_an_empty_directory_a_first_commit_once() {
-        let dir = std::env::temp_dir().join(format!("igd-workspace-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("workspace");
         ensure_commit(&dir).unwrap();
         let head = crate::projects::git_output(&dir, &["rev-parse", "HEAD"]).unwrap();
         ensure_commit(&dir).unwrap();
@@ -660,6 +659,5 @@ mod tests {
             crate::projects::git_output(&dir, &["rev-parse", "HEAD"]).unwrap(),
             head
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

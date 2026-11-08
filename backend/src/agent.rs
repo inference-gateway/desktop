@@ -1663,6 +1663,7 @@ pub(crate) async fn set_a2a_agent_model(name: String, model: String) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn save_guards_accept_userspace_and_per_project_runtime_dirs() {
@@ -2392,8 +2393,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn run_infer_in_recreates_a_vanished_project_dir() {
-        let dir = std::env::temp_dir().join(format!("igd-vanished-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new("vanished");
+        std::fs::remove_dir_all(&dir).unwrap();
         unsafe { std::env::set_var("INFER_BIN", "/usr/bin/true") };
         let result = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -2406,7 +2407,6 @@ mod tests {
         unsafe { std::env::remove_var("INFER_BIN") };
         assert!(result.is_ok(), "{result:?}");
         assert!(dir.is_dir());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

@@ -136,6 +136,7 @@ fn run_binaries(subcommand: &str, names: &[impl AsRef<std::ffi::OsStr>]) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TempDir;
 
     #[test]
     fn parse_status_reads_each_state() {
@@ -185,10 +186,10 @@ llama-tts    missing  /home/u/.infer/bin/tools/llama-tts
     #[ignore]
     fn ensure_upgrades_a_stale_binary_and_keeps_a_current_one() {
         use std::os::unix::fs::PermissionsExt;
-        let home = std::env::temp_dir().join(format!("infer-binaries-{}", std::process::id()));
+        let home = TempDir::new("binaries");
         let tools = home.join(".infer").join("bin").join("tools");
         std::fs::create_dir_all(&tools).unwrap();
-        unsafe { std::env::set_var("HOME", &home) };
+        unsafe { std::env::set_var("HOME", home.path()) };
         let ffmpeg = tools.join("ffmpeg");
         std::fs::write(&ffmpeg, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&ffmpeg, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -209,7 +210,6 @@ llama-tts    missing  /home/u/.infer/bin/tools/llama-tts
             std::fs::metadata(&ffmpeg).unwrap().modified().unwrap(),
             installed
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
