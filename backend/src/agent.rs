@@ -1361,43 +1361,61 @@ fn parse_model_ids(yaml: &str) -> Result<Vec<String>, String> {
         serde_norway::from_str(yaml).map_err(|e| format!("parsing scenarios: {e}"))?;
     Ok(defs.models.into_iter().map(|m| m.id).collect())
 }
-/// Resolve a history file path. Chat history is the canonical `~/.infer/history`
-/// (shared with the CLI; a directory there means some CLI version nests it at
-/// `history/history`). Bash history (issue #185) is a sibling file so it stays
-/// separate from chat history. Returns the path and whether it existed at the
-/// time of checking.
-fn history_path(bash: bool) -> (PathBuf, bool) {
-    if bash {
-        let path = home_dir().join(".infer").join("bash_history");
-        return (path.clone(), path.exists());
-    }
+/// Read the prompt history shared with the CLI.
+#[tauri::command]
+pub(crate) fn read_history() -> Result<Vec<String>, String> {
+    read_history_file(prompt_history_path())
+}
+
+/// Read the desktop's own bash-command history.
+#[tauri::command]
+pub(crate) fn read_bash_history() -> Result<Vec<String>, String> {
+    read_history_file(bash_history_path())
+}
+
+/// Append a line to the prompt history shared with the CLI.
+#[tauri::command]
+pub(crate) fn append_history(line: String) -> Result<(), String> {
+    append_history_line(prompt_history_path(), &line)
+}
+
+/// Append a line to the desktop's own bash-command history.
+#[tauri::command]
+pub(crate) fn append_bash_history(line: String) -> Result<(), String> {
+    append_history_line(bash_history_path(), &line)
+}
+
+/// Prompt history shared with the CLI: `~/.infer/history`, or
+/// `~/.infer/history/history` when that path is a directory (some CLI
+/// versions nest the file there).
+fn prompt_history_path() -> PathBuf {
     let base = home_dir().join(".infer").join("history");
     if base.is_dir() {
-        let inner = base.join("history");
-        (inner.clone(), inner.exists())
+        base.join("history")
     } else {
-        (base.clone(), base.exists())
+        base
     }
 }
 
-/// Read prompt history shared with the CLI (`bash` selects the desktop's
-/// separate bash-command history). Returns an empty vec when no history file
-/// exists yet.
-#[tauri::command]
-pub(crate) fn read_history(bash: Option<bool>) -> Result<Vec<String>, String> {
-    let (path, exists) = history_path(bash.unwrap_or(false));
-    if !exists {
+/// The desktop's own bash-command history (issue #185), a sibling file of
+/// the CLI's prompt history.
+fn bash_history_path() -> PathBuf {
+    home_dir().join(".infer").join("bash_history")
+}
+
+/// Read the lines of a history file. Returns an empty vec when the file
+/// does not exist yet.
+fn read_history_file(path: PathBuf) -> Result<Vec<String>, String> {
+    if !path.exists() {
         return Ok(Vec::new());
     }
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     Ok(content.lines().map(|l| l.to_string()).collect())
 }
 
-/// Append a line to a history file (creates the file and parent directories if
-/// missing).
-#[tauri::command]
-pub(crate) fn append_history(line: String, bash: Option<bool>) -> Result<(), String> {
-    let (path, _) = history_path(bash.unwrap_or(false));
+/// Append a line to a history file (creates the file and parent
+/// directories if missing).
+fn append_history_line(path: PathBuf, line: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
