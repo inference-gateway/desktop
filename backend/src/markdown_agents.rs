@@ -5,9 +5,9 @@ use tauri_plugin_dialog::DialogExt;
 /// A Markdown agent definition (`<name>.md`, Claude Code / infer format): the
 /// frontmatter is its profile, the body its system prompt. `emoji`,
 /// `workspace` (the computer its chats run on), `project` (the project its
-/// new chats open in), `email` (its AgentMail inbox address) and `email_to`
-/// (the comma-separated addresses it may send to) are desktop-only keys the
-/// CLI ignores, the picture is a sibling `<name>.<ext>`.
+/// new chats open in), `email` (its AgentMail inbox address) and
+/// `allowed_recipients` (the addresses or domains it may mail) are desktop-only
+/// keys the CLI ignores, the picture is a sibling `<name>.<ext>`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
@@ -23,7 +23,7 @@ pub(crate) struct MarkdownAgent {
     #[serde(default)]
     pub(crate) email: String,
     #[serde(default)]
-    pub(crate) email_to: String,
+    pub(crate) allowed_recipients: Vec<String>,
     #[serde(default)]
     pub(crate) instructions: String,
     #[serde(default)]
@@ -49,7 +49,7 @@ struct Frontmatter {
     #[serde(default)]
     email: String,
     #[serde(default)]
-    email_to: String,
+    allowed_recipients: Vec<String>,
 }
 
 const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
@@ -66,7 +66,7 @@ const MANAGED_KEYS: [&str; 8] = [
     "workspace",
     "project",
     "email",
-    "email_to",
+    "allowed_recipients",
 ];
 /// Microsoft's Fluent Emoji animated PNGs (MIT) and Google's Noto Animated
 /// Emoji (Apache 2.0): the only remote sources the avatar downloader accepts,
@@ -152,7 +152,7 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
         workspace: fm.workspace,
         project: fm.project,
         email: fm.email,
-        email_to: fm.email_to,
+        allowed_recipients: fm.allowed_recipients,
         instructions: body.trim().to_string(),
         avatar: None,
         path: path.display().to_string(),
@@ -271,8 +271,14 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
     if !agent.email.trim().is_empty() {
         front.insert("email".into(), agent.email.trim().into());
     }
-    if !agent.email_to.trim().is_empty() {
-        front.insert("email_to".into(), agent.email_to.trim().into());
+    let recipients: Vec<&str> = agent
+        .allowed_recipients
+        .iter()
+        .map(|recipient| recipient.trim())
+        .filter(|recipient| !recipient.is_empty())
+        .collect();
+    if !recipients.is_empty() {
+        front.insert("allowed_recipients".into(), recipients.into());
     }
     front.extend(kept);
     let yaml = serde_norway::to_string(&front).map_err(|e| e.to_string())?;
@@ -468,7 +474,7 @@ mod tests {
             workspace: String::new(),
             project: String::new(),
             email: String::new(),
-            email_to: String::new(),
+            allowed_recipients: Vec::new(),
             instructions: "You are a senior reviewer.\n\nReport findings by severity.".into(),
             avatar: None,
             path: String::new(),
@@ -567,14 +573,19 @@ mod tests {
     }
 
     #[test]
-    fn email_trips_the_frontmatter_and_the_whitelist_along() {
+    fn the_address_and_allowed_recipients_round_trip_as_a_block_list() {
         let dir = temp_dir("email");
         let path = write_in(&dir, &sample(), &sample().name).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("email"), "{text}");
+        assert!(!text.contains("allowed_recipients"), "{text}");
         let mut agent = sample();
         agent.email = " code-reviewer@agentmail.to ".into();
-        agent.email_to = " human@example.com, other-agent@agentmail.to ".into();
+        agent.allowed_recipients = vec![
+            " human@example.com ".into(),
+            " ".into(),
+            "other-agent@agentmail.to".into(),
+        ];
         write_in(&dir, &agent, &agent.name).unwrap();
 
         let text = std::fs::read_to_string(dir.join("code-reviewer.md")).unwrap();
@@ -583,18 +594,18 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("email_to: human@example.com, other-agent@agentmail.to\n"),
+            text.contains("allowed_recipients:\n- human@example.com\n- other-agent@agentmail.to\n"),
             "{text}"
         );
         let listed = &list_in(&dir)[0];
         assert_eq!(listed.email, "code-reviewer@agentmail.to");
         assert_eq!(
-            listed.email_to,
-            "human@example.com, other-agent@agentmail.to"
+            listed.allowed_recipients,
+            vec!["human@example.com", "other-agent@agentmail.to"]
         );
-        let by_name = by_name_in(&[dir.clone()], "code-reviewer").unwrap();
+        let by_name = by_name_in(std::slice::from_ref(&dir), "code-reviewer").unwrap();
         assert_eq!(by_name.email, "code-reviewer@agentmail.to");
-        assert!(by_name_in(&[dir.clone()], "ghost").is_none());
+        assert!(by_name_in(std::slice::from_ref(&dir), "ghost").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

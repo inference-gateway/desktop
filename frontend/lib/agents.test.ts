@@ -18,7 +18,7 @@ const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   workspace: "",
   project: "",
   email: "",
-  email_to: "",
+  allowed_recipients: [],
   instructions: "Write well.",
   avatar: null,
   path: "/tmp/writer.md",
@@ -84,7 +84,7 @@ test("the preamble carries the mail identity, the send whitelist and the others'
   const me = agent({
     name: "writer",
     email: "writer@agentmail.to",
-    email_to: " human@example.com, reviewer@agentmail.to ",
+    allowed_recipients: [" human@example.com ", "", "reviewer@agentmail.to"],
   });
   const reviewer = agent({ name: "reviewer", description: "Reviews drafts.", email: "reviewer@agentmail.to" });
   expect(agentInstructionsPreamble(me, [me, reviewer])).toBe(
@@ -96,7 +96,7 @@ test("the preamble carries the mail identity, the send whitelist and the others'
       "- reviewer: Reviews drafts. (email: reviewer@agentmail.to)",
     ].join("\n"),
   );
-  const addressless = agent({ name: "writer", email_to: "nobody@example.com" });
+  const addressless = agent({ name: "writer", allowed_recipients: ["nobody@example.com"] });
   expect(agentInstructionsPreamble(addressless, [addressless])).toBe(
     'You are running as the agent "writer": Writes prose.',
     "a whitelist without an address says nothing about mail",

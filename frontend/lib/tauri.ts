@@ -129,8 +129,8 @@ export type MarkdownAgent = {
   project: string;
   /** The agent's AgentMail inbox address, blank while it has none. */
   email: string;
-  /** Comma-separated addresses the agent may send to, blank for none stored. */
-  email_to: string;
+  /** Addresses or domains the agent may mail. Empty lets it mail only itself. */
+  allowed_recipients: string[];
   instructions: string;
   avatar: string | null;
   path: string;
@@ -535,6 +535,5 @@ export const api = {
   createAgentInbox: (name: string, apiKey: string) => invoke<string>("create_agent_inbox", { name, apiKey }),
   setAgentEmailKey: (name: string, apiKey: string) => invoke<void>("set_agent_email_key", { name, apiKey }),
   moveAgentEmailKey: (from: string, to: string) => invoke<void>("move_agent_email_key", { from, to }),
-  syncAgentSendAllowlist: (name: string, entries: string[]) =>
-    invoke<void>("sync_agent_send_allowlist", { name, entries }),
+  syncAgentMail: (name: string) => invoke<string[]>("sync_agent_mail", { name }),
 };

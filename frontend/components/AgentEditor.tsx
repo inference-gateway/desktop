@@ -17,7 +17,7 @@ const EMPTY: MarkdownAgent = {
   workspace: "",
   project: "",
   email: "",
-  email_to: "",
+  allowed_recipients: [],
   instructions: "",
   avatar: null,
   path: "",
@@ -36,6 +36,7 @@ export function AgentEditor() {
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [emailKey, setEmailKey] = useState("");
+  const [recipients, setRecipients] = useState((existing?.allowed_recipients ?? []).join(", "));
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
@@ -92,9 +93,6 @@ export function AgentEditor() {
     }
   };
 
-  // Provisioning asks AgentMail for `<name>@agentmail.to` and fills the
-  // address in with the key the user just typed; the key itself is only
-  // written to the credential store on save.
   const createInbox = async () => {
     const key = emailKey.trim();
     if (!draft.name || !key || creating) return;
@@ -112,18 +110,24 @@ export function AgentEditor() {
     if (!complete || saving) return;
     setSaving(true);
     try {
-      await saveAgent(draft, existing?.name, animatedPick ? fluentAnimatedUrl(animatedPick) : undefined);
-      if (existing?.name && existing.name !== draft.name) {
-        await api.moveAgentEmailKey(existing.name, draft.name);
+      const agent = {
+        ...draft,
+        allowed_recipients: recipients
+          .split(",")
+          .map((r) => r.trim())
+          .filter(Boolean),
+      };
+      await saveAgent(agent, existing?.name, animatedPick ? fluentAnimatedUrl(animatedPick) : undefined);
+      if (existing?.name && existing.name !== agent.name) {
+        await api.moveAgentEmailKey(existing.name, agent.name);
       }
       const key = emailKey.trim();
-      if (key) await api.setAgentEmailKey(draft.name, key);
-      const recipients = draft.email_to
-        .split(",")
-        .map((r) => r.trim())
-        .filter(Boolean);
-      if (draft.email.trim() && recipients.length > 0) {
-        await api.syncAgentSendAllowlist(draft.name, recipients);
+      if (key) await api.setAgentEmailKey(agent.name, key);
+      if (agent.email.trim()) {
+        const dropped = await api.syncAgentMail(agent.name);
+        if (dropped.length > 0) {
+          setError(`Not allowed by agent_mail.allowed_recipients in config.yaml: ${dropped.join(", ")}`);
+        }
       }
     } catch (e) {
       setError(String(e));
@@ -358,14 +362,15 @@ export function AgentEditor() {
             </Label>
             <Input
               id="agent-email-recipients"
-              value={draft.email_to}
+              value={recipients}
               placeholder="you@example.com, other-agent@agentmail.to"
-              onChange={(e) => set("email_to", e.target.value)}
+              onChange={(e) => setRecipients(e.target.value)}
             />
           </div>
           <span className="text-[0.72rem] text-muted-foreground/70">
-            Comma-separated: the agent may only send mail to these. The address travels with the agent's file, the API
-            key stays in the credential store and never in the file.
+            Comma-separated addresses or domains the agent may mail - with none it can only mail itself, and
+            agent_mail.allowed_recipients in config.yaml caps every agent. The address travels with the agent's file,
+            the API key stays in the credential store and never in the file.
           </span>
         </div>
 

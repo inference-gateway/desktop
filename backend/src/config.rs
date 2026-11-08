@@ -44,10 +44,6 @@ pub(crate) fn agent_key_name(agent: &str) -> String {
     format!("{AGENT_KEY_PREFIX}{agent}")
 }
 
-pub(crate) fn agent_api_key(agent: &str) -> String {
-    agent_api_key_in(&home_dir(), agent)
-}
-
 pub(crate) fn agent_api_key_in(home: &Path, agent: &str) -> String {
     read_auth_in(home)
         .get(&agent_key_name(agent))
@@ -67,6 +63,26 @@ pub(crate) fn set_agent_api_key_in(home: &Path, agent: &str, key: &str) -> Resul
         keys.insert(entry, key.trim().to_owned());
     }
     write_auth_in(home, keys.into_iter().collect())
+}
+
+/// The cap `agent_mail.allowed_recipients` in config.yaml puts on every agent's
+/// allowed recipients: addresses or whole domains, empty for no cap.
+/// ponytail: an unreadable config.yaml means no cap, like every other config key.
+pub(crate) fn agent_mail_cap_in(home: &Path) -> Vec<String> {
+    std::fs::read_to_string(home.join(".infer").join("config.yaml"))
+        .ok()
+        .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
+        .and_then(|config| {
+            config
+                .get("agent_mail")?
+                .get("allowed_recipients")?
+                .as_sequence()
+                .cloned()
+        })
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| entry.as_str().map(str::to_owned))
+        .collect()
 }
 
 /// `set_auth` rooted at an arbitrary home. Blank values are dropped rather than
@@ -745,6 +761,24 @@ pub(crate) async fn set_default_model(model: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_agent_mail_cap_reads_a_block_list_and_defaults_to_none() {
+        let home = std::env::temp_dir().join(format!("infer-mail-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(agent_mail_cap_in(&home).is_empty());
+        std::fs::create_dir_all(home.join(".infer")).unwrap();
+        std::fs::write(
+            home.join(".infer").join("config.yaml"),
+            "gateway:\n  url: http://localhost:8080\nagent_mail:\n  allowed_recipients:\n    - example.com\n    - boss@corp.example\n",
+        )
+        .unwrap();
+        assert_eq!(
+            agent_mail_cap_in(&home),
+            vec!["example.com".to_owned(), "boss@corp.example".to_owned()]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     #[test]
     fn auth_round_trips_yaml_and_ignores_legacy_json() {

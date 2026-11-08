@@ -142,7 +142,7 @@ pub fn run() {
             agent_mail::create_agent_inbox,
             agent_mail::set_agent_email_key,
             agent_mail::move_agent_email_key,
-            agent_mail::sync_agent_send_allowlist,
+            agent_mail::sync_agent_mail,
             agent::send_approval,
             agent::move_session,
             agent::send_user_message,
