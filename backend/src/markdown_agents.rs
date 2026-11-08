@@ -408,9 +408,12 @@ pub(crate) fn save_markdown_agent(
     Ok(path.display().to_string())
 }
 
+/// Removes the agent and its AgentMail API key, so a later agent of the same
+/// name starts without the old inbox's key.
 #[tauri::command]
 pub(crate) fn delete_markdown_agent(name: String) -> Result<(), String> {
-    delete_in(&agent_dir(&name), &name)
+    delete_in(&agent_dir(&name), &name)?;
+    crate::config::set_agent_api_key_in(&home_dir(), &name, "")
 }
 
 /// Lets the user pick a picture for the agent. Returns false when they cancel.

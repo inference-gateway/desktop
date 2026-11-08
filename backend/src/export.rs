@@ -855,9 +855,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            infer
-                    .join("agents")
-                    .join("code-reviewer.md"),
+            infer.join("agents").join("code-reviewer.md"),
             "---\nname: code-reviewer\ndescription: Reviews code\nemail: code-reviewer@agentmail.to\n---\nReview the diff.\n",
         )
         .unwrap();
