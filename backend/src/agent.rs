@@ -5,8 +5,8 @@ use crate::env::{
 };
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
-use crate::thread::{Sink, Thread, ThreadOptions};
-use std::collections::HashMap;
+use crate::thread::{Sink, Thread, ThreadMcpServer, ThreadOptions};
+use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -732,6 +732,8 @@ fn thread_options(
             .unwrap_or_default(),
         max_turns: 500,
         agent: agent.filter(|a| !a.trim().is_empty()).map(str::to_owned),
+        mcp_servers: Vec::new(),
+        env: BTreeMap::new(),
     }
 }
 
@@ -855,7 +857,7 @@ pub(crate) async fn open_thread(
     agent: Option<String>,
 ) -> Result<String, String> {
     let cwd = thread_dir(project.as_deref());
-    let options = thread_options(
+    let mut options = thread_options(
         &model,
         auto_mode,
         system_prompt.as_deref(),
@@ -863,6 +865,16 @@ pub(crate) async fn open_thread(
         &cwd,
         agent.as_deref(),
     );
+    if let Some(api_key) = crate::agent_mail::thread_key(agent.as_deref()) {
+        let mut headers = BTreeMap::new();
+        headers.insert("x-api-key".to_owned(), api_key.clone());
+        options.mcp_servers.push(ThreadMcpServer {
+            name: crate::agent_mail::MCP_SERVER_NAME.to_owned(),
+            url: crate::agent_mail::MCP_SERVER_URL.to_owned(),
+            headers,
+        });
+        options.env.insert("AGENTMAIL_API_KEY".to_owned(), api_key);
+    }
     let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
     serde_json::to_string(thread.history()).map_err(|e| e.to_string())
 }

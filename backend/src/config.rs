@@ -23,12 +23,50 @@ fn read_auth() -> BTreeMap<String, String> {
     read_auth_in(&home_dir())
 }
 
-/// Non-empty (KEY, value) pairs to inject as environment variables.
+/// Non-empty (KEY, value) pairs to inject as environment variables. An agent's
+/// AgentMail key stays out - it rides its own thread's frame to its worker.
 pub(crate) fn auth_env() -> Vec<(String, String)> {
     read_auth()
         .into_iter()
         .filter(|(_, v)| !v.is_empty())
+        .filter(|(k, _)| !k.starts_with(AGENT_KEY_PREFIX))
         .collect()
+}
+
+/// The auth.yaml key prefix that scopes store entries to one agent: an AgentMail
+/// API key per agent, never a provider env var.
+const AGENT_KEY_PREFIX: &str = "AGENTMAIL_API_KEY_";
+
+/// The auth.yaml key holding agent `name`'s AgentMail API key: a secret
+/// beside the provider keys, keyed by its full name and only read back by
+/// the desktop, which injects it to that agent's own worker.
+pub(crate) fn agent_key_name(agent: &str) -> String {
+    format!("{AGENT_KEY_PREFIX}{agent}")
+}
+
+pub(crate) fn agent_api_key(agent: &str) -> String {
+    agent_api_key_in(&home_dir(), agent)
+}
+
+pub(crate) fn agent_api_key_in(home: &Path, agent: &str) -> String {
+    read_auth_in(home)
+        .get(&agent_key_name(agent))
+        .map(|key| key.trim())
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Saves one agent's AgentMail API key, leaving every other auth.yaml
+/// entry alone. A blank value clears the entry.
+pub(crate) fn set_agent_api_key_in(home: &Path, agent: &str, key: &str) -> Result<(), String> {
+    let mut keys = read_auth_in(home);
+    let entry = agent_key_name(agent);
+    if key.trim().is_empty() {
+        keys.remove(&entry);
+    } else {
+        keys.insert(entry, key.trim().to_owned());
+    }
+    write_auth_in(home, keys.into_iter().collect())
 }
 
 /// `set_auth` rooted at an arbitrary home. Blank values are dropped rather than

@@ -127,6 +127,10 @@ export type MarkdownAgent = {
   workspace: string;
   /** The project the agent's new chats open in, blank for none. */
   project: string;
+  /** The agent's AgentMail inbox address, blank while it has none. */
+  email: string;
+  /** Comma-separated addresses the agent may send to, blank for none stored. */
+  email_to: string;
   instructions: string;
   avatar: string | null;
   path: string;
@@ -528,4 +532,9 @@ export const api = {
   pickAgentAvatar: (name: string) => invoke<boolean>("pick_agent_avatar", { name }),
   removeAgentAvatar: (name: string) => invoke<void>("remove_agent_avatar", { name }),
   setAgentAvatarFromUrl: (name: string, url: string) => invoke<void>("set_agent_avatar_from_url", { name, url }),
+  createAgentInbox: (name: string, apiKey: string) => invoke<string>("create_agent_inbox", { name, apiKey }),
+  setAgentEmailKey: (name: string, apiKey: string) => invoke<void>("set_agent_email_key", { name, apiKey }),
+  moveAgentEmailKey: (from: string, to: string) => invoke<void>("move_agent_email_key", { from, to }),
+  syncAgentSendAllowlist: (name: string, entries: string[]) =>
+    invoke<void>("sync_agent_send_allowlist", { name, entries }),
 };

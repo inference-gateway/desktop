@@ -599,6 +599,7 @@ export function Composer() {
   const runsOn = sessionId !== null ? chatWorkspace(sessionId, workspaceOf, agentOf, agents) : THIS_COMPUTER;
   const onOwnComputer = runsOn !== THIS_COMPUTER;
   const driving = sessionId !== null && drivenId === sessionId;
+  const agentEmail = agents.find((a) => a.name === currentAgent)?.email.trim() ?? "";
 
   return (
     <div id="input-area" className="border-t border-border bg-card px-4 pb-4 pt-[0.6rem]">
@@ -612,6 +613,7 @@ export function Composer() {
           <span className="min-w-0 flex-1 truncate">
             {currentProject ? `${currentAgent} (${currentProject})` : currentAgent}
             {driving && " - you are driving its computer"}
+            {agentEmail && <span className="block truncate text-[0.7rem] text-muted-foreground/70">{agentEmail}</span>}
           </span>
           {sessionId === null && <AgentProjectMenu />}
           {onOwnComputer && sessionId !== null && (

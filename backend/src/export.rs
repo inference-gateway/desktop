@@ -816,11 +816,14 @@ mod tests {
     }
 
     /// A home with every state kind the export moves, rooted at `home` so the
-    /// tilde round-trip is exercised (paths written absolute).
+    /// tilde round-trip is exercised (paths written absolute). Carries a
+    /// Markdown agent and an auth.yaml with provider and agent keys to prove
+    /// the export leaves secrets of both kinds behind.
     fn seed_home(home: &Path) {
         let infer = home.join(".infer");
         std::fs::create_dir_all(infer.join("schedules")).unwrap();
         std::fs::create_dir_all(infer.join("skills").join("code-review")).unwrap();
+        std::fs::create_dir_all(infer.join("agents")).unwrap();
         std::fs::write(
             infer.join("skills").join("code-review").join("SKILL.md"),
             "n",
@@ -849,6 +852,18 @@ mod tests {
         std::fs::write(
             infer.join("desktop.yaml"),
             "snippets:\n  - id: s1\n    label: Say hi\n    prompt: hi\nskills_registry_url: https://reg.example/c.json\n",
+        )
+        .unwrap();
+        std::fs::write(
+            infer
+                    .join("agents")
+                    .join("code-reviewer.md"),
+            "---\nname: code-reviewer\ndescription: Reviews code\nemail: code-reviewer@agentmail.to\n---\nReview the diff.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            infer.join("auth.yaml"),
+            "OPENAI_API_KEY: sk-provider\nAGENTMAIL_API_KEY_code-reviewer: am_us_secret\n",
         )
         .unwrap();
     }
@@ -921,6 +936,11 @@ mod tests {
         assert!(!text.contains("d1-secret"));
         assert!(!text.contains("gh-client-secret"));
         assert!(!text.contains("gh-key-secret"));
+        assert!(!text.contains("sk-provider"), "auth.yaml keys never travel");
+        assert!(
+            !text.contains("am_us_secret"),
+            "an agent's AgentMail key never travels"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 

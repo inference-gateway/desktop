@@ -64,15 +64,32 @@ export function normaliseAgentName(input: string): string {
     .slice(0, 64);
 }
 
-/** The extra instruction an agent chat carries: who it is, and which sibling
- * agents it can delegate to through the Agent tool's `agent` argument. */
+/** The extra instruction an agent chat carries: who it is, its mail identity,
+ * and which sibling agents it can delegate to through the Agent tool's `agent`
+ * argument. */
 export function agentInstructionsPreamble(agent: MarkdownAgent, all: MarkdownAgent[]): string {
   const others = all.filter((a) => a.name !== agent.name);
   const lines = [`You are running as the agent "${agent.name}": ${agent.description.trim()}`];
+  const email = agent.email.trim();
+  if (email) {
+    lines.push(
+      `Your email address is ${email}. People and other agents can write to you there, and you can send mail as it.`,
+    );
+    const recipients = agent.email_to
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    if (recipients.length > 0) {
+      lines.push(`You may only send mail to these addresses: ${recipients.join(", ")}.`);
+    }
+  }
   if (others.length > 0) {
     lines.push(
       "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
-      ...others.map((a) => `- ${a.name}: ${a.description.trim()}`),
+      ...others.map((a) => {
+        const otherEmail = a.email.trim();
+        return `- ${a.name}: ${a.description.trim()}${otherEmail ? ` (email: ${otherEmail})` : ""}`;
+      }),
     );
   }
   return lines.join("\n");

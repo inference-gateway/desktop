@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 mod agent;
+mod agent_mail;
 mod avatars;
 mod binaries;
 mod cli_install;
@@ -138,6 +139,10 @@ pub fn run() {
             markdown_agents::pick_agent_avatar,
             markdown_agents::remove_agent_avatar,
             markdown_agents::set_agent_avatar_from_url,
+            agent_mail::create_agent_inbox,
+            agent_mail::set_agent_email_key,
+            agent_mail::move_agent_email_key,
+            agent_mail::sync_agent_send_allowlist,
             agent::send_approval,
             agent::move_session,
             agent::send_user_message,

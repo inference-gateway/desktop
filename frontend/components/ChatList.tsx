@@ -284,16 +284,26 @@ function AgentGroup({
           {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
         </button>
         <AgentAvatar agent={agent} size={22} />
-        <button
-          aria-label={`Select agent ${agent.name}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          className="min-w-0 truncate"
-        >
-          {agent.name}
-        </button>
+        <div className="flex min-w-0 flex-col">
+          <button
+            aria-label={`Select agent ${agent.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            className="min-w-0 self-start truncate"
+          >
+            {agent.name}
+          </button>
+          {agent.email.trim() && (
+            <span
+              title={agent.email}
+              className="max-w-full truncate text-[0.62rem] font-normal text-muted-foreground/60"
+            >
+              {agent.email}
+            </span>
+          )}
+        </div>
         <span className="text-[0.7rem] text-muted-foreground/60">({count})</span>
         <span
           title={agent.model || "Runs on the model selected in the top bar"}
