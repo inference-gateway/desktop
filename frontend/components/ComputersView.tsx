@@ -202,7 +202,7 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
             draggable={false}
             onMouseDown={click}
             onContextMenu={(event) => event.preventDefault()}
-            className="max-h-full max-w-full cursor-crosshair select-none"
+            className="max-h-full max-w-full cursor-default select-none"
           />
         ) : (
           <span className="text-[0.75rem] text-muted-foreground">No screen yet</span>
