@@ -5,17 +5,17 @@ vars:
   NAMESPACE: computer-use
   WORKSPACE: ubuntu-desktop
   AGENT_SANDBOX_VERSION: v1.0.8
-  OPERATOR_VERSION: v0.29.0
+  OPERATOR_VERSION: v0.35.0
   INFER_DIR: '{{.HOME}}/.infer'
   MODEL: mock/openai/gpt-4o
+  USER_DATA: ../../backend/src/computer_user_data.sh
 
 tasks:
   up:
-    desc: Everything the app needs - the cluster, the computer image, the workspace and the three agents (MODEL switches from the mock model to a real one)
+    desc: Everything the app needs - the cluster, the workspace and the three agents (MODEL switches from the mock model to a real one)
     cmds:
       - task: agents:install
       - task: cluster:create
-      - task: image
       - task: workspace:register
 
   cluster:create:
@@ -28,20 +28,14 @@ tasks:
       - kubectl --context k3d-{{.CLUSTER}} -n inference-gateway-system wait --for=condition=Available deployment --all --timeout=180s
       - kubectl --context k3d-{{.CLUSTER}} apply -f k8s/namespace.yaml
 
-  image:
-    desc: Build the Ubuntu desktop image an agent's computer runs and import it into the cluster
-    cmds:
-      - docker build -t agent-computer:local desktop
-      - k3d image import agent-computer:local -c {{.CLUSTER}}
-
   workspace:register:
-    desc: Add the ubuntu-desktop workspace to ~/.infer/daemon.yaml, keeping every other entry (the previous file is saved as daemon.yaml.bak)
+    desc: Add the ubuntu-desktop workspace to ~/.infer/daemon.yaml, keeping every other entry (the previous file is saved as daemon.yaml.bak). Its user_data is the app's own computer setup plus the mock scenarios
     cmds:
       - mkdir -p {{.INFER_DIR}}
       - touch {{.INFER_DIR}}/daemon.yaml
       - cp {{.INFER_DIR}}/daemon.yaml {{.INFER_DIR}}/daemon.yaml.bak
       - |
-        yq -i '.workspaces = ((.workspaces // []) | map(select(.name != "{{.WORKSPACE}}"))) + [load("workspace.yaml") | .env.INFER_AGENT_MODEL = "{{.MODEL}}"{{$provider := splitList "/" .MODEL | first}}{{if ne $provider "mock"}} | del(.env.INFER_GATEWAY_MOCK) | del(.env.INFER_GATEWAY_MOCK_SCENARIOS) | . * {"gateway_env": ["{{upper $provider}}_API_KEY"]}{{end}}]' {{.INFER_DIR}}/daemon.yaml
+        yq -i '(load_str("{{.USER_DATA}}") + load_str("mock-scenarios.sh")) as $user_data | .workspaces = ((.workspaces // []) | map(select(.name != "{{.WORKSPACE}}"))) + [load("workspace.yaml") | . * {"user_data": $user_data} | .env.INFER_AGENT_MODEL = "{{.MODEL}}"{{$provider := splitList "/" .MODEL | first}}{{if ne $provider "mock"}} | del(.env.INFER_GATEWAY_MOCK) | del(.env.INFER_GATEWAY_MOCK_SCENARIOS) | . * {"gateway_env": ["{{upper $provider}}_API_KEY"]}{{end}}]' {{.INFER_DIR}}/daemon.yaml
 
   agents:install:
     desc: Copy the researcher, writer and tester agents into ~/.infer/agents, refusing to overwrite an agent of your own

@@ -1,3 +1,5 @@
+install -d /opt/agent-computer
+cat >/opt/agent-computer/scenarios.yaml <<'SCENARIOS'
 fallback:
   content: 'Try "research example.com", "write about ubuntu" or "test example.org".'
 scenarios:
@@ -82,3 +84,4 @@ scenarios:
             args:
               action: screenshot
       - content: I loaded https://example.org on my computer and the page renders.
+SCENARIOS

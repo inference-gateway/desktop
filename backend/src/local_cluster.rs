@@ -1,11 +1,9 @@
 use serde_norway::{Mapping, Value};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
 /// The kubeconfig context of the cluster this module runs in Docker.
 pub(crate) const CONTEXT: &str = "infer-k3s";
-/// The image every session of the local cluster's workspace runs.
-pub(crate) const COMPUTER_IMAGE: &str = "agent-computer:local";
 const CONTAINER: &str = "infer-k3s";
 const K3S_IMAGE: &str = "docker.io/rancher/k3s:v1.37.1-k3s1";
 const API_PORT: &str = "6443/tcp";
@@ -13,31 +11,10 @@ const K3S_KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
 const AGENT_SANDBOX: &str =
     "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.8/sandbox.yaml";
 const OPERATOR: &str =
-    "https://github.com/inference-gateway/operator/releases/download/v0.29.0/install.yaml";
+    "https://github.com/inference-gateway/operator/releases/download/v0.35.0/install.yaml";
 const GATEWAY_API_CRD: &str = "crd/gateways.gateway.networking.k8s.io";
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
-
-// TODO: pull the desktop image from a published registry instead of building
-// it on the user's machine, and drop these embedded build files.
-const DESKTOP_BUILD: [(&str, &str); 4] = [
-    (
-        "Dockerfile",
-        include_str!("../../examples/computer-use/desktop/Dockerfile"),
-    ),
-    (
-        "entrypoint.sh",
-        include_str!("../../examples/computer-use/desktop/entrypoint.sh"),
-    ),
-    (
-        "policies.json",
-        include_str!("../../examples/computer-use/desktop/policies.json"),
-    ),
-    (
-        "scenarios.yaml",
-        include_str!("../../examples/computer-use/desktop/scenarios.yaml"),
-    ),
-];
 
 fn docker_command() -> Command {
     let mut command = crate::env::command("docker");
@@ -156,44 +133,6 @@ fn install(manifest: &str, namespace: &str) -> Result<(), String> {
     .map(drop)
 }
 
-fn build_desktop_image(infer_version: Option<&str>) -> Result<(), String> {
-    let dir = crate::env::infer_dir().join("tmp").join("agent-computer");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    for (name, text) in DESKTOP_BUILD {
-        std::fs::write(dir.join(name), text).map_err(|e| e.to_string())?;
-    }
-    let version = infer_version.map(|version| format!("INFER_VERSION=v{version}"));
-    let mut args = vec!["build", "--tag", COMPUTER_IMAGE];
-    if let Some(version) = &version {
-        args.extend(["--build-arg", version]);
-    }
-    args.push(dir.to_str().ok_or("the build folder is not valid UTF-8")?);
-    docker(&args).map(drop)
-}
-
-/// Streams the desktop image from Docker into the cluster's containerd, so
-/// pods start it without a registry.
-fn import_desktop_image() -> Result<(), String> {
-    let mut save = docker_command()
-        .args(["save", COMPUTER_IMAGE])
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("docker could not run: {e}"))?;
-    let image = save.stdout.take().ok_or("docker save gave no output")?;
-    let imported = docker_command()
-        .args([
-            "exec", "-i", CONTAINER, "ctr", "-n", "k8s.io", "images", "import", "-",
-        ])
-        .stdin(Stdio::from(image))
-        .output()
-        .map_err(|e| format!("docker could not run: {e}"))?;
-    let saved = save.wait().map_err(|e| e.to_string())?;
-    if !saved.success() {
-        return Err(format!("docker save {COMPUTER_IMAGE} failed"));
-    }
-    outcome(imported, "ctr").map(drop)
-}
-
 fn named(name: &str, key: &str, value: Value) -> Value {
     let mut entry = Mapping::new();
     entry.insert("name".into(), name.into());
@@ -242,14 +181,10 @@ fn standalone_kubeconfig(k3s_yaml: &str, port: &str) -> Result<String, String> {
     serde_norway::to_string(&kubeconfig).map_err(|e| e.to_string())
 }
 
-/// Runs k3s in Docker with agent-sandbox and the Inference Gateway operator,
-/// and loads the Ubuntu desktop image every session runs. Each step is safe
-/// to repeat, so a second run repairs or refreshes the cluster. Answers the
-/// cluster's kubeconfig, reporting each step to `stage`.
-pub(crate) fn provision(
-    infer_version: Option<&str>,
-    stage: impl Fn(&str),
-) -> Result<String, String> {
+/// Runs k3s in Docker with agent-sandbox and the Inference Gateway operator.
+/// Each step is safe to repeat, so a second run repairs or refreshes the
+/// cluster. Answers the cluster's kubeconfig, reporting each step to `stage`.
+pub(crate) fn provision(stage: impl Fn(&str)) -> Result<String, String> {
     stage("Starting k3s in Docker (the first run downloads it)...");
     start_container()?;
     stage("Waiting for the cluster...");
@@ -260,10 +195,6 @@ pub(crate) fn provision(
     wait_until("the Gateway API", || kubectl(&["get", GATEWAY_API_CRD]))?;
     stage("Installing the Inference Gateway operator...");
     install(OPERATOR, "inference-gateway-system")?;
-    stage("Building the Ubuntu desktop image (a few minutes the first time)...");
-    build_desktop_image(infer_version)?;
-    stage("Loading the desktop image into the cluster...");
-    import_desktop_image()?;
     let published = docker(&["port", CONTAINER, API_PORT])?;
     let port = port_of(&published).ok_or("the cluster's API port is not published")?;
     standalone_kubeconfig(&docker(&["exec", CONTAINER, "cat", K3S_KUBECONFIG])?, port)

@@ -21,8 +21,16 @@ test("a draft turns back into the config it came from", () => {
     gateway_env: ["OPENAI_API_KEY"],
     forward_env: ["GH_TOKEN", "NPM_TOKEN"],
     env: { INFER_AGENT_MODEL: "openai/gpt-4o" },
+    user_data: "#!/bin/sh\napt-get install -y firefox-esr\n",
   };
   expect(configOf(draftOf(config))).toEqual(config);
+});
+
+test("user data must be a script, the one cloud-init format a workspace runs", () => {
+  const draft = { ...draftOf(EMPTY_WORKSPACE), name: "desktop", compute: "k3d" };
+  expect(draftProblem({ ...draft, user_data: "#cloud-config\npackages:\n  - gimp\n" })).toContain("#!");
+  expect(draftProblem({ ...draft, user_data: "#!/bin/sh\napt-get install -y gimp\n" })).toBeNull();
+  expect(draftProblem({ ...draft, user_data: "" })).toBeNull();
 });
 
 test("a kubernetes workspace needs a name, a context and a namespace", () => {

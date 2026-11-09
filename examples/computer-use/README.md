@@ -2,12 +2,14 @@
 
 Three agents, each on an Ubuntu desktop of its own, working in parallel while you watch their screens from the app.
 
-Every chat with an agent that has a `workspace` is teleported to that workspace of the `infer` daemon before its first run. The `ubuntu-desktop` workspace here is a Kubernetes one, so each chat gets its own pod - Xvfb, openbox and Firefox - and the app's **Computers** view shows the latest screen of each.
+Every chat with an agent that has a `workspace` is teleported to that workspace of the `infer` daemon before its first run. The `ubuntu-desktop` workspace here is a Kubernetes one, so each chat gets its own pod of the CLI's computer image, `ghcr.io/inference-gateway/computer` - an Ubuntu desktop with a taskbar - and the app's **Computers** view shows the latest screen of each.
 
-Needs `docker`, `ctlptl`, `k3d`, `kubectl`, `yq`, `task` and `infer` v0.245.0 or newer. Runs on a mock model - no API key, no tokens - or on [a real one](#a-real-model).
+The image ships no browser. The workspace's `user_data`, a cloud-init script each pod runs as root when it boots, installs Firefox with the [opentask](https://github.com/inference-gateway/opentask) extension, so the agents also browse with the browser tools. It is the app's own computer setup, [`backend/src/computer_user_data.sh`](../../backend/src/computer_user_data.sh), plus the mock model's scenarios from [`mock-scenarios.sh`](mock-scenarios.sh). The first boot of a computer takes about a minute longer while it installs.
+
+Needs `docker`, `ctlptl`, `k3d`, `kubectl`, `yq`, `task` and `infer` v0.251.0 or newer. The cluster runs Kubernetes 1.37, as each pod boots in a user namespace, and operator v0.35.0. Runs on a mock model - no API key, no tokens - or on [a real one](#a-real-model).
 
 ```bash
-task up     # cluster, image, workspace in ~/.infer/daemon.yaml, agents in ~/.infer/agents
+task up     # cluster, workspace in ~/.infer/daemon.yaml, agents in ~/.infer/agents
 ```
 
 Then in the app:

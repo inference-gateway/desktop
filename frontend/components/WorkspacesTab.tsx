@@ -283,6 +283,22 @@ function WorkspaceForm({
         />
         <span className={HINT_CLASS}>One NAME=value per line, not for secrets.</span>
       </div>
+      <div className={FIELD_CLASS}>
+        <Label htmlFor="workspace-user-data">User data</Label>
+        <textarea
+          id="workspace-user-data"
+          rows={6}
+          value={draft.user_data}
+          onChange={set("user_data")}
+          placeholder={"#!/bin/sh\napt-get update\napt-get install -y --no-install-recommends firefox-esr"}
+          spellCheck={false}
+          className={`${AREA_CLASS} font-mono`}
+        />
+        <span className={HINT_CLASS}>
+          A cloud-init script the computer runs as root when it boots, before the agent starts - to install a browser or
+          other apps.
+        </span>
+      </div>
       <div className="flex gap-2">
         <Button size="sm" onClick={onSave}>
           Save workspace

@@ -7,6 +7,11 @@ use tauri::ipc::Channel;
 const WORKSPACES_KEY: &str = "workspaces";
 pub(crate) const KUBERNETES: &str = "kubernetes";
 const CLI_IMAGE: &str = "ghcr.io/inference-gateway/cli";
+/// The Ubuntu desktop the local cluster's sessions run, released with the CLI.
+const COMPUTER_IMAGE: &str = "ghcr.io/inference-gateway/computer";
+/// What the local cluster's computer installs when it boots: Firefox with the
+/// opentask extension, so its agents browse with the browser tools.
+const COMPUTER_USER_DATA: &str = include_str!("computer_user_data.sh");
 pub(crate) const DETECTED_NAMESPACE: &str = "infer-workspaces";
 const DETECTED_STORAGE: &str = "5Gi";
 const KUBECTL_TIMEOUT: &str = "--request-timeout=5s";
@@ -103,6 +108,8 @@ pub(crate) struct WorkspaceConfig {
     gateway_env: Vec<String>,
     forward_env: Vec<String>,
     env: BTreeMap<String, String>,
+    /// The cloud-init script the pod runs as root when it boots.
+    user_data: String,
     /// The Kubernetes Secrets the pod daemon reads, which Settings > Secrets
     /// lists and the tab never edits.
     #[serde(skip)]
@@ -166,6 +173,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         gateway_env: names(entry, "gateway_env"),
         forward_env: names(entry, "forward_env"),
         env: environment(entry),
+        user_data: text(entry, "user_data"),
         secrets: names(entry, "secrets"),
         mcp_servers: names(entry, "mcp_servers"),
     };
@@ -255,6 +263,7 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "gateway_env", listed(&config.gateway_env));
     set_or_remove(entry, "forward_env", listed(&config.forward_env));
     set_or_remove(entry, "env", mapped(&config.env));
+    set_or_remove(entry, "user_data", filled(&config.user_data));
     if !config.compute.trim().is_empty() {
         for key in CLUSTER_KEYS {
             entry.remove(key);
@@ -551,12 +560,18 @@ fn installed_infer_version() -> Option<String> {
         .filter(|version| version != "dev")
 }
 
-/// The CLI image of the installed `infer` version, so a session's pod runs
-/// the same CLI as this machine. The workspace form starts from it.
+/// `repository` tagged with the installed `infer` version, so a session's pod
+/// runs the same CLI as this machine.
+fn of_installed_version(repository: &str) -> String {
+    let version = installed_infer_version();
+    format!("{repository}:{}", version.as_deref().unwrap_or("latest"))
+}
+
+/// The CLI image of the installed `infer` version. The workspace form starts
+/// from it.
 #[tauri::command]
 pub(crate) fn default_workspace_image() -> String {
-    let version = installed_infer_version();
-    format!("{CLI_IMAGE}:{}", version.as_deref().unwrap_or("latest"))
+    of_installed_version(CLI_IMAGE)
 }
 
 /// The names of the provider keys the user saved, for a workspace's gateway.
@@ -578,17 +593,19 @@ fn local_cluster(provider_keys: &[String]) -> ClusterConfig {
     }
 }
 
-/// The workspace of the local cluster: an Ubuntu desktop pod per chat on it.
+/// The workspace of the local cluster: an Ubuntu desktop pod per chat on it,
+/// with Firefox and the opentask extension installed when it boots.
 fn local_workspace() -> WorkspaceConfig {
     WorkspaceConfig {
         name: LOCAL_WORKSPACE.into(),
         compute: crate::local_cluster::CONTEXT.into(),
-        image: crate::local_cluster::COMPUTER_IMAGE.into(),
+        image: of_installed_version(COMPUTER_IMAGE),
         storage: DETECTED_STORAGE.into(),
         env: COMPUTER_ENV
             .iter()
             .map(|(name, value)| (name.to_string(), value.to_string()))
             .collect(),
+        user_data: COMPUTER_USER_DATA.into(),
         ..WorkspaceConfig::default()
     }
 }
@@ -675,8 +692,7 @@ fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
     crate::compute_settings::require_compute()?;
     let slot = local_workspace_slot(&workspace_configs())?;
     if !crate::env::mock_mode() {
-        let kubeconfig =
-            crate::local_cluster::provision(installed_infer_version().as_deref(), &stage)?;
+        let kubeconfig = crate::local_cluster::provision(&stage)?;
         stage("Creating the workspace namespace...");
         managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
         stage("Adding the cluster to your kubeconfig...");
@@ -991,7 +1007,7 @@ mod tests {
     }
 
     #[test]
-    fn the_local_workspace_runs_the_desktop_image_on_the_local_cluster() {
+    fn the_local_workspace_runs_the_computer_image_on_the_local_cluster() {
         let cluster = local_cluster(&["OLLAMA_CLOUD_API_KEY".into()]);
         assert_eq!(cluster.name, crate::local_cluster::CONTEXT);
         assert_eq!(cluster.context, crate::local_cluster::CONTEXT);
@@ -999,8 +1015,32 @@ mod tests {
         let workspace = local_workspace();
         assert_eq!(workspace.name, "ubuntu-desktop");
         assert_eq!(workspace.compute, cluster.name);
-        assert_eq!(workspace.image, crate::local_cluster::COMPUTER_IMAGE);
+        assert!(
+            workspace
+                .image
+                .starts_with("ghcr.io/inference-gateway/computer:")
+        );
         assert_eq!(workspace.env["INFER_COMPUTER_USE_ENABLED"], "true");
+    }
+
+    #[test]
+    fn the_local_workspace_installs_firefox_with_opentask_when_it_boots() {
+        let user_data = local_workspace().user_data;
+        assert!(user_data.starts_with("#!"));
+        assert!(user_data.contains("apt-get install -y --no-install-recommends firefox-esr"));
+        assert!(user_data.contains("opentask@inference-gateway.github.io"));
+    }
+
+    #[test]
+    fn a_workspace_keeps_its_user_data_in_daemon_yaml() {
+        let config = WorkspaceConfig {
+            user_data: "#!/bin/sh\napt-get install -y gimp\n".into(),
+            ..kubernetes("desktop")
+        };
+        let mut entry = Mapping::new();
+        apply(&mut entry, &config);
+        let read = config_of(&Value::Mapping(entry), &[]).unwrap();
+        assert_eq!(read.user_data, "#!/bin/sh\napt-get install -y gimp");
     }
 
     #[test]

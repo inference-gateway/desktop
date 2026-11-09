@@ -22,7 +22,11 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   gateway_env: [],
   forward_env: [],
   env: {},
+  user_data: "",
 };
+
+/** How a cloud-init user-data script starts - the one user-data format a workspace runs. */
+const USER_DATA_SCRIPT_PREFIX = "#!";
 
 export function splitNames(text: string): string[] {
   return text.split(/[\s,]+/).filter(Boolean);
@@ -66,6 +70,8 @@ export function configOf(draft: WorkspaceDraft): WorkspaceConfig {
 /** Why a draft cannot be saved yet, or null when it can. */
 export function draftProblem(draft: WorkspaceDraft): string | null {
   if (!draft.name.trim()) return "Give the workspace a name.";
+  if (draft.user_data.trim() && !draft.user_data.trimStart().startsWith(USER_DATA_SCRIPT_PREFIX))
+    return "Start the user data with #!, like #!/bin/sh - it runs as a script.";
   if (draft.compute) return null;
   if (draft.kind === "kubernetes" && !draft.context.trim()) return "Pick the Kubernetes context of the cluster.";
   if (draft.kind === "kubernetes" && !draft.namespace.trim()) return "Name the namespace the sessions run in.";
