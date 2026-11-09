@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useDesktop } from "@/store";
 import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
@@ -373,6 +374,7 @@ function TypingBubble({ label, startedAt }: { label: string | null; startedAt: n
 
 function ImageDownload({ filename, src, path }: { filename: string; src: string; path: string }) {
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [enlarged, setEnlarged] = useState(false);
   const save = () => {
     if (status === "saving") return;
     setStatus("saving");
@@ -389,7 +391,21 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   const Icon = status === "saving" ? Loader2 : status === "saved" ? Check : status === "error" ? X : Download;
   return (
     <div className="relative my-2 inline-block max-w-full">
-      <img className="block h-auto w-full rounded-md" data-infer={filename} src={src} alt="" />
+      <button
+        type="button"
+        aria-label="View image"
+        title="View full size"
+        className="block cursor-zoom-in rounded-md"
+        onClick={() => setEnlarged(true)}
+      >
+        <img className="block h-auto max-h-40 w-auto max-w-60 rounded-md" data-infer={filename} src={src} alt="" />
+      </button>
+      <Dialog open={enlarged} onOpenChange={setEnlarged}>
+        <DialogContent className="w-auto p-2 sm:max-w-[92vw]">
+          <DialogTitle className="sr-only">{filename}</DialogTitle>
+          <img className="block max-h-[88vh] max-w-full rounded-md" src={src} alt={filename} />
+        </DialogContent>
+      </Dialog>
       {path && (
         <Button
           type="button"

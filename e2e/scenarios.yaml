@@ -429,3 +429,12 @@ scenarios:
     match: '(?i)open the docs on your computer'
     turns:
       - content: "The docs are open."
+
+  # A Computer screenshot lands in the transcript as an image (used by
+  # screenshot-thumbnail).
+  - name: screenshot-thumbnail
+    match: '(?i)take a screenshot now'
+    turns:
+      - tool_calls:
+          - { name: Computer, args: { action: screenshot } }
+      - content: "Screenshot taken."

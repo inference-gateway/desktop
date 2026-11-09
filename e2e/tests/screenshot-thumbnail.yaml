@@ -1,0 +1,15 @@
+name: screenshot - shows as a thumbnail and opens full size on click
+narration:
+  - "Open a fresh chat."
+  - "Ask for a screenshot; the model issues a Computer screenshot."
+  - "The agent confirms."
+  - "The screenshot sits in the transcript as a thumbnail."
+  - "Click the thumbnail."
+  - "It opens full size in a dialog that can be closed."
+steps:
+  - new_chat
+  - send: "take a screenshot now"
+  - wait_for: { text: "Screenshot taken.", timeout: 30 }
+  - wait_for: { button: "View image", timeout: 10 }
+  - click: { button: "View image" }
+  - wait_for: { button: "Close", timeout: 10 }
