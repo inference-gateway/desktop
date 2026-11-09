@@ -166,6 +166,8 @@ export type WorkspaceConfig = {
   gateway_env: string[];
   forward_env: string[];
   env: Record<string, string>;
+  /** The cloud-init script the pod runs as root when it boots, before the agent starts. */
+  user_data: string;
 };
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 /** A cluster of ~/.infer/compute.yaml as the Compute tab edits it. Every workspace on it shares its namespace and

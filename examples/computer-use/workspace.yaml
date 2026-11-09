@@ -2,7 +2,7 @@ name: ubuntu-desktop
 kind: kubernetes
 context: k3d-computer-use
 namespace: computer-use
-image: agent-computer:local
+image: ghcr.io/inference-gateway/computer:latest
 storage: 1Gi
 idle_ttl: 30m
 away_ttl: 1m
