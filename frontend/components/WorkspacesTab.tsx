@@ -3,7 +3,7 @@ import { Eraser, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type ClusterConfig, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import { api, type ClusterConfig, type Machine, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import {
   configOf,
   draftOf,
@@ -51,6 +51,61 @@ function placement(config: WorkspaceConfig): string {
   return config.compute ? `on ${config.compute}${where ? ` - ${where}` : ""}` : where;
 }
 
+function MachineRow({ machine, onDelete }: { machine: Machine; onDelete: () => void }) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <li className="flex items-center gap-2 text-[0.75rem] text-muted-foreground">
+      <span
+        className={`h-2 w-2 shrink-0 rounded-full ${machine.ready ? "bg-emerald-500" : "bg-destructive"}`}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-mono text-foreground">{machine.name}</span>
+        {` - ${machine.ready ? "Ready" : "Not ready"}${machine.reason ? ` (${machine.reason})` : ""}`}
+      </span>
+      <Button
+        variant="outline"
+        size="xs"
+        aria-label={`Delete machine ${machine.name}`}
+        title={armed ? "Click again to delete" : "Delete this machine - its chat starts a new one on its next message"}
+        onClick={() => {
+          if (armed) onDelete();
+          setArmed(!armed);
+        }}
+        onBlur={() => setArmed(false)}
+        className={armed ? "border-destructive text-destructive" : ""}
+      >
+        <Trash2 size={12} />
+      </Button>
+    </li>
+  );
+}
+
+/** The machines a workspace has in its cluster, loaded when the row shows and again on demand. */
+function useMachines(context: string, namespace: string, name: string, enabled: boolean) {
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [problem, setProblem] = useState("");
+  const [deleted, setDeleted] = useState("");
+  const reload = useCallback(() => {
+    if (!enabled) return;
+    api
+      .workspaceMachines(context, namespace, name)
+      .then(setMachines)
+      .catch(() => setMachines([]));
+  }, [enabled, context, namespace, name]);
+  useEffect(reload, [reload]);
+  const remove = (machine: string) =>
+    api
+      .deleteWorkspaceMachine(context, namespace, machine)
+      .then(() => {
+        setProblem("");
+        setDeleted(machine);
+        setMachines((prev) => prev.filter((m) => m.name !== machine));
+      })
+      .catch((e) => setProblem(String(e)));
+  return { machines, problem, deleted, reload, remove };
+}
+
 function WorkspaceRow({
   config,
   known,
@@ -72,6 +127,7 @@ function WorkspaceRow({
     [checkable, context, namespace, name],
   );
   const { check, recheck } = useCheck(run);
+  const { machines, problem, deleted, reload, remove } = useMachines(context, namespace, name, checkable);
   const state = reachability(config, known, stale);
   const where = placement(config);
   return (
@@ -95,7 +151,10 @@ function WorkspaceRow({
             size="xs"
             aria-label={`Check workspace ${config.name}`}
             title="Check the cluster's prerequisites again"
-            onClick={recheck}
+            onClick={() => {
+              recheck();
+              reload();
+            }}
           >
             <RefreshCw size={12} />
           </Button>
@@ -121,6 +180,23 @@ function WorkspaceRow({
         </Button>
       </div>
       {checkable && <Prerequisites checks={check?.prerequisites ?? null} />}
+      {machines.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {machines.map((machine) => (
+            <MachineRow key={machine.name} machine={machine} onDelete={() => remove(machine.name)} />
+          ))}
+        </ul>
+      )}
+      {deleted && (
+        <p aria-live="polite" className={HINT_CLASS}>
+          {`Deleted machine ${deleted}.`}
+        </p>
+      )}
+      {problem && (
+        <p role="alert" className="text-[0.75rem] text-destructive">
+          {problem}
+        </p>
+      )}
     </div>
   );
 }

@@ -151,6 +151,8 @@ export type Screen = { src: string; width: number; height: number };
 export type Prerequisite = { name: string; met: boolean; detail: string };
 /** The state of a Kubernetes workspace's cluster. The session counts are null when it cannot list sessions. */
 export type ClusterCheck = { prerequisites: Prerequisite[]; running: number | null; suspended: number | null };
+/** One machine a workspace has in its cluster: a session's computer, ready or not, with the cluster's reason. */
+export type Machine = { name: string; ready: boolean; reason: string };
 /** A workspace entry of ~/.infer/daemon.yaml as Settings edits it. One that names a cluster in `compute` reads that
  * cluster's kind, context, namespace and provider keys. */
 export type WorkspaceConfig = {
@@ -577,6 +579,10 @@ export const api = {
   },
   checkWorkspace: (context: string, namespace: string, name: string) =>
     invoke<ClusterCheck>("check_workspace", { context, namespace, name }),
+  workspaceMachines: (context: string, namespace: string, name: string) =>
+    invoke<Machine[]>("workspace_machines", { context, namespace, name }),
+  deleteWorkspaceMachine: (context: string, namespace: string, machine: string) =>
+    invoke<void>("delete_workspace_machine", { context, namespace, machine }),
   moveSession: (
     sessionId: string,
     project: string | undefined,
