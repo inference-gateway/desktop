@@ -97,6 +97,7 @@ export type BackgroundJob = {
   description: string;
   detail: string;
   status: string;
+  output?: string;
 };
 
 export type ProgressEvent =
@@ -595,6 +596,8 @@ export const api = {
     return invoke<void>("move_session", { sessionId, project, target, remote, onStage: stages });
   },
   listArtifacts: (sessionId: string, project?: string) => invoke<Artifact[]>("list_artifacts", { sessionId, project }),
+  listBackgroundJobs: (sessionId: string, project?: string) =>
+    invoke<BackgroundJob[]>("list_background_jobs", { sessionId, project }),
   saveArtifact: (sessionId: string, project: string | undefined, name: string) =>
     invoke<string>("save_artifact", { sessionId, project, name }),
   cleanMachines: (sessions: { id: string; project?: string }[]) => invoke<number>("clean_machines", { sessions }),

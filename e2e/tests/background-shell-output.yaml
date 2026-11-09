@@ -1,0 +1,19 @@
+name: background shell - its output can be looked into while it runs
+narration:
+  - "Open a fresh chat."
+  - "Start a background shell that prints a line and keeps running."
+  - "The command asks for approval."
+  - "Approve it."
+  - "The session waits on the shell."
+  - "Open the agent status menu."
+  - "Pick the shell under the chat."
+  - "The dialog shows what the shell printed so far."
+steps:
+  - new_chat
+  - send: "start a chatty background shell"
+  - wait_for: { button: "Approve", timeout: 15 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Waiting on tasks (1)", timeout: 30 }
+  - click: { button: "Agent status" }
+  - click: { button: "View shell echo shell-$(expr 40 + 2)-ok; sleep 20" }
+  - wait_for: { text: "shell-42-ok", timeout: 15 }

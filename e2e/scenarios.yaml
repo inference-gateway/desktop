@@ -337,6 +337,15 @@ scenarios:
           - { name: Bash, args: { command: "sleep 20", detached: true } }
       - content: "Job started in the background."
 
+  # A background shell that prints before it idles, so its output can be
+  # looked into while it runs (used by background-shell-output).
+  - name: background-shell-output
+    match: '(?i)start a chatty background shell'
+    turns:
+      - tool_calls:
+          - { name: Bash, args: { command: "echo shell-$(expr 40 + 2)-ok; sleep 20", detached: true } }
+      - content: "Shell started in the background."
+
   # Auto mode runs protected tools without a prompt; a fresh chat is back to
   # manual approval (used by auto-mode-scoped).
   - name: write-auto-approve

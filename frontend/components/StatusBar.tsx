@@ -7,6 +7,7 @@ import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
 import { ArtifactsButton } from "./ArtifactsButton";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
+import { ShellOutputDialog, type ViewedShell } from "./ShellOutputDialog";
 
 const DOT: Record<string, string> = {
   error: "bg-destructive",
@@ -35,6 +36,7 @@ export function StatusBar() {
     clearError,
     sessionId,
     conversations,
+    projects,
     openConversation,
     runningCount,
     autoMode,
@@ -50,6 +52,7 @@ export function StatusBar() {
   const now = useNow(turnStartedAt !== null);
   const turnMs = turnStartedAt !== null ? now - turnStartedAt : lastTurnMs;
   const [open, setOpen] = useState(false);
+  const [viewedShell, setViewedShell] = useState<ViewedShell | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -208,9 +211,15 @@ export function StatusBar() {
                   <button
                     key={d.id}
                     role="menuitem"
-                    aria-label={`${BADGE[d.kind]} ${d.label} under ${a.title}`}
+                    aria-label={
+                      d.kind === "shell" ? `View shell ${d.label}` : `${BADGE[d.kind]} ${d.label} under ${a.title}`
+                    }
                     onClick={() => {
                       setOpen(false);
+                      if (d.kind === "shell") {
+                        setViewedShell({ sessionId: a.id, project: projects[a.id], jobId: d.id.slice("job:".length) });
+                        return;
+                      }
                       openConversation(delegationSessionId(a.id, d, conversations) ?? a.id);
                     }}
                     className="flex w-full items-center gap-[0.4rem] rounded py-1 pl-6 pr-2 text-left hover:bg-secondary"
@@ -255,6 +264,7 @@ export function StatusBar() {
           <Zap size={16} aria-hidden="true" />
         </button>
       </span>
+      <ShellOutputDialog shell={viewedShell} onClose={() => setViewedShell(null)} />
     </div>
   );
 }

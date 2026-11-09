@@ -18,7 +18,9 @@ const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 /// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead. Matches AXCheckBox and
 /// AXRadioButton too: buttons with aria-pressed (toggles/checkboxes) surface as
-/// AXCheckBox, and question-form options are native radios. The ceiling
+/// AXCheckBox, and question-form options are native radios. A button that
+/// opens a menu surfaces as a pop-up or menu button, and its entries as
+/// AXMenuItem. The ceiling
 /// matches the text finder's: a content project docks the chat one level
 /// deeper than a code project's transcript, and 8 no longer reaches it.
 const FIND_BUTTON_FN: &str = r#"
@@ -26,7 +28,7 @@ on findButton(el, btnName, depth)
 	tell application "System Events"
 		if depth > 10 then return missing value
 		try
-			if (role of el is "AXButton" or role of el is "AXCheckBox" or role of el is "AXRadioButton") and name of el is btnName then return el
+			if (role of el is "AXButton" or role of el is "AXCheckBox" or role of el is "AXRadioButton" or role of el is "AXPopUpButton" or role of el is "AXMenuButton" or role of el is "AXMenuItem") and name of el is btnName then return el
 		end try
 		try
 			repeat with c in (UI elements of el)

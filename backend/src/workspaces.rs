@@ -1,3 +1,4 @@
+use crate::agent::BackgroundJob;
 use crate::daemon::Binding;
 use crate::env::mock_mode;
 use crate::thread::{exchange, uuid};
@@ -11,6 +12,7 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(8);
 /// A Kubernetes workspace pulls an image and boots a pod on its first teleport.
 const TELEPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
+const BACKGROUND_JOBS_TIMEOUT: Duration = Duration::from_secs(10);
 /// Taking a screen over can relaunch the session's worker first.
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Listing wakes a suspended workspace first.
@@ -115,7 +117,7 @@ fn parse_thread_stopped(frame: &Value, session_id: &str) -> Option<Result<bool, 
     })
 }
 
-fn artifact_frame(kind: &str, session_id: &str, project_dir: &str) -> Value {
+fn session_frame(kind: &str, session_id: &str, project_dir: &str) -> Value {
     json!({ "type": kind, "project_dir": project_dir, "id": session_id })
 }
 
@@ -125,6 +127,14 @@ fn parse_artifacts(frame: &Value) -> Option<Vec<Artifact>> {
         return None;
     }
     Some(serde_json::from_value(frame["artifacts"].clone()).unwrap_or_default())
+}
+
+/// The background jobs a `tasks` answer lists, running and recently finished.
+fn parse_background_jobs(frame: &Value) -> Option<Vec<BackgroundJob>> {
+    if frame["type"] != "tasks" {
+        return None;
+    }
+    Some(serde_json::from_value(frame["tasks"].clone()).unwrap_or_default())
 }
 
 /// The bytes of the file an `artifact` answer carries, or why the worker could
@@ -316,7 +326,7 @@ pub(crate) async fn list_artifacts(
     tokio::task::spawn_blocking(move || {
         let binding = crate::daemon::binding()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
-        let request = artifact_frame(
+        let request = session_frame(
             "list_artifacts",
             &session_id,
             &project_dir.to_string_lossy(),
@@ -327,13 +337,35 @@ pub(crate) async fn list_artifacts(
     .map_err(|e| format!("artifacts task failed: {e}"))?
 }
 
+/// A session's background jobs with what each printed so far, asked of the
+/// worker that runs them - on this computer or on the session's workspace.
+#[tauri::command]
+pub(crate) async fn list_background_jobs(
+    session_id: String,
+    project: Option<String>,
+) -> Result<Vec<BackgroundJob>, String> {
+    tokio::task::spawn_blocking(move || {
+        let binding = crate::daemon::binding()?;
+        let project_dir = crate::agent::thread_dir(project.as_deref());
+        let request = session_frame("list_tasks", &session_id, &project_dir.to_string_lossy());
+        exchange(
+            &binding,
+            request,
+            BACKGROUND_JOBS_TIMEOUT,
+            parse_background_jobs,
+        )
+    })
+    .await
+    .map_err(|e| format!("background jobs task failed: {e}"))?
+}
+
 fn fetch_artifact(session_id: &str, project: Option<&str>, name: &str) -> Result<Vec<u8>, String> {
     if mock_mode() {
         return Ok(crate::screen_records::PLACEHOLDER_JPEG.to_vec());
     }
     let binding = crate::daemon::binding()?;
     let project_dir = crate::agent::thread_dir(project);
-    let mut request = artifact_frame("read_artifact", session_id, &project_dir.to_string_lossy());
+    let mut request = session_frame("read_artifact", session_id, &project_dir.to_string_lossy());
     request["name"] = json!(name);
     exchange(&binding, request, ARTIFACT_TIMEOUT, parse_artifact)?
 }
@@ -517,6 +549,19 @@ mod tests {
         let refused = json!({ "type": "artifact", "error": "too large" });
         assert_eq!(parse_artifact(&refused), Some(Err("too large".into())));
         assert_eq!(parse_artifact(&json!({ "type": "artifacts" })), None);
+    }
+
+    #[test]
+    fn a_tasks_answer_lists_each_job_with_its_output() {
+        let answer = json!({ "type": "tasks", "tasks": [
+            { "id": "shell-1", "kind": "shell", "label": "shell-1", "detail": "sleep 20",
+              "status": "running", "output": "tick\n" },
+        ] });
+        let jobs = parse_background_jobs(&answer).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, "shell-1");
+        assert_eq!(jobs[0].output, "tick\n");
+        assert!(parse_background_jobs(&json!({ "type": "frame" })).is_none());
     }
 
     #[test]
