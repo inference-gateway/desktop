@@ -297,6 +297,8 @@ pub fn run() {
             compute_settings::compute_supported,
             compute_settings::detect_clusters,
             workspace_settings::check_workspace,
+            workspace_settings::workspace_machines,
+            workspace_settings::delete_workspace_machine,
             workspace_settings::default_workspace_image,
             workspace_settings::docker_available,
             workspace_settings::provision_local_cluster,

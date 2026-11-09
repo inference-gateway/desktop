@@ -14,6 +14,8 @@ An agent can also get a computer of its own: add the compute under **Settings > 
 
 **Computers** in the top bar shows the latest screen of each such chat side by side. **Take over** on a computer, or in its agent's chat, holds the agent and lets you drive that screen with your own mouse and keyboard - a login, a captcha, a dialog in its way - until **Hand back** lets the agent continue from what it sees.
 
+**Settings > Workspaces** lists the machines each workspace has in its cluster, ready or not, and deletes any one of them - a machine that fails to boot shows there as not ready. The chat of a deleted machine starts a new one on its next message.
+
 A chat that already started can move too: **Move to workspace** in its composer sends it to a workspace or brings it back to this computer, between turns.
 
 A workspace's **User data** is a cloud-init script each of its computers runs as root when it boots, before the agent starts, to install what the agents need. The local cluster's workspace runs the CLI's Ubuntu desktop image, `ghcr.io/inference-gateway/computer`, and its user data installs Firefox with the opentask extension for [browser use](browser-use.md#on-an-agents-computer). A computer boots to an empty desktop - the browser stays closed until an agent opens it for a task that needs the web.

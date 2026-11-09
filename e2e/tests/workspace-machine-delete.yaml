@@ -1,0 +1,25 @@
+name: workspace machine delete - a machine that is not ready is deleted from Settings
+narration:
+  - "Open Settings."
+  - "Switch to the Workspaces tab."
+  - "Start a new workspace."
+  - "Name it."
+  - "Name the Kubernetes context of its cluster."
+  - "Name the namespace its sessions run in."
+  - "Save the workspace."
+  - "Its row lists a machine that is not ready."
+  - "Ask to delete that machine."
+  - "Confirm."
+  - "Settings reports the machine went."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Workspaces" }
+  - click: { button: "New workspace" }
+  - type: "e2e-machines"
+  - type: "k3d-e2e"
+  - type: "e2e-agents"
+  - click: { button: "Save workspace" }
+  - wait_for: { text: "Not ready (SandboxNotReady)", timeout: 10 }
+  - click: { button: "Delete machine infer-mock-broken" }
+  - click: { button: "Delete machine infer-mock-broken" }
+  - wait_for: { text: "Deleted machine infer-mock-broken.", timeout: 10 }

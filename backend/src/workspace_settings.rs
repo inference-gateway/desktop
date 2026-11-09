@@ -21,6 +21,10 @@ const ORCHESTRATORS: &str = "orchestrators.core.inference-gateway.com";
 const WORKSPACE_LABEL: &str = "inference-gateway.com/workspace";
 const READY_STATUSES: &str =
     r#"jsonpath={range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}"#;
+const MACHINES: &str = r#"jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].reason}{"\n"}{end}"#;
+const MOCK_MACHINE: &str = "infer-mock-broken";
+static MOCK_MACHINE_DELETED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 const LOCAL_WORKSPACE: &str = "ubuntu-desktop";
 /// A local cluster's sessions run on a pod of their own, not the user's
 /// machine, so its agents use the computer and edit files without asking.
@@ -78,6 +82,15 @@ pub(crate) struct ClusterCheck {
     prerequisites: Vec<Prerequisite>,
     running: Option<usize>,
     suspended: Option<usize>,
+}
+
+/// One machine of a workspace: the Orchestrator of a session, whether it is
+/// ready and the reason its cluster gives.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct Machine {
+    name: String,
+    ready: bool,
+    reason: String,
 }
 
 fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite {
@@ -500,6 +513,57 @@ fn session_counts(ready_statuses: &str) -> (usize, usize) {
     (running, sessions - running)
 }
 
+/// Machines from kubectl's listing, one per line as name, Ready status and reason.
+fn parse_machines(listing: &str) -> Vec<Machine> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let name = fields.next().filter(|name| !name.trim().is_empty())?;
+            Some(Machine {
+                name: name.trim().to_owned(),
+                ready: fields.next() == Some("True"),
+                reason: fields.next().unwrap_or_default().trim().to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn machines_of(context: &str, namespace: &str, workspace: &str) -> Result<Vec<Machine>, String> {
+    let selector = format!("{WORKSPACE_LABEL}={workspace}");
+    kubectl(
+        context,
+        &[
+            "get",
+            ORCHESTRATORS,
+            "-n",
+            namespace,
+            "-l",
+            &selector,
+            "-o",
+            MACHINES,
+        ],
+    )
+    .map(|listing| parse_machines(&listing))
+}
+
+/// The operator removes the machine's pod and volumes with its Orchestrator.
+fn delete_machine_named(context: &str, namespace: &str, machine: &str) -> Result<(), String> {
+    kubectl(
+        context,
+        &[
+            "delete",
+            ORCHESTRATORS,
+            machine,
+            "-n",
+            namespace,
+            "--ignore-not-found",
+            "--wait=false",
+        ],
+    )
+    .map(drop)
+}
+
 pub(crate) fn unreachable(error: &str) -> ClusterCheck {
     ClusterCheck {
         prerequisites: vec![prerequisite(REACHABLE, false, error)],
@@ -792,6 +856,44 @@ pub(crate) async fn check_workspace(
     check(context, namespace, format!("{WORKSPACE_LABEL}={name}")).await
 }
 
+/// The machines a Kubernetes workspace has in its cluster, ready or not, so a
+/// broken one shows up in Settings.
+#[tauri::command]
+pub(crate) async fn workspace_machines(
+    context: String,
+    namespace: String,
+    name: String,
+) -> Result<Vec<Machine>, String> {
+    use std::sync::atomic::Ordering;
+    if crate::env::mock_mode() {
+        let listing = format!("{MOCK_MACHINE}\tFalse\tSandboxNotReady");
+        let deleted = MOCK_MACHINE_DELETED.load(Ordering::Relaxed);
+        return Ok(parse_machines(if deleted { "" } else { &listing }));
+    }
+    tokio::task::spawn_blocking(move || machines_of(&context, &namespace, &name))
+        .await
+        .map_err(|e| format!("listing task failed: {e}"))?
+}
+
+/// Deletes one machine of a workspace by name, whatever state it is in.
+#[tauri::command]
+pub(crate) async fn delete_workspace_machine(
+    context: String,
+    namespace: String,
+    machine: String,
+) -> Result<(), String> {
+    if crate::env::mock_mode() {
+        MOCK_MACHINE_DELETED.fetch_or(
+            machine == MOCK_MACHINE,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        return Ok(());
+    }
+    tokio::task::spawn_blocking(move || delete_machine_named(&context, &namespace, &machine))
+        .await
+        .map_err(|e| format!("delete task failed: {e}"))?
+}
+
 /// Checks the cluster in `context`, counting the sessions `selector` picks.
 pub(crate) async fn check(context: String, namespace: String, selector: String) -> ClusterCheck {
     if crate::env::mock_mode() {
@@ -987,6 +1089,31 @@ mod tests {
     fn sessions_count_as_running_when_their_orchestrator_is_ready() {
         assert_eq!(session_counts("True\nFalse\nTrue\n\n"), (2, 2));
         assert_eq!(session_counts(""), (0, 0));
+    }
+
+    #[test]
+    fn machines_are_listed_ready_or_not_with_the_reason() {
+        let machines = parse_machines(
+            "infer-a\tTrue\tSandboxReady\ninfer-b\tFalse\tSandboxNotReady\ninfer-c\t\t\n\n",
+        );
+        let summary: Vec<_> = machines
+            .iter()
+            .map(|machine| {
+                (
+                    machine.name.as_str(),
+                    machine.ready,
+                    machine.reason.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("infer-a", true, "SandboxReady"),
+                ("infer-b", false, "SandboxNotReady"),
+                ("infer-c", false, ""),
+            ]
+        );
     }
 
     #[test]
