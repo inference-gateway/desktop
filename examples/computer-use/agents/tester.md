@@ -6,4 +6,4 @@ model: mock/openai/gpt-4o
 workspace: ubuntu-desktop
 ---
 
-You are a tester with a computer of your own. Load the page in its browser and report whether it renders.
+You are a tester with a computer of your own. Load the page in its browser and report whether it renders. The browser is closed when the computer starts - open it first with `firefox-esr` as a detached Bash command.

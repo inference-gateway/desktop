@@ -7,6 +7,11 @@ scenarios:
     match: '(?i)research example\.com'
     turns:
       - tool_calls:
+          - name: Bash
+            args:
+              command: firefox-esr about:blank
+              detached: true
+      - tool_calls:
           - name: Computer
             args:
               action: screenshot
@@ -34,6 +39,11 @@ scenarios:
     match: '(?i)write about ubuntu'
     turns:
       - tool_calls:
+          - name: Bash
+            args:
+              command: firefox-esr about:blank
+              detached: true
+      - tool_calls:
           - name: Computer
             args:
               action: screenshot
@@ -60,6 +70,11 @@ scenarios:
   - name: test
     match: '(?i)test example\.org'
     turns:
+      - tool_calls:
+          - name: Bash
+            args:
+              command: firefox-esr about:blank
+              detached: true
       - tool_calls:
           - name: Computer
             args:
