@@ -1,6 +1,6 @@
 /** One input of the person on a screen they took over, in the frame space the daemon serves the screen in. */
 export type ScreenInput =
-  | { kind: "click" | "double_click"; x: number; y: number; button: "left" | "right" | "middle" }
+  | { kind: "click"; x: number; y: number; button: "left" | "right" | "middle" }
   | { kind: "scroll"; direction: "vertical" | "horizontal"; amount: number }
   | { kind: "type"; text: string }
   | { kind: "key"; combo: string };
