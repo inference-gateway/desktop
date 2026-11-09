@@ -44,6 +44,7 @@ import {
   type Snippet,
 } from "@/lib/snippets";
 import { hydrateRegistry } from "@/lib/skills";
+import { stripV } from "@/lib/updates";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
@@ -108,6 +109,29 @@ export const PROVIDERS = [
 
 const INIT_PR_INSTRUCTION =
   "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge.";
+
+/** Status text for an install progress event, shared by the full init flow and
+ * per-component installs; "Ready" and "Error" carry extra side-effects there. */
+function progressStatus(event: ProgressEvent): string {
+  switch (event.kind) {
+    case "Checking":
+      return "Checking for infer binary...";
+    case "Downloading":
+      return event.total > 0
+        ? `Downloading infer... ${Math.round((event.received / event.total) * 100)}%`
+        : "Downloading infer...";
+    case "Verifying":
+      return "Verifying download...";
+    case "Installing":
+      return "Installing infer...";
+    case "Initializing":
+      return "Running initial setup...";
+    case "Ready":
+      return "Ready";
+    case "Error":
+      return `Error: ${event.message}`;
+  }
+}
 
 function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
@@ -405,10 +429,10 @@ function useDesktopStore() {
   );
 
   const startGatewayThenModels = useCallback(
-    async (force = false, restart = false) => {
+    async (force = false, restart = false, tag: string | null = null) => {
       setStatus("Starting gateway...");
       try {
-        await api.startGateway(force, restart);
+        await api.startGateway(force, restart, tag);
       } catch (e) {
         console.error("start_gateway failed:", e);
         setError(String(e));
@@ -532,25 +556,6 @@ function useDesktopStore() {
         const ch = new Channel<ProgressEvent>();
         ch.onmessage = (event) => {
           switch (event.kind) {
-            case "Checking":
-              setStatus("Checking for infer binary...");
-              break;
-            case "Downloading":
-              setStatus(
-                event.total > 0
-                  ? `Downloading infer... ${Math.round((event.received / event.total) * 100)}%`
-                  : "Downloading infer...",
-              );
-              break;
-            case "Verifying":
-              setStatus("Verifying download...");
-              break;
-            case "Installing":
-              setStatus("Installing infer...");
-              break;
-            case "Initializing":
-              setStatus("Running initial setup...");
-              break;
             case "Ready":
               setStatus("Ready");
               setReady(true);
@@ -568,8 +573,10 @@ function useDesktopStore() {
               startServices();
               break;
             case "Error":
-              setError(`Error: ${event.message}`);
+              setError(progressStatus(event));
               break;
+            default:
+              setStatus(progressStatus(event));
           }
         };
         await api.checkAndInstallCli(ch, force, restart);
@@ -580,21 +587,27 @@ function useDesktopStore() {
     [setStatus, setError, startGatewayThenModels, checkForUpdates, refreshConversations],
   );
 
+  // Cancels every running session and forgets them, before a backend the
+  // chats are attached to is restarted or swapped.
+  const cancelRunningAgents = useCallback(async () => {
+    for (const id of runningIds) {
+      try {
+        await api.cancelAgent(id);
+      } catch (e) {
+        console.error("Cancel failed:", e);
+      }
+    }
+    setRunningIds(new Set());
+  }, [runningIds]);
+
   const restartBackend = useCallback(
     async (force: boolean) => {
-      for (const id of runningIds) {
-        try {
-          await api.cancelAgent(id);
-        } catch (e) {
-          console.error("Cancel failed:", e);
-        }
-      }
-      setRunningIds(new Set());
+      await cancelRunningAgents();
       setStatus(force ? "Updating..." : "Restarting CLI...");
       setReady(false);
       await initBackend(force, true);
     },
-    [runningIds, setStatus, initBackend],
+    [cancelRunningAgents, setStatus, initBackend],
   );
 
   useEffect(() => {
@@ -1533,6 +1546,63 @@ function useDesktopStore() {
     }
   }, [restartBackend, updates, setStatus, setError]);
 
+  // Per-component version pinning: the tag picked in the Updates tab, per
+  // component row, kept until it has been installed.
+  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
+  const selectVersion = useCallback((name: string, tag: string | null) => {
+    setSelectedVersions((prev) => {
+      const next = { ...prev };
+      if (tag === null) delete next[name];
+      else next[name] = tag;
+      return next;
+    });
+  }, []);
+
+  // Installs exactly one component at the version picked for it, and leaves
+  // the other components alone. Without a pick the one-click flow applies.
+  const installUpdate = useCallback(
+    async (name: string) => {
+      const tag = selectedVersions[name] ?? null;
+      if (!tag) return;
+      try {
+        if (name === "Desktop") {
+          // The updater relaunches the app, so this never resolves.
+          setStatus("Updating app...");
+          await api.installDesktopUpdate(tag);
+        } else if (name === "Gateway") {
+          await cancelRunningAgents();
+          setReady(false);
+          await startGatewayThenModels(true, true, tag);
+          setReady(true);
+        } else {
+          // Only the CLI binary is replaced and its daemon restarted; the
+          // running gateway keeps serving, so nothing else is rebuilt.
+          await cancelRunningAgents();
+          setReady(false);
+          const ch = new Channel<ProgressEvent>();
+          ch.onmessage = (event) => setStatus(progressStatus(event));
+          await api.checkAndInstallCli(ch, true, true, tag);
+          setReady(true);
+          startGatewayThenModels(false, false);
+        }
+        selectVersion(name, null);
+        await checkForUpdates(true);
+      } catch (err) {
+        setError(`Failed to install ${name} ${stripV(tag)}: ${err}`);
+      }
+    },
+    [
+      selectedVersions,
+      cancelRunningAgents,
+      startGatewayThenModels,
+      selectVersion,
+      checkForUpdates,
+      setStatus,
+      setReady,
+      setError,
+    ],
+  );
+
   const outdated = updates.filter((u) => u.outdated);
   const versionBadge = updates.map((u) => `${u.name} ${u.current}`).join(" · ");
   const updateBannerText = outdated.length
@@ -2023,6 +2093,9 @@ function useDesktopStore() {
     getAuth: () => api.getAuth(),
     saveConfig: (cfg: DesktopConfig) => api.setConfig(cfg),
     updates,
+    selectedVersions,
+    selectVersion,
+    installUpdate,
     versionBadge,
     updateBannerText,
     showUpdateBanner: outdated.length > 0,

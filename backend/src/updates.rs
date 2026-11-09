@@ -3,6 +3,10 @@ use crate::gateway::gateway_bin_path;
 use std::io::Read;
 use tauri_plugin_updater::UpdaterExt;
 
+/// Release tags are spelled `v0.63.1`, so download URLs must not drop the `v`
+/// the way `parse_version` does for display.
+const DESKTOP_REPO: &str = "inference-gateway/desktop";
+
 // --- Update checks ---
 // GitHub allows 60 API requests/hour unauthenticated, 5000 through an authenticated
 // `gh`. The frontend caches results for 6h, so neither ceiling is anywhere near.
@@ -13,6 +17,10 @@ pub(crate) struct UpdateInfo {
     current: String,
     latest: String,
     outdated: bool,
+    /// Raw release tags of the repo, newest first and capped at 5. Unlike
+    /// `latest` they keep their `v` prefix, so download URLs can use them as
+    /// `releases/download/<tag>/<asset>`.
+    versions: Vec<String>,
 }
 
 /// Last whitespace token of the first line, minus a leading `v`. Covers
@@ -34,9 +42,10 @@ pub(crate) fn installed_version(bin: &std::path::Path, arg: &str) -> Option<Stri
     parse_version(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Latest release tag for a repo, via `gh` when it is available and authenticated,
-/// falling back to the public GitHub API.
-pub(crate) fn latest_tag(repo: &str) -> Option<String> {
+/// Most recent release tags for a repo, newest first and capped at 5, via
+/// `gh` when it is available and authenticated, falling back to the public
+/// GitHub API.
+pub(crate) fn recent_tags(repo: &str) -> Vec<String> {
     let gh = crate::env::command(crate::download::gh_bin())
         .args([
             "release",
@@ -44,21 +53,28 @@ pub(crate) fn latest_tag(repo: &str) -> Option<String> {
             "--repo",
             repo,
             "--limit",
-            "1",
+            "5",
             "--json",
             "tagName",
             "-q",
-            ".[0].tagName",
+            ".[].tagName",
         ])
         .output();
     if let Ok(out) = gh
         && out.status.success()
-        && let Some(tag) = parse_version(&String::from_utf8_lossy(&out.stdout))
     {
-        return Some(tag);
+        let tags = tags_from_lines(&String::from_utf8_lossy(&out.stdout));
+        if !tags.is_empty() {
+            return tags;
+        }
     }
+    api_recent_tags(repo).unwrap_or_default()
+}
 
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
+/// Release tags of a repo through the public GitHub API. `releases` lists
+/// newest first, like `gh release list` does.
+fn api_recent_tags(repo: &str) -> Option<Vec<String>> {
+    let url = format!("https://api.github.com/repos/{repo}/releases?per_page=5");
     let resp = ureq::get(&url)
         .config()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
@@ -70,14 +86,39 @@ pub(crate) fn latest_tag(repo: &str) -> Option<String> {
         .into_reader()
         .read_to_string(&mut text)
         .ok()?;
-    let body: serde_json::Value = serde_json::from_str(&text).ok()?;
-    parse_version(body.get("tag_name")?.as_str()?)
+    let releases: serde_json::Value = serde_json::from_str(&text).ok()?;
+    Some(
+        releases
+            .as_array()?
+            .iter()
+            .filter_map(|release| release.get("tag_name")?.as_str().map(str::to_string))
+            .collect(),
+    )
+}
+
+/// One raw tag per line, as `gh release list --json tagName` prints.
+fn tags_from_lines(out: &str) -> Vec<String> {
+    out.lines()
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// A component is outdated when both versions are known and differ. Locally built
 /// (`dev`) binaries and failed lookups never report an update.
 pub(crate) fn is_outdated(current: &str, latest: &str) -> bool {
     current != "dev" && !latest.is_empty() && current != latest
+}
+
+/// `latest` derived from the raw tag list: the newest tag, normalized the
+/// way `parse_version` normalizes `current` (`v` stripped), so an
+/// up-to-date component compares equal against its own tag.
+fn latest_from_tags(versions: &[String]) -> String {
+    versions
+        .first()
+        .and_then(|tag| parse_version(tag))
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -96,12 +137,14 @@ pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInf
             .into_iter()
             .filter_map(|(name, bin, repo, arg)| {
                 let current = installed_version(&bin, arg)?;
-                let latest = latest_tag(repo).unwrap_or_default();
+                let versions = recent_tags(repo);
+                let latest = latest_from_tags(&versions);
                 Some(UpdateInfo {
                     outdated: is_outdated(&current, &latest),
                     name: name.to_string(),
                     current,
                     latest,
+                    versions,
                 })
             })
             .collect()
@@ -135,12 +178,20 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
 /// Updater for the app itself. Checks use the same 10s ceiling as the
 /// CLI/gateway version lookups; the install path gets 300s because the
 /// timeout is a total-request deadline that also covers the bundle download.
+pub(crate) fn desktop_updater_builder(
+    app: &tauri::AppHandle,
+    timeout_secs: u64,
+) -> Result<tauri_plugin_updater::UpdaterBuilder, String> {
+    Ok(app
+        .updater_builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs)))
+}
+
 pub(crate) fn desktop_updater(
     app: &tauri::AppHandle,
     timeout_secs: u64,
 ) -> Result<tauri_plugin_updater::Updater, String> {
-    app.updater_builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs))
+    desktop_updater_builder(app, timeout_secs)?
         .build()
         .map_err(|e| error_chain(&e))
 }
@@ -161,19 +212,47 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
         },
         Err(_) => String::new(),
     };
+    // `recent_tags` shells out to `gh` / blocks on HTTP, so it stays off the
+    // async executor like the CLI and gateway lookups above.
+    let versions = tokio::task::spawn_blocking(|| recent_tags(DESKTOP_REPO))
+        .await
+        .unwrap_or_default();
     UpdateInfo {
         outdated: is_outdated(&current, &latest),
         name: "Desktop".to_string(),
         current,
         latest,
+        versions,
     }
 }
 
 /// Download, verify and install the desktop app update, then relaunch. Does not
-/// return on success.
+/// return on success. `tag` pins the updater to that release's manifest, and
+/// drops the default newer-than-current rule, so an older release can be
+/// installed over a bad update.
 #[tauri::command]
-pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), String> {
-    let update = desktop_updater(&app, 300)?
+pub(crate) async fn install_desktop_update(
+    app: tauri::AppHandle,
+    tag: Option<String>,
+) -> Result<(), String> {
+    let builder = desktop_updater_builder(&app, 300)?;
+    let updater = match &tag {
+        Some(tag) => {
+            let manifest = url::Url::parse(&format!(
+                "https://github.com/{DESKTOP_REPO}/releases/download/{tag}/latest.json"
+            ))
+            .map_err(|e| e.to_string())?;
+            // Same rule the plugin applies for `allowDowngrades`.
+            builder
+                .endpoints(vec![manifest])
+                .map_err(|e| error_chain(&e))?
+                .version_comparator(|current, release| release.version != current)
+        }
+        None => builder,
+    }
+    .build()
+    .map_err(|e| error_chain(&e))?;
+    let update = updater
         .check()
         .await
         .map_err(|e| error_chain(&e))?
@@ -188,6 +267,19 @@ pub(crate) async fn install_desktop_update(app: tauri::AppHandle) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tags_from_lines() {
+        assert_eq!(
+            tags_from_lines("v0.249.0\nv0.248.0\n"),
+            vec!["v0.249.0".to_string(), "v0.248.0".to_string()]
+        );
+        assert_eq!(
+            tags_from_lines("\n v0.1.0  \n\n"),
+            vec!["v0.1.0".to_string()]
+        );
+        assert!(tags_from_lines("").is_empty());
+    }
 
     #[test]
     fn test_parse_version() {
@@ -236,6 +328,18 @@ mod tests {
         assert!(!is_outdated("0.158.1", "0.158.1"));
         assert!(!is_outdated("dev", "0.158.1"));
         assert!(!is_outdated("0.158.0", ""));
+    }
+
+    #[test]
+    fn test_latest_from_tags() {
+        assert_eq!(latest_from_tags(&["v0.249.0".into()]), "0.249.0");
+        let tags = vec!["v0.249.0".to_string(), "v0.248.0".to_string()];
+        let latest = latest_from_tags(&tags);
+        // An up-to-date pair must compare equal even though the raw tag
+        // keeps its `v` prefix.
+        assert!(!is_outdated("0.249.0", &latest));
+        assert!(is_outdated("0.248.0", &latest));
+        assert!(latest_from_tags(&[]).is_empty());
     }
 
     /// macOS ships one universal bundle under both darwin keys.

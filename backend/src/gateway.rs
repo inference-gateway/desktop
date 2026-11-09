@@ -105,10 +105,27 @@ pub(crate) fn reuse_running_gateway(
     Ok(true)
 }
 
+/// Release download URL for the gateway binary: `releases/download/<tag>/<asset>`
+/// when `tag` is pinned, `releases/latest/download/<asset>` otherwise.
+fn gateway_release_url(asset: &str, tag: Option<&str>) -> String {
+    match tag {
+        Some(tag) => format!(
+            "https://github.com/inference-gateway/inference-gateway/releases/download/{tag}/{asset}"
+        ),
+        None => format!(
+            "https://github.com/inference-gateway/inference-gateway/releases/latest/download/{asset}"
+        ),
+    }
+}
+
 /// Download and extract the gateway binary if it isn't already present.
 /// `Reinstall` re-downloads over an existing binary; the caller must have
-/// stopped it first, otherwise the extraction hits ETXTBSY.
-pub(crate) fn ensure_gateway_binary(mode: GatewayStart) -> Result<PathBuf, String> {
+/// stopped it first, otherwise the extraction hits ETXTBSY. `tag` pins the
+/// release to download, `None` means latest.
+pub(crate) fn ensure_gateway_binary(
+    mode: GatewayStart,
+    tag: Option<&str>,
+) -> Result<PathBuf, String> {
     let bin = gateway_bin_path();
     if bin.exists() && mode != GatewayStart::Reinstall {
         return Ok(bin);
@@ -127,10 +144,7 @@ pub(crate) fn ensure_gateway_binary(mode: GatewayStart) -> Result<PathBuf, Strin
     let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
 
-    let url = format!(
-        "https://github.com/inference-gateway/inference-gateway/releases/latest/download/{}",
-        asset
-    );
+    let url = gateway_release_url(&asset, tag);
     let archive = bin_dir.join(&asset);
     let _ = std::fs::remove_file(&bin);
 
@@ -211,14 +225,14 @@ pub(crate) async fn start_gateway(
     state: tauri::State<'_, AppState>,
     force: bool,
     restart: bool,
+    tag: Option<String>,
 ) -> Result<(), String> {
     let processes = Arc::clone(&state.processes);
     tokio::task::spawn_blocking(move || {
-        processes.start_gateway(GatewayStart::from_flags(
-            force,
-            restart,
-            gateway_download_supported(),
-        ))
+        processes.start_gateway(
+            GatewayStart::from_flags(force, restart, gateway_download_supported()),
+            tag.as_deref(),
+        )
     })
     .await
     .map_err(|error| format!("gateway startup task failed: {error}"))?
@@ -227,6 +241,18 @@ pub(crate) async fn start_gateway(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gateway_release_url_pins_the_tag() {
+        assert_eq!(
+            gateway_release_url("inference-gateway_Linux_x86_64.tar.gz", Some("v0.63.1")),
+            "https://github.com/inference-gateway/inference-gateway/releases/download/v0.63.1/inference-gateway_Linux_x86_64.tar.gz"
+        );
+        assert_eq!(
+            gateway_release_url("inference-gateway_Linux_x86_64.tar.gz", None),
+            "https://github.com/inference-gateway/inference-gateway/releases/latest/download/inference-gateway_Linux_x86_64.tar.gz"
+        );
+    }
 
     #[test]
     fn from_flags_maps_flag_pairs_to_start_modes() {

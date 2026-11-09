@@ -3,17 +3,31 @@ use crate::env::{asset_name, bin_dir, binary_name, config_path, home_dir, infer_
 use std::io::Read;
 use tauri::ipc::Channel;
 
+/// Base URL for CLI release downloads: pinned to `tag` when given, `latest`
+/// otherwise. Release tags are spelled `v0.249.0`, so the tag must be passed
+/// through verbatim.
+fn cli_release_base(tag: Option<&str>) -> String {
+    match tag {
+        Some(tag) => format!("https://github.com/inference-gateway/cli/releases/download/{tag}"),
+        None => "https://github.com/inference-gateway/cli/releases/latest/download".to_string(),
+    }
+}
+
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
 /// which is how an update is applied. `restart` also restarts the daemon, so
-/// its workers run the installed binary.
+/// its workers run the installed binary. `tag` pins the release to install,
+/// which implies `force`; when it is empty, the newest release wins.
 #[tauri::command]
 pub(crate) async fn check_and_install_cli(
     on_event: Channel<ProgressEvent>,
     force: bool,
     restart: bool,
+    tag: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
+    // A pinned tag installs over an existing binary on purpose, so force is implied.
+    let force = force || tag.is_some();
 
     let bin_path = infer_bin_path();
 
@@ -40,7 +54,7 @@ pub(crate) async fn check_and_install_cli(
         )
     })?;
 
-    let release_url = "https://github.com/inference-gateway/cli/releases/latest/download";
+    let release_base = cli_release_base(tag.as_deref());
 
     let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
@@ -51,19 +65,19 @@ pub(crate) async fn check_and_install_cli(
         received: 0,
         total: 0,
     });
-    if !try_gh_download(asset, &archive_path)? {
+    if !try_gh_download(asset, &archive_path, tag.as_deref())? {
         download(
-            &format!("{}/{}", release_url, asset),
+            &format!("{}/{}", release_base, asset),
             &archive_path,
             &on_event,
         )?;
     }
 
     let _ = on_event.send(ProgressEvent::Verifying);
-    let checksums_url = format!("{}/checksums.txt", release_url);
+    let checksums_url = format!("{}/checksums.txt", release_base);
     let checksums_text = {
         let checksums_temp = bin_dir.join("checksums.txt.tmp");
-        if try_gh_download("checksums.txt", &checksums_temp)? {
+        if try_gh_download("checksums.txt", &checksums_temp, tag.as_deref())? {
             let text = std::fs::read_to_string(&checksums_temp).map_err(|e| e.to_string())?;
             let _ = std::fs::remove_file(&checksums_temp);
             text
@@ -176,6 +190,20 @@ fn finish(
     }
     let _ = on_event.send(ProgressEvent::Ready);
     Ok(())
+}
+
+// --- Pinned download URLs ---
+
+#[test]
+fn test_cli_release_base() {
+    assert_eq!(
+        cli_release_base(Some("v0.249.0")),
+        "https://github.com/inference-gateway/cli/releases/download/v0.249.0"
+    );
+    assert_eq!(
+        cli_release_base(None),
+        "https://github.com/inference-gateway/cli/releases/latest/download"
+    );
 }
 
 // --- Agent streaming types ---
