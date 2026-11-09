@@ -166,7 +166,7 @@ export function SettingsView() {
         <span className="mb-1 px-2 text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
           Settings
         </span>
-        <div className="flex min-h-0 flex-1 flex-col gap-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {TABS.map((t) => (
             <div key={t.id} className={cn("flex flex-col gap-1", t.id === "updates" && "mt-auto")}>
               <button
