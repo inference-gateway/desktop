@@ -67,12 +67,6 @@ write_firefox_policies() {
 EOF
 }
 
-start_firefox_on_login() {
-  install -d /etc/xdg/autostart
-  printf '[Desktop Entry]\nType=Application\nName=Firefox\nExec=firefox-esr about:blank\n' \
-    >/etc/xdg/autostart/firefox-esr.desktop
-}
-
 enable_browser_use() {
   sed -i \
     -e 's/^enabled: .*/enabled: true/' \
@@ -86,5 +80,4 @@ bridge_token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 install_firefox_esr
 download_opentask
 write_firefox_policies "$bridge_token"
-start_firefox_on_login
 enable_browser_use "$bridge_token"

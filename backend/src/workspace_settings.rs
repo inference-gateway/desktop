@@ -1032,6 +1032,11 @@ mod tests {
     }
 
     #[test]
+    fn the_local_workspace_leaves_the_browser_closed_when_it_boots() {
+        assert!(!local_workspace().user_data.contains("autostart"));
+    }
+
+    #[test]
     fn a_workspace_keeps_its_user_data_in_daemon_yaml() {
         let config = WorkspaceConfig {
             user_data: "#!/bin/sh\napt-get install -y gimp\n".into(),

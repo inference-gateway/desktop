@@ -16,6 +16,6 @@ An agent can also get a computer of its own: add the compute under **Settings > 
 
 A chat that already started can move too: **Move to workspace** in its composer sends it to a workspace or brings it back to this computer, between turns.
 
-A workspace's **User data** is a cloud-init script each of its computers runs as root when it boots, before the agent starts, to install what the agents need. The local cluster's workspace runs the CLI's Ubuntu desktop image, `ghcr.io/inference-gateway/computer`, and its user data installs Firefox with the opentask extension for [browser use](browser-use.md#on-an-agents-computer). Closing the browser leaves the desktop and its taskbar, where the agent can open it again.
+A workspace's **User data** is a cloud-init script each of its computers runs as root when it boots, before the agent starts, to install what the agents need. The local cluster's workspace runs the CLI's Ubuntu desktop image, `ghcr.io/inference-gateway/computer`, and its user data installs Firefox with the opentask extension for [browser use](browser-use.md#on-an-agents-computer). A computer boots to an empty desktop - the browser stays closed until an agent opens it for a task that needs the web.
 
 See [examples/computer-use](../examples/computer-use) for three agents on Ubuntu desktops in a local Kubernetes cluster.
