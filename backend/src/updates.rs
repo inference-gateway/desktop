@@ -111,6 +111,16 @@ pub(crate) fn is_outdated(current: &str, latest: &str) -> bool {
     current != "dev" && !latest.is_empty() && current != latest
 }
 
+/// `latest` derived from the raw tag list: the newest tag, normalized the
+/// way `parse_version` normalizes `current` (`v` stripped), so an
+/// up-to-date component compares equal against its own tag.
+fn latest_from_tags(versions: &[String]) -> String {
+    versions
+        .first()
+        .and_then(|tag| parse_version(tag))
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInfo>, String> {
     let mut updates: Vec<UpdateInfo> = tokio::task::spawn_blocking(|| {
@@ -128,7 +138,7 @@ pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInf
             .filter_map(|(name, bin, repo, arg)| {
                 let current = installed_version(&bin, arg)?;
                 let versions = recent_tags(repo);
-                let latest = versions.first().cloned().unwrap_or_default();
+                let latest = latest_from_tags(&versions);
                 Some(UpdateInfo {
                     outdated: is_outdated(&current, &latest),
                     name: name.to_string(),
@@ -318,6 +328,18 @@ mod tests {
         assert!(!is_outdated("0.158.1", "0.158.1"));
         assert!(!is_outdated("dev", "0.158.1"));
         assert!(!is_outdated("0.158.0", ""));
+    }
+
+    #[test]
+    fn test_latest_from_tags() {
+        assert_eq!(latest_from_tags(&["v0.249.0".into()]), "0.249.0");
+        let tags = vec!["v0.249.0".to_string(), "v0.248.0".to_string()];
+        let latest = latest_from_tags(&tags);
+        // An up-to-date pair must compare equal even though the raw tag
+        // keeps its `v` prefix.
+        assert!(!is_outdated("0.249.0", &latest));
+        assert!(is_outdated("0.248.0", &latest));
+        assert!(latest_from_tags(&[]).is_empty());
     }
 
     /// macOS ships one universal bundle under both darwin keys.
