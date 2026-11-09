@@ -196,7 +196,8 @@ impl AgentRecording {
     }
 }
 
-/// One supervised CLI job from the `background_tasks` AG-UI snapshot.
+/// One supervised CLI job, from the `background_tasks` AG-UI snapshot or a
+/// `tasks` answer. Only the answer carries `output`, what the job printed so far.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BackgroundJob {
     #[serde(default)]
@@ -211,6 +212,8 @@ pub(crate) struct BackgroundJob {
     pub(crate) detail: String,
     #[serde(default)]
     pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) output: String,
 }
 
 #[derive(Clone, serde::Serialize)]
