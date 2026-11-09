@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/hooks/useNow";
+import { formatElapsed } from "@/lib/elapsed";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { Zap } from "lucide-react";
@@ -38,11 +40,15 @@ export function StatusBar() {
     autoMode,
     setAutoMode,
     tokenUsage,
+    turnStartedAt,
+    lastTurnMs,
     tools,
     mcpStatus,
     a2aStatus,
     showStatusBar,
   } = useDesktop();
+  const now = useNow(turnStartedAt !== null);
+  const turnMs = turnStartedAt !== null ? now - turnStartedAt : lastTurnMs;
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -129,6 +135,7 @@ export function StatusBar() {
   ];
   if (contextPct !== null) stats.unshift(["Context", `${contextPct}%`]);
   if (tokenUsage.cost > 0) stats.push(["cost", formatCost(tokenUsage.cost)]);
+  if (turnMs !== null) stats.push(["time", formatElapsed(turnMs)]);
   if (!showStatusBar) return null;
   return (
     <div

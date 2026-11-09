@@ -366,7 +366,8 @@ function useDesktopStore() {
   }, []);
 
   const dispatchTo = useCallback((id: string, action: ChatAction) => {
-    setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action) }));
+    const now = Date.now();
+    setTranscripts((prev) => ({ ...prev, [id]: chatReducer(prev[id] ?? initialChatState, action, now) }));
   }, []);
 
   const clearTerminal = useCallback((id: string) => {
@@ -2118,6 +2119,8 @@ function useDesktopStore() {
     clearError,
     startServices,
     tokenUsage: active.usage,
+    turnStartedAt: active.turnStartedAt,
+    lastTurnMs: active.lastTurnMs,
     tools,
     shortcuts,
     mcpStatus,

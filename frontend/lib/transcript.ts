@@ -78,7 +78,19 @@ export type ChatState = {
   agentStartup: Record<string, { message: string; done: number; total: number }>;
   recording?: AgentRecording;
   suggestion: string;
+  turnStartedAt: number | null;
+  lastTurnMs: number | null;
 };
+
+function startTurn(state: ChatState, now: number): ChatState {
+  return state.turnStartedAt === null ? { ...state, turnStartedAt: now } : state;
+}
+
+function endTurn(state: ChatState, now: number): ChatState {
+  return state.turnStartedAt === null
+    ? state
+    : { ...state, turnStartedAt: null, lastTurnMs: now - state.turnStartedAt };
+}
 
 /** The agent recording this session's process owns, from RecordingStarted until
  * it stops or the process exits. */
@@ -250,6 +262,8 @@ export const initialChatState: ChatState = {
   backgroundJobs: [],
   agentStartup: {},
   suggestion: "",
+  turnStartedAt: null,
+  lastTurnMs: null,
 };
 
 export type ChatAction =
@@ -271,7 +285,7 @@ const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
 // require a CLI that always projects tool_execution.
 const FAILISH = /fail|error/i;
 
-export function chatReducer(state: ChatState, action: ChatAction): ChatState {
+export function chatReducer(state: ChatState, action: ChatAction, now: number = Date.now()): ChatState {
   switch (action.type) {
     case "newChat":
       return { ...initialChatState, seq: state.seq };
@@ -283,7 +297,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       let seq = state.seq;
       const items = [...state.items, { kind: "user", id: String(seq++), text: action.text } as TranscriptItem];
       return {
-        ...state,
+        ...startTurn(state, now),
         items,
         seq,
         typing: true,
@@ -328,7 +342,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       };
     }
     case "event":
-      return applyEvent(state, action.event);
+      return applyEvent(state, action.event, now);
   }
 }
 
@@ -344,10 +358,11 @@ function insertBeforeErrors(state: ChatState, item: TranscriptItem): ChatState {
   return { ...state, items, seq: state.seq + 1, typing: false };
 }
 
-function applyEvent(state: ChatState, event: AgentEvent): ChatState {
+function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState {
   switch (event.kind) {
-    case "SessionId":
     case "RunStarted":
+      return startTurn(state, now);
+    case "SessionId":
     case "RawLine":
     case "ComputerUseAction":
       return state;
@@ -431,7 +446,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       return { ...state, recording: undefined };
     case "Done":
       return {
-        ...finalizeTools(state, "done"),
+        ...finalizeTools(endTurn(state, now), "done"),
         typing: false,
         currentAssistantId: null,
         currentAssistantMessageId: null,
@@ -455,7 +470,7 @@ function applyEvent(state: ChatState, event: AgentEvent): ChatState {
       };
     }
     case "Cancelled": {
-      const finalized = finalizeTools(state, "cancelled");
+      const finalized = finalizeTools(endTurn(state, now), "cancelled");
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
       return {
@@ -735,5 +750,12 @@ function loadHistory(state: ChatState, messages: SnapshotMessage[]): ChatState {
     }
   }
 
-  return { ...initialChatState, items, seq, seenImages };
+  return {
+    ...initialChatState,
+    items,
+    seq,
+    seenImages,
+    turnStartedAt: state.turnStartedAt,
+    lastTurnMs: state.lastTurnMs,
+  };
 }
