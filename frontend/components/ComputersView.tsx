@@ -142,14 +142,14 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
       );
   };
 
-  const clickAs = (kind: "click" | "double_click") => (event: MouseEvent) => {
+  const click = (event: MouseEvent) => {
     event.preventDefault();
     surface.current?.focus();
     const shown = image.current;
     if (!shown || !screen) return;
     const frame = { width: screen.width || shown.naturalWidth, height: screen.height || shown.naturalHeight };
     const at = framePoint({ x: event.clientX, y: event.clientY }, shown.getBoundingClientRect(), frame);
-    if (at) send({ kind, ...at, button: mouseButton(event.button) });
+    if (at) send({ kind: "click", ...at, button: mouseButton(event.button) });
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -200,8 +200,7 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
             src={screen.src}
             alt=""
             draggable={false}
-            onMouseDown={clickAs("click")}
-            onDoubleClick={clickAs("double_click")}
+            onMouseDown={click}
             onContextMenu={(event) => event.preventDefault()}
             className="max-h-full max-w-full cursor-crosshair select-none"
           />
