@@ -5,6 +5,8 @@ import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { useDesktop } from "@/store";
+import { useNow } from "@/hooks/useNow";
+import { formatElapsed } from "@/lib/elapsed";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
@@ -352,7 +354,8 @@ function QuestionCard({
   );
 }
 
-function TypingBubble({ label }: { label: string | null }) {
+function TypingBubble({ label, startedAt }: { label: string | null; startedAt: number | null }) {
+  const now = useNow(startedAt !== null);
   return (
     <div className={cn(BUBBLE, "flex items-center gap-[0.35rem] self-start rounded-bl-[4px] bg-assistant")}>
       <div className="typing-dots flex items-center gap-[0.35rem]">
@@ -361,6 +364,9 @@ function TypingBubble({ label }: { label: string | null }) {
         <span />
       </div>
       {label && <span className="ml-1 text-[0.78rem] text-muted-foreground">{label}</span>}
+      {startedAt !== null && (
+        <span className="text-[0.78rem] tabular-nums text-muted-foreground/70">{formatElapsed(now - startedAt)}</span>
+      )}
     </div>
   );
 }
@@ -533,7 +539,7 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const { items, typing, approve, answerQuestions, runLabel, sessionId, composerRef } = useDesktop();
+  const { items, typing, approve, answerQuestions, runLabel, sessionId, composerRef, turnStartedAt } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
@@ -643,7 +649,9 @@ export function Transcript() {
         {items.map((item) => (
           <Item key={item.id} item={item} approve={approve} answer={answerQuestions} />
         ))}
-        {typing && <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} />}
+        {typing && (
+          <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} startedAt={turnStartedAt} />
+        )}
       </div>
       {showScrollButton && (
         <button
