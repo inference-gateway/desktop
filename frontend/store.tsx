@@ -36,9 +36,11 @@ import { SnippetsProvider } from "@/stores/snippets";
 import { StatusProvider, useStatusActions } from "@/stores/status";
 import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend";
 import { GitProvider, useGit } from "@/stores/git";
+import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 
 const AUTO_MODE_KEY = "autoMode";
-export type ProjectType = "code" | "content";
+import type { ProjectType } from "@/lib/sidebar-document";
+export type { ProjectType };
 /** What the sidebar lists: every project, one project type, or the agents. */
 export type SidebarFilter = ProjectType | "agents";
 
@@ -91,7 +93,6 @@ function useDesktopStore() {
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [initAllRunning, setInitAllRunning] = useState(false);
   const [initSelecting, setInitSelecting] = useState(false);
-  const [initSelection, setInitSelection] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const { setStatus, setError, hideError } = useStatusActions();
@@ -100,7 +101,29 @@ function useDesktopStore() {
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
-  const { gitProjects, fetchGitProjects, refreshGitProjects, cleanupProject } = useGit();
+  const {
+    projects,
+    projectNames,
+    activeProject,
+    projectContexts,
+    projectGroups,
+    projectTypes,
+    agentOf,
+    workspaceOf,
+    workspaceTitles,
+    initSelection,
+    loadProjects,
+    setProjects,
+    setProjectNames,
+    setActiveProject,
+    setProjectTypes,
+    setAgentOf,
+    setWorkspaceOf,
+    setWorkspaceTitles,
+    setInitSelection,
+    setProjectContext,
+  } = useSidebar();
+  const { gitProjects, refreshGitProjects, cleanupProject } = useGit();
   const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
   const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -118,14 +141,6 @@ function useDesktopStore() {
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
   const [showStatusBar, setShowStatusBar] = useState(true);
-  const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
-  const [projectNames, setProjectNames] = useState<string[]>(() => []);
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
-  const [activeProject, setActiveProject] = useState<string | null>(null);
-  const [projectContexts, setProjectContexts] = useState<Record<string, string>>(() => ({}));
-  const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
-  const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
-  const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
   const [projectFilter, setProjectFilter] = useState<SidebarFilter | null>(null);
   const visibleProjectNames = useMemo(
     () =>
@@ -135,13 +150,10 @@ function useDesktopStore() {
     [projectFilter, projectNames, projectTypes],
   );
   const [agents, setAgents] = useState<MarkdownAgent[]>(() => []);
-  const [agentOf, setAgentOf] = useState<Record<string, string>>(() => ({}));
-  const [workspaceOf, setWorkspaceOf] = useState<Record<string, string>>(() => ({}));
   const workspaceOfRef = useRef(workspaceOf);
   useEffect(() => {
     workspaceOfRef.current = workspaceOf;
   }, [workspaceOf]);
-  const [workspaceTitles, setWorkspaceTitles] = useState<Record<string, string>>(() => ({}));
   const [moving, setMoving] = useState<Record<string, string>>(() => ({}));
   const movingRef = useRef(moving);
   useEffect(() => {
@@ -149,7 +161,6 @@ function useDesktopStore() {
   }, [moving]);
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
-  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -157,7 +168,6 @@ function useDesktopStore() {
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
-  const gitSigRef = useRef("");
   const runningIdsRef = useRef<Set<string>>(runningIds);
   useEffect(() => {
     runningIdsRef.current = runningIds;
@@ -298,75 +308,6 @@ function useDesktopStore() {
     return () => window.removeEventListener("focus", refreshConversations);
   }, [refreshConversations]);
 
-  const loadProjects = useCallback(async () => {
-    try {
-      const raw = await api.readProjects();
-      const parsed = JSON.parse(raw);
-      const map: Record<string, string> = {};
-      const names = new Set<string>();
-      if (Array.isArray(parsed?.names)) {
-        for (const n of parsed.names) {
-          if (typeof n === "string" && n.trim()) names.add(n);
-        }
-      }
-      for (const [id, name] of Object.entries(parsed?.assignments ?? {})) {
-        if (typeof name === "string" && name.trim()) {
-          map[id] = name;
-          names.add(name);
-        }
-      }
-      const contexts: Record<string, string> = {};
-      for (const [name, ctx] of Object.entries(parsed?.contexts ?? {})) {
-        if (typeof ctx === "string" && ctx.trim()) contexts[name] = ctx;
-      }
-      const paths: Record<string, string> = {};
-      for (const [name, p] of Object.entries(parsed?.paths ?? {})) {
-        if (typeof p === "string" && p.trim()) paths[name] = p;
-      }
-      const groups: Record<string, string> = {};
-      for (const [name, g] of Object.entries(parsed?.groups ?? {})) {
-        if (typeof g === "string" && g.trim()) groups[name] = g;
-      }
-      const types: Record<string, ProjectType> = {};
-      for (const [name, t] of Object.entries(parsed?.types ?? {})) {
-        if (t === "content") types[name] = t;
-      }
-      const agentAssignments: Record<string, string> = {};
-      for (const [id, name] of Object.entries(parsed?.agents ?? {})) {
-        if (typeof name === "string" && name.trim()) agentAssignments[id] = name;
-      }
-      const chatWorkspaces: Record<string, string> = {};
-      for (const [id, name] of Object.entries(parsed?.workspaces ?? {})) {
-        if (typeof name === "string") chatWorkspaces[id] = name;
-      }
-      const chatTitles: Record<string, string> = {};
-      for (const [id, title] of Object.entries(parsed?.titles ?? {})) {
-        if (typeof title === "string") chatTitles[id] = title;
-      }
-      const selected = new Set<string>();
-      if (Array.isArray(parsed?.selected)) {
-        for (const n of parsed.selected) {
-          if (typeof n === "string" && names.has(n)) selected.add(n);
-        }
-      }
-      setProjects(map);
-      setProjectNames(Array.from(names));
-      setProjectContexts(contexts);
-      setProjectPaths(paths);
-      setProjectGroups(groups);
-      setProjectTypes(types);
-      setAgentOf(agentAssignments);
-      setWorkspaceOf(chatWorkspaces);
-      setWorkspaceTitles(chatTitles);
-      setInitSelection(selected);
-      setActiveProject(typeof parsed?.active === "string" && names.has(parsed.active) ? parsed.active : null);
-    } catch (e) {
-      console.error("Failed to load projects:", e);
-    } finally {
-      setProjectsLoaded(true);
-    }
-  }, []);
-
   const loadAgents = useCallback(async () => {
     try {
       setAgents(await api.listMarkdownAgents());
@@ -417,9 +358,8 @@ function useDesktopStore() {
       .readBashHistory()
       .then(setBashHistory)
       .catch(() => {});
-    loadProjects();
     loadAgents();
-  }, [loadProjects, loadAgents]);
+  }, [loadAgents]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -730,46 +670,6 @@ function useDesktopStore() {
     clearSelection();
     Promise.all(ids.map((id) => deleteConversation(id)));
   }, [selected, clearSelection, deleteConversation]);
-
-  useEffect(() => {
-    if (!projectsLoaded) return;
-    // ponytail: only rescan git when a git-relevant field changed - a checkbox toggle persists `selected` without a full `git status` sweep.
-    const sig = JSON.stringify([projectNames, projectPaths, projectGroups]);
-    const gitChanged = sig !== gitSigRef.current;
-    gitSigRef.current = sig;
-    api
-      .writeProjects(
-        JSON.stringify({
-          assignments: projects,
-          names: projectNames,
-          contexts: projectContexts,
-          paths: projectPaths,
-          groups: projectGroups,
-          types: projectTypes,
-          agents: agentOf,
-          workspaces: workspaceOf,
-          titles: workspaceTitles,
-          selected: Array.from(initSelection),
-          active: activeProject ?? undefined,
-        }),
-      )
-      .then(() => (gitChanged ? fetchGitProjects() : undefined))
-      .catch(() => {});
-  }, [
-    projectsLoaded,
-    projects,
-    projectNames,
-    projectContexts,
-    projectPaths,
-    projectGroups,
-    projectTypes,
-    agentOf,
-    workspaceOf,
-    workspaceTitles,
-    initSelection,
-    activeProject,
-    fetchGitProjects,
-  ]);
 
   const moveConversationStore = useCallback(
     (sessionId: string, projectName?: string) => {
@@ -1251,125 +1151,6 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
-  const placeInGroup = useCallback((name: string, group: string, path: string) => {
-    setProjectGroups((prev) => ({ ...prev, [name]: group }));
-    setProjectPaths((prev) => ({ ...prev, [name]: path }));
-  }, []);
-
-  const createProject = useCallback(
-    (name: string, group?: string) => {
-      setProjectNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
-      api
-        .createProjectDir(name, group)
-        .then((path) => group && placeInGroup(name, group, path))
-        .catch((e) => console.error("Failed to create project directory:", e));
-    },
-    [placeInGroup],
-  );
-
-  const importProjects = useCallback(
-    (repos: { name: string; path: string; group?: string; context?: string | null }[]) => {
-      setProjectNames((prev) => {
-        const fresh = repos.map((r) => r.name).filter((n) => !prev.includes(n));
-        return fresh.length ? [...prev, ...fresh] : prev;
-      });
-      setProjectPaths((prev) => {
-        const next = { ...prev };
-        for (const r of repos) next[r.name] ??= r.path;
-        return next;
-      });
-      setProjectContexts((prev) => {
-        const next = { ...prev };
-        for (const r of repos) if (r.context) next[r.name] ??= r.context;
-        return next;
-      });
-      setProjectGroups((prev) => {
-        const next = { ...prev };
-        for (const r of repos) if (r.group) next[r.name] ??= r.group;
-        return next;
-      });
-    },
-    [],
-  );
-
-  const deleteProjects = useCallback((names: string[]) => {
-    const gone = new Set(names);
-    setProjects((prev) => Object.fromEntries(Object.entries(prev).filter(([, p]) => !gone.has(p))));
-    setProjectNames((prev) => prev.filter((n) => !gone.has(n)));
-    setProjectContexts((prev) => {
-      const next = { ...prev };
-      for (const name of gone) delete next[name];
-      return next;
-    });
-    setProjectPaths((prev) => {
-      const next = { ...prev };
-      for (const name of gone) delete next[name];
-      return next;
-    });
-    setProjectGroups((prev) => {
-      const next = { ...prev };
-      for (const name of gone) delete next[name];
-      return next;
-    });
-    setProjectTypes((prev) => {
-      const next = { ...prev };
-      for (const name of gone) delete next[name];
-      return next;
-    });
-    setActiveProject((p) => (p && gone.has(p) ? null : p));
-  }, []);
-
-  const deleteProject = useCallback((name: string) => deleteProjects([name]), [deleteProjects]);
-
-  const renameProject = useCallback((oldName: string, newName: string) => {
-    setProjects((prev) => Object.fromEntries(Object.entries(prev).map(([id, p]) => [id, p === oldName ? newName : p])));
-    setProjectNames((prev) => prev.map((n) => (n === oldName ? newName : n)));
-    setProjectContexts((prev) => {
-      if (!(oldName in prev)) return prev;
-      const next = { ...prev };
-      next[newName] = next[oldName];
-      delete next[oldName];
-      return next;
-    });
-    setProjectPaths((prev) => {
-      if (!(oldName in prev)) return prev;
-      const next = { ...prev };
-      next[newName] = next[oldName];
-      delete next[oldName];
-      return next;
-    });
-    setProjectGroups((prev) => {
-      if (!(oldName in prev)) return prev;
-      const next = { ...prev };
-      next[newName] = next[oldName];
-      delete next[oldName];
-      return next;
-    });
-    setProjectTypes((prev) => {
-      if (!(oldName in prev)) return prev;
-      const next = { ...prev };
-      next[newName] = next[oldName];
-      delete next[oldName];
-      return next;
-    });
-    setActiveProject((p) => (p === oldName ? newName : p));
-  }, []);
-
-  const moveProject = useCallback(
-    (name: string, group: string) => {
-      const oldPrefix = projectGroups[name] ? `${projectGroups[name]}/` : "";
-      const renamed = name.startsWith(oldPrefix) && oldPrefix ? `${group}/${name.slice(oldPrefix.length)}` : name;
-      api
-        .moveProject(name, group)
-        .then((path) => {
-          if (renamed !== name) renameProject(name, renamed);
-          placeInGroup(renamed, group, path);
-        })
-        .catch((e) => setError(String(e)));
-    },
-    [placeInGroup, projectGroups, renameProject],
-  );
-
   // Content projects need ffmpeg, whisper-cli and the whisper model in
   // ~/.infer/bin/tools so the agent never has to fetch tools itself.
   const prepareContentTools = useCallback(async () => {
@@ -1416,10 +1197,6 @@ function useDesktopStore() {
     },
     [prepareContentTools],
   );
-
-  const setProjectContext = useCallback((name: string, context: string) => {
-    setProjectContexts((prev) => ({ ...prev, [name]: context }));
-  }, []);
 
   const initProject = useCallback(
     async (name: string) => {
@@ -1510,26 +1287,6 @@ function useDesktopStore() {
     },
     [runOnProjects, gitProjects, refreshGitProjects, cleanupProject, logActivity],
   );
-
-  const setProjectPath = useCallback((name: string, path: string) => {
-    setProjectPaths((prev) => {
-      if (!path.trim()) {
-        const next = { ...prev };
-        delete next[name];
-        return next;
-      }
-      return { ...prev, [name]: path };
-    });
-  }, []);
-
-  const toggleCollapseProject = useCallback((name: string) => {
-    setCollapsedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
 
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
   const currentAgent = (activeId ? agentOf[activeId] : null) ?? activeAgent;
@@ -1674,7 +1431,6 @@ function useDesktopStore() {
     selectProject,
     selectAgent,
     agents,
-    agentOf,
     activeAgent,
     currentAgent,
     agentEditor,
@@ -1694,7 +1450,6 @@ function useDesktopStore() {
     drivenId,
     takeOver,
     handBack,
-    workspaceOf,
     moving,
     moveChat,
     cleanMachines,
@@ -1713,24 +1468,12 @@ function useDesktopStore() {
     todoDrafts,
     setTodoDraft,
     insertSnippet,
-    loadProjects,
     tokenUsage: active.usage,
     turnStartedAt: active.turnStartedAt,
     lastTurnMs: active.lastTurnMs,
     showStatusBar,
     setShowStatusBar,
-    projects,
-    projectNames,
-    collapsedProjects,
-    activeProject,
-    setActiveProject,
     currentProject,
-    projectContexts,
-    setProjectContext,
-    projectPaths,
-    setProjectPath,
-    projectGroups,
-    projectTypes,
     setProjectType,
     initialSettingsTab,
     setInitialSettingsTab,
@@ -1738,20 +1481,12 @@ function useDesktopStore() {
     setInitialProjectFilter,
     assignProject,
     unassignProject,
-    createProject,
-    moveProject,
-    importProjects,
-    deleteProject,
-    deleteProjects,
-    renameProject,
-    toggleCollapseProject,
     initProject,
     initAllProjects,
     cleanupProjects,
     broadcastPrompt,
     initAllRunning,
     initSelecting,
-    initSelection,
     startInitSelection,
     cancelInitSelection,
     toggleInitSelection,
@@ -1787,7 +1522,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
         <SnippetsProvider>
           <BackendProvider>
             <GitProvider>
-              <DesktopStoreProvider>{children}</DesktopStoreProvider>
+              <SidebarProvider>
+                <DesktopStoreProvider>{children}</DesktopStoreProvider>
+              </SidebarProvider>
             </GitProvider>
           </BackendProvider>
         </SnippetsProvider>

@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 import { Bot, Clapperboard, Code, LayoutList, MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { Button } from "@/components/ui/button";
 import { ChatList } from "./ChatList";
 import { ResizeHandle } from "./ResizeHandle";
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
 export function Sidebar() {
+  const { projectNames, projectTypes } = useSidebar();
   const {
     newChat,
-    projectNames,
-    projectTypes,
     projectFilter: filter,
     setProjectFilter: setFilter,
     initSelecting,

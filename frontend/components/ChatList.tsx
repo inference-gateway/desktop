@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
 import { Button } from "@/components/ui/button";
@@ -679,41 +680,43 @@ export function ChatList() {
     syncDefaultBranch,
   } = useGit();
   const {
-    conversations,
-    selected,
     projects,
     projectNames,
     collapsedProjects,
-    bulkDelete,
-    assignProject,
-    unassignProject,
     deleteProject,
     renameProject,
     toggleCollapseProject,
     createProject,
     moveProject,
+    initSelection,
+    activeProject,
+    projectGroups,
+    projectTypes,
+    agentOf,
+  } = useSidebar();
+  const {
+    conversations,
+    selected,
+    bulkDelete,
+    assignProject,
+    unassignProject,
     initProject,
     initAllProjects,
     cleanupProjects,
     initSelecting,
-    initSelection,
     toggleInitSelection,
     cancelInitSelection,
     selectAllProjects,
     clearProjectSelection,
     selectProjectsInGroup,
     isRunning,
-    activeProject,
     selectProject,
     setInitialSettingsTab,
     setInitialProjectFilter,
     setCurrentView,
-    projectGroups,
-    projectTypes,
     projectFilter: filter,
     visibleProjectNames,
     agents,
-    agentOf,
     activeAgent,
     selectAgent,
     openAgentEditor,

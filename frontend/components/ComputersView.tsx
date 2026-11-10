@@ -12,6 +12,7 @@ import {
   type ScreenInput,
 } from "@/lib/screen-input";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { useStatusActions } from "@/stores/status";
 import { AgentAvatar } from "./AgentAvatar";
 
@@ -283,19 +284,9 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
 // screen, what the agent did last and whether it waits for an answer. A
 // computer the person took over fills the view until they hand it back.
 export function ComputersView() {
-  const {
-    workspaceOf,
-    agentOf,
-    agents,
-    transcripts,
-    runningIds,
-    projects,
-    openConversation,
-    setCurrentView,
-    drivenId,
-    takeOver,
-    deleteMachine,
-  } = useDesktop();
+  const { workspaceOf, agentOf, projects } = useSidebar();
+  const { agents, transcripts, runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } =
+    useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
   const open = (sessionId: string) => {
