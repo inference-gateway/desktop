@@ -17,6 +17,8 @@ import { emit } from "@tauri-apps/api/event";
 import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
+import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { ModelSelect } from "./ModelSelect";
 
@@ -24,12 +26,9 @@ const RECORDING_TITLE = "Record your screen and key presses so the agent can tur
 const MAX_RECORD_SECS = 180;
 
 export function TopBar() {
+  const { versionBadge, updateButton, updateBannerText, applyUpdates, restartBackend } = useBackend();
+  const { projectTypes } = useSidebar();
   const {
-    versionBadge,
-    updateButton,
-    updateBannerText,
-    applyUpdates,
-    restartBackend,
     openSettings,
     openObservability,
     openComputers,
@@ -40,7 +39,6 @@ export function TopBar() {
     setChatOpen,
     currentView,
     currentProject,
-    projectTypes,
   } = useDesktop();
   const { setError } = useStatusActions();
   const content = currentView === "chat" && currentProject !== null && projectTypes[currentProject] === "content";

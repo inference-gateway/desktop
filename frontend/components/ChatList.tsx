@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
+import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "./AgentAvatar";
@@ -667,35 +669,6 @@ function ProjectGroup({
 
 export function ChatList() {
   const {
-    conversations,
-    selected,
-    projects,
-    projectNames,
-    collapsedProjects,
-    bulkDelete,
-    assignProject,
-    unassignProject,
-    deleteProject,
-    renameProject,
-    toggleCollapseProject,
-    createProject,
-    moveProject,
-    initProject,
-    initAllProjects,
-    cleanupProjects,
-    initSelecting,
-    initSelection,
-    toggleInitSelection,
-    cancelInitSelection,
-    selectAllProjects,
-    clearProjectSelection,
-    selectProjectsInGroup,
-    isRunning,
-    activeProject,
-    selectProject,
-    setInitialSettingsTab,
-    setInitialProjectFilter,
-    setCurrentView,
     gitProjects,
     dirtyProjects,
     projectBranches,
@@ -705,12 +678,45 @@ export function ChatList() {
     refreshProjects,
     cleanupProject,
     syncDefaultBranch,
+  } = useGit();
+  const {
+    projects,
+    projectNames,
+    collapsedProjects,
+    deleteProject,
+    renameProject,
+    toggleCollapseProject,
+    createProject,
+    moveProject,
+    initSelection,
+    activeProject,
     projectGroups,
     projectTypes,
+    agentOf,
+  } = useSidebar();
+  const {
+    conversations,
+    selected,
+    bulkDelete,
+    assignProject,
+    unassignProject,
+    initProject,
+    initAllProjects,
+    cleanupProjects,
+    initSelecting,
+    toggleInitSelection,
+    cancelInitSelection,
+    selectAllProjects,
+    clearProjectSelection,
+    selectProjectsInGroup,
+    isRunning,
+    selectProject,
+    setInitialSettingsTab,
+    setInitialProjectFilter,
+    setCurrentView,
     projectFilter: filter,
     visibleProjectNames,
     agents,
-    agentOf,
     activeAgent,
     selectAgent,
     openAgentEditor,

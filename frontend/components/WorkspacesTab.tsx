@@ -22,6 +22,7 @@ import {
   useCheck,
 } from "./ClusterParts";
 import { useDesktop } from "@/store";
+import { useBackend } from "@/stores/backend";
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
 
@@ -390,7 +391,8 @@ function WorkspaceForm({
 // The computers sessions can run on: the workspaces of ~/.infer/daemon.yaml, each on a cluster of the Compute tab or
 // with its own connection. The daemon reads them when it starts, so a change asks for a CLI restart.
 export function WorkspacesTab() {
-  const { restartBackend, cleanMachines } = useDesktop();
+  const { restartBackend } = useBackend();
+  const { cleanMachines } = useDesktop();
   const [cleanArmed, setCleanArmed] = useState(false);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
   const [clusters, setClusters] = useState<ClusterConfig[]>([]);

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
+import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
@@ -173,7 +175,8 @@ function MoveToWorkspace({
 // Picks the project a new agent chat opens in, or none. The first message
 // fixes it, since the project is the folder the chat's thread runs in.
 function AgentProjectMenu() {
-  const { projectNames, currentProject, setActiveProject } = useDesktop();
+  const { projectNames, setActiveProject } = useSidebar();
+  const { currentProject } = useDesktop();
   const [open, setOpen] = useState(false);
 
   const choice = (project: string | null, label: string) => (
@@ -214,9 +217,10 @@ function AgentProjectMenu() {
 }
 
 export function Composer() {
+  const { ready, model, tools, shortcuts } = useBackend();
+  const { activeProject, setActiveProject, agentOf, workspaceOf, initSelection } = useSidebar();
   const {
     composerRef,
-    ready,
     enabled,
     running,
     send,
@@ -226,25 +230,17 @@ export function Composer() {
     popQueued,
     history,
     bashHistory,
-    activeProject,
-    setActiveProject,
     currentProject,
     agents,
     activeAgent,
     currentAgent,
     selectAgent,
     sessionId,
-    agentOf,
     drivenId,
     takeOver,
     handBack,
-    workspaceOf,
-    model,
     initSelecting,
-    initSelection,
     cancelInitSelection,
-    tools,
-    shortcuts,
     suggestion,
     dismissSuggestion,
   } = useDesktop();

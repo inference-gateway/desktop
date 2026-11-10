@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useBackend } from "@/stores/backend";
 import { Container, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,6 @@ import {
   RunningBadge,
   useCheck,
 } from "./ClusterParts";
-import { useDesktop } from "@/store";
 
 type Editing = { previous: string | null; draft: ClusterDraft };
 
@@ -153,7 +153,7 @@ function ClusterForm({
 // The clusters workspaces run on: ~/.infer/compute.yaml. The daemon reads it when it starts, so a change asks for a
 // CLI restart.
 export function ComputeTab() {
-  const { restartBackend } = useDesktop();
+  const { restartBackend } = useBackend();
   const [clusters, setClusters] = useState<ClusterConfig[]>([]);
   const [contexts, setContexts] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
