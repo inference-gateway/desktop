@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "monitor-window"
+description = "The commands the computer-use monitor bar calls: stop, resume and answer an approval."
+commands.allow = [
+    "cancel_agent",
+    "resume_agent",
+    "send_approval",
+]

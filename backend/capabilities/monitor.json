@@ -1,0 +1,19 @@
+{
+  "identifier": "monitor",
+  "description": "The computer-use monitor bar: place and drag itself, the approve and reject shortcuts, and stop, resume or answer a run",
+  "windows": ["monitor"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-outer-size",
+    "core:window:allow-current-monitor",
+    "core:window:allow-start-dragging",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "monitor-window"
+  ]
+}
