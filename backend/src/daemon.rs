@@ -6,7 +6,10 @@
 use crate::env::{
     agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env, mock_mode,
 };
+use crate::processes::ProcessSupervisor;
+use crate::thread::Threads;
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -18,6 +21,9 @@ const DAEMON_FILE: &str = "daemon.yaml";
 const BROWSER_USE_FILE: &str = "browser_use.yaml";
 const BOOT_WAIT: Duration = Duration::from_secs(15);
 const PROBE: Duration = Duration::from_millis(300);
+
+/// The daemon's recent output lines, shared with the readers of its pipes.
+pub(crate) type SchedulerLog = Arc<Mutex<VecDeque<String>>>;
 
 /// Where the daemon's binding listens and the token its clients present.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,14 +139,17 @@ pub(crate) fn reachable(port: u16) -> bool {
 /// Makes sure a daemon listens on the binding: one that already does is
 /// reused, else `infer daemon` starts with the app's env and the binding
 /// switched on, and the port is awaited.
-pub(crate) fn ensure_running(state: &crate::AppState) -> Result<Binding, String> {
+pub(crate) fn ensure_running(
+    processes: &ProcessSupervisor,
+    scheduler_log: &SchedulerLog,
+) -> Result<Binding, String> {
     let binding = binding()?;
     if reachable(binding.port) {
         return Ok(binding);
     }
-    let log = Arc::clone(&state.scheduler_log);
+    let log = Arc::clone(scheduler_log);
     let spawn_binding = binding.clone();
-    state.processes.restart_scheduler(move || {
+    processes.restart_scheduler(move || {
         log.lock()
             .map_err(|error| format!("scheduler log mutex poisoned: {error}"))?
             .clear();
@@ -178,10 +187,14 @@ pub(crate) fn ensure_running(state: &crate::AppState) -> Result<Binding, String>
 
 /// Stops the daemon the app started and closes every thread, so the next chat
 /// starts a daemon that sees the new env (auth keys, an updated binary).
-pub(crate) fn restart(state: &crate::AppState) -> Result<(), String> {
-    crate::thread::close_all(state);
-    state.processes.stop_scheduler()?;
-    ensure_running(state).map(|_| ())
+pub(crate) fn restart(
+    processes: &ProcessSupervisor,
+    scheduler_log: &SchedulerLog,
+    threads: &Threads,
+) -> Result<(), String> {
+    threads.close_all();
+    processes.stop_scheduler()?;
+    ensure_running(processes, scheduler_log).map(|_| ())
 }
 
 /// Records the extension's state from a `browser_extension_status` frame and
@@ -191,7 +204,10 @@ pub(crate) fn extension_status(app: &tauri::AppHandle, status: ExtensionStatus) 
     if let Ok(mut current) = state.extension.lock() {
         *current = status;
     }
-    let _ = app.emit(crate::events::BROWSER_BRIDGE, bridge_status(&state));
+    let _ = app.emit(
+        crate::events::BROWSER_BRIDGE,
+        bridge_status(&state.extension),
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -263,13 +279,13 @@ fn write_enabled(path: &Path, enabled: bool) -> Result<(), String> {
     crate::config::update_file(path, |existing| merge_enabled(existing, enabled, &seed))
 }
 
-fn bridge_status(state: &crate::AppState) -> BridgeStatus {
+fn bridge_status(extension: &Mutex<ExtensionStatus>) -> BridgeStatus {
     let settings = read_settings();
     let binding = binding().unwrap_or(Binding {
         port: settings.port,
         token: settings.token.clone(),
     });
-    let connected = state.extension.lock().map(|s| s.connected).unwrap_or(false);
+    let connected = extension.lock().map(|s| s.connected).unwrap_or(false);
     BridgeStatus {
         enabled: settings.active(),
         connected,
@@ -280,7 +296,7 @@ fn bridge_status(state: &crate::AppState) -> BridgeStatus {
 
 #[tauri::command]
 pub(crate) fn browser_use_status(state: tauri::State<'_, crate::AppState>) -> BridgeStatus {
-    bridge_status(&state)
+    bridge_status(&state.extension)
 }
 
 /// Switches browser use through the extension on or off in browser_use.yaml.
@@ -292,8 +308,8 @@ pub(crate) async fn set_browser_use_enabled(
 ) -> Result<BridgeStatus, String> {
     let current = crate::blocking_with_state(app.clone(), move |state| {
         write_enabled(&browser_use_path(&home_dir()), enabled)?;
-        restart(state)?;
-        Ok(bridge_status(state))
+        restart(&state.processes, &state.scheduler_log, &state.threads)?;
+        Ok(bridge_status(&state.extension))
     })
     .await?;
     let _ = app.emit(crate::events::BROWSER_BRIDGE, current.clone());

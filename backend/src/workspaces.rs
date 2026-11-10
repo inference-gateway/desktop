@@ -278,7 +278,10 @@ pub(crate) fn teleport(
 pub(crate) async fn list_workspaces(app: tauri::AppHandle) -> Vec<Workspace> {
     tokio::task::spawn_blocking(move || {
         ask(
-            || crate::daemon::ensure_running(&app.state::<crate::AppState>()),
+            || {
+                let state = app.state::<crate::AppState>();
+                crate::daemon::ensure_running(&state.processes, &state.scheduler_log)
+            },
             json!({ "type": "list_workspaces" }),
             LIST_TIMEOUT,
             parse_workspaces,

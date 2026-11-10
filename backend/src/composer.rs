@@ -41,7 +41,10 @@ async fn ask_project<T: DeserializeOwned + Send + 'static>(
     tokio::task::spawn_blocking(move || {
         let project_dir = crate::agent::thread_dir(project.as_deref());
         crate::daemon::ask(
-            || crate::daemon::ensure_running(&app.state::<crate::AppState>()),
+            || {
+                let state = app.state::<crate::AppState>();
+                crate::daemon::ensure_running(&state.processes, &state.scheduler_log)
+            },
             project_frame(request, &project_dir),
             MENU_TIMEOUT,
             |frame| parse_list(frame, reply),

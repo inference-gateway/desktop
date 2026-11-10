@@ -8,11 +8,13 @@ pub(crate) mod models;
 
 use crate::AppState;
 use crate::env::{agent_cwd, compose_extras};
-use crate::thread::{Sink, Thread, ThreadOptions};
+use crate::thread::{Sink, Thread, ThreadOptions, Threads};
 use events::AgentRecording;
 pub(crate) use events::{AgentEvent, BackgroundJob};
 use files::attached_image_paths;
 pub(crate) use infer::{gateway_url, infer_command, run_infer, run_infer_in};
+use std::collections::HashSet;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -127,38 +129,95 @@ fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
     emit
 }
 
-/// The open thread for a chat, opened on the daemon when the app has none.
-async fn ensure_thread(
-    app: &tauri::AppHandle,
-    state: &AppState,
-    session_id: &str,
+/// Dials the daemon for a chat's thread, starting the daemon when nothing
+/// listens, and wires the thread's events to the windows.
+fn open_on_daemon(
+    app: tauri::AppHandle,
+    session_id: String,
     project_dir: &Path,
     options: ThreadOptions,
-) -> Result<Arc<Thread>, String> {
-    if let Some(thread) = state.threads.get(session_id) {
-        return Ok(thread);
-    }
-    let app = app.clone();
-    let session_id = session_id.to_string();
+) -> impl Fn() -> Result<Arc<Thread>, String> + Clone + Send + 'static {
     let project_dir = project_dir.to_string_lossy().into_owned();
-    tokio::task::spawn_blocking(move || {
+    move || {
         crate::agent_mail::resync_allowlist(&options);
         let state = app.state::<AppState>();
-        let binding = crate::daemon::ensure_running(&state)?;
+        let binding = crate::daemon::ensure_running(&state.processes, &state.scheduler_log)?;
         let status_app = app.clone();
-        let thread = Thread::open(
+        Thread::open(
             &binding,
             &session_id,
             &project_dir,
             &options,
             session_sink(app.clone(), session_id.clone()),
             Arc::new(move |status| crate::daemon::extension_status(&status_app, status)),
-        )?;
-        state.threads.insert(&session_id, Arc::clone(&thread));
-        Ok(thread)
-    })
-    .await
-    .map_err(|e| format!("thread open task failed: {e}"))?
+        )
+    }
+}
+
+/// The open thread for a chat: the one the app follows, else the one `open`
+/// dials, which the app follows from then on.
+async fn ensure_thread(
+    threads: &Threads,
+    session_id: &str,
+    open: impl FnOnce() -> Result<Arc<Thread>, String> + Send + 'static,
+) -> Result<Arc<Thread>, String> {
+    if let Some(thread) = threads.get(session_id) {
+        return Ok(thread);
+    }
+    let thread = tokio::task::spawn_blocking(open)
+        .await
+        .map_err(|e| format!("thread open task failed: {e}"))??;
+    threads.insert(session_id, Arc::clone(&thread));
+    Ok(thread)
+}
+
+/// The thread a prompt runs on. A chat with a computer is marked remote, and
+/// one the app and the daemon both see for the first time is moved there by
+/// `teleport` and reopened, so its first run already happens on that computer.
+async fn thread_for_prompt<Teleport>(
+    threads: &Threads,
+    remote_sessions: &Mutex<HashSet<String>>,
+    session_id: &str,
+    workspace: Option<String>,
+    open: impl Fn() -> Result<Arc<Thread>, String> + Clone + Send + 'static,
+    teleport: impl FnOnce(String) -> Teleport,
+) -> Result<Arc<Thread>, String>
+where
+    Teleport: Future<Output = Result<(), String>>,
+{
+    let is_new_to_the_app = threads.get(session_id).is_none();
+    let thread = ensure_thread(threads, session_id, open.clone()).await?;
+    let Some(target) = workspace.filter(|name| !name.trim().is_empty()) else {
+        return Ok(thread);
+    };
+    if let Ok(mut sessions) = remote_sessions.lock() {
+        sessions.insert(session_id.to_string());
+    }
+    if !is_new_to_the_app || !thread.history().is_empty() {
+        return Ok(thread);
+    }
+    teleport(target).await?;
+    threads.remove(session_id);
+    ensure_thread(threads, session_id, open).await
+}
+
+/// Starts a prompt's run on its thread with the model and mode it asks for.
+/// A content project is checkpointed under the prompt's subject when the run ends.
+fn run_prompt(
+    thread: &Thread,
+    prompt: &str,
+    model: &str,
+    mode: &str,
+    content_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    let commit = agent_commit_message(prompt);
+    *thread.on_done.lock().unwrap_or_else(|e| e.into_inner()) = content_dir.map(|dir| {
+        Box::new(move || {
+            let _ = crate::projects::checkpoint(&dir, &commit);
+        }) as Box<dyn Fn() + Send + Sync>
+    });
+    thread.select(model, mode)?;
+    thread.run(Some(message_content(prompt)))
 }
 
 /// Stops following a chat the user left, so its worker idles out in the daemon.
@@ -167,9 +226,8 @@ pub(crate) fn close_thread(session_id: String, state: tauri::State<'_, AppState>
     state.threads.close_idle(&session_id);
 }
 
-fn thread_for(state: &AppState, session_id: &str) -> Result<Arc<Thread>, String> {
-    state
-        .threads
+fn thread_for(threads: &Threads, session_id: &str) -> Result<Arc<Thread>, String> {
+    threads
         .get(session_id)
         .ok_or_else(|| "No running agent".to_string())
 }
@@ -200,7 +258,8 @@ pub(crate) async fn open_thread(
         &cwd,
         agent.as_deref(),
     );
-    let thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
+    let open = open_on_daemon(app, session_id.clone(), &cwd, options);
+    let thread = ensure_thread(&state.threads, &session_id, open).await?;
     if let Ok(mut channels) = state.channels.lock() {
         channels.entry(session_id).or_insert(on_event);
     }
@@ -277,30 +336,20 @@ pub(crate) async fn send_message(
         agent.as_deref(),
     );
     let mode = options.mode.clone();
-    let is_new_to_the_app = state.threads.get(&session_id).is_none();
-    let mut thread = ensure_thread(&app, &state, &session_id, &cwd, options.clone()).await?;
-    let target = workspace.filter(|name| !name.trim().is_empty());
-    if target.is_some()
-        && let Ok(mut sessions) = state.remote_sessions.lock()
-    {
-        sessions.insert(session_id.clone());
-    }
-    if let Some(target) = target.filter(|_| is_new_to_the_app && thread.history().is_empty()) {
-        teleport_thread(&session_id, &cwd, &target, &on_event).await?;
-        state.threads.remove(&session_id);
-        thread = ensure_thread(&app, &state, &session_id, &cwd, options).await?;
-    }
+    let open = open_on_daemon(app, session_id.clone(), &cwd, options);
+    let thread = thread_for_prompt(
+        &state.threads,
+        &state.remote_sessions,
+        &session_id,
+        workspace,
+        open,
+        |target| teleport_thread(&session_id, &cwd, target, &on_event),
+    )
+    .await?;
     if let Ok(mut channels) = state.channels.lock() {
-        channels.insert(session_id.clone(), on_event);
+        channels.insert(session_id, on_event);
     }
-    let commit = agent_commit_message(&prompt);
-    *thread.on_done.lock().unwrap_or_else(|e| e.into_inner()) = content_dir.map(|dir| {
-        Box::new(move || {
-            let _ = crate::projects::checkpoint(&dir, &commit);
-        }) as Box<dyn Fn() + Send + Sync>
-    });
-    thread.select(&model, &mode)?;
-    thread.run(Some(message_content(&prompt)))
+    run_prompt(&thread, &prompt, &model, &mode, content_dir)
 }
 
 /// Places a new chat on its agent's computer before the first run, showing
@@ -309,12 +358,12 @@ pub(crate) async fn send_message(
 async fn teleport_thread(
     session_id: &str,
     project_dir: &Path,
-    target: &str,
+    target: String,
     on_event: &Channel<AgentEvent>,
 ) -> Result<(), String> {
     let report = |state: &str, message: String| {
         let _ = on_event.send(AgentEvent::AgentStatus {
-            name: target.to_string(),
+            name: target.clone(),
             state: state.to_string(),
             message,
             done: 0,
@@ -326,7 +375,7 @@ async fn teleport_thread(
     let (session_id, project_dir, name) = (
         session_id.to_string(),
         project_dir.to_path_buf(),
-        target.to_string(),
+        target.clone(),
     );
     let outcome = tokio::task::spawn_blocking(move || {
         let binding = crate::daemon::binding()?;
@@ -392,7 +441,7 @@ pub(crate) async fn send_approval(
     approved: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    thread_for(&state, &session_id)?.resume(serde_json::json!({
+    thread_for(&state.threads, &session_id)?.resume(serde_json::json!({
         "interruptId": tool_call_id,
         "status": if approved { "resolved" } else { "cancelled" },
     }))
@@ -406,7 +455,7 @@ pub(crate) async fn send_user_message(
     content: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    thread_for(&state, &session_id)?.run(Some(content.into()))
+    thread_for(&state.threads, &session_id)?.run(Some(content.into()))
 }
 
 /// Answers an AskUserQuestion form: `answers` is the frontend's
@@ -426,7 +475,7 @@ pub(crate) async fn send_question_answers(
         }),
         None => serde_json::json!({ "interruptId": tool_call_id, "status": "cancelled" }),
     };
-    thread_for(&state, &session_id)?.resume(entry)
+    thread_for(&state.threads, &session_id)?.resume(entry)
 }
 
 /// Continues a thread after a stopped run with a new, empty run: how a
@@ -436,7 +485,7 @@ pub(crate) async fn resume_agent(
     session_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    thread_for(&state, &session_id)?.run(None)
+    thread_for(&state.threads, &session_id)?.run(None)
 }
 
 /// Stops the thread's running turn, which ends with outcome `cancelled`.
@@ -454,6 +503,115 @@ pub(crate) async fn cancel_agent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn block_on<T>(future: impl Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    fn never_opened() -> Result<Arc<Thread>, String> {
+        panic!("a chat the app already follows must not be opened again")
+    }
+
+    async fn never_teleported(_target: String) -> Result<(), String> {
+        panic!("only a chat's first run is moved to its computer")
+    }
+
+    fn frame_types(frames: &std::sync::mpsc::Receiver<String>) -> Vec<String> {
+        frames
+            .try_iter()
+            .map(|frame| {
+                let frame: serde_json::Value = serde_json::from_str(&frame).unwrap();
+                frame["type"].as_str().unwrap().to_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_prompt_to_a_running_chat_reuses_its_thread_and_marks_it_remote() {
+        let threads = Threads::default();
+        let remote_sessions = Mutex::default();
+        let (running, _frames) = Thread::detached("chat", Vec::new());
+        threads.insert("chat", Arc::clone(&running));
+
+        let thread = block_on(thread_for_prompt(
+            &threads,
+            &remote_sessions,
+            "chat",
+            Some("box".into()),
+            never_opened,
+            never_teleported,
+        ))
+        .unwrap();
+
+        assert!(Arc::ptr_eq(&thread, &running));
+        assert!(remote_sessions.lock().unwrap().contains("chat"));
+    }
+
+    #[test]
+    fn a_new_chat_with_a_computer_is_moved_there_and_reopened() {
+        let threads = Threads::default();
+        let remote_sessions = Mutex::default();
+        let opens = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&opens);
+        let open = move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            Ok(Thread::detached("chat", Vec::new()).0)
+        };
+        let moved_to = Mutex::new(Vec::new());
+
+        block_on(thread_for_prompt(
+            &threads,
+            &remote_sessions,
+            "chat",
+            Some("box".into()),
+            open,
+            |target| {
+                moved_to.lock().unwrap().push(target);
+                async { Ok(()) }
+            },
+        ))
+        .unwrap();
+
+        assert_eq!(*moved_to.lock().unwrap(), ["box"]);
+        assert_eq!(opens.load(Ordering::SeqCst), 2);
+        assert!(threads.get("chat").is_some());
+    }
+
+    #[test]
+    fn a_chat_with_history_stays_where_it_is() {
+        let threads = Threads::default();
+        let remote_sessions = Mutex::default();
+        let history = vec![serde_json::json!({ "role": "user", "content": "hi" })];
+        let open = move || Ok(Thread::detached("chat", history.clone()).0);
+
+        block_on(thread_for_prompt(
+            &threads,
+            &remote_sessions,
+            "chat",
+            Some("box".into()),
+            open,
+            never_teleported,
+        ))
+        .unwrap();
+
+        assert!(remote_sessions.lock().unwrap().contains("chat"));
+    }
+
+    #[test]
+    fn a_prompt_switches_the_model_before_its_run() {
+        let (thread, frames) = Thread::detached("chat", Vec::new());
+
+        run_prompt(&thread, "hello", "openai/gpt-5", "auto", None).unwrap();
+
+        assert_eq!(
+            frame_types(&frames),
+            ["select_model", "set_mode", "run_agent_input"]
+        );
+    }
 
     #[test]
     fn only_single_bang_prompts_are_bash_commands() {
