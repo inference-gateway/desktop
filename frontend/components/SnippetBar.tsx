@@ -1,6 +1,7 @@
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_SNIPPETS, type Snippet } from "@/lib/snippets";
 import { useState } from "react";
 
@@ -58,7 +59,8 @@ function SnippetChip({
 }
 
 export function SnippetBar() {
-  const { snippets, running, insertSnippet, resetSnippet, resetAllSnippets } = useDesktop();
+  const { snippets, resetSnippet, resetAllSnippets } = useSnippets();
+  const { running, insertSnippet } = useDesktop();
 
   const hasModifications = snippets.some((s) => {
     const def = DEFAULT_SNIPPETS.find((d) => d.id === s.id);

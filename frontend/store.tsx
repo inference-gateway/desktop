@@ -35,15 +35,8 @@ import { matchShortcut } from "@/lib/shortcuts";
 import { isBashCommand } from "@/lib/tools";
 import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
-import {
-  loadSnippets,
-  saveSnippets,
-  defaultForId,
-  DEFAULT_SNIPPETS,
-  mergeSnippets,
-  type Snippet,
-} from "@/lib/snippets";
-import { hydrateRegistry } from "@/lib/skills";
+import { ActivityProvider, useActivity } from "@/stores/activity";
+import { SnippetsProvider } from "@/stores/snippets";
 import { markApplied, stripV, updateButtonState } from "@/lib/updates";
 
 const STORAGE_KEY = "selectedModel";
@@ -51,16 +44,6 @@ const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 /** What the sidebar lists: every project, one project type, or the agents. */
 export type SidebarFilter = ProjectType | "agents";
-
-export type ActivityStatus = "running" | "done" | "failed" | "skipped";
-
-export interface ActivityEntry {
-  id: number;
-  project: string | null;
-  action: string;
-  status: ActivityStatus;
-  message?: string;
-}
 
 const CONTENT_GUIDANCE =
   'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") to add captions or subtitles over it ("add captions", "caption this"), or to add title cards, lower thirds, callouts, step counters or charts over it, read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline. Every audio and video file (wav, mp3, m4a, mp4, mov and the like) MUST live inside media/, never in the project root or any other folder; the only exceptions are the scratch files the skill keeps in tmp/ and a voice.wav cut from the recording. Treat media/ as append-only: never overwrite or delete an existing file in it. When you need to replace a clip, write a new versioned filename (for example media/<name>-v2.<ext>) and point the timeline at the new file, leaving the old one in place.';
@@ -71,7 +54,6 @@ const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
 const LAST_RUN_TTL_MS = 10_000;
-const MAX_ACTIVITIES = 200;
 
 async function setMonitorVisible(visible: boolean) {
   const win = await WebviewWindow.getByLabel("monitor");
@@ -145,9 +127,7 @@ function useDesktopStore() {
   const [statusError, setStatusErr] = useState(false);
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const [activities, setActivities] = useState<ActivityEntry[]>([]);
-  const activityId = useRef(0);
-  const [seenActivityId, setSeenActivityId] = useState(0);
+  const { logActivity } = useActivity();
   const [ready, setReady] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
@@ -171,7 +151,6 @@ function useDesktopStore() {
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
-  const [snippets, setSnippetsState] = useState<Snippet[]>(() => loadSnippets());
   const [tools, setTools] = useState<string[]>([]);
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
@@ -262,19 +241,6 @@ function useDesktopStore() {
     setStatusText((t) => (t.startsWith("Failed") || t.startsWith("Error") ? "Ready" : t));
   }, []);
 
-  const logActivity = useCallback(
-    (project: string | null, action: string, status: ActivityStatus, message?: string) => {
-      const id = ++activityId.current;
-      setActivities((prev) => {
-        const i = prev.findIndex((a) => a.project === project && a.action === action && a.status === "running");
-        if (i >= 0) return prev.map((a, j) => (j === i ? { ...a, id, status, message } : a));
-        return [...prev.slice(-(MAX_ACTIVITIES - 1)), { id, project, action, status, message }];
-      });
-    },
-    [],
-  );
-  const clearActivities = useCallback(() => setActivities([]), []);
-  const markActivitiesSeen = useCallback(() => setSeenActivityId(activityId.current), []);
   const runGitAction = useCallback(
     (name: string, action: string, run: () => Promise<string>) => {
       logActivity(name, action, "running");
@@ -1387,45 +1353,6 @@ function useDesktopStore() {
     el.focus();
   }, []);
 
-  const resetSnippet = useCallback((id: string) => {
-    const def = defaultForId(id);
-    if (!def) return;
-    setSnippetsState((prev) => {
-      const next = prev.map((s) => (s.id === id ? { ...def } : s));
-      saveSnippets(next);
-      return next;
-    });
-  }, []);
-
-  const updateSnippet = useCallback((id: string, patch: { label?: string; prompt?: string }) => {
-    setSnippetsState((prev) => {
-      const next = prev.map((s) => (s.id === id ? { ...s, ...patch } : s));
-      saveSnippets(next);
-      return next;
-    });
-  }, []);
-
-  const resetAllSnippets = useCallback(() => {
-    setSnippetsState(DEFAULT_SNIPPETS);
-    saveSnippets(DEFAULT_SNIPPETS);
-  }, []);
-
-  const reloadDesktopData = useCallback(() => {
-    return api.readDesktopData().then((data) => {
-      if (data.snippets.length > 0) {
-        const next = mergeSnippets(data.snippets);
-        setSnippetsState(next);
-        saveSnippets(next);
-      }
-      hydrateRegistry(data.skills_registry_url);
-      return data;
-    });
-  }, []);
-
-  useEffect(() => {
-    void reloadDesktopData().catch(() => {});
-  }, [reloadDesktopData]);
-
   const openSettings = useCallback(() => {
     checkForUpdates();
     setCurrentView("settings");
@@ -2135,12 +2062,7 @@ function useDesktopStore() {
     bashHistory,
     todoDrafts,
     setTodoDraft,
-    snippets,
     insertSnippet,
-    updateSnippet,
-    resetSnippet,
-    resetAllSnippets,
-    reloadDesktopData,
     loadProjects,
     setStatus,
     setError,
@@ -2184,11 +2106,6 @@ function useDesktopStore() {
     projectRemotes,
     refreshGitProjects,
     refreshProjects,
-    activities,
-    logActivity,
-    clearActivities,
-    seenActivityId,
-    markActivitiesSeen,
     deleteProject,
     deleteProjects,
     renameProject,
@@ -2222,9 +2139,22 @@ const DesktopContext = createContext<DesktopStore | null>(null);
 // second refresh after this delay catches it. Replace with a daemon push when one exists.
 const SUBAGENT_SESSION_SETTLE_MS = 1500;
 
-export function DesktopProvider({ children }: { children: ReactNode }) {
+function DesktopStoreProvider({ children }: { children: ReactNode }) {
   const store = useDesktopStore();
   return <DesktopContext.Provider value={store}>{children}</DesktopContext.Provider>;
+}
+
+/** Every store the app reads. The feature stores sit outside the main one,
+ * which uses them, and each has its own context so its readers re-render only
+ * when that feature changes. */
+export function DesktopProvider({ children }: { children: ReactNode }) {
+  return (
+    <ActivityProvider>
+      <SnippetsProvider>
+        <DesktopStoreProvider>{children}</DesktopStoreProvider>
+      </SnippetsProvider>
+    </ActivityProvider>
+  );
 }
 
 export function useDesktop(): DesktopStore {
