@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 pub(crate) const DEFAULT_PORT: u16 = 52789;
-pub(crate) const EVENT: &str = "browser-bridge";
 const DAEMON_FILE: &str = "daemon.yaml";
 const BROWSER_USE_FILE: &str = "browser_use.yaml";
 const BOOT_WAIT: Duration = Duration::from_secs(15);
@@ -192,7 +191,7 @@ pub(crate) fn extension_status(app: &tauri::AppHandle, status: ExtensionStatus) 
     if let Ok(mut current) = state.extension.lock() {
         *current = status;
     }
-    let _ = app.emit(EVENT, bridge_status(&state));
+    let _ = app.emit(crate::events::BROWSER_BRIDGE, bridge_status(&state));
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -297,7 +296,7 @@ pub(crate) async fn set_browser_use_enabled(
         Ok(bridge_status(state))
     })
     .await?;
-    let _ = app.emit(EVENT, current.clone());
+    let _ = app.emit(crate::events::BROWSER_BRIDGE, current.clone());
     Ok(current)
 }
 

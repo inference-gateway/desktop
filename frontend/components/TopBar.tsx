@@ -21,6 +21,7 @@ import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { ModelSelect } from "./ModelSelect";
+import { WINDOW_EVENTS } from "@/lib/events";
 
 const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
 const MAX_RECORD_SECS = 180;
@@ -57,7 +58,7 @@ export function TopBar() {
   }, []);
 
   useEffect(() => {
-    emit("screen-recording", { recording }).catch(() => {});
+    emit(WINDOW_EVENTS.screenRecording, { recording }).catch(() => {});
     if (!recording) return;
     startedAtRef.current = Date.now();
     setElapsed(0);
