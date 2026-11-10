@@ -1,3 +1,4 @@
+use crate::error::{Result, blocking};
 use crate::scheduler::{gh_output, valid_repo, valid_secret_name};
 
 // infer-action workflow installed into a task repository, modeled on the
@@ -117,7 +118,7 @@ fn latest_action_version() -> Option<String> {
 }
 
 /// Decoded content of the installed workflow file on `git_ref`.
-fn workflow_content(repo: &str, git_ref: &str) -> Result<String, String> {
+fn workflow_content(repo: &str, git_ref: &str) -> Result<String> {
     use base64::Engine as _;
     let raw = gh_output(&[
         "api",
@@ -129,10 +130,10 @@ fn workflow_content(repo: &str, git_ref: &str) -> Result<String, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(stripped)
         .map_err(|e| e.to_string())?;
-    String::from_utf8(bytes).map_err(|e| e.to_string())
+    Ok(String::from_utf8(bytes).map_err(|e| e.to_string())?)
 }
 
-fn workflow_status(repo: &str, git_ref: Option<&str>) -> Result<WorkflowStatus, String> {
+fn workflow_status(repo: &str, git_ref: Option<&str>) -> Result<WorkflowStatus> {
     let path = match git_ref {
         Some(r) => format!("repos/{repo}/contents/{WORKFLOW_PATH}?ref={r}"),
         None => format!("repos/{repo}/contents/{WORKFLOW_PATH}"),
@@ -155,17 +156,17 @@ fn workflow_status(repo: &str, git_ref: Option<&str>) -> Result<WorkflowStatus, 
             version: None,
             latest: None,
         }),
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }
 
 /// Whether the infer-action task workflow exists in `repo`.
 #[tauri::command]
-pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus, String> {
+pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let mut status = workflow_status(&repo, None)?;
         if status.installed {
             let base = gh_output(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])?
@@ -180,13 +181,12 @@ pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus
         Ok(status)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Branch + commit `yaml` as the workflow file + open a PR against the
 /// default branch. The install branch is recreated from the base head every
 /// time so a stale branch never poisons the flow.
-fn open_workflow_pr(repo: &str, yaml: &str, message: &str, body: &str) -> Result<String, String> {
+fn open_workflow_pr(repo: &str, yaml: &str, message: &str, body: &str) -> Result<String> {
     use base64::Engine as _;
     let base = gh_output(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])?
         .trim()
@@ -256,7 +256,7 @@ fn open_workflow_pr(repo: &str, yaml: &str, message: &str, body: &str) -> Result
         if e.contains("No commits between") {
             "The workflow is already up to date - nothing to change.".into()
         } else {
-            e
+            e.into()
         }
     })
 }
@@ -271,9 +271,9 @@ pub(crate) async fn github_install_workflow(
     apt: String,
     vision_model: String,
     image_model: String,
-) -> Result<String, String> {
+) -> Result<String> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
     let cfg = crate::config::read_config();
     if !valid_secret_name(&cfg.scheduler_github_app_client_id_secret)
@@ -281,7 +281,7 @@ pub(crate) async fn github_install_workflow(
     {
         return Err("invalid GitHub App secret names in config".into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let version = latest_action_version().unwrap_or_else(|| "v0.49.0".into());
         let mut extras = String::new();
         for (key, val) in [
@@ -319,17 +319,16 @@ pub(crate) async fn github_install_workflow(
         )
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Bump only the infer-action version pin in the installed workflow via a
 /// pull request, leaving the rest of the user's file untouched.
 #[tauri::command]
-pub(crate) async fn github_bump_workflow(repo: String) -> Result<String, String> {
+pub(crate) async fn github_bump_workflow(repo: String) -> Result<String> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let base = gh_output(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])?
             .trim()
             .to_string();
@@ -339,7 +338,7 @@ pub(crate) async fn github_bump_workflow(repo: String) -> Result<String, String>
         let latest =
             latest_action_version().ok_or("couldn't resolve the latest infer-action release")?;
         if current == latest {
-            return Err(format!("already on the latest infer-action ({latest})"));
+            return Err(format!("already on the latest infer-action ({latest})").into());
         }
         let yaml = content.replace(
             &format!("infer-action@{current}"),
@@ -352,7 +351,6 @@ pub(crate) async fn github_bump_workflow(repo: String) -> Result<String, String>
         open_workflow_pr(&repo, &yaml, &message, &body)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -367,21 +365,20 @@ pub(crate) struct TaskIssue {
 /// Recent issues in the task repository, newest first.
 /// ponytail: newest 30, no pagination - enough for a dashboard.
 #[tauri::command]
-pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssue>, String> {
+pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssue>> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let out = gh_output(&[
             "api",
             &format!("repos/{repo}/issues?state=open&per_page=30"),
             "--jq",
             "[.[] | select(.pull_request | not) | {number, title, state, html_url, created_at}]",
         ])?;
-        serde_json::from_str(&out).map_err(|e| e.to_string())
+        Ok(serde_json::from_str(&out)?)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -395,21 +392,20 @@ pub(crate) struct TaskPull {
 /// Open pull requests in the task repository, newest first.
 /// ponytail: newest 30, no pagination - enough for a dashboard.
 #[tauri::command]
-pub(crate) async fn github_list_task_pulls(repo: String) -> Result<Vec<TaskPull>, String> {
+pub(crate) async fn github_list_task_pulls(repo: String) -> Result<Vec<TaskPull>> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let out = gh_output(&[
             "api",
             &format!("repos/{repo}/pulls?state=open&per_page=30"),
             "--jq",
             "[.[] | {number, title, html_url, body}]",
         ])?;
-        serde_json::from_str(&out).map_err(|e| e.to_string())
+        Ok(serde_json::from_str(&out)?)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -424,11 +420,11 @@ pub(crate) struct WorkflowRun {
 
 /// Recent runs of the installed task workflow, newest first.
 #[tauri::command]
-pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<WorkflowRun>, String> {
+pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<WorkflowRun>> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
-    tokio::task::spawn_blocking(move || {
+    blocking(move || {
         let out = gh_output(&[
             "api",
             &format!("repos/{repo}/actions/workflows/tasks.yml/runs?per_page=20"),
@@ -436,13 +432,12 @@ pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<Workfl
             "[.workflow_runs[] | {id, name: .display_title, status, conclusion, html_url, created_at}]",
         ]);
         match out {
-            Ok(out) => serde_json::from_str(&out).map_err(|e| e.to_string()),
+            Ok(out) => Ok(serde_json::from_str(&out)?),
             Err(e) if e.contains("404") || e.contains("Not Found") => Ok(Vec::new()),
-            Err(e) => Err(e),
+            Err(e) => Err(e.into()),
         }
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Create a task issue; the body is prefixed with the @opentask trigger so
@@ -452,15 +447,15 @@ pub(crate) async fn github_create_task_issue(
     repo: String,
     title: String,
     body: String,
-) -> Result<String, String> {
+) -> Result<String> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
     if title.trim().is_empty() {
         return Err("task title is empty".into());
     }
-    tokio::task::spawn_blocking(move || {
-        gh_output(&[
+    blocking(move || {
+        Ok(gh_output(&[
             "api",
             "-X",
             "POST",
@@ -471,11 +466,11 @@ pub(crate) async fn github_create_task_issue(
             &format!("body=@opentask\n\n{}", body.trim()),
             "--jq",
             ".html_url",
-        ])
-        .map(|s| s.trim().to_string())
+        ])?
+        .trim()
+        .to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Trigger the installed workflow on an issue by posting the trigger-phrase comment.
@@ -484,15 +479,15 @@ pub(crate) async fn github_run_task_issue(
     repo: String,
     number: u64,
     body: String,
-) -> Result<String, String> {
+) -> Result<String> {
     if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
+        return Err(format!("invalid repository: {repo}").into());
     }
     if body.trim().is_empty() {
         return Err("comment is empty".into());
     }
-    tokio::task::spawn_blocking(move || {
-        gh_output(&[
+    blocking(move || {
+        Ok(gh_output(&[
             "api",
             "-X",
             "POST",
@@ -501,11 +496,11 @@ pub(crate) async fn github_run_task_issue(
             &format!("body={}", body.trim()),
             "--jq",
             ".html_url",
-        ])
-        .map(|s| s.trim().to_string())
+        ])?
+        .trim()
+        .to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]

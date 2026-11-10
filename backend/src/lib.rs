@@ -14,6 +14,7 @@ mod daemon;
 mod daemon_mock;
 mod download;
 mod env;
+mod error;
 mod export;
 mod gateway;
 mod input_capture;
