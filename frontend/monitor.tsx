@@ -21,6 +21,7 @@ import {
   type MonitorSession,
   type MonitorState,
 } from "@/lib/monitor-state";
+import { BACKEND_EVENTS, WINDOW_EVENTS } from "@/lib/events";
 
 const TOP_MARGIN = 16;
 const COMPACT = { width: 620, height: 102 };
@@ -95,7 +96,7 @@ export default function Monitor() {
 
   useEffect(() => {
     dockTopCenter().catch(() => {});
-    const unlisten = listen<MonitorEvent>("agent-event", (e) => {
+    const unlisten = listen<MonitorEvent>(BACKEND_EVENTS.agentEvent, (e) => {
       const msg = e.payload;
       if (msg.remote) return;
       const event = msg.event;
@@ -132,7 +133,7 @@ export default function Monitor() {
         if (!manuallyHiddenRef.current) showInteractive().catch(() => {});
       }
     });
-    const unlistenResolved = listen<{ sessionId: string }>("approval-resolved", (e) =>
+    const unlistenResolved = listen<{ sessionId: string }>(WINDOW_EVENTS.approvalResolved, (e) =>
       dispatch({ type: "resolved", sessionId: e.payload.sessionId }),
     );
     return () => {
@@ -156,7 +157,7 @@ export default function Monitor() {
     const el = promptRef.current;
     const text = el?.value.trim() ?? "";
     if (!text || !id) return;
-    emit("monitor-send", { sessionId: id, text }).catch(() => {});
+    emit(WINDOW_EVENTS.monitorSend, { sessionId: id, text }).catch(() => {});
     if (el) {
       el.value = "";
       autoGrow(el);
@@ -172,7 +173,7 @@ export default function Monitor() {
     } catch {
       return;
     }
-    emit("approval-resolved", {
+    emit(WINDOW_EVENTS.approvalResolved, {
       sessionId: id,
       callId,
       status: approved ? "approved" : "denied",

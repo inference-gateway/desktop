@@ -145,7 +145,7 @@ pub(crate) fn watch_project(
             if all_under_git(&event) {
                 return;
             }
-            let _ = app.emit("project-changed", &name);
+            let _ = app.emit(crate::events::PROJECT_CHANGED, &name);
         }
     })
     .map_err(|e| e.to_string())?;

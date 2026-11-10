@@ -93,7 +93,7 @@ fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
             .lock()
             .is_ok_and(|sessions| sessions.contains(&session_id));
         let _ = app.emit(
-            "agent-event",
+            crate::events::AGENT_EVENT,
             serde_json::json!({ "sessionId": session_id, "name": "", "remote": remote, "event": event }),
         );
         if let Some(channel) = app

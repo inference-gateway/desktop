@@ -391,7 +391,7 @@ pub(crate) async fn git_project_status(
     .await
     .map_err(|e| format!("git status task failed: {e}"))?;
     let watcher = watch_git_dirs(&git_dirs, move || {
-        let _ = app.emit("git-changed", ());
+        let _ = app.emit(crate::events::GIT_CHANGED, ());
     })
     .map_err(|e| format!("watching git dirs: {e}"))?;
     *state.0.lock().map_err(|e| e.to_string())? = Some(watcher);
