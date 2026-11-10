@@ -169,6 +169,7 @@ commands.allow = [
     "workspace_machines",
     "delete_workspace_machine",
     "default_workspace_image",
+    "workspace_capabilities",
     "docker_available",
     "provision_local_cluster",
 ]

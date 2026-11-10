@@ -1,4 +1,4 @@
-import type { WorkspaceConfig } from "./tauri";
+import type { Capability, WorkspaceConfig } from "./tauri";
 
 /** A workspace as the Settings form holds it: lists and the environment as the text the person types. */
 export type WorkspaceDraft = Omit<WorkspaceConfig, "gateway_env" | "forward_env" | "env"> & {
@@ -65,6 +65,29 @@ export function configOf(draft: WorkspaceDraft): WorkspaceConfig {
     forward_env: splitNames(draft.forward_env),
     env: parseEnv(draft.env),
   };
+}
+
+/** Whether the draft's environment and user data give its computers the capability. */
+export function hasCapability(draft: WorkspaceDraft, capability: Capability): boolean {
+  const env = parseEnv(draft.env);
+  return capability.env.every(([name, value]) => env[name] === value) && draft.user_data.includes(capability.user_data);
+}
+
+/** The draft with the capability's variables and boot script added, or taken out. The rest stays as typed. */
+export function withCapability(draft: WorkspaceDraft, capability: Capability, on: boolean): WorkspaceDraft {
+  const names = new Set(capability.env.map(([name]) => name));
+  const kept = Object.entries(parseEnv(draft.env)).filter(([name]) => !names.has(name));
+  const script = capability.user_data;
+  const rest = script ? draft.user_data.split(script).join("") : draft.user_data;
+  return {
+    ...draft,
+    env: formatEnv(Object.fromEntries(on ? [...kept, ...capability.env] : kept)),
+    user_data: on && script ? joinScripts(rest, script) : rest,
+  };
+}
+
+function joinScripts(first: string, second: string): string {
+  return first.trim() ? `${first.trimEnd()}\n${second}` : second;
 }
 
 /** Why a draft cannot be saved yet, or null when it can. */

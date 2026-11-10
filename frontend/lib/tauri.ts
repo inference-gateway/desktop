@@ -172,6 +172,9 @@ export type WorkspaceConfig = {
   /** The cloud-init script the pod runs as root when it boots, before the agent starts. */
   user_data: string;
 };
+/** Something a workspace's agents may do on its computers. A workspace has it when its environment holds every
+ * entry of `env` and its user data holds `user_data`. */
+export type Capability = { id: string; label: string; hint: string; env: [string, string][]; user_data: string };
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 /** A cluster of ~/.infer/compute.yaml as the Compute tab edits it. Every workspace on it shares its namespace and
  * gateway. */
@@ -564,6 +567,7 @@ export const api = {
   deleteWorkspace: (name: string) => invoke<void>("delete_workspace", { name }),
   kubeContexts: () => invoke<string[]>("kube_contexts"),
   defaultWorkspaceImage: () => invoke<string>("default_workspace_image"),
+  workspaceCapabilities: () => invoke<Capability[]>("workspace_capabilities"),
   clusterConfigs: () => invoke<ClusterConfig[]>("cluster_configs"),
   saveCluster: (config: ClusterConfig, previousName?: string) => invoke<void>("save_cluster", { config, previousName }),
   deleteCluster: (name: string) => invoke<void>("delete_cluster", { name }),
