@@ -1,0 +1,13 @@
+{
+  "identifier": "main",
+  "description": "The app window: every app command, notifications, and showing or hiding the monitor bar",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-ignore-cursor-events",
+    "notification:default",
+    "main-window"
+  ]
+}

@@ -467,7 +467,8 @@ export const api = {
     invoke<string>("github_run_task_issue", { repo, number, body }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   checkUpdates: () => invoke<UpdateInfo[]>("check_updates"),
-  installDesktopUpdate: (tag: string | null = null) => invoke<void>("install_desktop_update", { tag }),
+  installDesktopUpdate: (onEvent: Channel<ProgressEvent>, tag: string | null = null) =>
+    invoke<void>("install_desktop_update", { onEvent, tag }),
   sttStatus: () => invoke<SttStatus>("stt_status"),
   prepareStt: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_stt", { onEvent }),
   transcribeAudio: (wav: number[]) => invoke<string>("transcribe_audio", { wav }),

@@ -155,10 +155,13 @@ pub(crate) async fn get_auth() -> Result<BTreeMap<String, String>, String> {
 #[tauri::command]
 pub(crate) async fn set_auth(
     keys: BTreeMap<String, String>,
-    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    merge_auth_in(&home_dir(), keys)?;
-    crate::daemon::restart(&state)
+    crate::blocking_with_state(app, move |state| {
+        merge_auth_in(&home_dir(), keys)?;
+        crate::daemon::restart(state)
+    })
+    .await
 }
 
 /// Desktop-facing config fields read from ~/.infer/config.yaml.

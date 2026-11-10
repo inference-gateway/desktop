@@ -55,6 +55,17 @@ pub(crate) struct AppState {
     remote_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
+/// Runs blocking work that needs the app state on the blocking pool, so a
+/// command neither freezes the window nor holds an async worker while it waits.
+pub(crate) async fn blocking_with_state<T: Send + 'static>(
+    app: tauri::AppHandle,
+    work: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(move || work(&app.state::<AppState>()))
+        .await
+        .map_err(|error| format!("background task failed: {error}"))?
+}
+
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
 // window-level API, so set NSStatusWindowLevel (25) directly. The overlay is
 // also kept out of the accessibility tree: an ignored window hands its children
@@ -329,6 +340,47 @@ pub fn run() {
             thread::close_all(&state);
         }
     });
+}
+
+#[cfg(test)]
+mod window_permissions {
+    use std::collections::BTreeSet;
+
+    fn allowed(permission_file: &str) -> BTreeSet<String> {
+        let parsed: toml::Value = toml::from_str(permission_file).unwrap();
+        parsed["permission"][0]["commands"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|command| command.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn registered() -> BTreeSet<String> {
+        let (_, after) = include_str!("lib.rs")
+            .split_once("generate_handler![")
+            .unwrap();
+        let (list, _) = after.split_once(']').unwrap();
+        list.split(',')
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(|path| path.rsplit("::").next().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_main_window_is_granted_exactly_the_registered_commands() {
+        assert_eq!(
+            allowed(include_str!("../permissions/main-window.toml")),
+            registered()
+        );
+    }
+
+    #[test]
+    fn the_monitor_window_is_granted_only_registered_commands() {
+        let monitor = allowed(include_str!("../permissions/monitor-window.toml"));
+        assert!(monitor.is_subset(&registered()));
+    }
 }
 
 #[cfg(test)]
