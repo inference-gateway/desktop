@@ -8,8 +8,8 @@ narration:
   - "The top bar shows the installed release."
 steps:
   - wait_for: { text: "CLI 0.1.0", timeout: 30 }
-  - wait_for: { button: "Update available", timeout: 10 }
-  - click: { button: "Update available" }
+  - wait_for: { button: "Update", timeout: 10 }
+  - click: { button: "Update" }
   - wait_for: { button: "Updating...", timeout: 10 }
-  - wait_gone: { button: "Updating...", never: "Update available", timeout: 60 }
+  - wait_gone: { button: "Updating...", never: "Update", timeout: 60 }
   - wait_for: { text: "CLI 0.2.0", timeout: 10 }
