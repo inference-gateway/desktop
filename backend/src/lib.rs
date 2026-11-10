@@ -39,6 +39,7 @@ mod tools;
 mod tts_samples;
 mod updates;
 mod updates_mock;
+mod workspace_capabilities;
 mod workspace_settings;
 mod workspaces;
 
@@ -317,6 +318,7 @@ pub fn run() {
             workspace_settings::workspace_machines,
             workspace_settings::delete_workspace_machine,
             workspace_settings::default_workspace_image,
+            workspace_capabilities::workspace_capabilities,
             workspace_settings::docker_available,
             workspace_settings::provision_local_cluster,
         ])

@@ -6,12 +6,8 @@ use tauri::ipc::Channel;
 
 const WORKSPACES_KEY: &str = "workspaces";
 pub(crate) const KUBERNETES: &str = "kubernetes";
-const CLI_IMAGE: &str = "ghcr.io/inference-gateway/cli";
 /// The Ubuntu desktop the local cluster's sessions run, released with the CLI.
 const COMPUTER_IMAGE: &str = "ghcr.io/inference-gateway/computer";
-/// What the local cluster's computer installs when it boots: Firefox with the
-/// opentask extension, so its agents browse with the browser tools.
-const COMPUTER_USER_DATA: &str = include_str!("computer_user_data.sh");
 pub(crate) const DETECTED_NAMESPACE: &str = "infer-workspaces";
 const DETECTED_STORAGE: &str = "5Gi";
 const KUBECTL_TIMEOUT: &str = "--request-timeout=5s";
@@ -24,10 +20,8 @@ const READY_STATUSES: &str =
 pub(crate) const MACHINES: &str = r#"jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].reason}{"\n"}{end}"#;
 const LOCAL_WORKSPACE: &str = "ubuntu-desktop";
 /// A local cluster's sessions run on a pod of their own, not the user's
-/// machine, so its agents use the computer and edit files without asking.
-const COMPUTER_ENV: [(&str, &str); 5] = [
-    ("INFER_COMPUTER_USE_ENABLED", "true"),
-    ("INFER_COMPUTER_USE_APPROVAL", "never"),
+/// machine, so its agents run commands and edit files without asking.
+const UNATTENDED_ENV: [(&str, &str); 3] = [
     ("INFER_TOOLS_BASH_ALLOW_APPEND", ".*"),
     ("INFER_TOOLS_WRITE_REQUIRE_APPROVAL", "false"),
     ("INFER_TOOLS_EDIT_REQUIRE_APPROVAL", "false"),
@@ -657,11 +651,11 @@ fn of_installed_version(repository: &str) -> String {
     format!("{repository}:{}", version.as_deref().unwrap_or("latest"))
 }
 
-/// The CLI image of the installed `infer` version. The workspace form starts
-/// from it.
+/// The Ubuntu desktop image of the installed `infer` version. The workspace
+/// form starts from it, since a new workspace starts with every capability.
 #[tauri::command]
 pub(crate) fn default_workspace_image() -> String {
-    of_installed_version(CLI_IMAGE)
+    of_installed_version(COMPUTER_IMAGE)
 }
 
 /// The names of the provider keys the user saved, for a workspace's gateway.
@@ -684,18 +678,24 @@ fn local_cluster(provider_keys: &[String]) -> ClusterConfig {
 }
 
 /// The workspace of the local cluster: an Ubuntu desktop pod per chat on it,
-/// with Firefox and the opentask extension installed when it boots.
+/// given every capability a workspace can have.
 fn local_workspace() -> WorkspaceConfig {
+    let capabilities = &crate::workspace_capabilities::CAPABILITIES;
     WorkspaceConfig {
         name: LOCAL_WORKSPACE.into(),
         compute: crate::local_cluster::CONTEXT.into(),
         image: of_installed_version(COMPUTER_IMAGE),
         storage: DETECTED_STORAGE.into(),
-        env: COMPUTER_ENV
+        env: capabilities
             .iter()
+            .flat_map(|capability| capability.env)
+            .chain(&UNATTENDED_ENV)
             .map(|(name, value)| (name.to_string(), value.to_string()))
             .collect(),
-        user_data: COMPUTER_USER_DATA.into(),
+        user_data: capabilities
+            .iter()
+            .map(|capability| capability.user_data)
+            .collect(),
         ..WorkspaceConfig::default()
     }
 }
@@ -1194,6 +1194,12 @@ mod tests {
                 .starts_with("ghcr.io/inference-gateway/computer:")
         );
         assert_eq!(workspace.env["INFER_COMPUTER_USE_ENABLED"], "true");
+        assert_eq!(workspace.env["INFER_COMPUTER_USE_APPROVAL"], "never");
+        assert_eq!(
+            workspace.env["INFER_COMPUTER_USE_RECORDING_ENABLED"],
+            "true"
+        );
+        assert_eq!(workspace.env["INFER_TOOLS_BASH_ALLOW_APPEND"], ".*");
     }
 
     #[test]

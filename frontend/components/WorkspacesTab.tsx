@@ -3,12 +3,21 @@ import { Eraser, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type ClusterConfig, type Machine, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
+import {
+  api,
+  type Capability,
+  type ClusterConfig,
+  type Machine,
+  type Workspace,
+  type WorkspaceConfig,
+} from "@/lib/tauri";
 import {
   configOf,
   draftOf,
   draftProblem,
   EMPTY_WORKSPACE,
+  hasCapability,
+  withCapability,
   WORKSPACE_KINDS,
   type WorkspaceDraft,
 } from "@/lib/workspace-form";
@@ -207,6 +216,7 @@ function WorkspaceForm({
   editing,
   clusters,
   contexts,
+  capabilities,
   onChange,
   onSave,
   onCancel,
@@ -214,6 +224,7 @@ function WorkspaceForm({
   editing: Editing;
   clusters: ClusterConfig[];
   contexts: string[];
+  capabilities: Capability[];
   onChange: (draft: WorkspaceDraft) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -306,9 +317,11 @@ function WorkspaceForm({
           id="workspace-image"
           value={draft.image}
           onChange={set("image")}
-          placeholder="ghcr.io/inference-gateway/cli:latest"
+          placeholder="ghcr.io/inference-gateway/computer:latest"
         />
-        <span className={HINT_CLASS}>The image every session's pod runs. It needs the infer CLI.</span>
+        <span className={HINT_CLASS}>
+          The image every session's pod runs. It needs the infer CLI, and a desktop for the switches below.
+        </span>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className={FIELD_CLASS}>
@@ -349,6 +362,23 @@ function WorkspaceForm({
         />
         <span className={HINT_CLASS}>Names of variables the agent itself gets, such as a token it pushes with.</span>
       </div>
+      {capabilities.map((capability) => (
+        <div key={capability.id} className={FIELD_CLASS}>
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id={`workspace-capability-${capability.id}`}
+              checked={hasCapability(draft, capability)}
+              onChange={(event) => onChange(withCapability(draft, capability, event.target.checked))}
+              className="h-4 w-4 accent-primary"
+            />
+            <Label htmlFor={`workspace-capability-${capability.id}`} className="cursor-pointer">
+              {capability.label}
+            </Label>
+          </div>
+          <span className={HINT_CLASS}>{capability.hint}</span>
+        </div>
+      ))}
       <div className={FIELD_CLASS}>
         <Label htmlFor="workspace-env">Environment</Label>
         <textarea
@@ -399,6 +429,7 @@ export function WorkspacesTab() {
   const [image, setImage] = useState("");
   const [known, setKnown] = useState<Record<string, Workspace>>({});
   const [contexts, setContexts] = useState<string[]>([]);
+  const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
@@ -435,6 +466,10 @@ export function WorkspacesTab() {
     api
       .defaultWorkspaceImage()
       .then(setImage)
+      .catch(() => {});
+    api
+      .workspaceCapabilities()
+      .then(setCapabilities)
       .catch(() => {});
   }, [reload]);
 
@@ -479,7 +514,10 @@ export function WorkspacesTab() {
   const startNew = () =>
     setEditing({
       previous: null,
-      draft: draftOf({ ...EMPTY_WORKSPACE, compute: clusters[0]?.name ?? "", image }),
+      draft: capabilities.reduce(
+        (draft, capability) => withCapability(draft, capability, true),
+        draftOf({ ...EMPTY_WORKSPACE, compute: clusters[0]?.name ?? "", image }),
+      ),
     });
 
   return (
@@ -514,6 +552,7 @@ export function WorkspacesTab() {
             editing={editing}
             clusters={clusters}
             contexts={contexts}
+            capabilities={capabilities}
             onChange={(draft) => setEditing({ ...editing, draft })}
             onSave={save}
             onCancel={() => {

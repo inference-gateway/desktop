@@ -144,7 +144,8 @@ export function GeneralTab() {
 
       <h3 className="text-[0.9rem] font-semibold">Computer Use</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Lets the agent see the screen and control other apps. Off by default; takes effect on the next agent spawn.
+        Lets the agent see the screen and control other apps on this computer. Off by default; takes effect on the next
+        agent spawn. A workspace's computers have their own switch in Settings &gt; Workspaces.
       </p>
       <div className="mb-5 flex items-center gap-3">
         <input
@@ -194,9 +195,9 @@ export function GeneralTab() {
       {/* Browser use */}
       <h3 className="text-[0.9rem] font-semibold">Browser Use</h3>
       <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Lets the agent drive your real browser through the opentask extension. Paste the port and token below into the
-        extension options. The infer daemon the app runs its chats through holds the port and reports when the extension
-        connects.
+        Lets the agent drive your real browser on this computer through the opentask extension. A workspace's computers
+        have their own switch in Settings &gt; Workspaces. Paste the port and token below into the extension options.
+        The infer daemon the app runs its chats through holds the port and reports when the extension connects.
       </p>
       <div className="mb-3 flex items-center gap-3">
         <input

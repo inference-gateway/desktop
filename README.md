@@ -18,7 +18,7 @@ Like Codex or Co-Work, but provider-agnostic: OpenAI, Anthropic, Google, local O
 ## What you can do
 
 - **Chat and code in your projects** - the agent runs in the project directory you pick, with file tools sandboxed to it.
-- **Give agents their own computer** - run an agent on a Kubernetes workspace, watch its screen under **Computers**, and take over the mouse and keyboard when it gets stuck.
+- **Give agents their own computer** - run an agent on a Kubernetes workspace, watch its screen under **Computers**, and take over the mouse and keyboard when it gets stuck. Each workspace has its own **Computer use**, **Browser use** and **Recording** switches in Settings > Workspaces, on by default - the ones in Settings > General cover this computer only.
 - **Drive your browser** - the [opentask](https://github.com/inference-gateway/opentask) extension lets the agent navigate, click, type and read tabs in your everyday browser.
 - **Write your own agents** - Markdown files with a name, instructions, model and face. Agents can hand work to each other.
 - **Make content** - talking-avatar clips, text to speech and text to video on a timeline in Content projects.
