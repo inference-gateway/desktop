@@ -89,8 +89,38 @@ export const PROVIDERS = [
 const INIT_PR_INSTRUCTION =
   "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge.";
 
+const getConfig = () => api.getConfig();
+const getAuth = () => api.getAuth();
+const saveConfig = (cfg: DesktopConfig) => api.setConfig(cfg);
+
+/** The value itself while its JSON is unchanged, so a list rebuilt on every
+ * streamed event keeps its identity until its content really differs. */
+// ponytail: stringifies on every change of the input - fine for the sidebar list and a handful of ids; compare by key if either grows large.
+/** The previous object while every field still holds the same value. A context
+ * value is built fresh on each render, and this keeps its readers from
+ * re-rendering unless a field they could read has changed. */
+function useUnchanged<T extends Record<string, unknown>>(value: T): T {
+  // The object always has the same keys, so the dependency list keeps its length.
+  return useMemo(() => value, Object.values(value));
+}
+
+function useSameContent<T>(value: T): T {
+  const kept = useRef(value);
+  const json = JSON.stringify(value);
+  const keptJson = useRef(json);
+  if (json !== keptJson.current) {
+    kept.current = value;
+    keptJson.current = json;
+  }
+  return kept.current;
+}
+
 function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
+  const transcriptsRef = useRef(transcripts);
+  useEffect(() => {
+    transcriptsRef.current = transcripts;
+  }, [transcripts]);
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
   const [initAllRunning, setInitAllRunning] = useState(false);
   const [initSelecting, setInitSelecting] = useState(false);
@@ -355,9 +385,11 @@ function useDesktopStore() {
     lastClickedIndex.current = -1;
   }, []);
 
-  const displayConversations = useMemo(
-    () => sidebarConversations(conversations, runningIds, workspaceOf, workspaceTitles, transcripts),
-    [conversations, runningIds, workspaceOf, workspaceTitles, transcripts],
+  const displayConversations = useSameContent(
+    useMemo(
+      () => sidebarConversations(conversations, runningIds, workspaceOf, workspaceTitles, transcripts),
+      [conversations, runningIds, workspaceOf, workspaceTitles, transcripts],
+    ),
   );
 
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
@@ -368,10 +400,13 @@ function useDesktopStore() {
     [transcripts],
   );
 
-  const isAwaitingApproval = useCallback(
-    (id: string) => pendingInput(transcripts[id]?.items ?? []) != null,
-    [transcripts],
+  const awaitingApproval = useSameContent(
+    useMemo(
+      () => Object.keys(transcripts).filter((id) => pendingInput(transcripts[id]?.items ?? []) != null),
+      [transcripts],
+    ),
   );
+  const isAwaitingApproval = useCallback((id: string) => awaitingApproval.includes(id), [awaitingApproval]);
 
   // The system prompt and custom instructions a chat's thread launches with:
   // the configured ones plus the project's group, type and context.
@@ -524,14 +559,14 @@ function useDesktopStore() {
       activeIdRef.current = id;
       setActiveProject(projects[id] ?? null);
       setActiveAgent(agentOf[id] ?? null);
-      if (transcripts[id]) return;
+      if (transcriptsRef.current[id]) return;
       try {
         dispatchTo(id, { type: "loadHistory", messages: await followThread(id) });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [transcripts, projects, agentOf, followThread, dispatchTo, leaveConversation],
+    [projects, agentOf, followThread, dispatchTo, leaveConversation],
   );
 
   const newChat = useCallback(() => {
@@ -1007,11 +1042,11 @@ function useDesktopStore() {
     if (!drivenId) return;
     setDrivenId(null);
     const messages = await followThread(drivenId).catch(() => null);
-    if (messages && !transcripts[drivenId]) dispatchTo(drivenId, { type: "loadHistory", messages });
+    if (messages && !transcriptsRef.current[drivenId]) dispatchTo(drivenId, { type: "loadHistory", messages });
     await api
       .screenControl(drivenId, projects[drivenId], false)
       .catch((e) => setError(`Failed to hand the screen back: ${e}`));
-  }, [drivenId, followThread, transcripts, dispatchTo, projects, setError]);
+  }, [drivenId, followThread, dispatchTo, projects, setError]);
 
   // A chat moves between turns: an open run stops first, and a chat on one
   // workspace comes home before it goes to another.
@@ -1360,9 +1395,16 @@ function useDesktopStore() {
     return () => clearTimeout(later);
   }, [runningSubagents, refreshConversations]);
 
-  return {
+  const stream = {
+    transcripts,
     items: active.items,
     recording: active.recording,
+    tokenUsage: active.usage,
+    runLabel,
+    delegations,
+    runningTasks,
+  };
+  const session = {
     typing: active.typing,
     suggestion: active.suggestion,
     dismissSuggestion,
@@ -1378,9 +1420,6 @@ function useDesktopStore() {
     isRunning,
     isAwaitingApproval,
     recordingOwner,
-    runLabel,
-    delegations,
-    runningTasks,
     runningCount: runningIds.size,
     onChatClick,
     clearSelection,
@@ -1416,21 +1455,19 @@ function useDesktopStore() {
     moveChat,
     cleanMachines,
     deleteMachine,
-    transcripts,
     promptProject,
     runningIds,
     setCurrentView,
     saveSettings,
-    getConfig: () => api.getConfig(),
-    getAuth: () => api.getAuth(),
-    saveConfig: (cfg: DesktopConfig) => api.setConfig(cfg),
+    getConfig,
+    getAuth,
+    saveConfig,
     composerRef,
     history,
     bashHistory,
     todoDrafts,
     setTodoDraft,
     insertSnippet,
-    tokenUsage: active.usage,
     turnStartedAt: active.turnStartedAt,
     lastTurnMs: active.lastTurnMs,
     showStatusBar,
@@ -1459,19 +1496,26 @@ function useDesktopStore() {
     clearProjectSelection,
     selectProjectsInGroup,
   };
+  return { session: useUnchanged(session), stream: useUnchanged(stream) };
 }
 
-export type DesktopStore = ReturnType<typeof useDesktopStore>;
+export type DesktopStore = ReturnType<typeof useDesktopStore>["session"];
+export type ChatStream = ReturnType<typeof useDesktopStore>["stream"];
 
 const DesktopContext = createContext<DesktopStore | null>(null);
+const ChatStreamContext = createContext<ChatStream | null>(null);
 
 // ponytail: a subagent's session file lands shortly after its Agent call starts; a
 // second refresh after this delay catches it. Replace with a daemon push when one exists.
 const SUBAGENT_SESSION_SETTLE_MS = 1500;
 
 function DesktopStoreProvider({ children }: { children: ReactNode }) {
-  const store = useDesktopStore();
-  return <DesktopContext.Provider value={store}>{children}</DesktopContext.Provider>;
+  const { session, stream } = useDesktopStore();
+  return (
+    <DesktopContext.Provider value={session}>
+      <ChatStreamContext.Provider value={stream}>{children}</ChatStreamContext.Provider>
+    </DesktopContext.Provider>
+  );
 }
 
 /** Every store the app reads. The feature stores sit outside the main one,
@@ -1495,6 +1539,15 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
       </ActivityProvider>
     </StatusProvider>
   );
+}
+
+/** What streams in while an agent works: the transcripts and what is read off
+ * them. It changes on every agent event, so only the components that show the
+ * stream read it - everything else uses `useDesktop`. */
+export function useChatStream(): ChatStream {
+  const ctx = useContext(ChatStreamContext);
+  if (!ctx) throw new Error("useChatStream must be used within DesktopProvider");
+  return ctx;
 }
 
 export function useDesktop(): DesktopStore {

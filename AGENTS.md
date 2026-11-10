@@ -75,7 +75,7 @@ Each window has its own capability file in `backend/capabilities/` and may only 
 
 The content security policy in `backend/tauri.conf.json` blocks inline and remote scripts. A new kind of remote resource (a font host, a media host) needs its directive widened there.
 
-State lives in context stores: the main one in `frontend/store.tsx` (`useDesktop`) and one per feature in `frontend/stores/` (`useActivity`, `useAgents`, `useBackend`, `useGit`, `useSidebar`, `useSnippets`, `useStatus`), each with its own context so its readers re-render only when that feature changes. New feature state goes in `frontend/stores/`, not in the main store. The typed Tauri client and transcript state machine live in `frontend/lib/`.
+State lives in context stores: the main one in `frontend/store.tsx` (`useDesktop`) and one per feature in `frontend/stores/` (`useActivity`, `useAgents`, `useBackend`, `useGit`, `useSidebar`, `useSnippets`, `useStatus`), each with its own context so its readers re-render only when that feature changes. New feature state goes in `frontend/stores/`, not in the main store. The main store holds chat sessions and gives two hooks: `useDesktop` for sessions and actions, and `useChatStream` for what changes on every agent event (transcripts, items, token usage, run labels). A component reads `useChatStream` only if it shows the stream. The typed Tauri client and transcript state machine live in `frontend/lib/`.
 
 ## Coding Style
 

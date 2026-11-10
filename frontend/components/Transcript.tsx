@@ -5,7 +5,7 @@ import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useDesktop } from "@/store";
+import { useChatStream, useDesktop } from "@/store";
 import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
@@ -555,7 +555,8 @@ function ScheduledJobs() {
 const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
-  const { items, typing, approve, answerQuestions, runLabel, sessionId, composerRef, turnStartedAt } = useDesktop();
+  const { items, runLabel } = useChatStream();
+  const { typing, approve, answerQuestions, sessionId, composerRef, turnStartedAt } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);

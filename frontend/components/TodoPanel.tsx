@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { todosDiffer, todosFrom, type TodoItem, type TodoStatus } from "@/lib/transcript";
-import { useDesktop } from "@/store";
+import { useChatStream, useDesktop } from "@/store";
 
 const STATUS_ORDER: TodoStatus[] = ["pending", "in_progress", "completed"];
 const STATUS_ICON = { pending: Circle, in_progress: CircleDot, completed: Check } as const;
@@ -26,7 +26,8 @@ const ROW_BUTTON =
   "shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-30";
 
 export function TodoPanel() {
-  const { items, sessionId, running, sendText, todoDrafts, setTodoDraft } = useDesktop();
+  const { items } = useChatStream();
+  const { sessionId, running, sendText, todoDrafts, setTodoDraft } = useDesktop();
   const draftKey = sessionId ?? "new";
   const draft = todoDrafts[draftKey] ?? null;
   const agentTodos = todosFrom(items);

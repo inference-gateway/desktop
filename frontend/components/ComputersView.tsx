@@ -11,7 +11,7 @@ import {
   wheelInputs,
   type ScreenInput,
 } from "@/lib/screen-input";
-import { useDesktop } from "@/store";
+import { useChatStream, useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useStatusActions } from "@/stores/status";
@@ -287,7 +287,8 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
 export function ComputersView() {
   const { workspaceOf, agentOf, projects } = useSidebar();
   const { agents } = useAgents();
-  const { transcripts, runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
+  const { transcripts } = useChatStream();
+  const { runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
   const open = (sessionId: string) => {

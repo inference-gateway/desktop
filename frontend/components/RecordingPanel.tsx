@@ -3,10 +3,10 @@
 // backend saves the same log next to the MP4 as <name>.events.jsonl.
 import { useEffect, useRef } from "react";
 import { formatInput } from "@/lib/recording";
-import { useDesktop } from "@/store";
+import { useChatStream } from "@/store";
 
 export function RecordingPanel() {
-  const { recording } = useDesktop();
+  const { recording } = useChatStream();
   const listRef = useRef<HTMLUListElement>(null);
   const lines = (recording?.inputs ?? []).map(formatInput).filter((line) => line !== null);
 
