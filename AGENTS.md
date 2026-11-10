@@ -69,6 +69,12 @@ The e2e harness drives the real UI through the accessibility tree. When editing 
 - Agent editor inputs keep their ids (`agent-name`, `agent-description`, `agent-model`, `agent-workspace`, `agent-project`, `agent-instructions`, `agent-emoji`, and `agent-mcp-<server>` per MCP server); Enter in the name or description field moves focus to the next one, which is how the e2e `type` step fills the form.
 - Shallow DOM: `App` renders `<header id="top-bar">` + `<div id="main">` into `#app`, no wrapper.
 
+## Window permissions (load-bearing)
+
+Each window has its own capability file in `backend/capabilities/` and may only call the commands its permission in `backend/permissions/` allows. A new `#[tauri::command]` must be added to `permissions/main-window.toml` as well as to `generate_handler!` - `cargo test` fails until both lists match. Add it to `monitor-window.toml` only if the monitor bar calls it. The overlay calls no commands.
+
+The content security policy in `backend/tauri.conf.json` blocks inline and remote scripts. A new kind of remote resource (a font host, a media host) needs its directive widened there.
+
 State is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine live in `frontend/lib/`.
 
 ## Coding Style
