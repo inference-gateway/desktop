@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useStatus, useStatusActions } from "@/stores/status";
 import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import { selectableVersions, stripV, versionAction } from "@/lib/updates";
@@ -120,12 +121,11 @@ export function SettingsView() {
     checkForUpdates,
     applyUpdates,
     updateButton,
-    statusText,
-    statusError,
     initialSettingsTab,
     setInitialSettingsTab,
     setInitialProjectFilter,
   } = useDesktop();
+  const { statusText, statusError } = useStatus();
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general",
   );
@@ -1511,7 +1511,8 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
 // from: .infer/agents and .agents/agents, then ~/.infer/agents and
 // ~/.agents/agents. A new agent is saved to ~/.infer/agents.
 function MarkdownAgentsCard() {
-  const { agents, openAgentEditor, deleteAgent, setError } = useDesktop();
+  const { setError } = useStatusActions();
+  const { agents, openAgentEditor, deleteAgent } = useDesktop();
   return (
     <>
       <h3 className="text-[0.9rem] font-semibold">Your agents</h3>

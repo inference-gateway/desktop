@@ -118,6 +118,7 @@ import {
   type TransformProp,
 } from "@/lib/timeline";
 import { useDesktop } from "@/store";
+import { useStatusActions } from "@/stores/status";
 import { useActivity } from "@/stores/activity";
 import { AudioPlayer } from "./AudioPlayer";
 import { Thumbnails, Waveform } from "./ClipMedia";
@@ -244,7 +245,8 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
   const { logActivity } = useActivity();
-  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
+  const { setError } = useStatusActions();
+  const { currentProject: project, promptProject, runningIds } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");

@@ -12,6 +12,7 @@ import {
   type ScreenInput,
 } from "@/lib/screen-input";
 import { useDesktop } from "@/store";
+import { useStatusActions } from "@/stores/status";
 import { AgentAvatar } from "./AgentAvatar";
 
 const FRAME_POLL_MS = 2000;
@@ -132,7 +133,8 @@ function Tile({
 // inside it drive that computer, one input after the other, until they hand
 // it back with the button or by pressing Esc twice.
 function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string }) {
-  const { handBack, setError } = useDesktop();
+  const { setError } = useStatusActions();
+  const { handBack } = useDesktop();
   const screen = useScreen(tile.sessionId, project, true, DRIVEN_POLL_MS);
   const surface = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);

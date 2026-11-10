@@ -37,6 +37,7 @@ import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentTh
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import { ActivityProvider, useActivity } from "@/stores/activity";
 import { SnippetsProvider } from "@/stores/snippets";
+import { StatusProvider, useStatusActions } from "@/stores/status";
 import { markApplied, stripV, updateButtonState } from "@/lib/updates";
 
 const STORAGE_KEY = "selectedModel";
@@ -123,8 +124,7 @@ function useDesktopStore() {
   const [initSelection, setInitSelection] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
-  const [statusText, setStatusText] = useState("");
-  const [statusError, setStatusErr] = useState(false);
+  const { setStatus, setError, hideError } = useStatusActions();
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
@@ -227,19 +227,6 @@ function useDesktopStore() {
   useEffect(() => {
     autoModesRef.current = autoModes;
   }, [autoModes]);
-
-  const setStatus = useCallback((t: string) => {
-    setStatusText(t);
-    setStatusErr(false);
-  }, []);
-  const setError = useCallback((t: string) => {
-    setStatusText(t);
-    setStatusErr(true);
-  }, []);
-  const clearError = useCallback(() => {
-    setStatusErr(false);
-    setStatusText((t) => (t.startsWith("Failed") || t.startsWith("Error") ? "Ready" : t));
-  }, []);
 
   const runGitAction = useCallback(
     (name: string, action: string, run: () => Promise<string>) => {
@@ -1077,7 +1064,7 @@ function useDesktopStore() {
       }
       runningIdsRef.current = new Set(runningIdsRef.current).add(runId);
       const isInit = /^\/init(\s|$)/.test(text);
-      setStatusErr(false);
+      hideError();
       dispatchTo(runId, { type: "userSend", text });
       clearTerminal(runId);
       setRunningIds((prev) => new Set(prev).add(runId));
@@ -1975,8 +1962,6 @@ function useDesktopStore() {
     typing: active.typing,
     suggestion: active.suggestion,
     dismissSuggestion,
-    statusText,
-    statusError,
     ready,
     running,
     enabled: ready && !running,
@@ -2064,9 +2049,6 @@ function useDesktopStore() {
     setTodoDraft,
     insertSnippet,
     loadProjects,
-    setStatus,
-    setError,
-    clearError,
     startServices,
     tokenUsage: active.usage,
     turnStartedAt: active.turnStartedAt,
@@ -2149,11 +2131,13 @@ function DesktopStoreProvider({ children }: { children: ReactNode }) {
  * when that feature changes. */
 export function DesktopProvider({ children }: { children: ReactNode }) {
   return (
-    <ActivityProvider>
-      <SnippetsProvider>
-        <DesktopStoreProvider>{children}</DesktopStoreProvider>
-      </SnippetsProvider>
-    </ActivityProvider>
+    <StatusProvider>
+      <ActivityProvider>
+        <SnippetsProvider>
+          <DesktopStoreProvider>{children}</DesktopStoreProvider>
+        </SnippetsProvider>
+      </ActivityProvider>
+    </StatusProvider>
   );
 }
 

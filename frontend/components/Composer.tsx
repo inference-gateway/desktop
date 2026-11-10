@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useStatusActions } from "@/stores/status";
 import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -223,8 +224,6 @@ export function Composer() {
     queuedPrompt,
     discardQueued,
     popQueued,
-    setStatus,
-    setError,
     history,
     bashHistory,
     activeProject,
@@ -249,6 +248,7 @@ export function Composer() {
     suggestion,
     dismissSuggestion,
   } = useDesktop();
+  const { setStatus, setError } = useStatusActions();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });

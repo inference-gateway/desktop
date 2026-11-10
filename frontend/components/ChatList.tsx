@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useStatusActions } from "@/stores/status";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "./AgentAvatar";
 import type { MarkdownAgent } from "@/lib/tauri";
@@ -708,7 +709,6 @@ export function ChatList() {
     projectTypes,
     projectFilter: filter,
     visibleProjectNames,
-    setError,
     agents,
     agentOf,
     activeAgent,
@@ -717,6 +717,7 @@ export function ChatList() {
     deleteAgent,
     loadAgents,
   } = useDesktop();
+  const { setError } = useStatusActions();
   const agentsFilter = filter === "agents";
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(() => new Set());
 
