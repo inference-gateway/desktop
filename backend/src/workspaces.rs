@@ -36,6 +36,7 @@ pub(crate) struct Workspace {
 /// pointer maps onto while they drive it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub(crate) struct Screen {
+    id: String,
     src: String,
     width: u64,
     height: u64,
@@ -76,8 +77,12 @@ fn teleport_frame(session_id: &str, project_dir: &str, target: &str, teleport_id
     })
 }
 
-fn read_frame_frame(session_id: &str, project_dir: &str) -> Value {
-    json!({ "type": "read_frame", "project_dir": project_dir, "id": session_id })
+fn read_frame_frame(session_id: &str, project_dir: &str, have: Option<&str>) -> Value {
+    let mut frame = json!({ "type": "read_frame", "project_dir": project_dir, "id": session_id });
+    if let Some(have) = have.filter(|id| !id.is_empty()) {
+        frame["have"] = json!(have);
+    }
+    frame
 }
 
 fn screen_control_frame(session_id: &str, project_dir: &str, take_over: bool) -> Value {
@@ -204,6 +209,7 @@ fn parse_screen(frame: &Value) -> Option<Option<Screen>> {
     Some(screen["data"].as_str().map(|data| {
         let format = screen["format"].as_str().unwrap_or("jpeg");
         Screen {
+            id: screen["id"].as_str().unwrap_or_default().to_owned(),
             src: format!("data:image/{format};base64,{data}"),
             width: screen["width"].as_u64().unwrap_or(0),
             height: screen["height"].as_u64().unwrap_or(0),
@@ -282,6 +288,7 @@ fn mock_screen() -> Screen {
     let jpeg =
         base64::engine::general_purpose::STANDARD.encode(crate::screen_records::PLACEHOLDER_JPEG);
     Screen {
+        id: String::new(),
         src: format!("data:image/jpeg;base64,{jpeg}"),
         width: 0,
         height: 0,
@@ -452,17 +459,23 @@ pub(crate) async fn delete_machine(session: MachineSession) -> Result<bool, Stri
         .map_err(|e| format!("delete task failed: {e}"))?
 }
 
-/// The latest screen of the computer a session runs on.
+/// The latest screen of the computer a session runs on. `have` names the frame
+/// the view already shows, and a screen that is still that frame answers `None`.
 /// ponytail: one connection per poll, keep one open if tiles outgrow a dozen.
 #[tauri::command]
-pub(crate) async fn screen_frame(session_id: String, project: Option<String>) -> Option<Screen> {
+pub(crate) async fn screen_frame(
+    session_id: String,
+    project: Option<String>,
+    have: Option<String>,
+) -> Option<Screen> {
     if mock_mode() {
         return Some(mock_screen());
     }
     tokio::task::spawn_blocking(move || {
         let binding = crate::daemon::binding().ok()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
-        let request = read_frame_frame(&session_id, &project_dir.to_string_lossy());
+        let request =
+            read_frame_frame(&session_id, &project_dir.to_string_lossy(), have.as_deref());
         exchange(&binding, request, FRAME_TIMEOUT, parse_screen).ok()?
     })
     .await
@@ -608,7 +621,15 @@ mod tests {
             })
         );
         assert_eq!(
-            read_frame_frame("s1", "/proj"),
+            read_frame_frame("s1", "/proj", None),
+            json!({ "type": "read_frame", "project_dir": "/proj", "id": "s1" })
+        );
+        assert_eq!(
+            read_frame_frame("s1", "/proj", Some("f1")),
+            json!({ "type": "read_frame", "project_dir": "/proj", "id": "s1", "have": "f1" })
+        );
+        assert_eq!(
+            read_frame_frame("s1", "/proj", Some("")),
             json!({ "type": "read_frame", "project_dir": "/proj", "id": "s1" })
         );
     }
@@ -647,10 +668,11 @@ mod tests {
 
     #[test]
     fn a_frame_becomes_a_data_url_and_an_error_is_no_screen() {
-        let frame = json!({"type": "frame", "frame": {"data": "QUJD", "format": "png", "width": 1280, "height": 800}});
+        let frame = json!({"type": "frame", "frame": {"id": "f1", "data": "QUJD", "format": "png", "width": 1280, "height": 800}});
         assert_eq!(
             parse_screen(&frame),
             Some(Some(Screen {
+                id: "f1".into(),
                 src: "data:image/png;base64,QUJD".into(),
                 width: 1280,
                 height: 800,
@@ -658,6 +680,10 @@ mod tests {
         );
         assert_eq!(
             parse_screen(&json!({"type": "frame", "error": "no screen"})),
+            Some(None)
+        );
+        assert_eq!(
+            parse_screen(&json!({"type": "frame", "unchanged": true})),
             Some(None)
         );
         assert_eq!(parse_screen(&json!({"type": "thread_activity"})), None);

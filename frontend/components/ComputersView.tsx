@@ -36,12 +36,15 @@ function useScreen(sessionId: string, project: string | undefined, live: boolean
   useEffect(() => {
     let cancelled = false;
     let pending = false;
+    let shownFrame: string | undefined;
     const poll = async () => {
       if (pending || document.hidden) return;
       pending = true;
-      const frame = await api.screenFrame(sessionId, project).catch(() => null);
+      const frame = await api.screenFrame(sessionId, project, shownFrame).catch(() => null);
       pending = false;
-      if (frame && !cancelled) setScreen(frame);
+      if (!frame || cancelled) return;
+      shownFrame = frame.id;
+      setScreen(frame);
     };
     poll();
     if (!live) return () => void (cancelled = true);

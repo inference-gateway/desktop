@@ -147,7 +147,7 @@ export type MarkdownAgent = {
   path: string;
 };
 /** The latest screen of a session's computer and the frame space a pointer maps onto, zero when unknown. */
-export type Screen = { src: string; width: number; height: number };
+export type Screen = { id: string; src: string; width: number; height: number };
 /** One thing a Kubernetes workspace needs from its cluster, and what to do when it is missing. */
 export type Prerequisite = { name: string; met: boolean; detail: string };
 /** The state of a Kubernetes workspace's cluster. The session counts are null when it cannot list sessions. */
@@ -602,7 +602,8 @@ export const api = {
     invoke<string>("save_artifact", { sessionId, project, name }),
   cleanMachines: (sessions: { id: string; project?: string }[]) => invoke<number>("clean_machines", { sessions }),
   deleteMachine: (session: { id: string; project?: string }) => invoke<boolean>("delete_machine", { session }),
-  screenFrame: (sessionId: string, project?: string) => invoke<Screen | null>("screen_frame", { sessionId, project }),
+  screenFrame: (sessionId: string, project?: string, have?: string) =>
+    invoke<Screen | null>("screen_frame", { sessionId, project, have }),
   screenControl: (sessionId: string, project: string | undefined, takeOver: boolean) =>
     invoke<boolean>("screen_control", { sessionId, project, takeOver }),
   screenInput: (sessionId: string, project: string | undefined, input: ScreenInput) =>
