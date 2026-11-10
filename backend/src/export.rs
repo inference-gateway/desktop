@@ -548,19 +548,7 @@ async fn apply_export(export: &DesktopExport) -> Result<ImportReport, String> {
 /// `gh` with an override token; without one the CLI's stored auth is used.
 fn gh_call(args: &[&str], token: Option<&str>) -> Result<String, String> {
     let token = token.map(str::trim).filter(|t| !t.is_empty());
-    let Some(token) = token else {
-        return crate::scheduler::gh_output(args);
-    };
-    let out = crate::env::command(crate::download::gh_bin())
-        .args(args)
-        .env("GH_TOKEN", token)
-        .output()
-        .map_err(|e| format!("gh failed to start: {e}"))?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+    crate::scheduler::gh_output_as(args, token)
 }
 
 /// Ensure the repo is private (a missing repo is created private; a public

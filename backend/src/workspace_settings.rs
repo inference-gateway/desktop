@@ -288,11 +288,34 @@ fn named(entry: &Value, name: &str) -> bool {
     text(entry, "name") == name
 }
 
-fn workspaces_of(root: &mut Mapping) -> Result<&mut Vec<Value>, String> {
-    root.entry(WORKSPACES_KEY.into())
+/// The list of named entries under `key`, created empty when the file has none.
+pub(crate) fn named_entries<'a>(
+    root: &'a mut Mapping,
+    key: &str,
+    file: &str,
+) -> Result<&'a mut Vec<Value>, String> {
+    root.entry(key.into())
         .or_insert_with(|| Value::Sequence(Vec::new()))
         .as_sequence_mut()
-        .ok_or_else(|| "workspaces in daemon.yaml is not a list".to_string())
+        .ok_or_else(|| format!("{key} in {file} is not a list"))
+}
+
+/// `yaml` without the entry called `name` in the list under `key`. Every
+/// other entry and key stays as written.
+pub(crate) fn remove_named(
+    yaml: Option<&str>,
+    key: &str,
+    file: &str,
+    name: &str,
+) -> Result<String, String> {
+    let mut yaml = crate::config::config_mapping(yaml);
+    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    named_entries(root, key, file)?.retain(|entry| !named(entry, name));
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
+fn workspaces_of(root: &mut Mapping) -> Result<&mut Vec<Value>, String> {
+    named_entries(root, WORKSPACES_KEY, "daemon.yaml")
 }
 
 /// `daemon.yaml` with `config` added, or replacing the entry `previous` names
@@ -357,10 +380,7 @@ pub(crate) fn list_on(
 }
 
 fn remove_workspace(daemon_yaml: Option<&str>, name: &str) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(daemon_yaml);
-    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    workspaces_of(root)?.retain(|entry| !named(entry, name));
-    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+    remove_named(daemon_yaml, WORKSPACES_KEY, "daemon.yaml", name)
 }
 
 fn crd_names(listing: &str) -> Vec<&str> {

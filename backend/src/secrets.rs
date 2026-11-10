@@ -94,7 +94,7 @@ fn valid_label(label: &str) -> bool {
         && !label.ends_with('-')
 }
 
-fn valid_variable(variable: &str) -> bool {
+pub(crate) fn valid_variable(variable: &str) -> bool {
     variable
         .chars()
         .next()
