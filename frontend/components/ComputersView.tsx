@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { api, type Screen } from "@/lib/tauri";
 import { computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
-import { framePoint, keyInput, latestOnly, mouseButton, wheelInputs, type ScreenInput } from "@/lib/screen-input";
+import {
+  framePoint,
+  isUnsupportedInput,
+  keyInput,
+  latestOnly,
+  mouseButton,
+  wheelInputs,
+  type ScreenInput,
+} from "@/lib/screen-input";
 import { useDesktop } from "@/store";
 import { AgentAvatar } from "./AgentAvatar";
 
@@ -128,38 +136,69 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
   const inputs = useRef(Promise.resolve());
   const lastEscape = useRef(0);
   const pointerMoves = useRef(latestOnly<{ x: number; y: number }>());
+  const canPress = useRef(true);
+  const stopAwaitingRelease = useRef(() => {});
 
   useEffect(() => surface.current?.focus(), []);
+  useEffect(() => () => stopAwaitingRelease.current(), []);
 
-  const sendWhenItsTurnComes = (nextInput: () => ScreenInput | null) => {
-    inputs.current = inputs.current
-      .then(() => {
-        const input = nextInput();
-        return input ? api.screenInput(tile.sessionId, project, input) : undefined;
-      })
-      .then(
-        () => undefined,
-        (e) => {
-          setError(`The computer of ${tile.agent.name} is no longer yours to drive: ${e}`);
-          handBack();
-        },
-      );
+  const drive = (input: ScreenInput) => api.screenInput(tile.sessionId, project, input);
+
+  const whenItsTurnComes = (driveNext: () => Promise<unknown> | undefined) => {
+    inputs.current = inputs.current.then(driveNext).then(
+      () => undefined,
+      (e) => {
+        setError(`The computer of ${tile.agent.name} is no longer yours to drive: ${e}`);
+        handBack();
+      },
+    );
   };
+
+  const sendWhenItsTurnComes = (nextInput: () => ScreenInput | null) =>
+    whenItsTurnComes(() => {
+      const input = nextInput();
+      return input ? drive(input) : undefined;
+    });
 
   const send = (input: ScreenInput) => sendWhenItsTurnComes(() => input);
 
-  const pointOnScreen = (event: MouseEvent) => {
+  const pointOnScreen = (event: { clientX: number; clientY: number }) => {
     const shown = image.current;
     if (!shown || !screen) return null;
     const frame = { width: screen.width || shown.naturalWidth, height: screen.height || shown.naturalHeight };
     return framePoint({ x: event.clientX, y: event.clientY }, shown.getBoundingClientRect(), frame);
   };
 
-  const click = (event: MouseEvent) => {
+  const pressOrClick = async (at: { x: number; y: number }, button: "left" | "right" | "middle") => {
+    if (canPress.current) {
+      try {
+        await drive({ kind: "mouse_down", ...at, button });
+        return;
+      } catch (e) {
+        if (!isUnsupportedInput(e)) throw e;
+        canPress.current = false;
+      }
+    }
+    await drive({ kind: "click", ...at, button });
+  };
+
+  const press = (event: MouseEvent) => {
     event.preventDefault();
     surface.current?.focus();
     const at = pointOnScreen(event);
-    if (at) send({ kind: "click", ...at, button: mouseButton(event.button) });
+    if (!at) return;
+    const button = mouseButton(event.button);
+    whenItsTurnComes(() => pressOrClick(at, button));
+
+    const release = (up: globalThis.MouseEvent) => {
+      if (mouseButton(up.button) !== button) return;
+      stopAwaitingRelease.current();
+      const end = pointOnScreen(up) ?? at;
+      sendWhenItsTurnComes(() => (canPress.current ? { kind: "mouse_up", ...end, button } : null));
+    };
+    stopAwaitingRelease.current();
+    stopAwaitingRelease.current = () => window.removeEventListener("mouseup", release);
+    window.addEventListener("mouseup", release);
   };
 
   const movePointer = (event: MouseEvent) => {
@@ -222,7 +261,7 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
             src={screen.src}
             alt=""
             draggable={false}
-            onMouseDown={click}
+            onMouseDown={press}
             onMouseMove={movePointer}
             onContextMenu={(event) => event.preventDefault()}
             className="max-h-full max-w-full cursor-default select-none"
