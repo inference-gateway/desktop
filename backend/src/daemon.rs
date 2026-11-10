@@ -3,7 +3,9 @@
 //! extension behind it, and the extension's state the daemon reports.
 //! Wire contract: cli/docs/browser-extension-protocol.md.
 
-use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env};
+use crate::env::{
+    agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env, mock_mode,
+};
 use serde::Serialize;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -105,6 +107,24 @@ fn merge_binding(existing: Option<&str>, port: u16, token: &str) -> Result<Strin
         ],
     );
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
+/// One request to the daemon and its parsed answer. In mock mode the requests
+/// that need a workspace are answered by `daemon_mock` through the same
+/// parser, so no workspace has to exist. The rest still reach the daemon.
+pub(crate) fn ask<T>(
+    binding: impl FnOnce() -> Result<Binding, String>,
+    request: serde_json::Value,
+    timeout: Duration,
+    mut parse: impl FnMut(&serde_json::Value) -> Option<T>,
+) -> Result<T, String> {
+    if mock_mode()
+        && let Some(answer) = crate::daemon_mock::answer(&request)
+    {
+        return parse(&answer)
+            .ok_or_else(|| format!("no parser took the mock answer to {}", request["type"]));
+    }
+    crate::thread::exchange(&binding()?, request, timeout, parse)
 }
 
 pub(crate) fn reachable(port: u16) -> bool {

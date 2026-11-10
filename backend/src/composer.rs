@@ -1,5 +1,3 @@
-use crate::env::mock_mode;
-use crate::thread::exchange;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -8,13 +6,6 @@ use tauri::Manager;
 
 /// Answering can start a worker in the project first.
 const MENU_TIMEOUT: Duration = Duration::from_secs(15);
-const MOCK_FILES: &[&str] = &[
-    "README.md",
-    "backend/src/main.rs",
-    "frontend/App.tsx",
-    "~/.infer/config.yaml",
-];
-const MOCK_ISSUES: &[(u64, &str)] = &[(57, "Fix the flaky test"), (42, "Add a dark mode toggle")];
 
 /// An open GitHub issue of the project, as the worker lists it for `#N` expansion.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -48,10 +39,9 @@ async fn ask_project<T: DeserializeOwned + Send + 'static>(
     reply: &'static str,
 ) -> Vec<T> {
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::ensure_running(&app.state::<crate::AppState>())?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
-        exchange(
-            &binding,
+        crate::daemon::ask(
+            || crate::daemon::ensure_running(&app.state::<crate::AppState>()),
             project_frame(request, &project_dir),
             MENU_TIMEOUT,
             |frame| parse_list(frame, reply),
@@ -67,9 +57,6 @@ async fn ask_project<T: DeserializeOwned + Send + 'static>(
 /// them for `@<path>` expansion.
 #[tauri::command]
 pub(crate) async fn list_files(app: tauri::AppHandle, project: Option<String>) -> Vec<String> {
-    if mock_mode() {
-        return MOCK_FILES.iter().map(|file| file.to_string()).collect();
-    }
     ask_project(app, project, "list_files", "files").await
 }
 
@@ -77,22 +64,32 @@ pub(crate) async fn list_files(app: tauri::AppHandle, project: Option<String>) -
 /// has no git repo, no `gh` or no auth.
 #[tauri::command]
 pub(crate) async fn list_issues(app: tauri::AppHandle, project: Option<String>) -> Vec<Issue> {
-    if mock_mode() {
-        return MOCK_ISSUES
-            .iter()
-            .map(|&(number, title)| Issue {
-                number,
-                title: title.into(),
-                state: "OPEN".into(),
-            })
-            .collect();
-    }
     ask_project(app, project, "list_issues", "issues").await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mock_daemon_lists_files_and_open_issues() {
+        let files = crate::daemon_mock::answer(&project_frame("list_files", Path::new("/p")))
+            .and_then(|frame| parse_list::<String>(&frame, "files"))
+            .unwrap_or_default();
+        assert_eq!(files.first().map(String::as_str), Some("README.md"));
+
+        let issues = crate::daemon_mock::answer(&project_frame("list_issues", Path::new("/p")))
+            .and_then(|frame| parse_list::<Issue>(&frame, "issues"))
+            .unwrap_or_default();
+        assert_eq!(
+            issues.first(),
+            Some(&Issue {
+                number: 57,
+                title: "Fix the flaky test".into(),
+                state: "OPEN".into(),
+            })
+        );
+    }
 
     #[test]
     fn a_request_names_the_project_dir() {
