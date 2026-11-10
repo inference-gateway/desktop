@@ -1,6 +1,9 @@
 use crate::config;
 use crate::env::infer_dir;
-use crate::workspace_settings::{self, KUBERNETES, WorkspaceConfig, filled, set_or_remove, text};
+use crate::secrets::valid_variable;
+use crate::workspace_settings::{
+    self, KUBERNETES, WorkspaceConfig, filled, named_entries, remove_named, set_or_remove, text,
+};
 use serde::{Deserialize, Serialize};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeSet;
@@ -135,16 +138,6 @@ fn parse_settings(mcp_yaml: Option<&str>, workspaces: &[WorkspaceConfig]) -> Mcp
     }
 }
 
-fn valid_variable(variable: &str) -> bool {
-    variable
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && variable
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
 /// The CLI names a server's tools after it, so a name is lowercase letters,
 /// digits, `-` and `_`.
 fn valid_server_name(name: &str) -> bool {
@@ -239,10 +232,7 @@ fn apply(entry: &mut Mapping, server: &McpServerConfig) {
 }
 
 fn servers_of(root: &mut Mapping) -> Result<&mut Vec<Value>, String> {
-    root.entry(SERVERS_KEY.into())
-        .or_insert_with(|| Value::Sequence(Vec::new()))
-        .as_sequence_mut()
-        .ok_or_else(|| "servers in mcp.yaml is not a list".to_string())
+    named_entries(root, SERVERS_KEY, MCP_FILE)
 }
 
 /// `mcp.yaml` with `server` added or replacing its entry. Every other entry
@@ -266,10 +256,7 @@ fn merge_server(mcp_yaml: Option<&str>, server: &McpServerConfig) -> Result<Stri
 }
 
 fn remove_server(mcp_yaml: Option<&str>, name: &str) -> Result<String, String> {
-    let mut yaml = config::config_mapping(mcp_yaml);
-    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    servers_of(root)?.retain(|entry| text(entry, "name") != name);
-    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+    remove_named(mcp_yaml, SERVERS_KEY, MCP_FILE, name)
 }
 
 fn merge_enabled(mcp_yaml: Option<&str>, enabled: bool) -> Result<String, String> {

@@ -1,4 +1,6 @@
-use crate::workspace_settings::{ClusterCheck, filled, listed, names, set_or_remove, text};
+use crate::workspace_settings::{
+    ClusterCheck, filled, listed, named_entries, names, remove_named, set_or_remove, text,
+};
 use serde_norway::{Mapping, Value};
 use std::path::PathBuf;
 
@@ -68,10 +70,7 @@ fn label_value(name: &str) -> bool {
 }
 
 fn clusters_of(root: &mut Mapping) -> Result<&mut Vec<Value>, String> {
-    root.entry(CLUSTERS_KEY.into())
-        .or_insert_with(|| Value::Sequence(Vec::new()))
-        .as_sequence_mut()
-        .ok_or_else(|| format!("clusters in {COMPUTE_FILE} is not a list"))
+    named_entries(root, CLUSTERS_KEY, COMPUTE_FILE)
 }
 
 fn apply(entry: &mut Mapping, config: &ClusterConfig) {
@@ -121,10 +120,7 @@ pub(crate) fn merge_cluster(
 }
 
 fn remove_cluster(compute_yaml: Option<&str>, name: &str) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(compute_yaml);
-    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    clusters_of(root)?.retain(|entry| text(entry, "name") != name);
-    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+    remove_named(compute_yaml, CLUSTERS_KEY, COMPUTE_FILE, name)
 }
 
 /// The workspaces of `daemon.yaml` that run on the cluster `name`.

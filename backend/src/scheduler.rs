@@ -138,8 +138,17 @@ pub(crate) async fn github_auth_status() -> Result<GithubAuthStatus, String> {
 }
 
 pub(crate) fn gh_output(args: &[&str]) -> Result<String, String> {
-    let out = crate::env::command(crate::download::gh_bin())
-        .args(args)
+    gh_output_as(args, None)
+}
+
+/// `gh` with an override token. Without one the CLI's stored auth is used.
+pub(crate) fn gh_output_as(args: &[&str], token: Option<&str>) -> Result<String, String> {
+    let mut command = crate::env::command(crate::download::gh_bin());
+    command.args(args);
+    if let Some(token) = token {
+        command.env("GH_TOKEN", token);
+    }
+    let out = command
         .output()
         .map_err(|e| format!("gh failed to start: {e}"))?;
     if !out.status.success() {
