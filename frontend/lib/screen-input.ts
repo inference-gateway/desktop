@@ -1,7 +1,7 @@
 /** One input of the person on a screen they took over, in the frame space the daemon serves the screen in. */
 export type ScreenInput =
   | { kind: "move"; x: number; y: number }
-  | { kind: "click"; x: number; y: number; button: "left" | "right" | "middle" }
+  | { kind: "click" | "mouse_down" | "mouse_up"; x: number; y: number; button: "left" | "right" | "middle" }
   | { kind: "scroll"; direction: "vertical" | "horizontal"; amount: number }
   | { kind: "type"; text: string }
   | { kind: "key"; combo: string };
@@ -100,4 +100,9 @@ export function latestOnly<T>(): { put: (value: T) => boolean; take: () => T | n
       return value;
     },
   };
+}
+
+/** Whether a computer refused an input because its CLI is older than the input kind. */
+export function isUnsupportedInput(error: unknown): boolean {
+  return String(error).includes("unsupported screen input");
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { framePoint, keyInput, latestOnly, mouseButton, wheelInputs } from "./screen-input";
+import { framePoint, isUnsupportedInput, keyInput, latestOnly, mouseButton, wheelInputs } from "./screen-input";
 
 const key = (key: string, modifiers: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   key,
@@ -54,4 +54,10 @@ test("latestOnly keeps the newest value and tells when the slot was empty", () =
   expect(moves.take()).toBe(3);
   expect(moves.take()).toBeNull();
   expect(moves.put(4)).toBe(true);
+});
+
+test("isUnsupportedInput recognises an older CLI refusing an input kind", () => {
+  expect(isUnsupportedInput('unsupported screen input "mouse_down"')).toBe(true);
+  expect(isUnsupportedInput(new Error('unsupported screen input "mouse_up"'))).toBe(true);
+  expect(isUnsupportedInput("the screen is not held by the person")).toBe(false);
 });
