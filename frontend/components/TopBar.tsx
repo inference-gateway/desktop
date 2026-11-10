@@ -17,6 +17,7 @@ import { emit } from "@tauri-apps/api/event";
 import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
 import { useDesktop } from "@/store";
+import { useStatusActions } from "@/stores/status";
 import { ModelSelect } from "./ModelSelect";
 
 const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
@@ -33,7 +34,6 @@ export function TopBar() {
     openObservability,
     openComputers,
     composerRef,
-    setError,
     sidebarOpen,
     setSidebarOpen,
     chatOpen,
@@ -42,6 +42,7 @@ export function TopBar() {
     currentProject,
     projectTypes,
   } = useDesktop();
+  const { setError } = useStatusActions();
   const content = currentView === "chat" && currentProject !== null && projectTypes[currentProject] === "content";
   const isUpdating = updateButton === "busy";
   const [recording, setRecording] = useState(false);

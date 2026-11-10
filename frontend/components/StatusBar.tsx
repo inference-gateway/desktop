@@ -4,6 +4,7 @@ import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useStatus, useStatusActions } from "@/stores/status";
 import { Zap } from "lucide-react";
 import { ArtifactsButton } from "./ArtifactsButton";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
@@ -24,8 +25,6 @@ const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1
 
 export function StatusBar() {
   const {
-    statusText,
-    statusError,
     running,
     ready,
     isAwaitingApproval,
@@ -33,7 +32,6 @@ export function StatusBar() {
     runLabel,
     delegations,
     runningTasks,
-    clearError,
     sessionId,
     conversations,
     projects,
@@ -49,6 +47,8 @@ export function StatusBar() {
     a2aStatus,
     showStatusBar,
   } = useDesktop();
+  const { statusText, statusError } = useStatus();
+  const { clearError } = useStatusActions();
   const now = useNow(turnStartedAt !== null);
   const turnMs = turnStartedAt !== null ? now - turnStartedAt : lastTurnMs;
   const [open, setOpen] = useState(false);
