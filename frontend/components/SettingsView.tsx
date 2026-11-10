@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
 import { selectableVersions, stripV, versionAction } from "@/lib/updates";
 import { safeAudioSrc, safeImageSrc } from "@/lib/tools";
@@ -904,7 +905,8 @@ function GeneralTab() {
 }
 
 function ConfigTransfer() {
-  const { reloadDesktopData, loadProjects } = useDesktop();
+  const { reloadDesktopData } = useSnippets();
+  const { loadProjects } = useDesktop();
   const [format, setFormat] = useState("json");
   const [target, setTarget] = useState<"file" | "github">("file");
   const [repo, setRepo] = useState("");
@@ -2253,7 +2255,7 @@ function ProjectsTab() {
 }
 
 function SnippetsTab() {
-  const { snippets, updateSnippet, resetSnippet, resetAllSnippets } = useDesktop();
+  const { snippets, updateSnippet, resetSnippet, resetAllSnippets } = useSnippets();
   const hasModifications = snippets.some((s) => {
     const def = DEFAULT_SNIPPETS.find((d) => d.id === s.id);
     return def && def.prompt !== s.prompt;

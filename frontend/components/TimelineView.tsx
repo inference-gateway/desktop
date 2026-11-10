@@ -118,6 +118,7 @@ import {
   type TransformProp,
 } from "@/lib/timeline";
 import { useDesktop } from "@/store";
+import { useActivity } from "@/stores/activity";
 import { AudioPlayer } from "./AudioPlayer";
 import { Thumbnails, Waveform } from "./ClipMedia";
 import { Button } from "@/components/ui/button";
@@ -242,7 +243,8 @@ function sourceAudioInstruction(mode: SourceAudio): string {
 // lanes; the user layers tracks or asks the agent to arrange the media.
 // Edits mark clips draft and are debounced to disk.
 export function TimelineView() {
-  const { currentProject: project, promptProject, runningIds, setError, logActivity } = useDesktop();
+  const { logActivity } = useActivity();
+  const { currentProject: project, promptProject, runningIds, setError } = useDesktop();
   const [dir, setDir] = useState("");
   const [names, setNames] = useState<string[]>([]);
   const [name, setName] = useState("");

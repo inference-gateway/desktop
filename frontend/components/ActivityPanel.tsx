@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useDesktop, type ActivityStatus } from "@/store";
+import { useActivity, type ActivityStatus } from "@/stores/activity";
 
 const DOT: Record<ActivityStatus, string> = {
   running: "animate-pulse bg-primary",
@@ -15,7 +15,7 @@ const DOT: Record<ActivityStatus, string> = {
 };
 
 export function ActivityPanel() {
-  const { activities, clearActivities, seenActivityId, markActivitiesSeen } = useDesktop();
+  const { activities, clearActivities, seenActivityId, markActivitiesSeen } = useActivity();
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (open) markActivitiesSeen();

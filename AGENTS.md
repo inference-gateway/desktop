@@ -69,7 +69,7 @@ The e2e harness drives the real UI through the accessibility tree. When editing 
 - Agent editor inputs keep their ids (`agent-name`, `agent-description`, `agent-model`, `agent-workspace`, `agent-project`, `agent-instructions`, `agent-emoji`, and `agent-mcp-<server>` per MCP server); Enter in the name or description field moves focus to the next one, which is how the e2e `type` step fills the form.
 - Shallow DOM: `App` renders `<header id="top-bar">` + `<div id="main">` into `#app`, no wrapper.
 
-State is a single context store (`frontend/store.tsx`); the typed Tauri client and transcript state machine live in `frontend/lib/`.
+State lives in context stores: the main one in `frontend/store.tsx` (`useDesktop`) and one per feature in `frontend/stores/` (`useActivity`, `useSnippets`), each with its own context so its readers re-render only when that feature changes. New feature state goes in `frontend/stores/`, not in the main store. The typed Tauri client and transcript state machine live in `frontend/lib/`.
 
 ## Coding Style
 
