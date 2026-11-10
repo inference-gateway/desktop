@@ -10,7 +10,7 @@ Tauri v2 desktop client for Inference Gateway: a **React 19 + TypeScript** front
 git config core.hooksPath .githooks
 ```
 
-Activate the pre-commit hook before making changes - it is inert until you do. The hook prettier-formats staged `.ts/.tsx`, enforces a final newline on tracked text files, runs the frontend build (`bun run build`), then `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo check`, `cargo test` in `backend/`. The toolchain (rust, `cargo-tauri`, `task`, `bun`, `infer`) comes from the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
+Activate the pre-commit hook before making changes - it is inert until you do. The hook prettier-formats staged `.ts/.tsx`, enforces a final newline on tracked text files, runs the frontend build (`bun run build`) and unit tests (`bun test`), then `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo check`, `cargo test` in `backend/`. The toolchain (rust, `cargo-tauri`, `task`, `bun`, `infer`) comes from the [flox manifest](.flox/env/manifest.toml); enter it with `flox activate`.
 
 ## Commands
 
@@ -18,7 +18,7 @@ Activate the pre-commit hook before making changes - it is inert until you do. T
 | --- | --- |
 | `task dev` | Run the app (`cargo tauri dev`). No frontend hot-reload - re-run `task web` after frontend edits |
 | `task web` | Build the frontend into `dist/` (`tsc && vite build`) |
-| `task build` / `test` / `clippy` / `check` | The cargo step in `backend/`, building `dist/` first |
+| `task build` / `test` / `clippy` / `check` | The cargo step in `backend/`, building `dist/` first - `task test` runs `bun test` too |
 | `task e2e -- tests/<name>.yaml` | Run the macOS e2e suite, optionally filtered to one test |
 | `task e2e:record` | Run all e2e tests while recording (`artifacts/<slug>.mov` per test) |
 | `bun test` | Frontend unit tests (`frontend/lib/*.test.ts`) |
@@ -28,7 +28,7 @@ The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **e
 
 ## Verifying the UI
 
-`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu) runs `bun run build` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu) runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
 
 Running the tests (macOS only):
 

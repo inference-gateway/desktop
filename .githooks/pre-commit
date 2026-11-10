@@ -28,6 +28,8 @@ done
 if command -v bun >/dev/null 2>&1; then
     echo "--> Frontend (bun run build)..."
     (cd "$ROOT" && bun install --frozen-lockfile >/dev/null 2>&1 && bun run build >/dev/null)
+    echo "--> Frontend tests (bun test)..."
+    (cd "$ROOT" && bun test)
 fi
 
 cd "$ROOT/backend"
