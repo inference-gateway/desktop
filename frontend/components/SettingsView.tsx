@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useGit } from "@/stores/git";
 import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
 import { useSnippets } from "@/stores/snippets";
@@ -1752,6 +1753,7 @@ function ProjectFiles({ project }: { project: string }) {
 }
 
 function ProjectsTab() {
+  const { gitProjects, dirtyProjects } = useGit();
   const {
     projectNames,
     projectContexts,
@@ -1759,8 +1761,6 @@ function ProjectsTab() {
     projectPaths,
     setProjectPath,
     importProjects,
-    gitProjects,
-    dirtyProjects,
     deleteProjects,
     projectGroups,
     projectTypes,
