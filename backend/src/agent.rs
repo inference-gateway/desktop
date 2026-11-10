@@ -1308,8 +1308,14 @@ pub(crate) async fn move_conversation(
 
 #[tauri::command]
 pub(crate) async fn list_models() -> Result<Vec<String>, String> {
-    fetch_models()
+    tokio::task::spawn_blocking(fetch_models)
+        .await
+        .map_err(|e| format!("model list task failed: {e}"))?
 }
+
+/// The gateway asks every configured provider for its models, so the listing
+/// gets a generous ceiling - it only has to stop a hung gateway pinning a thread.
+const MODELS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub(crate) fn fetch_models() -> Result<Vec<String>, String> {
     if mock_mode() {
@@ -1317,6 +1323,9 @@ pub(crate) fn fetch_models() -> Result<Vec<String>, String> {
     }
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let resp = ureq::get(&url)
+        .config()
+        .timeout_global(Some(MODELS_TIMEOUT))
+        .build()
         .call()
         .map_err(|e| format!("Gateway unreachable at {}: {}", url, e))?;
     let mut text = String::new();

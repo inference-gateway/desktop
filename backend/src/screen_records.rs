@@ -189,15 +189,17 @@ pub(crate) fn start_screen_recording(
 }
 
 #[tauri::command]
-pub(crate) fn stop_screen_recording(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<String, String> {
-    let mut slot = state
-        .screen_recording
-        .lock()
-        .map_err(|e| format!("screen recording state mutex poisoned: {e}"))?;
-    let handle = slot.take().ok_or("No screen recording in progress")?;
-    Ok(stop_recording(handle))
+pub(crate) async fn stop_screen_recording(app: tauri::AppHandle) -> Result<String, String> {
+    crate::blocking_with_state(app, |state| {
+        let handle = state
+            .screen_recording
+            .lock()
+            .map_err(|e| format!("screen recording state mutex poisoned: {e}"))?
+            .take()
+            .ok_or("No screen recording in progress")?;
+        Ok(stop_recording(handle))
+    })
+    .await
 }
 
 #[tauri::command]

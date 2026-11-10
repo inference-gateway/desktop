@@ -267,14 +267,16 @@ pub(crate) fn browser_use_status(state: tauri::State<'_, crate::AppState>) -> Br
 /// Switches browser use through the extension on or off in browser_use.yaml.
 /// The daemon reads it when it starts, so the one the app owns is restarted.
 #[tauri::command]
-pub(crate) fn set_browser_use_enabled(
+pub(crate) async fn set_browser_use_enabled(
     enabled: bool,
     app: tauri::AppHandle,
-    state: tauri::State<'_, crate::AppState>,
 ) -> Result<BridgeStatus, String> {
-    write_enabled(&browser_use_path(&home_dir()), enabled)?;
-    restart(&state)?;
-    let current = bridge_status(&state);
+    let current = crate::blocking_with_state(app.clone(), move |state| {
+        write_enabled(&browser_use_path(&home_dir()), enabled)?;
+        restart(state)?;
+        Ok(bridge_status(state))
+    })
+    .await?;
     let _ = app.emit(EVENT, current.clone());
     Ok(current)
 }
