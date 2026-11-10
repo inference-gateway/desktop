@@ -287,8 +287,12 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
             Ok(())
         }
         Step::AssertComposer { assert_composer } => {
-            let got = app.composer_value()?;
-            if got.trim() != assert_composer.text.trim() {
+            let mut got = String::new();
+            let matched = app.poll(Duration::from_secs(assert_composer.timeout), || {
+                got = app.composer_value()?;
+                Ok(got.trim() == assert_composer.text.trim())
+            })?;
+            if !matched {
                 bail!("composer is {got:?}, expected {:?}", assert_composer.text);
             }
             Ok(())
@@ -311,6 +315,24 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
                 );
             }
             Ok(())
+        }
+        Step::WaitGone { wait_gone } => {
+            let never_shown = || -> Result<()> {
+                match &wait_gone.never {
+                    Some(never) if app.button_exists(never)? => {
+                        bail!("button {never:?} showed up")
+                    }
+                    _ => Ok(()),
+                }
+            };
+            let gone = app.poll(Duration::from_secs(wait_gone.timeout), || {
+                never_shown()?;
+                Ok(!app.button_exists(&wait_gone.button)?)
+            })?;
+            if !gone {
+                bail!("still there after {}s", wait_gone.timeout);
+            }
+            never_shown()
         }
         Step::WaitFor { wait_for } => {
             let timeout = Duration::from_secs(wait_for.timeout);
@@ -349,6 +371,7 @@ fn describe(step: &Step) -> String {
         Step::Screenshot { screenshot } => format!("screenshot {screenshot}"),
         Step::AssertModel { assert_model } => format!("assert_model {assert_model}"),
         Step::AssertComposer { .. } => "assert_composer".into(),
+        Step::WaitGone { wait_gone } => format!("wait_gone button {:?}", wait_gone.button),
         Step::AssertAbsent { assert_absent } => {
             format!("assert_absent {}", assert_absent.file.display())
         }

@@ -1,0 +1,15 @@
+name: update - the button stays busy until the update is installed, then goes away
+narration:
+  - "Mock mode reports a CLI one release behind."
+  - "The top bar offers the update."
+  - "Apply it."
+  - "The button turns busy while the release is installed and the CLI restarts."
+  - "It goes away without ever turning clickable again in between."
+  - "The top bar shows the installed release."
+steps:
+  - wait_for: { text: "CLI 0.1.0", timeout: 30 }
+  - wait_for: { button: "Update", timeout: 10 }
+  - click: { button: "Update" }
+  - wait_for: { button: "Updating...", timeout: 10 }
+  - wait_gone: { button: "Updating...", never: "Update", timeout: 60 }
+  - wait_for: { text: "CLI 0.2.0", timeout: 10 }

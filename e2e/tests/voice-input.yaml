@@ -1,0 +1,18 @@
+# Dictation records through the real microphone: the WebView's getUserMedia
+# has no mock, so the terminal that runs the suite needs Microphone access in
+# System Settings > Privacy & Security, next to the Accessibility access the
+# runner already needs. Only the speech-to-text engine is faked - mock mode
+# hears the same sentence whatever the microphone picks up.
+name: voice input - dictated speech lands in the composer
+narration:
+  - "Open a fresh chat."
+  - "Start dictating - mock mode needs no voice tools."
+  - "The words show up in the composer while the microphone listens."
+  - "Stop dictating."
+  - "The sentence stays in the composer, ready to send."
+steps:
+  - new_chat
+  - click: { button: "Voice input" }
+  - assert_composer: { text: "this is a mock transcription", timeout: 15 }
+  - click: { button: "Voice input" }
+  - assert_composer: { text: "this is a mock transcription", timeout: 5 }

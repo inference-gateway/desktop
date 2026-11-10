@@ -1,0 +1,20 @@
+name: restart - restarting the CLI from the top bar stops the running chat
+cleanup:
+  - restarted.txt
+narration:
+  - "Open a fresh chat."
+  - "Ask for a file - the Write tool call pauses for approval."
+  - "The chat is running and waits for a decision."
+  - "Restart the CLI from the top bar instead of answering."
+  - "The chat is stopped - there is nothing left to stop."
+  - "The composer takes a prompt again."
+  - "restarted.txt was never created."
+steps:
+  - new_chat
+  - send: "create a file named restarted.txt"
+  - wait_for: { button: Approve, timeout: 30 }
+  - click: { button: "Restart CLI" }
+  - wait_gone: { button: Stop, timeout: 30 }
+  - wait_for: { button: Send, timeout: 30 }
+  - assert_absent:
+      file: restarted.txt

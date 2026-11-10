@@ -1,5 +1,7 @@
 use crate::download::{ProgressEvent, download, find_checksum, sha256_digest, try_gh_download};
-use crate::env::{asset_name, bin_dir, binary_name, config_path, home_dir, infer_bin_path};
+use crate::env::{
+    asset_name, bin_dir, binary_name, config_path, home_dir, infer_bin_path, mock_mode,
+};
 use std::io::Read;
 use tauri::ipc::Channel;
 
@@ -44,6 +46,12 @@ fn install_cli(
     let _ = on_event.send(ProgressEvent::Checking);
     // A pinned tag installs over an existing binary on purpose, so force is implied.
     let force = force || tag.is_some();
+    if force && mock_mode() {
+        crate::updates_mock::apply(|event| {
+            let _ = on_event.send(event);
+        });
+        return Ok(());
+    }
 
     let bin_path = infer_bin_path();
 

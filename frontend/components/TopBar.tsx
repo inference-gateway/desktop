@@ -130,7 +130,7 @@ export function TopBar() {
           className="flex shrink-0 items-center gap-1 rounded-full border border-primary bg-primary/10 px-[0.6rem] py-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground disabled:cursor-wait disabled:opacity-60"
         >
           {isUpdating && <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />}
-          {isUpdating ? "Updating..." : "Update available"}
+          {isUpdating ? "Updating..." : "Update"}
         </button>
       )}
       <div id="model-controls" className="ml-auto flex items-center gap-2">
