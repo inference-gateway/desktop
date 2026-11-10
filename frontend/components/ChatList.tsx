@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "./AgentAvatar";
@@ -667,6 +668,17 @@ function ProjectGroup({
 
 export function ChatList() {
   const {
+    gitProjects,
+    dirtyProjects,
+    projectBranches,
+    projectDefaultBranches,
+    projectRemotes,
+    refreshGitProjects,
+    refreshProjects,
+    cleanupProject,
+    syncDefaultBranch,
+  } = useGit();
+  const {
     conversations,
     selected,
     projects,
@@ -696,15 +708,6 @@ export function ChatList() {
     setInitialSettingsTab,
     setInitialProjectFilter,
     setCurrentView,
-    gitProjects,
-    dirtyProjects,
-    projectBranches,
-    projectDefaultBranches,
-    projectRemotes,
-    refreshGitProjects,
-    refreshProjects,
-    cleanupProject,
-    syncDefaultBranch,
     projectGroups,
     projectTypes,
     projectFilter: filter,

@@ -35,6 +35,7 @@ import { ActivityProvider, useActivity } from "@/stores/activity";
 import { SnippetsProvider } from "@/stores/snippets";
 import { StatusProvider, useStatusActions } from "@/stores/status";
 import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend";
+import { GitProvider, useGit } from "@/stores/git";
 
 const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
@@ -99,6 +100,7 @@ function useDesktopStore() {
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
+  const { gitProjects, fetchGitProjects, refreshGitProjects, cleanupProject } = useGit();
   const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
   const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -148,11 +150,6 @@ function useDesktopStore() {
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
-  const [dirtyProjects, setDirtyProjects] = useState<Set<string>>(() => new Set());
-  const [projectBranches, setProjectBranches] = useState<Record<string, string>>(() => ({}));
-  const [projectDefaultBranches, setProjectDefaultBranches] = useState<Record<string, string>>(() => ({}));
-  const [projectRemotes, setProjectRemotes] = useState<Record<string, string>>(() => ({}));
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -169,17 +166,6 @@ function useDesktopStore() {
   useEffect(() => {
     autoModesRef.current = autoModes;
   }, [autoModes]);
-
-  const runGitAction = useCallback(
-    (name: string, action: string, run: () => Promise<string>) => {
-      logActivity(name, action, "running");
-      return run().then(
-        (message) => logActivity(name, action, "done", message),
-        (e) => logActivity(name, action, "failed", String(e)),
-      );
-    },
-    [logActivity],
-  );
 
   // Todo panel drafts are keyed by session so switching sessions never
   // leaks a user-edited list into another chat (#196); null clears it.
@@ -745,15 +731,6 @@ function useDesktopStore() {
     Promise.all(ids.map((id) => deleteConversation(id)));
   }, [selected, clearSelection, deleteConversation]);
 
-  const fetchGitProjects = useCallback(async () => {
-    const status = await api.gitProjectStatus();
-    setGitProjects(new Set(status.git));
-    setDirtyProjects(new Set(status.dirty));
-    setProjectBranches(status.branches);
-    setProjectDefaultBranches(status.default_branches);
-    setProjectRemotes(status.remotes);
-  }, []);
-
   useEffect(() => {
     if (!projectsLoaded) return;
     // ponytail: only rescan git when a git-relevant field changed - a checkbox toggle persists `selected` without a full `git status` sweep.
@@ -793,26 +770,6 @@ function useDesktopStore() {
     activeProject,
     fetchGitProjects,
   ]);
-
-  const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unlisten = listen("git-changed", () => {
-      clearTimeout(timer);
-      timer = setTimeout(refreshGitProjects, 300);
-    });
-    return () => {
-      clearTimeout(timer);
-      unlisten.then((f) => f());
-    };
-  }, [refreshGitProjects]);
-  const refreshProjects = useCallback(() => {
-    logActivity(null, "Refresh projects", "running");
-    return fetchGitProjects().then(
-      () => logActivity(null, "Refresh projects", "done", "git status updated"),
-      (e) => logActivity(null, "Refresh projects", "failed", String(e)),
-    );
-  }, [fetchGitProjects, logActivity]);
 
   const moveConversationStore = useCallback(
     (sessionId: string, projectName?: string) => {
@@ -1540,14 +1497,6 @@ function useDesktopStore() {
     [runOnProjects, initProject],
   );
 
-  const cleanupProject = useCallback(
-    (name: string) => runGitAction(name, "Clean up branches", () => api.cleanupProject(name)),
-    [runGitAction],
-  );
-  const syncDefaultBranch = useCallback(
-    (name: string) => runGitAction(name, "Checkout default branch + pull", () => api.syncDefaultBranch(name)),
-    [runGitAction],
-  );
   const cleanupProjects = useCallback(
     async (names: string[]) => {
       for (const name of names.filter((n) => !gitProjects.has(n)))
@@ -1792,21 +1741,12 @@ function useDesktopStore() {
     createProject,
     moveProject,
     importProjects,
-    gitProjects,
-    dirtyProjects,
-    projectBranches,
-    projectDefaultBranches,
-    projectRemotes,
-    refreshGitProjects,
-    refreshProjects,
     deleteProject,
     deleteProjects,
     renameProject,
     toggleCollapseProject,
     initProject,
     initAllProjects,
-    cleanupProject,
-    syncDefaultBranch,
     cleanupProjects,
     broadcastPrompt,
     initAllRunning,
@@ -1846,7 +1786,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
       <ActivityProvider>
         <SnippetsProvider>
           <BackendProvider>
-            <DesktopStoreProvider>{children}</DesktopStoreProvider>
+            <GitProvider>
+              <DesktopStoreProvider>{children}</DesktopStoreProvider>
+            </GitProvider>
           </BackendProvider>
         </SnippetsProvider>
       </ActivityProvider>
