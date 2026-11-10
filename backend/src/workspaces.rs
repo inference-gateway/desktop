@@ -1,5 +1,5 @@
 use crate::agent::BackgroundJob;
-use crate::daemon::Binding;
+use crate::daemon::{Binding, ask};
 use crate::env::mock_mode;
 use crate::thread::{exchange, uuid};
 use serde_json::{Value, json};
@@ -18,10 +18,8 @@ const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Listing wakes a suspended workspace first.
 const ARTIFACTS_TIMEOUT: Duration = Duration::from_secs(120);
 const ARTIFACT_TIMEOUT: Duration = Duration::from_secs(300);
-const MOCK_ARTIFACT: &str = "demo.gif";
 /// The daemon gives a workspace a minute to delete a session's machine.
 const STOP_TIMEOUT: Duration = Duration::from_secs(70);
-const MOCK_WORKSPACE: &str = "mock-computer";
 
 /// A computer a session can run on: an entry of the daemon's `workspaces`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -274,38 +272,13 @@ pub(crate) fn teleport(
     .map_err(|message| format!("teleport to {target} failed: {message}"))
 }
 
-fn mock_workspaces() -> Vec<Workspace> {
-    vec![Workspace {
-        name: MOCK_WORKSPACE.into(),
-        kind: "kubernetes".into(),
-        reachable: true,
-        error: None,
-    }]
-}
-
-fn mock_screen() -> Screen {
-    use base64::Engine as _;
-    let jpeg =
-        base64::engine::general_purpose::STANDARD.encode(crate::screen_records::PLACEHOLDER_JPEG);
-    Screen {
-        id: String::new(),
-        src: format!("data:image/jpeg;base64,{jpeg}"),
-        width: 0,
-        height: 0,
-    }
-}
-
 /// The daemon's workspaces. A daemon that cannot answer, such as a CLI from
 /// before workspaces, has none.
 #[tauri::command]
 pub(crate) async fn list_workspaces(app: tauri::AppHandle) -> Vec<Workspace> {
-    if mock_mode() {
-        return mock_workspaces();
-    }
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::ensure_running(&app.state::<crate::AppState>())?;
-        exchange(
-            &binding,
+        ask(
+            || crate::daemon::ensure_running(&app.state::<crate::AppState>()),
             json!({ "type": "list_workspaces" }),
             LIST_TIMEOUT,
             parse_workspaces,
@@ -323,22 +296,19 @@ pub(crate) async fn list_artifacts(
     session_id: String,
     project: Option<String>,
 ) -> Result<Vec<Artifact>, String> {
-    if mock_mode() {
-        return Ok(vec![Artifact {
-            name: MOCK_ARTIFACT.into(),
-            size: 43,
-            modified_at: String::new(),
-        }]);
-    }
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = session_frame(
             "list_artifacts",
             &session_id,
             &project_dir.to_string_lossy(),
         );
-        exchange(&binding, request, ARTIFACTS_TIMEOUT, parse_artifacts)
+        ask(
+            crate::daemon::binding,
+            request,
+            ARTIFACTS_TIMEOUT,
+            parse_artifacts,
+        )
     })
     .await
     .map_err(|e| format!("artifacts task failed: {e}"))?
@@ -352,11 +322,10 @@ pub(crate) async fn list_background_jobs(
     project: Option<String>,
 ) -> Result<Vec<BackgroundJob>, String> {
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = session_frame("list_tasks", &session_id, &project_dir.to_string_lossy());
-        exchange(
-            &binding,
+        ask(
+            crate::daemon::binding,
             request,
             BACKGROUND_JOBS_TIMEOUT,
             parse_background_jobs,
@@ -367,14 +336,15 @@ pub(crate) async fn list_background_jobs(
 }
 
 fn fetch_artifact(session_id: &str, project: Option<&str>, name: &str) -> Result<Vec<u8>, String> {
-    if mock_mode() {
-        return Ok(crate::screen_records::PLACEHOLDER_JPEG.to_vec());
-    }
-    let binding = crate::daemon::binding()?;
     let project_dir = crate::agent::thread_dir(project);
     let mut request = session_frame("read_artifact", session_id, &project_dir.to_string_lossy());
     request["name"] = json!(name);
-    exchange(&binding, request, ARTIFACT_TIMEOUT, parse_artifact)?
+    ask(
+        crate::daemon::binding,
+        request,
+        ARTIFACT_TIMEOUT,
+        parse_artifact,
+    )?
 }
 
 /// Saves one of a session's artifacts to the Downloads folder, fetching it from
@@ -403,10 +373,10 @@ pub(crate) async fn save_artifact(
 
 /// Has the daemon delete the machine of one chat and release its lease, so the
 /// chat starts on this computer next time. Answers whether a machine went.
-fn remove_machine(binding: &Binding, session: &MachineSession) -> Result<bool, String> {
+fn remove_machine(session: &MachineSession) -> Result<bool, String> {
     let project_dir = crate::agent::thread_dir(session.project.as_deref());
     let request = stop_thread_frame(&session.id, &project_dir.to_string_lossy());
-    exchange(binding, request, STOP_TIMEOUT, |frame| {
+    ask(crate::daemon::binding, request, STOP_TIMEOUT, |frame| {
         parse_thread_stopped(frame, &session.id)
     })?
 }
@@ -414,9 +384,8 @@ fn remove_machine(binding: &Binding, session: &MachineSession) -> Result<bool, S
 /// ponytail: one chat after another, each waiting on its workspace. Stop them
 /// side by side with `std::thread::scope` once a clean-up of many chats is slow.
 fn remove_machines(sessions: &[MachineSession]) -> Result<usize, String> {
-    let binding = crate::daemon::binding()?;
     let of_chats = sessions.iter().map(|session| {
-        remove_machine(&binding, session)
+        remove_machine(session)
             .map(usize::from)
             .map_err(|error| format!("{}: {error}", session.id))
     });
@@ -451,10 +420,7 @@ pub(crate) async fn clean_machines(sessions: Vec<MachineSession>) -> Result<usiz
 /// The chat's next message starts it over. Answers whether a machine went.
 #[tauri::command]
 pub(crate) async fn delete_machine(session: MachineSession) -> Result<bool, String> {
-    if mock_mode() {
-        return Ok(true);
-    }
-    tokio::task::spawn_blocking(move || remove_machine(&crate::daemon::binding()?, &session))
+    tokio::task::spawn_blocking(move || remove_machine(&session))
         .await
         .map_err(|e| format!("delete task failed: {e}"))?
 }
@@ -468,15 +434,11 @@ pub(crate) async fn screen_frame(
     project: Option<String>,
     have: Option<String>,
 ) -> Option<Screen> {
-    if mock_mode() {
-        return Some(mock_screen());
-    }
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding().ok()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request =
             read_frame_frame(&session_id, &project_dir.to_string_lossy(), have.as_deref());
-        exchange(&binding, request, FRAME_TIMEOUT, parse_screen).ok()?
+        ask(crate::daemon::binding, request, FRAME_TIMEOUT, parse_screen).ok()?
     })
     .await
     .ok()
@@ -490,10 +452,14 @@ async fn screen_request(
     request: impl FnOnce(&str) -> Value + Send + 'static,
 ) -> Result<bool, String> {
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = request(&project_dir.to_string_lossy());
-        exchange(&binding, request, SCREEN_TIMEOUT, parse_screen_result)?
+        ask(
+            crate::daemon::binding,
+            request,
+            SCREEN_TIMEOUT,
+            parse_screen_result,
+        )?
     })
     .await
     .map_err(|e| format!("screen task failed: {e}"))?
@@ -507,9 +473,6 @@ pub(crate) async fn screen_control(
     project: Option<String>,
     take_over: bool,
 ) -> Result<bool, String> {
-    if mock_mode() {
-        return Ok(take_over);
-    }
     screen_request(project, move |dir| {
         screen_control_frame(&session_id, dir, take_over)
     })
@@ -524,9 +487,6 @@ pub(crate) async fn screen_input(
     project: Option<String>,
     input: Value,
 ) -> Result<bool, String> {
-    if mock_mode() {
-        return Ok(true);
-    }
     screen_request(project, move |dir| {
         screen_input_frame(&session_id, dir, &input)
     })
@@ -537,6 +497,68 @@ pub(crate) async fn screen_input(
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    fn mock_answer(request: Value) -> Value {
+        crate::daemon_mock::answer(&request).expect("the mock daemon answers this request")
+    }
+
+    #[test]
+    fn the_mock_daemon_answers_in_the_wire_format_the_parsers_read() {
+        let workspaces = parse_workspaces(&mock_answer(json!({ "type": "list_workspaces" })));
+        assert_eq!(
+            workspaces,
+            Some(vec![Workspace {
+                name: "mock-computer".into(),
+                kind: "kubernetes".into(),
+                reachable: true,
+                error: None,
+            }])
+        );
+
+        let listed = parse_artifacts(&mock_answer(session_frame("list_artifacts", "s", "/p")));
+        assert_eq!(
+            listed,
+            Some(vec![Artifact {
+                name: "demo.gif".into(),
+                size: 43,
+                modified_at: String::new(),
+            }])
+        );
+
+        let file = parse_artifact(&mock_answer(session_frame("read_artifact", "s", "/p")));
+        assert_eq!(
+            file,
+            Some(Ok(crate::screen_records::PLACEHOLDER_JPEG.to_vec()))
+        );
+
+        let stopped = mock_answer(stop_thread_frame("s", "/p"));
+        assert_eq!(parse_thread_stopped(&stopped, "s"), Some(Ok(true)));
+
+        let screen = parse_screen(&mock_answer(read_frame_frame("s", "/p", None)))
+            .flatten()
+            .expect("the mock daemon streams a screen");
+        assert!(screen.src.starts_with("data:image/jpeg;base64,"));
+    }
+
+    #[test]
+    fn the_mock_daemon_hands_the_screen_over_and_back_and_takes_input() {
+        let held = |request| parse_screen_result(&mock_answer(request));
+        assert_eq!(held(screen_control_frame("s", "/p", true)), Some(Ok(true)));
+        assert_eq!(
+            held(screen_control_frame("s", "/p", false)),
+            Some(Ok(false))
+        );
+        assert_eq!(
+            held(screen_input_frame("s", "/p", &json!({}))),
+            Some(Ok(true))
+        );
+    }
+
+    #[test]
+    fn the_mock_daemon_leaves_background_jobs_to_the_real_one() {
+        let request = session_frame("list_tasks", "s", "/p");
+        assert_eq!(crate::daemon_mock::answer(&request), None);
+    }
 
     #[test]
     fn an_artifacts_answer_lists_the_files_and_an_artifact_answer_carries_one() {

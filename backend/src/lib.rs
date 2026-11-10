@@ -11,6 +11,7 @@ mod composer;
 mod compute_settings;
 mod config;
 mod daemon;
+mod daemon_mock;
 mod download;
 mod env;
 mod export;
