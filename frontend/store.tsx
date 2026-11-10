@@ -41,6 +41,7 @@ import { AgentsProvider, useAgents } from "@/stores/agents";
 
 const AUTO_MODE_KEY = "autoMode";
 import type { ProjectType } from "@/lib/sidebar-document";
+import { WINDOW_EVENTS } from "@/lib/events";
 export type { ProjectType };
 /** What the sidebar lists: every project, one project type, or the agents. */
 export type SidebarFilter = ProjectType | "agents";
@@ -309,7 +310,7 @@ function useDesktopStore() {
 
   useEffect(() => {
     const unlisten = listen<{ sessionId: string; callId: string; status: "approved" | "denied" }>(
-      "approval-resolved",
+      WINDOW_EVENTS.approvalResolved,
       (e) =>
         dispatchTo(e.payload.sessionId, {
           type: "setApproval",
@@ -438,7 +439,7 @@ function useDesktopStore() {
         await api.sendApproval(id, callId, approved);
         const status = approved ? "approved" : "denied";
         dispatchTo(id, { type: "setApproval", callId, status });
-        emit("approval-resolved", { sessionId: id, callId, status }).catch(() => {});
+        emit(WINDOW_EVENTS.approvalResolved, { sessionId: id, callId, status }).catch(() => {});
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Approval failed: ${err}` });
       }
@@ -879,7 +880,7 @@ function useDesktopStore() {
   );
 
   useEffect(() => {
-    const unlisten = listen<{ sessionId: string; text: string }>("monitor-send", (e) =>
+    const unlisten = listen<{ sessionId: string; text: string }>(WINDOW_EVENTS.monitorSend, (e) =>
       sendPrompt(e.payload.sessionId, e.payload.text, projects[e.payload.sessionId]),
     );
     return () => {

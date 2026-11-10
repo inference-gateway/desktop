@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { BACKEND_EVENTS } from "@/lib/events";
 
 export function useBrowserUseStatus() {
   const [status, setStatus] = useState<BrowserUseStatus | null>(null);
@@ -20,7 +21,7 @@ export function useBrowserUseStatus() {
       .browserUseStatus()
       .then(setStatus)
       .catch(() => {});
-    const unlisten = listen<BrowserUseStatus>("browser-bridge", (e) => setStatus(e.payload));
+    const unlisten = listen<BrowserUseStatus>(BACKEND_EVENTS.browserBridge, (e) => setStatus(e.payload));
     return () => {
       unlisten.then((f) => f());
     };

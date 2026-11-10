@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { listen } from "@tauri-apps/api/event";
 import { api } from "@/lib/tauri";
 import { useActivity } from "@/stores/activity";
+import { BACKEND_EVENTS } from "@/lib/events";
 
 function useGitStore() {
   const { logActivity } = useActivity();
@@ -23,7 +24,7 @@ function useGitStore() {
   const refreshGitProjects = useCallback(() => fetchGitProjects().catch(() => {}), [fetchGitProjects]);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const unlisten = listen("git-changed", () => {
+    const unlisten = listen(BACKEND_EVENTS.gitChanged, () => {
       clearTimeout(timer);
       timer = setTimeout(refreshGitProjects, 300);
     });

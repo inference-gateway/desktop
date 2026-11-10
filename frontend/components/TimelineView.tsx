@@ -123,6 +123,7 @@ import { useActivity } from "@/stores/activity";
 import { AudioPlayer } from "./AudioPlayer";
 import { Thumbnails, Waveform } from "./ClipMedia";
 import { Button } from "@/components/ui/button";
+import { BACKEND_EVENTS } from "@/lib/events";
 
 const SAVE_DEBOUNCE_MS = 600;
 const RELOAD_DEBOUNCE_MS = 200;
@@ -526,7 +527,7 @@ export function TimelineView() {
     if (!project) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     api.watchProject(project).catch(() => {});
-    const unlisten = listen<string>("project-changed", (e) => {
+    const unlisten = listen<string>(BACKEND_EVENTS.projectChanged, (e) => {
       if (e.payload !== project) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
