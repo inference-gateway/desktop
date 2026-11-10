@@ -1,4 +1,5 @@
 import { useDesktop } from "@/store";
+import { useAgents } from "@/stores/agents";
 import { useBackend } from "@/stores/backend";
 import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 
@@ -6,7 +7,8 @@ import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 // with a custom dropdown.
 export function ModelSelect() {
   const { models, model, setModel } = useBackend();
-  const { enabled, agents, currentAgent } = useDesktop();
+  const { agents } = useAgents();
+  const { enabled, currentAgent } = useDesktop();
   const agent = agents.find((a) => a.name === currentAgent);
   const shown = agentThreadModel(agent, model);
   const ownModel = agentPinsModel(agent);

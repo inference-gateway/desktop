@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { ImagePlus, KeyRound, Mail, X } from "lucide-react";
 import { useDesktop } from "@/store";
+import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
@@ -39,7 +40,8 @@ export function AgentEditor() {
   const { setError } = useStatusActions();
   const { models } = useBackend();
   const { projectNames } = useSidebar();
-  const { agentEditor, closeAgentEditor, saveAgent } = useDesktop();
+  const { agentEditor, closeAgentEditor } = useAgents();
+  const { saveAgent } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [emailKey, setEmailKey] = useState("");

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
@@ -694,6 +695,7 @@ export function ChatList() {
     projectTypes,
     agentOf,
   } = useSidebar();
+  const { agents, activeAgent, deleteAgent, loadAgents } = useAgents();
   const {
     conversations,
     selected,
@@ -716,12 +718,8 @@ export function ChatList() {
     setCurrentView,
     projectFilter: filter,
     visibleProjectNames,
-    agents,
-    activeAgent,
     selectAgent,
     openAgentEditor,
-    deleteAgent,
-    loadAgents,
   } = useDesktop();
   const { setError } = useStatusActions();
   const agentsFilter = filter === "agents";

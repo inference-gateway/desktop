@@ -37,6 +37,7 @@ import { StatusProvider, useStatusActions } from "@/stores/status";
 import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend";
 import { GitProvider, useGit } from "@/stores/git";
 import { SidebarProvider, useSidebar } from "@/stores/sidebar";
+import { AgentsProvider, useAgents } from "@/stores/agents";
 
 const AUTO_MODE_KEY = "autoMode";
 import type { ProjectType } from "@/lib/sidebar-document";
@@ -101,6 +102,7 @@ function useDesktopStore() {
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
+  const { agents, activeAgent, setActiveAgent, assignAgent, showAgentEditor, storeAgent } = useAgents();
   const {
     projects,
     projectNames,
@@ -117,7 +119,6 @@ function useDesktopStore() {
     setProjectNames,
     setActiveProject,
     setProjectTypes,
-    setAgentOf,
     setWorkspaceOf,
     setWorkspaceTitles,
     setInitSelection,
@@ -149,7 +150,6 @@ function useDesktopStore() {
         : projectNames,
     [projectFilter, projectNames, projectTypes],
   );
-  const [agents, setAgents] = useState<MarkdownAgent[]>(() => []);
   const workspaceOfRef = useRef(workspaceOf);
   useEffect(() => {
     workspaceOfRef.current = workspaceOf;
@@ -159,8 +159,6 @@ function useDesktopStore() {
   useEffect(() => {
     movingRef.current = moving;
   }, [moving]);
-  const [activeAgent, setActiveAgent] = useState<string | null>(null);
-  const [agentEditor, setAgentEditor] = useState<{ agent: MarkdownAgent | null } | null>(null);
   const [initialSettingsTab, setInitialSettingsTab] = useState("general");
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
@@ -308,14 +306,6 @@ function useDesktopStore() {
     return () => window.removeEventListener("focus", refreshConversations);
   }, [refreshConversations]);
 
-  const loadAgents = useCallback(async () => {
-    try {
-      setAgents(await api.listMarkdownAgents());
-    } catch (e) {
-      console.error("Failed to load agents:", e);
-    }
-  }, []);
-
   // Cancels every running session and forgets them, before a backend the
   // chats are attached to is restarted or swapped.
   const cancelRunningAgents = useCallback(async () => {
@@ -358,8 +348,7 @@ function useDesktopStore() {
       .readBashHistory()
       .then(setBashHistory)
       .catch(() => {});
-    loadAgents();
-  }, [loadAgents]);
+  }, []);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -691,44 +680,23 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
-  const assignAgent = useCallback((sessionId: string, agentName: string) => {
-    setAgentOf((prev) => ({ ...prev, [sessionId]: agentName }));
-  }, []);
-
-  const openAgentEditor = useCallback((agent: MarkdownAgent | null) => {
-    setCurrentView("chat");
-    setAgentEditor({ agent });
-  }, []);
-  const closeAgentEditor = useCallback(() => setAgentEditor(null), []);
+  const openAgentEditor = useCallback(
+    (agent: MarkdownAgent | null) => {
+      setCurrentView("chat");
+      showAgentEditor(agent);
+    },
+    [showAgentEditor],
+  );
 
   // Saving lands the user in a fresh chat with the agent, Grok Bot style.
   const saveAgent = useCallback(
     async (agent: MarkdownAgent, previousName?: string, avatarUrl?: string) => {
-      await api.saveMarkdownAgent(agent, previousName);
-      if (avatarUrl) await api.setAgentAvatarFromUrl(agent.name, avatarUrl);
-      await loadAgents();
-      if (previousName && previousName !== agent.name) {
-        setAgentOf((prev) =>
-          Object.fromEntries(Object.entries(prev).map(([id, n]) => [id, n === previousName ? agent.name : n])),
-        );
-      }
-      setAgentEditor(null);
+      await storeAgent(agent, previousName, avatarUrl);
       setProjectFilter("agents");
       selectAgent(agent.name, agentDefaultProject(agent, projectNames));
       composerRef.current?.focus();
     },
-    [loadAgents, selectAgent, projectNames],
-  );
-
-  const deleteAgent = useCallback(
-    async (name: string) => {
-      await api.deleteMarkdownAgent(name);
-      setAgentOf((prev) => Object.fromEntries(Object.entries(prev).filter(([, n]) => n !== name)));
-      setActiveAgent((prev) => (prev === name ? null : prev));
-      setAgentEditor((prev) => (prev?.agent?.name === name ? null : prev));
-      await loadAgents();
-    },
-    [loadAgents],
+    [storeAgent, selectAgent, projectNames],
   );
 
   // A chat keeps its agent: a send into an existing chat (a queued prompt, the
@@ -1430,15 +1398,9 @@ function useDesktopStore() {
     newChat,
     selectProject,
     selectAgent,
-    agents,
-    activeAgent,
     currentAgent,
-    agentEditor,
     openAgentEditor,
-    closeAgentEditor,
     saveAgent,
-    deleteAgent,
-    loadAgents,
     currentView,
     sidebarOpen,
     setSidebarOpen,
@@ -1523,7 +1485,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
           <BackendProvider>
             <GitProvider>
               <SidebarProvider>
-                <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                <AgentsProvider>
+                  <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                </AgentsProvider>
               </SidebarProvider>
             </GitProvider>
           </BackendProvider>
