@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useBackend } from "@/stores/backend";
 import { Pencil, Plus, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +12,7 @@ import {
   type WorkspaceConfig,
 } from "@/lib/tauri";
 import { EMPTY_SERVER, missingSecrets, secretVariables, serverState } from "@/lib/mcp-form";
-import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, RestartNotice } from "./ClusterParts";
+import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, Problem, RestartNotice, useRestart } from "./ClusterParts";
 
 type Editing = { isNew: boolean; server: McpServerConfig };
 
@@ -297,7 +296,6 @@ function ServerForm({
 // The MCP servers of ~/.infer/mcp.yaml, edited as written so a ${VARIABLE} reference stays one. New chats pick up a
 // change, and a workspace's servers live in daemon.yaml, which asks for a CLI restart.
 export function McpTab() {
-  const { restartBackend } = useBackend();
   const [enabled, setEnabled] = useState(false);
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [status, setStatus] = useState<McpStatus | null>(null);
@@ -305,7 +303,6 @@ export function McpTab() {
   const [workspaces, setWorkspaces] = useState<WorkspaceConfig[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
-  const [stale, setStale] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const check = useCallback(() => {
@@ -334,6 +331,7 @@ export function McpTab() {
       .catch(() => {});
     check();
   }, [check]);
+  const { stale, setStale, restart } = useRestart(reload);
 
   useEffect(reload, [reload]);
 
@@ -375,12 +373,6 @@ export function McpTab() {
       .then(reload)
       .catch((e) => setProblem(String(e)));
 
-  const restart = async () => {
-    await restartBackend(false);
-    setStale(false);
-    reload();
-  };
-
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">MCPs</h2>
@@ -411,11 +403,7 @@ export function McpTab() {
         </Button>
       </div>
       {stale && <RestartNotice onRestart={restart} />}
-      {problem && (
-        <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
-          {problem}
-        </p>
-      )}
+      <Problem text={problem} />
       <div className="flex flex-col gap-3">
         {servers.length === 0 && !editing && <p className="text-[0.8rem] text-muted-foreground">No MCP server yet.</p>}
         {servers.map((server) => (

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useBackend } from "@/stores/backend";
 import { Container, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +10,11 @@ import {
   FIELD_CLASS,
   HINT_CLASS,
   Prerequisites,
+  Problem,
   RestartNotice,
   RunningBadge,
   useCheck,
+  useRestart,
 } from "./ClusterParts";
 
 type Editing = { previous: string | null; draft: ClusterDraft };
@@ -153,13 +154,11 @@ function ClusterForm({
 // The clusters workspaces run on: ~/.infer/compute.yaml. The daemon reads it when it starts, so a change asks for a
 // CLI restart.
 export function ComputeTab() {
-  const { restartBackend } = useBackend();
   const [clusters, setClusters] = useState<ClusterConfig[]>([]);
   const [contexts, setContexts] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
-  const [stale, setStale] = useState(false);
   const [supported, setSupported] = useState(true);
   const [docker, setDocker] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
@@ -170,6 +169,7 @@ export function ComputeTab() {
       .then(setClusters)
       .catch((e) => setProblem(String(e)));
   }, []);
+  const { stale, setStale, restart } = useRestart(reload);
 
   useEffect(() => {
     reload();
@@ -240,12 +240,6 @@ export function ComputeTab() {
     }
   };
 
-  const restart = async () => {
-    await restartBackend(false);
-    setStale(false);
-    reload();
-  };
-
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">Compute</h2>
@@ -268,11 +262,7 @@ export function ComputeTab() {
           {notice}
         </p>
       )}
-      {problem && (
-        <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
-          {problem}
-        </p>
-      )}
+      <Problem text={problem} />
       <div className="flex flex-col gap-3">
         {clusters.length === 0 && !editing && <p className="text-[0.8rem] text-muted-foreground">No cluster yet.</p>}
         {clusters.map((config) => (

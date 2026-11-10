@@ -17,12 +17,13 @@ import {
   FIELD_CLASS,
   HINT_CLASS,
   Prerequisites,
+  Problem,
   RestartNotice,
   RunningBadge,
   useCheck,
+  useRestart,
 } from "./ClusterParts";
 import { useDesktop } from "@/store";
-import { useBackend } from "@/stores/backend";
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
 
@@ -391,7 +392,6 @@ function WorkspaceForm({
 // The computers sessions can run on: the workspaces of ~/.infer/daemon.yaml, each on a cluster of the Compute tab or
 // with its own connection. The daemon reads them when it starts, so a change asks for a CLI restart.
 export function WorkspacesTab() {
-  const { restartBackend } = useBackend();
   const { cleanMachines } = useDesktop();
   const [cleanArmed, setCleanArmed] = useState(false);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
@@ -401,7 +401,6 @@ export function WorkspacesTab() {
   const [contexts, setContexts] = useState<string[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
-  const [stale, setStale] = useState(false);
   const [notice, setNotice] = useState("");
 
   const loadKnown = useCallback((retries: number) => {
@@ -425,6 +424,7 @@ export function WorkspacesTab() {
       .catch(() => {});
     loadKnown(DAEMON_RETRIES);
   }, [loadKnown]);
+  const { stale, setStale, restart } = useRestart(reload);
 
   useEffect(() => {
     reload();
@@ -476,12 +476,6 @@ export function WorkspacesTab() {
     }
   };
 
-  const restart = async () => {
-    await restartBackend(false);
-    setStale(false);
-    reload();
-  };
-
   const startNew = () =>
     setEditing({
       previous: null,
@@ -501,11 +495,7 @@ export function WorkspacesTab() {
           {notice}
         </p>
       )}
-      {problem && (
-        <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
-          {problem}
-        </p>
-      )}
+      <Problem text={problem} />
       <div className="flex flex-col gap-3">
         {configs.length === 0 && !editing && <p className="text-[0.8rem] text-muted-foreground">No workspace yet.</p>}
         {configs.map((config) => (
