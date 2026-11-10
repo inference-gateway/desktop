@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
@@ -219,6 +220,7 @@ function AgentProjectMenu() {
 export function Composer() {
   const { ready, model, tools, shortcuts } = useBackend();
   const { activeProject, setActiveProject, agentOf, workspaceOf, initSelection } = useSidebar();
+  const { agents, activeAgent } = useAgents();
   const {
     composerRef,
     enabled,
@@ -231,8 +233,6 @@ export function Composer() {
     history,
     bashHistory,
     currentProject,
-    agents,
-    activeAgent,
     currentAgent,
     selectAgent,
     sessionId,

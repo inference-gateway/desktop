@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
 import { useBackend } from "@/stores/backend";
@@ -1505,7 +1506,8 @@ function RepositoryPicker({ value, onChange }: { value: string; onChange: (v: st
 // ~/.agents/agents. A new agent is saved to ~/.infer/agents.
 function MarkdownAgentsCard() {
   const { setError } = useStatusActions();
-  const { agents, openAgentEditor, deleteAgent } = useDesktop();
+  const { agents, deleteAgent } = useAgents();
+  const { openAgentEditor } = useDesktop();
   return (
     <>
       <h3 className="text-[0.9rem] font-semibold">Your agents</h3>
