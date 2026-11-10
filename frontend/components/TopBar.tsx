@@ -25,7 +25,7 @@ const MAX_RECORD_SECS = 180;
 export function TopBar() {
   const {
     versionBadge,
-    showUpdateBanner,
+    updateButton,
     updateBannerText,
     applyUpdates,
     restartBackend,
@@ -43,7 +43,7 @@ export function TopBar() {
     projectTypes,
   } = useDesktop();
   const content = currentView === "chat" && currentProject !== null && projectTypes[currentProject] === "content";
-  const [isUpdating, setIsUpdating] = useState(false);
+  const isUpdating = updateButton === "busy";
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const startedAtRef = useRef(0);
@@ -102,16 +102,6 @@ export function TopBar() {
     if (recording) toggleRecording();
   };
 
-  const handleUpdate = async () => {
-    if (isUpdating) return;
-    setIsUpdating(true);
-    try {
-      await applyUpdates();
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
   return (
     <header id="top-bar" className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-[0.6rem]">
       <Button
@@ -130,13 +120,13 @@ export function TopBar() {
       <span title="Installed versions" className="shrink-0 text-[0.65rem] text-muted-foreground">
         {versionBadge}
       </span>
-      {showUpdateBanner && (
+      {updateButton !== "hidden" && (
         <button
           type="button"
           title={isUpdating ? "Update in progress - see status below" : updateBannerText}
           aria-busy={isUpdating}
           disabled={isUpdating}
-          onClick={handleUpdate}
+          onClick={applyUpdates}
           className="flex shrink-0 items-center gap-1 rounded-full border border-primary bg-primary/10 px-[0.6rem] py-1 text-xs font-medium text-primary hover:bg-primary hover:text-primary-foreground disabled:cursor-wait disabled:opacity-60"
         >
           {isUpdating && <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />}

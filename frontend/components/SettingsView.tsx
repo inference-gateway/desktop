@@ -118,7 +118,7 @@ export function SettingsView() {
     installUpdate,
     checkForUpdates,
     applyUpdates,
-    showUpdateBanner,
+    updateButton,
     statusText,
     statusError,
     initialSettingsTab,
@@ -325,15 +325,16 @@ export function SettingsView() {
                 >
                   {checking ? "Checking..." : "Check for updates"}
                 </Button>
-                {showUpdateBanner && (
+                {updateButton !== "hidden" && (
                   <Button
                     size="sm"
+                    disabled={updateButton === "busy"}
                     onClick={() => {
                       setCurrentView("chat");
                       applyUpdates();
                     }}
                   >
-                    Install updates
+                    {updateButton === "busy" ? "Updating..." : "Install updates"}
                   </Button>
                 )}
               </div>
