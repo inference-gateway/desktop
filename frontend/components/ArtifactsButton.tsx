@@ -3,6 +3,7 @@ import { Download, Package, RefreshCw } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, type Artifact } from "@/lib/tauri";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 
 const ICON_BUTTON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground";
@@ -16,7 +17,8 @@ const formatSize = (bytes: number) =>
 
 /** The files the open chat produced, wherever it runs, each saved to Downloads on request. */
 export function ArtifactsButton() {
-  const { sessionId, projects } = useDesktop();
+  const { projects } = useSidebar();
+  const { sessionId } = useDesktop();
   const [open, setOpen] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[] | null>(null);
   const [status, setStatus] = useState("");

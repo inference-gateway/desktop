@@ -7,6 +7,7 @@ import { Composer } from "./Composer";
 import { ResizeHandle } from "./ResizeHandle";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
 const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
@@ -23,8 +24,8 @@ const DEFAULT_CHAT_DOCK_WIDTH = 400;
 // panels collapse and resize; the sidebar starts collapsed for content
 // projects so the editor gets the room.
 export function Main() {
-  const { currentView, currentProject, projectTypes, sidebarOpen, setSidebarOpen, chatOpen, agentEditor } =
-    useDesktop();
+  const { projectTypes } = useSidebar();
+  const { currentView, currentProject, sidebarOpen, setSidebarOpen, chatOpen, agentEditor } = useDesktop();
   const content = currentProject !== null && projectTypes[currentProject] === "content";
   useEffect(() => setSidebarOpen(!content), [content, setSidebarOpen]);
   if (currentView === "settings") {

@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
 import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
@@ -899,7 +900,7 @@ function GeneralTab() {
 
 function ConfigTransfer() {
   const { reloadDesktopData } = useSnippets();
-  const { loadProjects } = useDesktop();
+  const { loadProjects } = useSidebar();
   const [format, setFormat] = useState("json");
   const [target, setTarget] = useState<"file" | "github">("file");
   const [repo, setRepo] = useState("");
@@ -1764,9 +1765,8 @@ function ProjectsTab() {
     deleteProjects,
     projectGroups,
     projectTypes,
-    setProjectType,
-    initialProjectFilter,
-  } = useDesktop();
+  } = useSidebar();
+  const { setProjectType, initialProjectFilter } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);

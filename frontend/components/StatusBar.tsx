@@ -4,6 +4,7 @@ import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
 import { Zap } from "lucide-react";
@@ -26,6 +27,7 @@ const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1
 
 export function StatusBar() {
   const { ready, tools, mcpStatus, a2aStatus } = useBackend();
+  const { projects } = useSidebar();
   const {
     running,
     isAwaitingApproval,
@@ -35,7 +37,6 @@ export function StatusBar() {
     runningTasks,
     sessionId,
     conversations,
-    projects,
     openConversation,
     runningCount,
     autoMode,
