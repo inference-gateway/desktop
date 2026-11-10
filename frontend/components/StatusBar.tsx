@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
-import { useDesktop } from "@/store";
+import { useChatStream, useDesktop } from "@/store";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
@@ -28,20 +28,17 @@ const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1
 export function StatusBar() {
   const { ready, tools, mcpStatus, a2aStatus } = useBackend();
   const { projects } = useSidebar();
+  const { runLabel, delegations, runningTasks, tokenUsage } = useChatStream();
   const {
     running,
     isAwaitingApproval,
     isRunning,
-    runLabel,
-    delegations,
-    runningTasks,
     sessionId,
     conversations,
     openConversation,
     runningCount,
     autoMode,
     setAutoMode,
-    tokenUsage,
     turnStartedAt,
     lastTurnMs,
     showStatusBar,
