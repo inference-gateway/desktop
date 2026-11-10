@@ -142,7 +142,7 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = handle.state::<AppState>();
-                if let Err(e) = daemon::ensure_running(&state) {
+                if let Err(e) = daemon::ensure_running(&state.processes, &state.scheduler_log) {
                     eprintln!("infer daemon autostart failed: {e}");
                 }
             });
@@ -341,7 +341,7 @@ pub fn run() {
             }
             screen_records::stop_on_exit(&state);
             app_handle.state::<timeline::Export>().cancel();
-            thread::close_all(&state);
+            state.threads.close_all();
         }
     });
 }

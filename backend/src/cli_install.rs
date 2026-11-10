@@ -199,7 +199,7 @@ fn finish(
     state: &crate::AppState,
 ) -> Result<(), String> {
     if restart {
-        crate::daemon::restart(state)?;
+        crate::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)?;
     }
     let _ = on_event.send(ProgressEvent::Ready);
     Ok(())

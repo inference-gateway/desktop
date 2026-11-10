@@ -33,7 +33,7 @@ pub(crate) fn pipe_logger<R: std::io::Read + Send + 'static>(
 #[tauri::command]
 pub(crate) async fn start_scheduler(app: tauri::AppHandle) -> Result<(), String> {
     crate::blocking_with_state(app, |state| {
-        crate::daemon::ensure_running(state).map(|_| ())
+        crate::daemon::ensure_running(&state.processes, &state.scheduler_log).map(|_| ())
     })
     .await
 }

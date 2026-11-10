@@ -95,6 +95,26 @@ impl Thread {
             }
         };
 
+        let (thread, rx) = Thread::following(session_id, history, options, sink, status);
+        let follower = Arc::downgrade(&thread);
+        std::thread::spawn(move || {
+            pump(ws, rx, |text| {
+                if let Some(thread) = follower.upgrade() {
+                    thread.handle(text);
+                }
+            })
+        });
+        Ok(thread)
+    }
+
+    /// A thread and the queue of frames it sends, before any socket drains it.
+    fn following(
+        session_id: &str,
+        history: Vec<serde_json::Value>,
+        options: &ThreadOptions,
+        sink: Sink,
+        status: StatusSink,
+    ) -> (Arc<Thread>, mpsc::Receiver<String>) {
         let (tx, rx) = mpsc::channel();
         let thread = Arc::new(Thread {
             session_id: session_id.to_string(),
@@ -110,15 +130,22 @@ impl Thread {
             status,
             on_done: Mutex::new(None),
         });
-        let follower = Arc::downgrade(&thread);
-        std::thread::spawn(move || {
-            pump(ws, rx, |text| {
-                if let Some(thread) = follower.upgrade() {
-                    thread.handle(text);
-                }
-            })
-        });
-        Ok(thread)
+        (thread, rx)
+    }
+
+    /// A thread with no daemon behind it, and the frames it would have sent.
+    #[cfg(test)]
+    pub(crate) fn detached(
+        session_id: &str,
+        history: Vec<serde_json::Value>,
+    ) -> (Arc<Thread>, mpsc::Receiver<String>) {
+        Thread::following(
+            session_id,
+            history,
+            &ThreadOptions::default(),
+            Arc::new(|_| {}),
+            Arc::new(|_| {}),
+        )
     }
 
     /// Tells the daemon to stop the thread's worker at once, as a deleted chat
@@ -528,10 +555,10 @@ impl Threads {
             threads.remove(session_id);
         }
     }
-}
 
-pub(crate) fn close_all(state: &crate::AppState) {
-    lock(&state.threads.0).clear();
+    pub(crate) fn close_all(&self) {
+        lock(&self.0).clear();
+    }
 }
 
 #[cfg(test)]

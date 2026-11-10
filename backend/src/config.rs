@@ -159,7 +159,7 @@ pub(crate) async fn set_auth(
 ) -> Result<(), String> {
     crate::blocking_with_state(app, move |state| {
         merge_auth_in(&home_dir(), keys)?;
-        crate::daemon::restart(state)
+        crate::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)
     })
     .await
 }
