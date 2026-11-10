@@ -1,5 +1,5 @@
 use crate::config;
-use crate::env::{home_dir, infer_dir_in, mock_mode};
+use crate::env::{home_dir, infer_dir_in};
 use crate::workspace_settings::{self, KUBERNETES, WorkspaceConfig};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -330,9 +330,6 @@ fn in_namespace<'a>(place: &'a Place, args: &[&'a str]) -> Vec<&'a str> {
 }
 
 fn write_kube_secret(place: &Place, manifest: &str) -> Result<(), String> {
-    if mock_mode() {
-        return Ok(());
-    }
     let args = [
         "apply",
         "--server-side",
@@ -346,9 +343,6 @@ fn write_kube_secret(place: &Place, manifest: &str) -> Result<(), String> {
 }
 
 fn delete_kube_secret(place: &Place, name: &str) -> Result<(), String> {
-    if mock_mode() {
-        return Ok(());
-    }
     let args = ["delete", "secret", name, "--ignore-not-found"];
     workspace_settings::kubectl(&place.context, &in_namespace(place, &args)).map(drop)
 }

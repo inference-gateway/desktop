@@ -408,9 +408,6 @@ fn remove_machines(sessions: &[MachineSession]) -> Result<usize, String> {
 /// Answers how many machines went.
 #[tauri::command]
 pub(crate) async fn clean_machines(sessions: Vec<MachineSession>) -> Result<usize, String> {
-    if mock_mode() {
-        return Ok(sessions.len());
-    }
     tokio::task::spawn_blocking(move || remove_machines(&sessions))
         .await
         .map_err(|e| format!("clean-up task failed: {e}"))?
