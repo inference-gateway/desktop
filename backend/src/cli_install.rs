@@ -26,7 +26,12 @@ pub(crate) async fn check_and_install_cli(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     crate::blocking_with_state(app, move |state| {
-        install_cli(&on_event, force, restart, tag.as_deref(), state)
+        install_cli(&on_event, force, tag.as_deref())?;
+        if restart {
+            crate::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)?;
+        }
+        let _ = on_event.send(ProgressEvent::Ready);
+        Ok(())
     })
     .await
 }
@@ -34,9 +39,7 @@ pub(crate) async fn check_and_install_cli(
 fn install_cli(
     on_event: &Channel<ProgressEvent>,
     force: bool,
-    restart: bool,
     tag: Option<&str>,
-    state: &crate::AppState,
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
     // A pinned tag installs over an existing binary on purpose, so force is implied.
@@ -50,12 +53,12 @@ fn install_cli(
             use std::os::unix::fs::PermissionsExt;
             let meta = std::fs::metadata(&bin_path).map_err(|e| e.to_string())?;
             if meta.permissions().mode() & 0o111 != 0 {
-                return finish(on_event, restart, state);
+                return Ok(());
             }
         }
         #[cfg(not(unix))]
         {
-            return finish(on_event, restart, state);
+            return Ok(());
         }
     }
 
@@ -164,7 +167,7 @@ fn install_cli(
         }
     }
 
-    finish(on_event, restart, state)
+    Ok(())
 }
 
 /// Extracts the executable from the release tarball into a staging directory
@@ -190,19 +193,6 @@ fn extract_cli(
         return Err("Failed to extract the CLI binary from the release archive".into());
     }
     Ok(staging)
-}
-
-/// Reports the binary ready, after restarting the daemon when asked.
-fn finish(
-    on_event: &Channel<ProgressEvent>,
-    restart: bool,
-    state: &crate::AppState,
-) -> Result<(), String> {
-    if restart {
-        crate::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)?;
-    }
-    let _ = on_event.send(ProgressEvent::Ready);
-    Ok(())
 }
 
 // --- Pinned download URLs ---
