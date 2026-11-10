@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { Check, CircleCheck, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClusterCheck, Prerequisite } from "@/lib/tauri";
+import { useBackend } from "@/stores/backend";
 
 export const FIELD_CLASS = "flex flex-col gap-1";
 export const HINT_CLASS = "text-[0.72rem] text-muted-foreground";
@@ -97,5 +98,28 @@ export function RestartNotice({ onRestart }: { onRestart: () => void }) {
         Restart CLI now
       </Button>
     </div>
+  );
+}
+
+/** The restart a settings tab offers after a change the daemon only loads on
+ * start: `stale` shows the notice, and restarting reloads the tab's list. */
+export function useRestart(reload: () => void) {
+  const { restartBackend } = useBackend();
+  const [stale, setStale] = useState(false);
+  const restart = async () => {
+    await restartBackend(false);
+    setStale(false);
+    reload();
+  };
+  return { stale, setStale, restart };
+}
+
+/** Why the tab's last action failed, announced to screen readers. */
+export function Problem({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
+      {text}
+    </p>
   );
 }

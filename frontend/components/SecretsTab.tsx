@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { useBackend } from "@/stores/backend";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type Secret, type WorkspaceConfig } from "@/lib/tauri";
-import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, RestartNotice } from "./ClusterParts";
+import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, Problem, RestartNotice, useRestart } from "./ClusterParts";
 
 const EMPTY_SECRET: Secret = { label: "", variable: "", computer: false, workspaces: [], mcp_servers: [] };
 
@@ -160,12 +159,10 @@ function SecretForm({
 // The secrets agents' computers need, kept once in ~/.infer/auth.yaml and assigned where they go. This computer's
 // processes and the daemon's workspaces read them when they start, so a change asks for a CLI restart.
 export function SecretsTab() {
-  const { restartBackend } = useBackend();
   const [secrets, setSecrets] = useState<Secret[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceConfig[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
-  const [stale, setStale] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const reload = useCallback(() => {
@@ -178,6 +175,7 @@ export function SecretsTab() {
       .then((all) => setWorkspaces(all.filter((w) => w.kind === "kubernetes")))
       .catch(() => {});
   }, []);
+  const { stale, setStale, restart } = useRestart(reload);
 
   useEffect(reload, [reload]);
 
@@ -213,12 +211,6 @@ export function SecretsTab() {
       .then((failures) => settle("Deleted", failures, assigned(secret)))
       .catch((e) => setProblem(String(e)));
 
-  const restart = async () => {
-    await restartBackend(false);
-    setStale(false);
-    reload();
-  };
-
   return (
     <>
       <h2 className="text-[1.05rem] font-semibold">Secrets</h2>
@@ -235,11 +227,7 @@ export function SecretsTab() {
           </p>
         </>
       )}
-      {problem && (
-        <p role="alert" className="mb-4 text-[0.8rem] text-destructive">
-          {problem}
-        </p>
-      )}
+      <Problem text={problem} />
       <div className="flex flex-col gap-3">
         {secrets.length === 0 && !editing && <p className="text-[0.8rem] text-muted-foreground">No secret yet.</p>}
         {secrets.map((secret) => (
