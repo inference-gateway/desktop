@@ -3,14 +3,10 @@ import {
   api,
   Channel,
   type AgentEvent,
-  type A2aStatus,
   type Conversation,
   type DesktopConfig,
   type MarkdownAgent,
-  type McpStatus,
   type ProgressEvent,
-  type Shortcut,
-  type UpdateInfo,
   type UserQuestionAnswer,
 } from "@/lib/tauri";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -38,9 +34,8 @@ import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import { ActivityProvider, useActivity } from "@/stores/activity";
 import { SnippetsProvider } from "@/stores/snippets";
 import { StatusProvider, useStatusActions } from "@/stores/status";
-import { markApplied, stripV, updateButtonState } from "@/lib/updates";
+import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend";
 
-const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
 export type ProjectType = "code" | "content";
 /** What the sidebar lists: every project, one project type, or the agents. */
@@ -51,9 +46,6 @@ const CONTENT_GUIDANCE =
 
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
-const UPDATE_CACHE_KEY = "updateCheck";
-const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const MAX_RETRIES = 10;
 const LAST_RUN_TTL_MS = 10_000;
 
 async function setMonitorVisible(visible: boolean) {
@@ -93,29 +85,6 @@ export const PROVIDERS = [
 const INIT_PR_INSTRUCTION =
   "After /init completes, open a pull request containing the AGENTS.md changes for human review - do not merge.";
 
-/** Status text for an install progress event, shared by the full init flow and
- * per-component installs; "Ready" and "Error" carry extra side-effects there. */
-function progressStatus(event: ProgressEvent, what = "infer"): string {
-  switch (event.kind) {
-    case "Checking":
-      return "Checking for infer binary...";
-    case "Downloading":
-      return event.total > 0
-        ? `Downloading ${what}... ${Math.round((event.received / event.total) * 100)}%`
-        : `Downloading ${what}...`;
-    case "Verifying":
-      return "Verifying download...";
-    case "Installing":
-      return `Installing ${what}...`;
-    case "Initializing":
-      return "Running initial setup...";
-    case "Ready":
-      return "Ready";
-    case "Error":
-      return `Error: ${event.message}`;
-  }
-}
-
 function useDesktopStore() {
   const [transcripts, setTranscripts] = useState<Record<string, ChatState>>({});
   const [runningIds, setRunningIds] = useState<Set<string>>(() => new Set());
@@ -125,12 +94,11 @@ function useDesktopStore() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const { setStatus, setError, hideError } = useStatusActions();
+  const { ready, model, refreshStatus, servicesStarting, startGatewayThenModels, checkForUpdates, sessionStopper } =
+    useBackend();
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
-  const [ready, setReady] = useState(false);
-  const [models, setModels] = useState<string[]>([]);
-  const [model, setModelState] = useState<string>(() => localStorage.getItem(STORAGE_KEY) || "");
   const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
   const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -139,10 +107,6 @@ function useDesktopStore() {
     const n = parseInt(localStorage.getItem(MAX_SESSIONS_KEY) || "", 10);
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
-  const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [updating, setUpdating] = useState(false);
-  const updatingRef = useRef(false);
-  const updateCheckAfterInit = useRef<Promise<boolean | null>>(Promise.resolve(null));
   const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "computers">("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
@@ -151,28 +115,6 @@ function useDesktopStore() {
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
-  const [tools, setTools] = useState<string[]>([]);
-  const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
-  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [a2aStatus, setA2aStatus] = useState<A2aStatus | null>(null);
-  const refreshStatus = useCallback(() => {
-    api
-      .mcpStatus()
-      .then(setMcpStatus)
-      .catch(() => {});
-    api
-      .a2aStatus()
-      .then(setA2aStatus)
-      .catch(() => {});
-  }, []);
-  const [servicesStarting, setServicesStarting] = useState(false);
-  const startServices = useCallback(() => {
-    setServicesStarting(true);
-    api
-      .startServices()
-      .finally(() => setServicesStarting(false))
-      .finally(refreshStatus);
-  }, [refreshStatus]);
   const [showStatusBar, setShowStatusBar] = useState(true);
   const [projects, setProjects] = useState<Record<string, string>>(() => ({}));
   const [projectNames, setProjectNames] = useState<string[]>(() => []);
@@ -298,14 +240,6 @@ function useDesktopStore() {
     if (id) dropQueued(id);
   }, [dropQueued]);
 
-  const setModel = useCallback((m: string) => {
-    setModelState(m);
-    localStorage.setItem(STORAGE_KEY, m);
-    api.setDefaultModel(m).catch(() => {});
-  }, []);
-
-  // With an open conversation this flips that session's own mode; on a new
-  // chat (no active session) it sets the default new sessions are seeded with (#171).
   const setAutoMode = useCallback((enabled: boolean) => {
     const id = activeIdRef.current;
     if (id) setAutoModes((prev) => ({ ...prev, [id]: enabled }));
@@ -363,42 +297,6 @@ function useDesktopStore() {
       unlisten.then((f) => f());
     };
   }, [dispatchTo]);
-
-  const populateModels = useCallback((list: string[]) => {
-    setModels(list);
-    setModelState((cur) => {
-      if (cur && list.includes(cur)) return cur;
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && list.includes(saved)) return saved;
-      return list[0] ?? "";
-    });
-  }, []);
-
-  const fetchModelsWithRetry = useCallback(
-    async (attempt = 0) => {
-      try {
-        populateModels(await api.listModels());
-      } catch {
-        if (attempt < MAX_RETRIES) setTimeout(() => fetchModelsWithRetry(attempt + 1), 1500);
-      }
-    },
-    [populateModels],
-  );
-
-  const startGatewayThenModels = useCallback(
-    async (force = false, restart = false, tag: string | null = null) => {
-      setStatus("Starting gateway...");
-      try {
-        await api.startGateway(force, restart, tag);
-      } catch (e) {
-        console.error("start_gateway failed:", e);
-        setError(String(e));
-      }
-      setStatus("Ready");
-      fetchModelsWithRetry();
-    },
-    [setStatus, setError, fetchModelsWithRetry],
-  );
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -491,66 +389,6 @@ function useDesktopStore() {
     }
   }, []);
 
-  const checkForUpdates = useCallback(async (force = false) => {
-    const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
-    if (!force && cached && Date.now() - cached.checkedAt < UPDATE_INTERVAL_MS) {
-      setUpdates(cached.updates);
-      return true;
-    }
-    try {
-      const list = await api.checkUpdates();
-      localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ checkedAt: Date.now(), updates: list }));
-      setUpdates(list);
-      return true;
-    } catch (e) {
-      console.error("check_updates failed:", e);
-      if (cached) setUpdates(cached.updates);
-      return false;
-    }
-  }, []);
-
-  const initBackend = useCallback(
-    async (force = false, restart = false) => {
-      let settle: (checked: boolean | null) => void = () => {};
-      updateCheckAfterInit.current = new Promise((resolve) => (settle = resolve));
-      try {
-        const ch = new Channel<ProgressEvent>();
-        ch.onmessage = (event) => {
-          switch (event.kind) {
-            case "Ready":
-              setStatus("Ready");
-              setReady(true);
-              startGatewayThenModels(force, restart)
-                .then(() => checkForUpdates(true))
-                .then(settle, () => settle(null));
-              refreshConversations();
-              api
-                .listTools()
-                .then(setTools)
-                .catch(() => {});
-              api
-                .listShortcuts()
-                .then(setShortcuts)
-                .catch(() => {});
-              refreshStatus();
-              startServices();
-              break;
-            case "Error":
-              setError(progressStatus(event));
-              break;
-            default:
-              setStatus(progressStatus(event));
-          }
-        };
-        await api.checkAndInstallCli(ch, force, restart);
-      } catch (err) {
-        setError(`Setup failed: ${err}`);
-        settle(null);
-      }
-    },
-    [setStatus, setError, startGatewayThenModels, checkForUpdates, refreshConversations],
-  );
-
   // Cancels every running session and forgets them, before a backend the
   // chats are attached to is restarted or swapped.
   const cancelRunningAgents = useCallback(async () => {
@@ -564,40 +402,27 @@ function useDesktopStore() {
     setRunningIds(new Set());
   }, [runningIds]);
 
-  const restartBackend = useCallback(
-    async (force: boolean) => {
-      await cancelRunningAgents();
-      setStatus(force ? "Updating..." : "Restarting CLI...");
-      setReady(false);
-      await initBackend(force, true);
-    },
-    [cancelRunningAgents, setStatus, initBackend],
-  );
+  useEffect(() => {
+    sessionStopper.current = cancelRunningAgents;
+  }, [sessionStopper, cancelRunningAgents]);
+
+  useEffect(() => {
+    if (ready) refreshConversations();
+  }, [ready, refreshConversations]);
 
   useEffect(() => {
     if (initRan.current) return;
     initRan.current = true;
 
-    const staleRaw = localStorage.getItem(UPDATE_CACHE_KEY);
-    if (staleRaw) {
-      try {
-        const stale = JSON.parse(staleRaw);
-        localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ ...stale, checkedAt: 0 }));
-      } catch {
-        localStorage.removeItem(UPDATE_CACHE_KEY);
-      }
-    }
-
     api
       .getConfig()
       .then((cfg) => {
         setShowStatusBar(cfg.status_bar_enabled);
-        if (cfg.default_model && !localStorage.getItem(STORAGE_KEY)) {
-          localStorage.setItem(STORAGE_KEY, cfg.default_model);
+        if (cfg.default_model && !localStorage.getItem(MODEL_STORAGE_KEY)) {
+          localStorage.setItem(MODEL_STORAGE_KEY, cfg.default_model);
         }
       })
       .catch(() => {});
-    initBackend();
     api
       .readHistory()
       .then(setHistory)
@@ -608,9 +433,7 @@ function useDesktopStore() {
       .catch(() => {});
     loadProjects();
     loadAgents();
-    const t = setInterval(() => checkForUpdates(true), UPDATE_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, [initBackend, checkForUpdates, loadAgents]);
+  }, [loadProjects, loadAgents]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -1459,99 +1282,6 @@ function useDesktopStore() {
     [startGatewayThenModels, setError],
   );
 
-  const installDesktop = useCallback(
-    (tag: string | null = null) => {
-      setStatus("Updating app...");
-      const ch = new Channel<ProgressEvent>();
-      ch.onmessage = (event) => setStatus(progressStatus(event, "app update"));
-      return api.installDesktopUpdate(ch, tag);
-    },
-    [setStatus],
-  );
-
-  // One apply at a time, and busy until the follow-up check has answered, so
-  // neither update button turns clickable again on rows that are about to change.
-  const applyUpdates = useCallback(async () => {
-    if (updatingRef.current) return;
-    updatingRef.current = true;
-    setUpdating(true);
-    try {
-      const desktopOutdated = updates.some((u) => u.outdated && u.name === "Desktop");
-      localStorage.removeItem(UPDATE_CACHE_KEY);
-      await restartBackend(true);
-      if ((await updateCheckAfterInit.current) === false) setUpdates(markApplied);
-      if (desktopOutdated) await installDesktop();
-    } catch (err) {
-      setError(`App update failed: ${err}`);
-    } finally {
-      updatingRef.current = false;
-      setUpdating(false);
-    }
-  }, [restartBackend, installDesktop, updates, setError]);
-
-  // Per-component version pinning: the tag picked in the Updates tab, per
-  // component row, kept until it has been installed.
-  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
-  const selectVersion = useCallback((name: string, tag: string | null) => {
-    setSelectedVersions((prev) => {
-      const next = { ...prev };
-      if (tag === null) delete next[name];
-      else next[name] = tag;
-      return next;
-    });
-  }, []);
-
-  // Installs exactly one component at the version picked for it, and leaves
-  // the other components alone. Without a pick the one-click flow applies.
-  const installUpdate = useCallback(
-    async (name: string) => {
-      const tag = selectedVersions[name] ?? null;
-      if (!tag) return;
-      try {
-        if (name === "Desktop") {
-          // The updater relaunches the app, so this never resolves.
-          await installDesktop(tag);
-        } else if (name === "Gateway") {
-          await cancelRunningAgents();
-          setReady(false);
-          await startGatewayThenModels(true, true, tag);
-          setReady(true);
-        } else {
-          // Only the CLI binary is replaced and its daemon restarted; the
-          // running gateway keeps serving, so nothing else is rebuilt.
-          await cancelRunningAgents();
-          setReady(false);
-          const ch = new Channel<ProgressEvent>();
-          ch.onmessage = (event) => setStatus(progressStatus(event));
-          await api.checkAndInstallCli(ch, true, true, tag);
-          setReady(true);
-          startGatewayThenModels(false, false);
-        }
-        selectVersion(name, null);
-        await checkForUpdates(true);
-      } catch (err) {
-        setError(`Failed to install ${name} ${stripV(tag)}: ${err}`);
-      }
-    },
-    [
-      selectedVersions,
-      installDesktop,
-      cancelRunningAgents,
-      startGatewayThenModels,
-      selectVersion,
-      checkForUpdates,
-      setStatus,
-      setReady,
-      setError,
-    ],
-  );
-
-  const outdated = updates.filter((u) => u.outdated);
-  const versionBadge = updates.map((u) => `${u.name} ${u.current}`).join(" · ");
-  const updateBannerText = outdated.length
-    ? `${outdated.map((u) => `${u.name} ${u.latest}`).join(", ")} available - restart to update`
-    : "";
-
   const unassignProject = useCallback(
     (sessionId: string) => {
       setProjects((prev) => {
@@ -1962,12 +1692,8 @@ function useDesktopStore() {
     typing: active.typing,
     suggestion: active.suggestion,
     dismissSuggestion,
-    ready,
     running,
     enabled: ready && !running,
-    models,
-    model,
-    setModel,
     autoMode: activeAutoMode,
     setAutoMode,
     maxSessions,
@@ -2008,7 +1734,6 @@ function useDesktopStore() {
     saveAgent,
     deleteAgent,
     loadAgents,
-    restartBackend,
     currentView,
     sidebarOpen,
     setSidebarOpen,
@@ -2033,15 +1758,6 @@ function useDesktopStore() {
     getConfig: () => api.getConfig(),
     getAuth: () => api.getAuth(),
     saveConfig: (cfg: DesktopConfig) => api.setConfig(cfg),
-    updates,
-    selectedVersions,
-    selectVersion,
-    installUpdate,
-    versionBadge,
-    updateBannerText,
-    updateButton: updateButtonState(updates, updating),
-    checkForUpdates,
-    applyUpdates,
     composerRef,
     history,
     bashHistory,
@@ -2049,14 +1765,9 @@ function useDesktopStore() {
     setTodoDraft,
     insertSnippet,
     loadProjects,
-    startServices,
     tokenUsage: active.usage,
     turnStartedAt: active.turnStartedAt,
     lastTurnMs: active.lastTurnMs,
-    tools,
-    shortcuts,
-    mcpStatus,
-    a2aStatus,
     showStatusBar,
     setShowStatusBar,
     projects,
@@ -2134,7 +1845,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
     <StatusProvider>
       <ActivityProvider>
         <SnippetsProvider>
-          <DesktopStoreProvider>{children}</DesktopStoreProvider>
+          <BackendProvider>
+            <DesktopStoreProvider>{children}</DesktopStoreProvider>
+          </BackendProvider>
         </SnippetsProvider>
       </ActivityProvider>
     </StatusProvider>

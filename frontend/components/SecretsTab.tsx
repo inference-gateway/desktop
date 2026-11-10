@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { useBackend } from "@/stores/backend";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type Secret, type WorkspaceConfig } from "@/lib/tauri";
 import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, RestartNotice } from "./ClusterParts";
-import { useDesktop } from "@/store";
 
 const EMPTY_SECRET: Secret = { label: "", variable: "", computer: false, workspaces: [], mcp_servers: [] };
 
@@ -160,7 +160,7 @@ function SecretForm({
 // The secrets agents' computers need, kept once in ~/.infer/auth.yaml and assigned where they go. This computer's
 // processes and the daemon's workspaces read them when they start, so a change asks for a CLI restart.
 export function SecretsTab() {
-  const { restartBackend } = useDesktop();
+  const { restartBackend } = useBackend();
   const [secrets, setSecrets] = useState<Secret[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceConfig[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);

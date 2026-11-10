@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
@@ -214,9 +215,9 @@ function AgentProjectMenu() {
 }
 
 export function Composer() {
+  const { ready, model, tools, shortcuts } = useBackend();
   const {
     composerRef,
-    ready,
     enabled,
     running,
     send,
@@ -239,12 +240,9 @@ export function Composer() {
     takeOver,
     handBack,
     workspaceOf,
-    model,
     initSelecting,
     initSelection,
     cancelInitSelection,
-    tools,
-    shortcuts,
     suggestion,
     dismissSuggestion,
   } = useDesktop();

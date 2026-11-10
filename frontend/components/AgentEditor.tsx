@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { ImagePlus, KeyRound, Mail, X } from "lucide-react";
 import { useDesktop } from "@/store";
+import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { api, type MarkdownAgent, type Workspace } from "@/lib/tauri";
 import { normaliseAgentName } from "@/lib/agents";
@@ -35,7 +36,8 @@ function agentFolder(agent: MarkdownAgent | null): string {
 
 export function AgentEditor() {
   const { setError } = useStatusActions();
-  const { agentEditor, closeAgentEditor, saveAgent, models, projectNames } = useDesktop();
+  const { models } = useBackend();
+  const { agentEditor, closeAgentEditor, saveAgent, projectNames } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [emailKey, setEmailKey] = useState("");

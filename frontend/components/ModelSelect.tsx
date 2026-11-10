@@ -1,10 +1,12 @@
 import { useDesktop } from "@/store";
+import { useBackend } from "@/stores/backend";
 import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 
 // Native <select> (AXPopUpButton) - required by the e2e harness; do not replace
 // with a custom dropdown.
 export function ModelSelect() {
-  const { models, model, setModel, enabled, agents, currentAgent } = useDesktop();
+  const { models, model, setModel } = useBackend();
+  const { enabled, agents, currentAgent } = useDesktop();
   const agent = agents.find((a) => a.name === currentAgent);
   const shown = agentThreadModel(agent, model);
   const ownModel = agentPinsModel(agent);

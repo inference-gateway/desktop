@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useBackend } from "@/stores/backend";
 import { Pencil, Plus, RefreshCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,6 @@ import {
 } from "@/lib/tauri";
 import { EMPTY_SERVER, missingSecrets, secretVariables, serverState } from "@/lib/mcp-form";
 import { advanceOnEnter, FIELD_CLASS, HINT_CLASS, RestartNotice } from "./ClusterParts";
-import { useDesktop } from "@/store";
 
 type Editing = { isNew: boolean; server: McpServerConfig };
 
@@ -297,7 +297,7 @@ function ServerForm({
 // The MCP servers of ~/.infer/mcp.yaml, edited as written so a ${VARIABLE} reference stays one. New chats pick up a
 // change, and a workspace's servers live in daemon.yaml, which asks for a CLI restart.
 export function McpTab() {
-  const { restartBackend } = useDesktop();
+  const { restartBackend } = useBackend();
   const [enabled, setEnabled] = useState(false);
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [status, setStatus] = useState<McpStatus | null>(null);

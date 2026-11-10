@@ -52,6 +52,7 @@ import { TasksPanel } from "./TasksView";
 import { fetchAgentCatalog, type CatalogAgent } from "@/lib/registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { PROVIDERS, useDesktop, type ProjectType } from "@/store";
+import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
 import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_SNIPPETS } from "@/lib/snippets";
@@ -110,21 +111,10 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export function SettingsView() {
-  const {
-    setCurrentView,
-    saveSettings,
-    getAuth,
-    updates,
-    selectedVersions,
-    selectVersion,
-    installUpdate,
-    checkForUpdates,
-    applyUpdates,
-    updateButton,
-    initialSettingsTab,
-    setInitialSettingsTab,
-    setInitialProjectFilter,
-  } = useDesktop();
+  const { updates, selectedVersions, selectVersion, installUpdate, checkForUpdates, applyUpdates, updateButton } =
+    useBackend();
+  const { setCurrentView, saveSettings, getAuth, initialSettingsTab, setInitialSettingsTab, setInitialProjectFilter } =
+    useDesktop();
   const { statusText, statusError } = useStatus();
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general",
@@ -463,7 +453,8 @@ const SCHEDULER_GITHUB_FIELDS: readonly StorageField[] = [
 ];
 
 function GeneralTab() {
-  const { maxSessions, setMaxSessions, models, model, setModel, setShowStatusBar } = useDesktop();
+  const { models, model, setModel } = useBackend();
+  const { maxSessions, setMaxSessions, setShowStatusBar } = useDesktop();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [computerUsePermissions, setComputerUsePermissions] = useState<ComputerUsePermissionStatus | null>(null);
   const browserUse = useBrowserUseStatus();
@@ -1548,7 +1539,7 @@ function MarkdownAgentsCard() {
 }
 
 function AgentsTab() {
-  const { models, startServices } = useDesktop();
+  const { models, startServices } = useBackend();
   const [agents, setAgents] = useState<A2aAgent[]>([]);
   const [catalog, setCatalog] = useState<CatalogAgent[]>([]);
   const [catalogError, setCatalogError] = useState(false);
