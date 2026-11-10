@@ -15,16 +15,13 @@ const COMPUTER_USER_DATA: &str = include_str!("computer_user_data.sh");
 pub(crate) const DETECTED_NAMESPACE: &str = "infer-workspaces";
 const DETECTED_STORAGE: &str = "5Gi";
 const KUBECTL_TIMEOUT: &str = "--request-timeout=5s";
-const MANAGED_LABEL: &str = "inference-gateway.com/managed";
+pub(crate) const MANAGED_LABEL: &str = "inference-gateway.com/managed";
 const REACHABLE: &str = "Cluster reachable";
-const ORCHESTRATORS: &str = "orchestrators.core.inference-gateway.com";
+pub(crate) const ORCHESTRATORS: &str = "orchestrators.core.inference-gateway.com";
 const WORKSPACE_LABEL: &str = "inference-gateway.com/workspace";
 const READY_STATUSES: &str =
     r#"jsonpath={range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}"#;
-const MACHINES: &str = r#"jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].reason}{"\n"}{end}"#;
-const MOCK_MACHINE: &str = "infer-mock-broken";
-static MOCK_MACHINE_DELETED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+pub(crate) const MACHINES: &str = r#"jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\t"}{.status.conditions[?(@.type=="Ready")].reason}{"\n"}{end}"#;
 const LOCAL_WORKSPACE: &str = "ubuntu-desktop";
 /// A local cluster's sessions run on a pod of their own, not the user's
 /// machine, so its agents use the computer and edit files without asking.
@@ -38,13 +35,13 @@ const COMPUTER_ENV: [(&str, &str); 5] = [
 
 /// Something a cluster must have installed before sessions can run in it,
 /// told by the CRDs it brings.
-struct Requirement {
+pub(crate) struct Requirement {
     name: &'static str,
-    crds: &'static [&'static str],
+    pub(crate) crds: &'static [&'static str],
     fix: &'static str,
 }
 
-const REQUIREMENTS: [Requirement; 3] = [
+pub(crate) const REQUIREMENTS: [Requirement; 3] = [
     Requirement {
         name: "agent-sandbox",
         crds: &["sandboxes.agents.x-k8s.io"],
@@ -435,7 +432,13 @@ fn kubectl_for(context: &str) -> std::process::Command {
     command
 }
 
+/// kubectl's output for `args` in `context`. This and `kubectl_with_input` are
+/// the only places that reach a cluster, so mock mode answers both from
+/// `kubectl_mock` and everything above them runs as it does for real.
 pub(crate) fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
+    if crate::env::mock_mode() {
+        return Ok(crate::kubectl_mock::output(args));
+    }
     let output = kubectl_for(context)
         .arg(KUBECTL_TIMEOUT)
         .args(args)
@@ -453,6 +456,9 @@ pub(crate) fn kubectl_with_input(
 ) -> Result<String, String> {
     use std::io::Write;
     use std::process::Stdio;
+    if crate::env::mock_mode() {
+        return Ok(crate::kubectl_mock::output(args));
+    }
     let mut child = kubectl_for(context)
         .arg(KUBECTL_TIMEOUT)
         .args(args)
@@ -884,12 +890,6 @@ pub(crate) async fn workspace_machines(
     namespace: String,
     name: String,
 ) -> Result<Vec<Machine>, String> {
-    use std::sync::atomic::Ordering;
-    if crate::env::mock_mode() {
-        let listing = format!("{MOCK_MACHINE}\tFalse\tSandboxNotReady");
-        let deleted = MOCK_MACHINE_DELETED.load(Ordering::Relaxed);
-        return Ok(parse_machines(if deleted { "" } else { &listing }));
-    }
     tokio::task::spawn_blocking(move || machines_of(&context, &namespace, &name))
         .await
         .map_err(|e| format!("listing task failed: {e}"))?
@@ -902,13 +902,6 @@ pub(crate) async fn delete_workspace_machine(
     namespace: String,
     machine: String,
 ) -> Result<(), String> {
-    if crate::env::mock_mode() {
-        MOCK_MACHINE_DELETED.fetch_or(
-            machine == MOCK_MACHINE,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        return Ok(());
-    }
     tokio::task::spawn_blocking(move || delete_machine_named(&context, &namespace, &machine))
         .await
         .map_err(|e| format!("delete task failed: {e}"))?
@@ -916,13 +909,6 @@ pub(crate) async fn delete_workspace_machine(
 
 /// Checks the cluster in `context`, counting the sessions `selector` picks.
 pub(crate) async fn check(context: String, namespace: String, selector: String) -> ClusterCheck {
-    if crate::env::mock_mode() {
-        return ClusterCheck {
-            prerequisites: vec![prerequisite(REACHABLE, true, "")],
-            running: Some(0),
-            suspended: Some(0),
-        };
-    }
     tokio::task::spawn_blocking(move || check_cluster(&context, &namespace, &selector))
         .await
         .unwrap_or_else(|e| unreachable(&e.to_string()))
@@ -953,6 +939,46 @@ pub(crate) async fn provision_local_cluster(on_stage: Channel<String>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mock_cluster_meets_every_prerequisite_and_runs_nothing() {
+        let crds = crate::kubectl_mock::output(&["get", "crd", "-o", "name"]);
+        assert!(
+            installed_prerequisites(&crd_names(&crds))
+                .iter()
+                .all(|check| check.met)
+        );
+        let labels = crate::kubectl_mock::output(&["get", "namespace", "ns"]);
+        assert!(
+            namespace_prerequisites("ns", Ok(&labels))
+                .iter()
+                .all(|check| check.met)
+        );
+        let statuses = crate::kubectl_mock::output(&["get", ORCHESTRATORS, "-o", READY_STATUSES]);
+        assert_eq!(session_counts(&statuses), (0, 0));
+    }
+
+    #[test]
+    fn the_mock_cluster_holds_one_broken_machine_until_it_is_deleted() {
+        let list = || {
+            parse_machines(&crate::kubectl_mock::output(&[
+                "get",
+                ORCHESTRATORS,
+                "-o",
+                MACHINES,
+            ]))
+        };
+        let listed = list();
+        assert_eq!(listed.len(), 1);
+        assert!(!listed[0].ready);
+        assert_eq!(listed[0].reason, "SandboxNotReady");
+
+        crate::kubectl_mock::output(&["delete", ORCHESTRATORS, "-l", "workspace=any"]);
+        assert_eq!(list().len(), 1);
+
+        crate::kubectl_mock::output(&["delete", ORCHESTRATORS, &listed[0].name, "-n", "ns"]);
+        assert!(list().is_empty());
+    }
 
     const DAEMON_YAML: &str = "binding:\n  enabled: true\n  token: secret\nworkspaces:\n  - name: laptop\n    kind: local\n  - name: build\n    kind: kubernetes\n    context: build-cluster\n    namespace: infer\n    mode: all-in-one\n    gateway_env:\n      - OPENAI_API_KEY\n    env:\n      INFER_AGENT_MODEL: openai/gpt-4o\n      INFER_COMPUTER_USE_ENABLED: true\n";
 

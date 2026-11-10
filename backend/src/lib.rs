@@ -17,6 +17,7 @@ mod env;
 mod export;
 mod gateway;
 mod input_capture;
+mod kubectl_mock;
 mod local_cluster;
 mod markdown_agents;
 mod mcp_settings;
