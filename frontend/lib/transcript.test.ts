@@ -11,6 +11,7 @@ import {
   subagentParentId,
   todosDiffer,
   todosFrom,
+  type ChatAction,
   type ChatState,
   type Delegation,
   type TodoItem,
@@ -458,7 +459,7 @@ test("ApprovalRequest before AgentError keeps the natural order", () => {
 });
 
 test("approval record renders above its tool card once the result arrives", () => {
-  const actions = (assistantFirst: boolean) => [
+  const actions = (assistantFirst: boolean): ChatAction[] => [
     { type: "userSend", text: "write" },
     ...(assistantFirst
       ? [
@@ -471,7 +472,7 @@ test("approval record renders above its tool card once the result arrives", () =
           ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: '{"path":"a"}', tool_call_id: "c1" }),
         ]
       : [ev({ kind: "ApprovalRequest", tool_name: "Write", tool_args: '{"path":"a"}', tool_call_id: "c1" })]),
-    { type: "setApproval", callId: "c1", status: "approved" as const },
+    { type: "setApproval", callId: "c1", status: "approved" },
     ...(assistantFirst
       ? []
       : [

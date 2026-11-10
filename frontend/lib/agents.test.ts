@@ -98,10 +98,10 @@ test("the preamble carries the mail identity, the send whitelist and the others'
     ].join("\n"),
   );
   const addressless = agent({ name: "writer", allowed_recipients: ["nobody@example.com"] });
-  expect(agentInstructionsPreamble(addressless, [addressless])).toBe(
-    'You are running as the agent "writer": Writes prose.',
+  expect(
+    agentInstructionsPreamble(addressless, [addressless]),
     "a whitelist without an address says nothing about mail",
-  );
+  ).toBe('You are running as the agent "writer": Writes prose.');
 });
 
 test("fluent emoji entries are unique and resolve to the static and animated asset URLs", () => {

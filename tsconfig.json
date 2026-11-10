@@ -24,6 +24,5 @@
     "paths": { "@/*": ["./frontend/*"] }
   },
   "include": ["frontend"],
-  "exclude": ["frontend/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

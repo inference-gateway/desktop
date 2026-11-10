@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import { providerKey, workspaceModel } from "./workspace-model";
 
+const modelEnv = (model: string): Record<string, string> => (model ? { INFER_AGENT_MODEL: model } : {});
+
 const workspace = (gateway_env: string[], model = "") => ({
   name: "ubuntu-desktop",
   gateway_env,
-  env: model ? { INFER_AGENT_MODEL: model } : {},
+  env: modelEnv(model),
 });
 
 test("a provider key is named after the model's provider", () => {
