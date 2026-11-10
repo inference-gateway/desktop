@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { framePoint, keyInput, mouseButton, wheelInputs } from "./screen-input";
+import { framePoint, keyInput, latestOnly, mouseButton, wheelInputs } from "./screen-input";
 
 const key = (key: string, modifiers: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   key,
@@ -43,4 +43,15 @@ test("a wheel event scrolls at least one click and at most ten per axis", () => 
   expect(wheelInputs(-250, 0)).toEqual([{ kind: "scroll", direction: "horizontal", amount: -3 }]);
   expect(wheelInputs(0, 99999)).toEqual([{ kind: "scroll", direction: "vertical", amount: 10 }]);
   expect(wheelInputs(0, 0)).toEqual([]);
+});
+
+test("latestOnly keeps the newest value and tells when the slot was empty", () => {
+  const moves = latestOnly<number>();
+  expect(moves.take()).toBeNull();
+  expect(moves.put(1)).toBe(true);
+  expect(moves.put(2)).toBe(false);
+  expect(moves.put(3)).toBe(false);
+  expect(moves.take()).toBe(3);
+  expect(moves.take()).toBeNull();
+  expect(moves.put(4)).toBe(true);
 });
