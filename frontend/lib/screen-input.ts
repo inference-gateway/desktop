@@ -1,5 +1,6 @@
 /** One input of the person on a screen they took over, in the frame space the daemon serves the screen in. */
 export type ScreenInput =
+  | { kind: "move"; x: number; y: number }
   | { kind: "click"; x: number; y: number; button: "left" | "right" | "middle" }
   | { kind: "scroll"; direction: "vertical" | "horizontal"; amount: number }
   | { kind: "type"; text: string }
@@ -78,4 +79,25 @@ export function wheelInputs(deltaX: number, deltaY: number): ScreenInput[] {
   const scroll = (direction: "vertical" | "horizontal", delta: number): ScreenInput[] =>
     delta ? [{ kind: "scroll", direction, amount: clicks(delta) }] : [];
   return [...scroll("vertical", deltaY), ...scroll("horizontal", deltaX)];
+}
+
+/**
+ * Holds only the newest value put into it. A pointer moves far more often than
+ * an input can be sent, so the moves that pile up while one is in flight
+ * collapse into the latest. `put` reports whether the slot was empty.
+ */
+export function latestOnly<T>(): { put: (value: T) => boolean; take: () => T | null } {
+  let held: T | null = null;
+  return {
+    put: (value) => {
+      const wasEmpty = held === null;
+      held = value;
+      return wasEmpty;
+    },
+    take: () => {
+      const value = held;
+      held = null;
+      return value;
+    },
+  };
 }

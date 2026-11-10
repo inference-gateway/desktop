@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { api, type Screen } from "@/lib/tauri";
 import { computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
-import { framePoint, keyInput, mouseButton, wheelInputs, type ScreenInput } from "@/lib/screen-input";
+import { framePoint, keyInput, latestOnly, mouseButton, wheelInputs, type ScreenInput } from "@/lib/screen-input";
 import { useDesktop } from "@/store";
 import { AgentAvatar } from "./AgentAvatar";
 
@@ -127,12 +127,16 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
   const image = useRef<HTMLImageElement>(null);
   const inputs = useRef(Promise.resolve());
   const lastEscape = useRef(0);
+  const pointerMoves = useRef(latestOnly<{ x: number; y: number }>());
 
   useEffect(() => surface.current?.focus(), []);
 
-  const send = (input: ScreenInput) => {
+  const sendWhenItsTurnComes = (nextInput: () => ScreenInput | null) => {
     inputs.current = inputs.current
-      .then(() => api.screenInput(tile.sessionId, project, input))
+      .then(() => {
+        const input = nextInput();
+        return input ? api.screenInput(tile.sessionId, project, input) : undefined;
+      })
       .then(
         () => undefined,
         (e) => {
@@ -142,14 +146,32 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
       );
   };
 
+  const send = (input: ScreenInput) => sendWhenItsTurnComes(() => input);
+
+  const pointOnScreen = (event: MouseEvent) => {
+    const shown = image.current;
+    if (!shown || !screen) return null;
+    const frame = { width: screen.width || shown.naturalWidth, height: screen.height || shown.naturalHeight };
+    return framePoint({ x: event.clientX, y: event.clientY }, shown.getBoundingClientRect(), frame);
+  };
+
   const click = (event: MouseEvent) => {
     event.preventDefault();
     surface.current?.focus();
-    const shown = image.current;
-    if (!shown || !screen) return;
-    const frame = { width: screen.width || shown.naturalWidth, height: screen.height || shown.naturalHeight };
-    const at = framePoint({ x: event.clientX, y: event.clientY }, shown.getBoundingClientRect(), frame);
+    const at = pointOnScreen(event);
     if (at) send({ kind: "click", ...at, button: mouseButton(event.button) });
+  };
+
+  const movePointer = (event: MouseEvent) => {
+    const at = pointOnScreen(event);
+    if (!at) return;
+    const noMoveWaiting = pointerMoves.current.put(at);
+    if (noMoveWaiting) {
+      sendWhenItsTurnComes(() => {
+        const latest = pointerMoves.current.take();
+        return latest ? { kind: "move", ...latest } : null;
+      });
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -201,6 +223,7 @@ function DrivenScreen({ tile, project }: { tile: ComputerTile; project?: string 
             alt=""
             draggable={false}
             onMouseDown={click}
+            onMouseMove={movePointer}
             onContextMenu={(event) => event.preventDefault()}
             className="max-h-full max-w-full cursor-default select-none"
           />
