@@ -44,7 +44,7 @@ import {
   type Snippet,
 } from "@/lib/snippets";
 import { hydrateRegistry } from "@/lib/skills";
-import { stripV } from "@/lib/updates";
+import { markApplied, stripV, updateButtonState } from "@/lib/updates";
 
 const STORAGE_KEY = "selectedModel";
 const AUTO_MODE_KEY = "autoMode";
@@ -112,18 +112,18 @@ const INIT_PR_INSTRUCTION =
 
 /** Status text for an install progress event, shared by the full init flow and
  * per-component installs; "Ready" and "Error" carry extra side-effects there. */
-function progressStatus(event: ProgressEvent): string {
+function progressStatus(event: ProgressEvent, what = "infer"): string {
   switch (event.kind) {
     case "Checking":
       return "Checking for infer binary...";
     case "Downloading":
       return event.total > 0
-        ? `Downloading infer... ${Math.round((event.received / event.total) * 100)}%`
-        : "Downloading infer...";
+        ? `Downloading ${what}... ${Math.round((event.received / event.total) * 100)}%`
+        : `Downloading ${what}...`;
     case "Verifying":
       return "Verifying download...";
     case "Installing":
-      return "Installing infer...";
+      return `Installing ${what}...`;
     case "Initializing":
       return "Running initial setup...";
     case "Ready":
@@ -160,6 +160,9 @@ function useDesktopStore() {
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
+  const [updating, setUpdating] = useState(false);
+  const updatingRef = useRef(false);
+  const updateCheckAfterInit = useRef<Promise<boolean | null>>(Promise.resolve(null));
   const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "computers">("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
@@ -539,20 +542,24 @@ function useDesktopStore() {
     const cached = JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || "null");
     if (!force && cached && Date.now() - cached.checkedAt < UPDATE_INTERVAL_MS) {
       setUpdates(cached.updates);
-      return;
+      return true;
     }
     try {
       const list = await api.checkUpdates();
       localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ checkedAt: Date.now(), updates: list }));
       setUpdates(list);
+      return true;
     } catch (e) {
       console.error("check_updates failed:", e);
       if (cached) setUpdates(cached.updates);
+      return false;
     }
   }, []);
 
   const initBackend = useCallback(
     async (force = false, restart = false) => {
+      let settle: (checked: boolean | null) => void = () => {};
+      updateCheckAfterInit.current = new Promise((resolve) => (settle = resolve));
       try {
         const ch = new Channel<ProgressEvent>();
         ch.onmessage = (event) => {
@@ -560,7 +567,9 @@ function useDesktopStore() {
             case "Ready":
               setStatus("Ready");
               setReady(true);
-              startGatewayThenModels(force, restart).then(() => checkForUpdates(true));
+              startGatewayThenModels(force, restart)
+                .then(() => checkForUpdates(true))
+                .then(settle, () => settle(null));
               refreshConversations();
               api
                 .listTools()
@@ -583,6 +592,7 @@ function useDesktopStore() {
         await api.checkAndInstallCli(ch, force, restart);
       } catch (err) {
         setError(`Setup failed: ${err}`);
+        settle(null);
       }
     },
     [setStatus, setError, startGatewayThenModels, checkForUpdates, refreshConversations],
@@ -1535,17 +1545,35 @@ function useDesktopStore() {
     [startGatewayThenModels, setError],
   );
 
-  const applyUpdates = useCallback(async () => {
-    await restartBackend(true);
-    if (updates.some((u) => u.outdated && u.name === "Desktop")) {
+  const installDesktop = useCallback(
+    (tag: string | null = null) => {
       setStatus("Updating app...");
-      try {
-        await api.installDesktopUpdate();
-      } catch (err) {
-        setError(`App update failed: ${err}`);
-      }
+      const ch = new Channel<ProgressEvent>();
+      ch.onmessage = (event) => setStatus(progressStatus(event, "app update"));
+      return api.installDesktopUpdate(ch, tag);
+    },
+    [setStatus],
+  );
+
+  // One apply at a time, and busy until the follow-up check has answered, so
+  // neither update button turns clickable again on rows that are about to change.
+  const applyUpdates = useCallback(async () => {
+    if (updatingRef.current) return;
+    updatingRef.current = true;
+    setUpdating(true);
+    try {
+      const desktopOutdated = updates.some((u) => u.outdated && u.name === "Desktop");
+      localStorage.removeItem(UPDATE_CACHE_KEY);
+      await restartBackend(true);
+      if ((await updateCheckAfterInit.current) === false) setUpdates(markApplied);
+      if (desktopOutdated) await installDesktop();
+    } catch (err) {
+      setError(`App update failed: ${err}`);
+    } finally {
+      updatingRef.current = false;
+      setUpdating(false);
     }
-  }, [restartBackend, updates, setStatus, setError]);
+  }, [restartBackend, installDesktop, updates, setError]);
 
   // Per-component version pinning: the tag picked in the Updates tab, per
   // component row, kept until it has been installed.
@@ -1568,8 +1596,7 @@ function useDesktopStore() {
       try {
         if (name === "Desktop") {
           // The updater relaunches the app, so this never resolves.
-          setStatus("Updating app...");
-          await api.installDesktopUpdate(tag);
+          await installDesktop(tag);
         } else if (name === "Gateway") {
           await cancelRunningAgents();
           setReady(false);
@@ -1594,6 +1621,7 @@ function useDesktopStore() {
     },
     [
       selectedVersions,
+      installDesktop,
       cancelRunningAgents,
       startGatewayThenModels,
       selectVersion,
@@ -2099,7 +2127,7 @@ function useDesktopStore() {
     installUpdate,
     versionBadge,
     updateBannerText,
-    showUpdateBanner: outdated.length > 0,
+    updateButton: updateButtonState(updates, updating),
     checkForUpdates,
     applyUpdates,
     composerRef,

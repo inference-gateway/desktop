@@ -32,3 +32,20 @@ export function versionAction(installed: string, target: string): "Upgrade" | "D
   }
   return null;
 }
+
+/** The one "update" button: hidden with nothing to install, busy for the whole
+ * apply, available otherwise. Busy wins, so the button never turns clickable
+ * again while an apply is still being confirmed. */
+export function updateButtonState(updates: UpdateInfo[], updating: boolean): "hidden" | "busy" | "available" {
+  if (updating) return "busy";
+  return updates.some((u) => u.outdated) ? "available" : "hidden";
+}
+
+/** The rows after an apply whose follow-up check could not run: the CLI and
+ * gateway are taken as updated, so a stale row does not offer them again. The
+ * desktop app is left alone - a finished desktop install relaunches the app. */
+export function markApplied(updates: UpdateInfo[]): UpdateInfo[] {
+  return updates.map((u) =>
+    u.outdated && u.name !== "Desktop" ? { ...u, outdated: false, current: u.latest ?? u.current } : u,
+  );
+}

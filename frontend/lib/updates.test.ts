@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { selectableVersions, stripV, versionAction } from "./updates";
+import { markApplied, selectableVersions, stripV, updateButtonState, versionAction } from "./updates";
 
 test("a release tag loses its v prefix, nothing else", () => {
   expect(stripV("v0.63.1")).toBe("0.63.1");
@@ -31,4 +31,29 @@ test("an older install means an upgrade and a newer one a downgrade, numerically
   expect(versionAction("0.158.0", "0.158.0.1")).toBe("Upgrade");
   expect(versionAction("dev", "0.158.0")).toBeNull();
   expect(versionAction("0.158.0", "not-a-version")).toBeNull();
+});
+
+test("the update button goes available, busy, hidden and is never clickable in between", () => {
+  const row = (name: string, outdated: boolean) => ({
+    name,
+    current: "0.1.0",
+    latest: "0.2.0",
+    outdated,
+    versions: [],
+  });
+  const before = [row("CLI", true), row("Gateway", false), row("Desktop", false)];
+  expect(updateButtonState(before, false)).toBe("available");
+  expect(updateButtonState(before, true)).toBe("busy");
+  const stillStale = before;
+  expect(updateButtonState(stillStale, true)).toBe("busy");
+  const applied = markApplied(before);
+  expect(applied[0]).toMatchObject({ outdated: false, current: "0.2.0" });
+  expect(updateButtonState(applied, true)).toBe("busy");
+  expect(updateButtonState(applied, false)).toBe("hidden");
+});
+
+test("an unconfirmed apply never hides a pending desktop update", () => {
+  const desktop = { name: "Desktop", current: "0.1.0", latest: "0.2.0", outdated: true, versions: [] };
+  expect(markApplied([desktop])).toEqual([desktop]);
+  expect(updateButtonState(markApplied([desktop]), false)).toBe("available");
 });

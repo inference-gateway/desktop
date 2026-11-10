@@ -1,3 +1,4 @@
+use crate::download::ProgressEvent;
 use crate::env::infer_bin_path;
 use crate::gateway::gateway_bin_path;
 use std::io::Read;
@@ -226,6 +227,14 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
     }
 }
 
+/// Whole percent downloaded, or whole megabytes when the server sent no length.
+/// Progress is reported once per step, not once per network chunk.
+fn progress_step(received: u64, total: u64) -> u64 {
+    (received * 100)
+        .checked_div(total)
+        .unwrap_or(received >> 20)
+}
+
 /// Download, verify and install the desktop app update, then relaunch. Does not
 /// return on success. `tag` pins the updater to that release's manifest, and
 /// drops the default newer-than-current rule, so an older release can be
@@ -234,6 +243,7 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
 pub(crate) async fn install_desktop_update(
     app: tauri::AppHandle,
     tag: Option<String>,
+    on_event: tauri::ipc::Channel<ProgressEvent>,
 ) -> Result<(), String> {
     let builder = desktop_updater_builder(&app, 300)?;
     let updater = match &tag {
@@ -257,8 +267,22 @@ pub(crate) async fn install_desktop_update(
         .await
         .map_err(|e| error_chain(&e))?
         .ok_or("Desktop app is already up to date")?;
+    let mut received = 0u64;
+    let mut reported = None;
     update
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            |chunk, total| {
+                received += chunk as u64;
+                let total = total.unwrap_or(0);
+                let step = progress_step(received, total);
+                if reported.replace(step) != Some(step) {
+                    let _ = on_event.send(ProgressEvent::Downloading { received, total });
+                }
+            },
+            || {
+                let _ = on_event.send(ProgressEvent::Installing);
+            },
+        )
         .await
         .map_err(|e| error_chain(&e))?;
     app.restart();
@@ -267,6 +291,16 @@ pub(crate) async fn install_desktop_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_steps_by_percent_or_by_megabyte_without_a_length() {
+        assert_eq!(progress_step(0, 200), 0);
+        assert_eq!(progress_step(1, 200), 0);
+        assert_eq!(progress_step(2, 200), 1);
+        assert_eq!(progress_step(200, 200), 100);
+        assert_eq!(progress_step((1 << 20) - 1, 0), 0);
+        assert_eq!(progress_step(3 << 20, 0), 3);
+    }
 
     #[test]
     fn test_tags_from_lines() {
