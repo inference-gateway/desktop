@@ -23,7 +23,20 @@ pub(crate) async fn check_and_install_cli(
     force: bool,
     restart: bool,
     tag: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::blocking_with_state(app, move |state| {
+        install_cli(&on_event, force, restart, tag.as_deref(), state)
+    })
+    .await
+}
+
+fn install_cli(
+    on_event: &Channel<ProgressEvent>,
+    force: bool,
+    restart: bool,
+    tag: Option<&str>,
+    state: &crate::AppState,
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
     // A pinned tag installs over an existing binary on purpose, so force is implied.
@@ -37,12 +50,12 @@ pub(crate) async fn check_and_install_cli(
             use std::os::unix::fs::PermissionsExt;
             let meta = std::fs::metadata(&bin_path).map_err(|e| e.to_string())?;
             if meta.permissions().mode() & 0o111 != 0 {
-                return finish(&on_event, restart, &state);
+                return finish(on_event, restart, state);
             }
         }
         #[cfg(not(unix))]
         {
-            return finish(&on_event, restart, &state);
+            return finish(on_event, restart, state);
         }
     }
 
@@ -54,7 +67,7 @@ pub(crate) async fn check_and_install_cli(
         )
     })?;
 
-    let release_base = cli_release_base(tag.as_deref());
+    let release_base = cli_release_base(tag);
 
     let bin_dir = bin_dir();
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
@@ -65,11 +78,11 @@ pub(crate) async fn check_and_install_cli(
         received: 0,
         total: 0,
     });
-    if !try_gh_download(asset, &archive_path, tag.as_deref())? {
+    if !try_gh_download(asset, &archive_path, tag)? {
         download(
             &format!("{}/{}", release_base, asset),
             &archive_path,
-            &on_event,
+            on_event,
         )?;
     }
 
@@ -77,7 +90,7 @@ pub(crate) async fn check_and_install_cli(
     let checksums_url = format!("{}/checksums.txt", release_base);
     let checksums_text = {
         let checksums_temp = bin_dir.join("checksums.txt.tmp");
-        if try_gh_download("checksums.txt", &checksums_temp, tag.as_deref())? {
+        if try_gh_download("checksums.txt", &checksums_temp, tag)? {
             let text = std::fs::read_to_string(&checksums_temp).map_err(|e| e.to_string())?;
             let _ = std::fs::remove_file(&checksums_temp);
             text
@@ -151,7 +164,7 @@ pub(crate) async fn check_and_install_cli(
         }
     }
 
-    finish(&on_event, restart, &state)
+    finish(on_event, restart, state)
 }
 
 /// Extracts the executable from the release tarball into a staging directory

@@ -55,6 +55,17 @@ pub(crate) struct AppState {
     remote_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
+/// Runs blocking work that needs the app state on the blocking pool, so a
+/// command neither freezes the window nor holds an async worker while it waits.
+pub(crate) async fn blocking_with_state<T: Send + 'static>(
+    app: tauri::AppHandle,
+    work: impl FnOnce(&AppState) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(move || work(&app.state::<AppState>()))
+        .await
+        .map_err(|error| format!("background task failed: {error}"))?
+}
+
 // Always-on-top (NSFloatingWindowLevel) still draws under the Dock; Tauri has no
 // window-level API, so set NSStatusWindowLevel (25) directly. The overlay is
 // also kept out of the accessibility tree: an ignored window hands its children
