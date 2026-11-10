@@ -38,6 +38,7 @@ mod timeline;
 mod tools;
 mod tts_samples;
 mod updates;
+mod updates_mock;
 mod workspace_settings;
 mod workspaces;
 

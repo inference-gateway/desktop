@@ -64,6 +64,9 @@ pub enum Step {
     WaitFor {
         wait_for: WaitTarget,
     },
+    WaitGone {
+        wait_gone: GoneTarget,
+    },
     Click {
         click: ClickTarget,
     },
@@ -105,6 +108,17 @@ pub struct WaitTarget {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct GoneTarget {
+    pub button: String,
+    /// A button that must not show up while `button` is still there, nor
+    /// once it has gone.
+    pub never: Option<String>,
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClickTarget {
     pub button: String,
 }
@@ -119,6 +133,9 @@ pub struct FileTarget {
 #[serde(deny_unknown_fields)]
 pub struct TextTarget {
     pub text: String,
+    /// Seconds to wait for the text to show up. Without it the check is immediate.
+    #[serde(default)]
+    pub timeout: u64,
 }
 
 fn default_timeout() -> u64 {

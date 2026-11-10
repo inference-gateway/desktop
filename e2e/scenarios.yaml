@@ -76,6 +76,18 @@ scenarios:
               content: "should never land"
       - content: "The file was written."
 
+  # A Write that pauses at approval, so the chat is still running when the
+  # CLI is restarted (used by restart-stops-chat).
+  - name: write-restarted
+    match: '(?i)create a file named restarted\.txt'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "restarted.txt"
+              content: "should never land"
+      - content: "The file was written."
+
   - name: todo-batched-with-write
     match: '(?i)plan and create a file named todo-batch\.txt'
     turns:

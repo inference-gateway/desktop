@@ -24,6 +24,20 @@ pub(crate) struct UpdateInfo {
     versions: Vec<String>,
 }
 
+impl UpdateInfo {
+    /// A component at `current` against its release tags, newest first.
+    pub(crate) fn new(name: &str, current: String, versions: Vec<String>) -> Self {
+        let latest = latest_from_tags(&versions);
+        UpdateInfo {
+            outdated: is_outdated(&current, &latest),
+            name: name.to_string(),
+            current,
+            latest,
+            versions,
+        }
+    }
+}
+
 /// Last whitespace token of the first line, minus a leading `v`. Covers
 /// `infer v0.158.0`, `infer version v0.158.0` and the gateway's bare `0.44.0`.
 pub(crate) fn parse_version(output: &str) -> Option<String> {
@@ -124,6 +138,9 @@ fn latest_from_tags(versions: &[String]) -> String {
 
 #[tauri::command]
 pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInfo>, String> {
+    if crate::env::mock_mode() {
+        return Ok(crate::updates_mock::check());
+    }
     let mut updates: Vec<UpdateInfo> = tokio::task::spawn_blocking(|| {
         let components = [
             ("CLI", infer_bin_path(), "inference-gateway/cli", "version"),
@@ -138,15 +155,7 @@ pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInf
             .into_iter()
             .filter_map(|(name, bin, repo, arg)| {
                 let current = installed_version(&bin, arg)?;
-                let versions = recent_tags(repo);
-                let latest = latest_from_tags(&versions);
-                Some(UpdateInfo {
-                    outdated: is_outdated(&current, &latest),
-                    name: name.to_string(),
-                    current,
-                    latest,
-                    versions,
-                })
+                Some(UpdateInfo::new(name, current, recent_tags(repo)))
             })
             .collect()
     })
