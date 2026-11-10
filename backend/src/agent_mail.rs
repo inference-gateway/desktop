@@ -67,6 +67,56 @@ struct ListEntry {
     read_only: bool,
 }
 
+/// What the app asks of AgentMail. The app talks to it through this, so mock
+/// mode swaps the service for `MockMail` in one place, `mail`.
+trait Mail {
+    /// Provisions `<name>@agentmail.to` (display name = agent name) and
+    /// answers the address the inbox got.
+    fn create_inbox(&self, name: &str) -> Result<String, String>;
+    /// Mints a key scoped to `inbox` with `INBOX_KEY_PERMISSIONS`, named after
+    /// the secret that keeps it.
+    fn mint_inbox_key(&self, inbox: &str, label: &str) -> Result<String, String>;
+    /// Every entry of `inbox`'s send allowlist, across all pages.
+    fn allowlist(&self, inbox: &str) -> Result<Vec<ListEntry>, String>;
+    fn allow(&self, inbox: &str, entry: &str) -> Result<(), String>;
+    fn disallow(&self, inbox: &str, entry: &str) -> Result<(), String>;
+}
+
+/// AgentMail for `api_key`'s owner, or its stand-in in mock mode.
+fn mail(api_key: &str) -> Box<dyn Mail> {
+    if mock_mode() {
+        Box::new(MockMail)
+    } else {
+        Box::new(Client::new(api_key))
+    }
+}
+
+/// An AgentMail that takes every request and keeps nothing: inboxes get the
+/// address they asked for, keys are a fixed value and allowlists start empty.
+struct MockMail;
+
+impl Mail for MockMail {
+    fn create_inbox(&self, name: &str) -> Result<String, String> {
+        Ok(format!("{name}@agentmail.to"))
+    }
+
+    fn mint_inbox_key(&self, _inbox: &str, _label: &str) -> Result<String, String> {
+        Ok("am_mock_inbox_key".to_owned())
+    }
+
+    fn allowlist(&self, _inbox: &str) -> Result<Vec<ListEntry>, String> {
+        Ok(Vec::new())
+    }
+
+    fn allow(&self, _inbox: &str, _entry: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn disallow(&self, _inbox: &str, _entry: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 /// The AgentMail REST API as the owner of an API key, every call bounded by
 /// `REQUEST_TIMEOUT`.
 struct Client {
@@ -84,9 +134,9 @@ impl Client {
             authorization: format!("Bearer {}", api_key.trim()),
         }
     }
+}
 
-    /// Provisions `<name>@agentmail.to` (display name = agent name) and
-    /// answers the address the inbox got.
+impl Mail for Client {
     fn create_inbox(&self, name: &str) -> Result<String, String> {
         let inbox: Inbox = self
             .http
@@ -98,8 +148,6 @@ impl Client {
         Ok(inbox.email)
     }
 
-    /// Mints a key scoped to `inbox` with `INBOX_KEY_PERMISSIONS`, named after
-    /// the secret that keeps it.
     fn mint_inbox_key(&self, inbox: &str, label: &str) -> Result<String, String> {
         let permissions: serde_json::Map<String, serde_json::Value> = INBOX_KEY_PERMISSIONS
             .iter()
@@ -121,7 +169,6 @@ impl Client {
         Ok(minted.api_key)
     }
 
-    /// Every entry of `inbox`'s send allowlist, across all pages.
     fn allowlist(&self, inbox: &str) -> Result<Vec<ListEntry>, String> {
         let mut entries = Vec::new();
         let mut page_token: Option<String> = None;
@@ -247,7 +294,7 @@ fn plan_sync(current: &[ListEntry], wanted: &BTreeSet<String>) -> (Vec<String>, 
 /// answers the entries the cap dropped. Adds go first so the list never
 /// passes through empty, which AgentMail reads as allow all.
 fn sync_allowlist(
-    client: &Client,
+    client: &dyn Mail,
     agent: &MarkdownAgent,
     cap: &[String],
 ) -> Result<Vec<String>, String> {
@@ -297,14 +344,10 @@ fn sync_agent_mail_in(dirs: &[PathBuf], home: &Path, name: &str) -> Result<Vec<S
         return Err(format!("agent {name} has no AgentMail API key"));
     }
     let cap = config::agent_mail_cap_in(home);
-    if mock_mode() {
-        return Ok(effective_allowlist(&agent.allowed_recipients, &cap, &agent.email).1);
-    }
-    sync_allowlist(&Client::new(&owner_key), &agent, &cap)
+    sync_allowlist(mail(&owner_key).as_ref(), &agent, &cap)
 }
 
 /// Provisions `<name>@agentmail.to` and answers the address the inbox got.
-/// Mock mode answers the address without touching AgentMail.
 #[tauri::command]
 pub(crate) async fn create_agent_inbox(name: String, api_key: String) -> Result<String, String> {
     if !markdown_agents::valid_agent_name(&name) {
@@ -313,10 +356,7 @@ pub(crate) async fn create_agent_inbox(name: String, api_key: String) -> Result<
     if api_key.trim().is_empty() {
         return Err("an AgentMail API key is needed to create an inbox".into());
     }
-    if mock_mode() {
-        return Ok(format!("{name}@agentmail.to"));
-    }
-    tokio::task::spawn_blocking(move || Client::new(&api_key).create_inbox(&name))
+    tokio::task::spawn_blocking(move || mail(&api_key).create_inbox(&name))
         .await
         .map_err(|e| format!("inbox task failed: {e}"))?
 }
@@ -396,11 +436,7 @@ fn save_inbox_secret_blocking(name: &str, owner_key: &str) -> Result<InboxSecret
         ..Secret::default()
     });
     secrets::check(&secret, is_new)?;
-    let key = if mock_mode() {
-        "am_mock_inbox_key".to_owned()
-    } else {
-        Client::new(&owner_key).mint_inbox_key(agent.email.trim(), &label)?
-    };
+    let key = mail(&owner_key).mint_inbox_key(agent.email.trim(), &label)?;
     let failures = secrets::save_blocking(secret.clone(), key, is_new)?;
     Ok(InboxSecret {
         label,
@@ -608,6 +644,73 @@ mod tests {
             &["x@evil.example"],
         );
         check(&["corp.example"], &["CORP.example"], &["corp.example"], &[]);
+    }
+
+    /// An AgentMail that holds one allowlist and writes down what it is asked.
+    struct RecordingMail {
+        current: Vec<ListEntry>,
+        asked: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl Mail for RecordingMail {
+        fn create_inbox(&self, name: &str) -> Result<String, String> {
+            Ok(name.to_owned())
+        }
+
+        fn mint_inbox_key(&self, _inbox: &str, _label: &str) -> Result<String, String> {
+            Ok(String::new())
+        }
+
+        fn allowlist(&self, _inbox: &str) -> Result<Vec<ListEntry>, String> {
+            Ok(self.current.clone())
+        }
+
+        fn allow(&self, _inbox: &str, entry: &str) -> Result<(), String> {
+            self.asked.borrow_mut().push(format!("allow {entry}"));
+            Ok(())
+        }
+
+        fn disallow(&self, _inbox: &str, entry: &str) -> Result<(), String> {
+            self.asked.borrow_mut().push(format!("disallow {entry}"));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_sync_adds_before_it_removes_and_leaves_read_only_entries() {
+        let home = TempDir::new("agent-mail-sync");
+        seed_agent(&home);
+        let agent = mail_agent_in(&agent_dirs_of(&home), "code-reviewer").unwrap();
+        let mail = RecordingMail {
+            current: vec![
+                entry("old@example.com", false),
+                entry("kept@example.com", true),
+            ],
+            asked: Default::default(),
+        };
+        assert_eq!(sync_allowlist(&mail, &agent, &[]), Ok(vec![]));
+        assert_eq!(
+            *mail.asked.borrow(),
+            [
+                "allow code-reviewer@agentmail.to",
+                "disallow old@example.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_mock_mail_takes_every_request() {
+        assert_eq!(
+            MockMail.create_inbox("helper"),
+            Ok("helper@agentmail.to".into())
+        );
+        assert_eq!(
+            MockMail.mint_inbox_key("a@b", "label"),
+            Ok("am_mock_inbox_key".into())
+        );
+        assert_eq!(MockMail.allowlist("a@b"), Ok(vec![]));
+        assert_eq!(MockMail.allow("a@b", "c@d"), Ok(()));
+        assert_eq!(MockMail.disallow("a@b", "c@d"), Ok(()));
     }
 
     #[test]

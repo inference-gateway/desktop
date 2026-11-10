@@ -181,66 +181,83 @@ pub(crate) struct SttStatus {
     hint: String,
 }
 
-/// Whether STT is usable and, if not, why - so the frontend can grey the mic and
-/// show the right tooltip.
-#[tauri::command]
-pub(crate) async fn stt_status() -> Result<SttStatus, String> {
+/// The speech-to-text engine behind the mic. The commands ask through this,
+/// so mock mode swaps whisper for `MockStt` in one place, `stt`.
+trait Stt {
+    /// Whether voice input is usable and, if not, why - so the frontend can
+    /// grey the mic and show the right tooltip.
+    fn status(&self) -> SttStatus;
+    /// Makes sure the binary and the model are present, reporting progress the
+    /// way the CLI install does.
+    fn prepare(&self, on_event: &Channel<ProgressEvent>) -> Result<(), String>;
+    /// The text spoken in WAV bytes (16kHz mono, produced by the WebView).
+    fn transcribe(&self, wav: &[u8]) -> Result<String, String>;
+}
+
+fn stt() -> Box<dyn Stt> {
     if mock_mode() {
-        return Ok(SttStatus {
+        Box::new(MockStt)
+    } else {
+        Box::new(Whisper)
+    }
+}
+
+/// Voice input that is always ready and hears the same sentence every time.
+struct MockStt;
+
+impl Stt for MockStt {
+    fn status(&self) -> SttStatus {
+        SttStatus {
             binary: true,
             model: true,
             downloadable: false,
             hint: String::new(),
-        });
+        }
     }
-    let binary = whisper_bin_path().is_some();
-    let downloadable = !binary
-        && tokio::task::spawn_blocking(|| binaries::has_prebuilt("whisper-cli"))
-            .await
-            .unwrap_or(true);
-    let hint = if !binary && !downloadable {
-        "No prebuilt voice tools for this platform - install whisper-cli or whisper-cpp on PATH (or set WHISPER_BIN) to enable voice input".into()
-    } else {
-        String::new()
-    };
-    Ok(SttStatus {
-        binary,
-        model: whisper_model_path().exists(),
-        downloadable,
-        hint,
-    })
+
+    fn prepare(&self, on_event: &Channel<ProgressEvent>) -> Result<(), String> {
+        let _ = on_event.send(ProgressEvent::Ready);
+        Ok(())
+    }
+
+    fn transcribe(&self, _wav: &[u8]) -> Result<String, String> {
+        Ok("this is a mock transcription".into())
+    }
 }
 
-/// Ensure the whisper binary (installed by the CLI where a prebuilt exists) and
-/// model are present, streaming progress through the same channel as the CLI install UI.
-#[tauri::command]
-pub(crate) async fn prepare_stt(on_event: Channel<ProgressEvent>) -> Result<(), String> {
-    if mock_mode() {
-        let _ = on_event.send(ProgressEvent::Ready);
-        return Ok(());
+/// whisper.cpp with the GGML model in ~/.infer/models/whisper.
+struct Whisper;
+
+impl Stt for Whisper {
+    fn status(&self) -> SttStatus {
+        let binary = whisper_bin_path().is_some();
+        let downloadable = !binary && binaries::has_prebuilt("whisper-cli");
+        let hint = if !binary && !downloadable {
+            "No prebuilt voice tools for this platform - install whisper-cli or whisper-cpp on PATH (or set WHISPER_BIN) to enable voice input".into()
+        } else {
+            String::new()
+        };
+        SttStatus {
+            binary,
+            model: whisper_model_path().exists(),
+            downloadable,
+            hint,
+        }
     }
-    tokio::task::spawn_blocking(move || {
+
+    fn prepare(&self, on_event: &Channel<ProgressEvent>) -> Result<(), String> {
         let _ = on_event.send(ProgressEvent::Checking);
         if whisper_bin_path().is_none() {
-            binaries::ensure(&["whisper-cli"], &on_event)?;
+            binaries::ensure(&["whisper-cli"], on_event)?;
         }
         ensure_whisper_model(|received, total| {
             let _ = on_event.send(ProgressEvent::Downloading { received, total });
         })?;
         let _ = on_event.send(ProgressEvent::Ready);
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Transcribe WAV bytes (16kHz mono, produced by the WebView) to text.
-#[tauri::command]
-pub(crate) async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
-    if mock_mode() {
-        return Ok("this is a mock transcription".into());
+        Ok(())
     }
-    tokio::task::spawn_blocking(move || {
+
+    fn transcribe(&self, wav: &[u8]) -> Result<String, String> {
         let bin = whisper_bin_path().ok_or("whisper-cli not found")?;
         let model = ensure_whisper_model(|_, _| {})?;
         let tmp = std::env::temp_dir().join(format!(
@@ -248,18 +265,48 @@ pub(crate) async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
             std::process::id(),
             next_tmp_id()
         ));
-        std::fs::write(&tmp, &wav).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, wav).map_err(|e| e.to_string())?;
         let result = run_whisper(&bin, &model, &tmp);
         let _ = std::fs::remove_file(&tmp);
         result
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn stt_status() -> Result<SttStatus, String> {
+    tokio::task::spawn_blocking(|| stt().status())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn prepare_stt(on_event: Channel<ProgressEvent>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || stt().prepare(&on_event))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn transcribe_audio(wav: Vec<u8>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || stt().transcribe(&wav))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mock_voice_input_is_ready_and_hears_one_sentence() {
+        let status = MockStt.status();
+        assert!(status.binary && status.model && !status.downloadable);
+        assert_eq!(status.hint, "");
+        assert_eq!(
+            MockStt.transcribe(&[]),
+            Ok("this is a mock transcription".to_owned())
+        );
+    }
 
     #[test]
     fn test_clean_transcript_strips_markers() {
