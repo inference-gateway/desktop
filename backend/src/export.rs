@@ -1,4 +1,4 @@
-use crate::agent::{A2aAgent, add_a2a_agent, list_a2a_agents, set_a2a_agent_model};
+use crate::agent::a2a::{A2aAgent, add_a2a_agent, list_a2a_agents, set_a2a_agent_model};
 use crate::config::{DesktopConfig, merge_config, merge_default_model};
 use crate::env::{home_dir, infer_dir_in};
 use base64::Engine as _;

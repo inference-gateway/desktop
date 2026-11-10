@@ -86,7 +86,7 @@ pub(crate) fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
 
 /// Token-free e2e testing: DESKTOP_MOCK=true skips the desktop-owned gateway,
 /// takes the model list from the scenarios file named by
-/// INFER_GATEWAY_MOCK_SCENARIOS (see agent::mock_models), and spawns infer
+/// INFER_GATEWAY_MOCK_SCENARIOS (see agent::models::mock_models), and spawns infer
 /// children with INFER_GATEWAY_MOCK=true - the CLI's own mock mode, where
 /// infer serves its embedded scenario gateway (see cli/internal/mockgateway).
 pub(crate) fn mock_mode() -> bool {

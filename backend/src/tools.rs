@@ -1,4 +1,4 @@
-use crate::agent::{run_infer_blocking, run_infer_in};
+use crate::agent::infer::{run_infer_blocking, run_infer_in};
 use serde_json::Value;
 
 /// Config pointers into the full `infer config get` dump mapped to the CLI

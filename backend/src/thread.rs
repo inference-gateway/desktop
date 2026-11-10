@@ -4,7 +4,7 @@
 //! one thread running `pump`, which polls with a short read timeout and
 //! drains an mpsc queue of outbound frames, so no lock spans socket I/O.
 
-use crate::agent::{AgentEvent, AgentParser, run_outcome};
+use crate::agent::events::{AgentEvent, AgentParser, run_outcome};
 use crate::daemon::{Binding, ExtensionStatus, lock};
 use std::collections::HashMap;
 use std::io::ErrorKind;
