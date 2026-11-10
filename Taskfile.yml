@@ -34,12 +34,20 @@ tasks:
     cmds:
       - cargo build
 
+  test:web:
+    desc: Run the frontend unit tests (frontend/lib/*.test.ts)
+    deps:
+      - install
+    cmds:
+      - bun test
+
   test:
     desc: Run all tests
     dir: backend
     deps:
       - web
     cmds:
+      - task: test:web
       - cargo test
 
   clippy:
