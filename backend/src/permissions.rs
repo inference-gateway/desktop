@@ -5,12 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 const COMPUTER_USE_CONFIG_FILE: &str = "computer_use.yaml";
 const COMPUTER_USE_ENABLED_ENV: &str = "INFER_COMPUTER_USE_ENABLED";
 
-// Mock mode (DESKTOP_MOCK=true) simulates the grant flow so dev sessions and
-// e2e can exercise the Settings UI without touching TCC: statuses start
-// not_granted and flip to granted when the request commands run.
-static MOCK_ACCESSIBILITY_GRANTED: AtomicBool = AtomicBool::new(false);
-static MOCK_SCREEN_RECORDING_GRANTED: AtomicBool = AtomicBool::new(false);
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OsPermissionState {
@@ -181,6 +175,110 @@ pub(crate) fn set_computer_use_enabled(enabled: bool) -> Result<(), String> {
     )
 }
 
+/// The OS prompts behind computer use. The app asks through this, so the
+/// commands below do not know whether the answer comes from macOS, from the
+/// simulated flow of mock mode, or from a platform with nothing to grant.
+trait Grants: Sync {
+    /// Accessibility and Screen Recording, in that order.
+    fn status(&self) -> (OsPermissionState, OsPermissionState);
+    fn request_accessibility(&self);
+    fn request_screen_recording(&self);
+}
+
+/// Mock mode's grant flow, so dev sessions and e2e exercise Settings without
+/// touching TCC: both start not granted and flip when they are requested.
+struct MockGrants {
+    accessibility: AtomicBool,
+    screen_recording: AtomicBool,
+}
+
+impl MockGrants {
+    const fn new() -> Self {
+        Self {
+            accessibility: AtomicBool::new(false),
+            screen_recording: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Grants for MockGrants {
+    fn status(&self) -> (OsPermissionState, OsPermissionState) {
+        (
+            self.accessibility.load(Ordering::SeqCst).into(),
+            self.screen_recording.load(Ordering::SeqCst).into(),
+        )
+    }
+
+    fn request_accessibility(&self) {
+        self.accessibility.store(true, Ordering::SeqCst);
+    }
+
+    fn request_screen_recording(&self) {
+        self.screen_recording.store(true, Ordering::SeqCst);
+    }
+}
+
+/// macOS answers only for an app bundle - a bare binary has no TCC identity.
+#[cfg(target_os = "macos")]
+struct MacGrants;
+
+#[cfg(target_os = "macos")]
+impl Grants for MacGrants {
+    fn status(&self) -> (OsPermissionState, OsPermissionState) {
+        let bundled = std::env::current_exe()
+            .ok()
+            .is_some_and(|executable| runs_from_app_bundle(&executable));
+        if !bundled {
+            return (
+                OsPermissionState::Unavailable,
+                OsPermissionState::Unavailable,
+            );
+        }
+        let (accessibility, screen_recording) = macos::permission_status();
+        (accessibility.into(), screen_recording.into())
+    }
+
+    fn request_accessibility(&self) {
+        macos::request_accessibility();
+    }
+
+    fn request_screen_recording(&self) {
+        macos::request_screen_recording();
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+struct NoGrants;
+
+#[cfg(not(target_os = "macos"))]
+impl Grants for NoGrants {
+    fn status(&self) -> (OsPermissionState, OsPermissionState) {
+        (
+            OsPermissionState::NotApplicable,
+            OsPermissionState::NotApplicable,
+        )
+    }
+
+    fn request_accessibility(&self) {}
+
+    fn request_screen_recording(&self) {}
+}
+
+fn grants() -> &'static dyn Grants {
+    static MOCK: MockGrants = MockGrants::new();
+    if mock_mode() {
+        return &MOCK;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        &MacGrants
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        &NoGrants
+    }
+}
+
 #[tauri::command]
 pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
     let computer_use_enabled = computer_use_enabled(
@@ -188,37 +286,14 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
         &home_dir(),
         std::env::var(COMPUTER_USE_ENABLED_ENV).ok().as_deref(),
     );
-    if computer_use_enabled && mock_mode() {
-        return ComputerUsePermissionStatus {
-            computer_use_enabled,
-            accessibility: MOCK_ACCESSIBILITY_GRANTED.load(Ordering::SeqCst).into(),
-            screen_recording: MOCK_SCREEN_RECORDING_GRANTED.load(Ordering::SeqCst).into(),
-        };
-    }
-    #[cfg(target_os = "macos")]
-    let (accessibility, screen_recording) = if !computer_use_enabled {
-        (
-            OsPermissionState::NotApplicable,
-            OsPermissionState::NotApplicable,
-        )
-    } else if std::env::current_exe()
-        .ok()
-        .is_some_and(|executable| runs_from_app_bundle(&executable))
-    {
-        let (accessibility, screen_recording) = macos::permission_status();
-        (accessibility.into(), screen_recording.into())
+    let (accessibility, screen_recording) = if computer_use_enabled {
+        grants().status()
     } else {
         (
-            OsPermissionState::Unavailable,
-            OsPermissionState::Unavailable,
+            OsPermissionState::NotApplicable,
+            OsPermissionState::NotApplicable,
         )
     };
-    #[cfg(not(target_os = "macos"))]
-    let (accessibility, screen_recording) = (
-        OsPermissionState::NotApplicable,
-        OsPermissionState::NotApplicable,
-    );
-
     ComputerUsePermissionStatus {
         computer_use_enabled,
         accessibility,
@@ -228,28 +303,29 @@ pub(crate) fn computer_use_permission_status() -> ComputerUsePermissionStatus {
 
 #[tauri::command]
 pub(crate) fn request_accessibility_permission() {
-    if mock_mode() {
-        MOCK_ACCESSIBILITY_GRANTED.store(true, Ordering::SeqCst);
-    } else {
-        #[cfg(target_os = "macos")]
-        macos::request_accessibility();
-    }
+    grants().request_accessibility();
 }
 
 #[tauri::command]
 pub(crate) fn request_screen_recording_permission() {
-    if mock_mode() {
-        MOCK_SCREEN_RECORDING_GRANTED.store(true, Ordering::SeqCst);
-    } else {
-        #[cfg(target_os = "macos")]
-        macos::request_screen_recording();
-    }
+    grants().request_screen_recording();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn mock_grants_start_not_granted_and_flip_one_at_a_time_when_requested() {
+        use OsPermissionState::{Granted, NotGranted};
+        let grants = MockGrants::new();
+        assert_eq!(grants.status(), (NotGranted, NotGranted));
+        grants.request_accessibility();
+        assert_eq!(grants.status(), (Granted, NotGranted));
+        grants.request_screen_recording();
+        assert_eq!(grants.status(), (Granted, Granted));
+    }
 
     #[test]
     fn parses_computer_use_enabled() {
