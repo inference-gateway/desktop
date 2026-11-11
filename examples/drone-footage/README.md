@@ -28,7 +28,7 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 task up     # FilmCraft, Gyroflow and DJI's LUT in ~/drone-tools, the drone-editor agent in ~/.infer/agents
 ```
 
-`task up` downloads FilmCraft's package for this computer's architecture and checks it against the release's checksums, and downloads DJI's LUT and checks it against the checksum of the file the example was run with. Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker, which takes about ten minutes the first time. That makes the example arm64-only for now.
+`task up` downloads FilmCraft's latest package for this computer's architecture and checks it against the release's checksums - run it again when FilmCraft offers an update, and it replaces the older package. It also downloads DJI's LUT and checks it against the checksum of the file the example was run with. Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker, which takes about ten minutes the first time. That makes the example arm64-only for now.
 
 Put your footage in a folder of its own, for example `~/footage`. Then in the app:
 
