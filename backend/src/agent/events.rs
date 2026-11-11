@@ -305,6 +305,21 @@ fn usage_event(
     }
 }
 
+/// The tool name and arguments an interrupt carries in its metadata. A call
+/// the run never streamed, such as an access outside the sandbox, is only
+/// described there.
+fn call_of_interrupt(interrupt: &serde_json::Value) -> (String, String) {
+    let metadata = interrupt.get("metadata");
+    let field = |key: &str| metadata.and_then(|m| m.get(key));
+    let name = field("toolName").and_then(|v| v.as_str()).unwrap_or("");
+    let args = match field("arguments") {
+        Some(serde_json::Value::String(args)) => args.clone(),
+        Some(args) if !args.is_null() => args.to_string(),
+        _ => String::new(),
+    };
+    (name.to_string(), args)
+}
+
 impl AgentParser {
     pub(crate) fn new(session_id: Option<String>) -> Self {
         Self {
@@ -610,7 +625,7 @@ impl AgentParser {
             .tool_calls
             .get(&tool_call_id)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_else(|| call_of_interrupt(interrupt));
         match interrupt.get("reason").and_then(|v| v.as_str())? {
             "tool_call" => Some(AgentEvent::ApprovalRequest {
                 tool_name: name,
@@ -1067,6 +1082,22 @@ mod tests {
         assert!(
             matches!(&events[3], AgentEvent::UserQuestionRequest { tool_call_id, questions }
             if tool_call_id == "call-2" && questions[0]["options"][0]["label"] == "Go")
+        );
+    }
+
+    #[test]
+    fn test_parse_interrupt_for_a_call_never_streamed_reads_its_metadata() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r1","outcome":{"type":"interrupt","interrupts":[{"id":"sandbox-1","reason":"tool_call","toolCallId":"sandbox-1","metadata":{"toolName":"SandboxAccess","arguments":"{\"path\":\"/home/infer/work\"}"}}]}}"#,
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r2","outcome":{"type":"interrupt","interrupts":[{"id":"sandbox-2","reason":"tool_call","toolCallId":"sandbox-2","metadata":{"toolName":"SandboxAccess","arguments":{"path":"/mnt"}}}]}}"#,
+        ]);
+        assert!(
+            matches!(&events[0], AgentEvent::ApprovalRequest { tool_name, tool_args, tool_call_id }
+            if tool_name == "SandboxAccess" && tool_args == "{\"path\":\"/home/infer/work\"}" && tool_call_id == "sandbox-1")
+        );
+        assert!(
+            matches!(&events[1], AgentEvent::ApprovalRequest { tool_name, tool_args, .. }
+            if tool_name == "SandboxAccess" && tool_args == "{\"path\":\"/mnt\"}")
         );
     }
 
