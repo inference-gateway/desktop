@@ -45,6 +45,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Export / Import](docs/export-import.md) - move your setup to a new machine.
 - [examples/computer-use](examples/computer-use) - three agents on Ubuntu desktops in a local Kubernetes cluster.
 - [examples/filmcraft](examples/filmcraft) - an editor agent with FilmCraft on every computer, from a folder shared with the local cluster.
+- [examples/drone-footage](examples/drone-footage) - an agent edits raw drone footage end to end: stabilisation, a color grade, ElevenLabs sound and one export per platform shape.
 
 ## Development
 

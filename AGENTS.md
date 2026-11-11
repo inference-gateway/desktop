@@ -91,6 +91,7 @@ State lives in context stores: the main one in `frontend/store.tsx` (`useDesktop
 - No semicolons in documentation prose (Markdown files, doc comments): split the sentence or use
   a dash instead.
 - User-facing docs (README, CONTRIBUTING) use `-`, not em dashes.
+- No issue numbers in documentation, doc comments or examples.
 - YAML: block lists (`- item` per line), never flow arrays (`[a, b]`).
 - GitHub Actions: pin every `uses:` to an explicit release tag (`v2.9.2`, not `v2`) or a commit SHA.
 
