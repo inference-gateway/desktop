@@ -44,6 +44,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
 - [Export / Import](docs/export-import.md) - move your setup to a new machine.
 - [examples/computer-use](examples/computer-use) - three agents on Ubuntu desktops in a local Kubernetes cluster.
+- [examples/filmcraft](examples/filmcraft) - an editor agent with FilmCraft on every computer, from a folder shared with the local cluster.
 
 ## Development
 
