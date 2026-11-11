@@ -37,7 +37,7 @@ fn prompt_history_path() -> PathBuf {
     }
 }
 
-/// The desktop's own bash-command history (issue #185), a sibling file of
+/// The desktop's own bash-command history, a sibling file of
 /// the CLI's prompt history.
 fn bash_history_path() -> PathBuf {
     infer_dir().join("bash_history")
