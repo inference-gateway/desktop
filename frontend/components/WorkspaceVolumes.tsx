@@ -29,9 +29,10 @@ function VolumeRow({
     const chosen = folders.find((each) => each.name === name);
     onChange(chosen ? onFolder(volume, chosen) : { ...volume, claim: "" });
   };
+  const mountPathId = `workspace-volume-mount-path-${index}`;
   const afterName = mapsFolders ? `workspace-volume-source-${index}` : `workspace-volume-claim-${index}`;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Input
         id={`workspace-volume-name-${index}`}
         aria-label={`Volume ${number} name`}
@@ -40,6 +41,7 @@ function VolumeRow({
         onChange={(e) => onChange({ ...volume, name: e.target.value })}
         onKeyDown={advanceOnEnter(afterName)}
         placeholder="footage"
+        className="w-32"
       />
       {mapsFolders && (
         <select
@@ -47,7 +49,8 @@ function VolumeRow({
           aria-label={`Volume ${number} source`}
           value={folder?.name ?? ""}
           onChange={(e) => onSource(e.target.value)}
-          className={SELECT_CLASS}
+          onKeyDown={advanceOnEnter(folder ? mountPathId : `workspace-volume-claim-${index}`)}
+          className={`${SELECT_CLASS} min-w-0 flex-1`}
         >
           <option value="">An existing claim</option>
           {folders.map((each) => (
@@ -63,19 +66,21 @@ function VolumeRow({
           aria-label={`Volume ${number} claim`}
           value={volume.claim}
           onChange={(e) => onChange({ ...volume, claim: e.target.value })}
-          onKeyDown={advanceOnEnter(`workspace-volume-mount-path-${index}`)}
+          onKeyDown={advanceOnEnter(mountPathId)}
           placeholder="raw-footage"
+          className="min-w-32 flex-1"
         />
       )}
       <span aria-hidden className="shrink-0 text-muted-foreground">
         &rarr;
       </span>
       <Input
-        id={`workspace-volume-mount-path-${index}`}
+        id={mountPathId}
         aria-label={`Volume ${number} mount path`}
         value={volume.mount_path}
         onChange={(e) => onChange({ ...volume, mount_path: e.target.value })}
         placeholder="/mnt/footage"
+        className="min-w-32 flex-1"
       />
       <label className="flex shrink-0 items-center gap-1.5 text-[0.8rem]">
         <input
