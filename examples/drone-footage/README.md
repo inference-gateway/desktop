@@ -17,7 +17,7 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 
 - `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**.
 - `infer` CLI v0.255.0 and operator v0.36.0 or newer, which mount the folders.
-- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet ([#536](https://github.com/inference-gateway/desktop/issues/536)), so today this example runs only with the stopgap that issue describes, on an Apple silicon Mac.
+- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet, so today this example runs only on a cluster that hands its computers a GPU.
 - An ElevenLabs API key. The sound effects and the music are real API calls and cost credits, so this example cannot run on the mock model.
 - A model that follows long instructions and reads pictures, since the agent looks at frames to judge its picks, its grade and its crops.
 - Your own footage, with gyro data. The example was run on one clip from a DJI Avata 2: 3840x2880, 29.97 fps, 10-bit HEVC in D-Log M, with electronic stabilisation off, which is what leaves the gyro data in the file. Gyroflow reads the data of many other cameras. The LUT is DJI's for the Avata 2 - for another camera, put its `.cube` in the tools folder instead.
@@ -80,11 +80,11 @@ Gyroflow warps every frame, and that is GPU work. On the clip above, in a Linux 
 
 FilmCraft is different. Its export is no faster with the GPU - 20 frames a second on software rendering, 17 to 18 with the GPU allowed - because decoding and encoding video are most of the work, and no Linux VM on a Mac reaches Apple's hardware codecs. The agent's instructions keep FilmCraft on software rendering and leave the GPU to Gyroflow.
 
-The app's local cluster runs in Docker, whose VM has no GPU, so a computer of the local cluster has none either. [#536](https://github.com/inference-gateway/desktop/issues/536) is about giving it one, and describes the stopgap this example was run with: the cluster on Podman with libkrun, which hands the Mac's GPU to the computers.
+The app's local cluster runs in Docker, whose VM has no GPU, so a computer of the local cluster has none either. This example was run with the cluster on Podman with libkrun instead, which hands the Mac's GPU to the computers.
 
 ## The run this was written from
 
-One run, on an M4 Pro with macOS 27 and the stopgap of #536, with `ollama_cloud/glm-5.3-flash`:
+One run, on an M4 Pro with macOS 27 and the cluster on Podman with libkrun, with `ollama_cloud/glm-5.3-flash`:
 
 | Step | Time |
 | --- | --- |
