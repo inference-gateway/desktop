@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,29 +55,31 @@ function FolderRow({
   );
 }
 
-/** The folders of this computer the local cluster shares with its workspaces. They reach the cluster only when it is
- * created, so a change asks for the cluster to be recreated, which `onRecreate` does. */
-export function ClusterFolders({ busy, onRecreate }: { busy: boolean; onRecreate: () => Promise<void> }) {
+/** The folders of this computer the local cluster shares with its workspaces. They and the cluster's runtime reach the
+ * cluster only when it is created, so while a change is `pending` this asks for the cluster to be recreated, which
+ * `onRecreate` does. */
+export function ClusterFolders({
+  busy,
+  pending,
+  onSaved,
+  onRecreate,
+}: {
+  busy: boolean;
+  pending: boolean;
+  onSaved: () => void;
+  onRecreate: () => Promise<void>;
+}) {
   const [folders, setFolders] = useState<ClusterFolder[]>([]);
-  const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState("");
   const [saved, setSaved] = useState(false);
-
-  const refreshPending = useCallback(() => {
-    api
-      .clusterFoldersPending()
-      .then(setPending)
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     api
       .clusterFolders()
       .then(setFolders)
       .catch((e) => setProblem(String(e)));
-    refreshPending();
-  }, [refreshPending]);
+  }, []);
 
   const change = (next: ClusterFolder[]) => {
     setFolders(next);
@@ -91,7 +93,7 @@ export function ClusterFolders({ busy, onRecreate }: { busy: boolean; onRecreate
       await api.saveClusterFolders(folders);
       setProblem("");
       setSaved(true);
-      refreshPending();
+      onSaved();
     } catch (e) {
       setProblem(String(e));
     }
@@ -100,7 +102,6 @@ export function ClusterFolders({ busy, onRecreate }: { busy: boolean; onRecreate
   const recreate = async () => {
     setConfirming(false);
     await onRecreate();
-    refreshPending();
   };
 
   return (
@@ -141,8 +142,9 @@ export function ClusterFolders({ busy, onRecreate }: { busy: boolean; onRecreate
           className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[0.8rem]"
         >
           <span>
-            The local cluster runs with other folders than these. Docker mounts a folder only into a cluster it creates,
-            so recreating it is what applies them. That deletes the cluster's machines and everything on them.
+            The local cluster runs with other folders than these, or on another runtime than the one chosen. Both reach
+            a cluster only as it is created, so recreating it is what applies them. That deletes the cluster's machines
+            and everything on them.
           </span>
           <div className="flex gap-2">
             {confirming ? (

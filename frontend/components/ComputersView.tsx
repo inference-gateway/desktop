@@ -63,12 +63,14 @@ function useScreen(sessionId: string, project: string | undefined, live: boolean
 function Tile({
   tile,
   project,
+  gpu,
   onOpen,
   onTakeOver,
   onDelete,
 }: {
   tile: ComputerTile;
   project?: string;
+  gpu: boolean;
   onOpen: () => void;
   onTakeOver: () => void;
   onDelete: () => void;
@@ -94,6 +96,14 @@ function Tile({
               {tile.lastAction ? ` - ${tile.lastAction}` : ""}
             </span>
           </div>
+          {gpu && (
+            <span
+              title="This computer has the Mac's GPU"
+              className="rounded-full bg-foreground/5 px-2 py-0.5 text-[0.7rem] font-medium text-muted-foreground"
+            >
+              GPU
+            </span>
+          )}
           <span className="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
             <span className={`h-2 w-2 rounded-full ${STATUS_DOT[tile.status]}`} aria-hidden="true" />
             {STATUS_LABEL[tile.status]}
@@ -291,6 +301,14 @@ export function ComputersView() {
   const { runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
+  const [withGpu, setWithGpu] = useState<string[]>([]);
+  const sessionIds = tiles.map((tile) => tile.sessionId).join(" ");
+  useEffect(() => {
+    api
+      .gpuComputers()
+      .then(setWithGpu)
+      .catch(() => {});
+  }, [sessionIds]);
   const open = (sessionId: string) => {
     setCurrentView("chat");
     openConversation(sessionId);
@@ -320,6 +338,7 @@ export function ComputersView() {
               key={tile.sessionId}
               tile={tile}
               project={projects[tile.sessionId]}
+              gpu={withGpu.includes(tile.sessionId)}
               onOpen={() => open(tile.sessionId)}
               onTakeOver={() => takeOver(tile.sessionId)}
               onDelete={() => deleteMachine(tile.sessionId)}

@@ -19,7 +19,7 @@ task up     # FilmCraft's package in ~/filmcraft, the editor agent in ~/.infer/a
 5. Open the **Agents** filter and send `editor` its task: `open filmcraft`. It runs on the model selected in the top bar, which has to read screenshots - give it a model of its own in the agent editor to pin one.
 6. Start a second chat with `editor` for a second editor. Open **Computers** in the top bar to watch them side by side.
 
-The package sits one level below the mount path, under the folder's name: `/mnt/filmcraft/filmcraft`. The computers have no GPU, so FilmCraft renders on the CPU and says so in its status bar.
+The package sits one level below the mount path, under the folder's name: `/mnt/filmcraft/filmcraft`. FilmCraft renders on the CPU and says so in its status bar, on Docker because the computers have no GPU and on Podman because it does not pick the one they have - see [the GPU on the local cluster](../../docs/gpu.md).
 
 ```bash
 task down   # delete the package and the agent

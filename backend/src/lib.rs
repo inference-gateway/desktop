@@ -8,6 +8,7 @@ mod avatars;
 mod binaries;
 mod cli_install;
 mod cluster_folders;
+mod cluster_gpu;
 mod composer;
 mod compute_settings;
 mod config;
@@ -321,9 +322,10 @@ pub fn run() {
             workspace_settings::delete_workspace_machine,
             workspace_settings::default_workspace_image,
             workspace_capabilities::workspace_capabilities,
-            workspace_settings::docker_available,
+            workspace_settings::local_cluster_status,
+            workspace_settings::save_local_cluster_runtime,
+            cluster_gpu::gpu_computers,
             workspace_settings::provision_local_cluster,
-            workspace_settings::cluster_folders_pending,
             cluster_folders::cluster_folders,
             cluster_folders::save_cluster_folders,
         ])

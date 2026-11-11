@@ -15,9 +15,9 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 
 ## What you need
 
-- `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**.
-- `infer` CLI v0.255.0 and operator v0.36.0 or newer, which mount the folders.
-- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet, so today this example runs only on a cluster that hands its computers a GPU.
+- `podman` with a `libkrun` machine, `task` and the app's local cluster on it - choose **Podman** under **Settings > Compute**, then press the container button. See [the GPU on the local cluster](../../docs/gpu.md).
+- `infer` CLI v0.256.0 and operator v0.36.0 or newer, which mount the folders and bring the GPU driver.
+- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The local cluster on Podman gives every computer the Mac's.
 - An ElevenLabs API key. The sound effects and the music are real API calls and cost credits, so this example cannot run on the mock model.
 - A model that follows long instructions and reads pictures, since the agent looks at frames to judge its picks, its grade and its crops.
 - Your own footage, with gyro data. The example was run on one clip from a DJI Avata 2: 3840x2880, 29.97 fps, 10-bit HEVC in D-Log M, with electronic stabilisation off, which is what leaves the gyro data in the file. Gyroflow reads the data of many other cameras. The LUT is DJI's for the Avata 2 - for another camera, put its `.cube` in the tools folder instead.
@@ -80,7 +80,7 @@ Gyroflow warps every frame, and that is GPU work. On the clip above, in a Linux 
 
 FilmCraft is different. Its export is no faster with the GPU - 20 frames a second on software rendering, 17 to 18 with the GPU allowed - because decoding and encoding video are most of the work, and no Linux VM on a Mac reaches Apple's hardware codecs. The agent's instructions keep FilmCraft on software rendering and leave the GPU to Gyroflow.
 
-The app's local cluster runs in Docker, whose VM has no GPU, so a computer of the local cluster has none either. This example was run with the cluster on Podman with libkrun instead, which hands the Mac's GPU to the computers.
+The app's local cluster has no GPU on Docker, whose VM has none. On Podman with libkrun every computer gets the Mac's GPU - see [the GPU on the local cluster](../../docs/gpu.md).
 
 ## The run this was written from
 

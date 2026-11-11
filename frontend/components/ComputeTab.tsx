@@ -3,7 +3,8 @@ import { Container, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type ClusterConfig } from "@/lib/tauri";
+import { api, type ClusterConfig, type ClusterRuntime, type LocalCluster } from "@/lib/tauri";
+import { LOCAL_CLUSTER } from "@/lib/workspace-form";
 import { clusterConfigOf, clusterDraftOf, clusterProblem, EMPTY_CLUSTER, type ClusterDraft } from "@/lib/cluster-form";
 import { ClusterFolders } from "./ClusterFolders";
 import {
@@ -20,7 +21,23 @@ import {
 
 type Editing = { previous: string | null; draft: ClusterDraft };
 
-function ClusterRow({ config, onEdit, onDelete }: { config: ClusterConfig; onEdit: () => void; onDelete: () => void }) {
+const RUNTIME_LABEL: Record<ClusterRuntime, string> = { docker: "Docker", podman: "Podman" };
+const RUNTIME_HINT: Record<ClusterRuntime, string> = {
+  docker: "Its computers render on the CPU.",
+  podman: "On a libkrun machine, so its computers get this Mac's GPU.",
+};
+
+function ClusterRow({
+  config,
+  runtime,
+  onEdit,
+  onDelete,
+}: {
+  config: ClusterConfig;
+  runtime: ClusterRuntime | null;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const [armed, setArmed] = useState(false);
   const run = useMemo(() => () => api.checkCluster(config.name), [config.name]);
   const { check, recheck } = useCheck(run);
@@ -30,7 +47,11 @@ function ClusterRow({ config, onEdit, onDelete }: { config: ClusterConfig; onEdi
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[0.88rem] font-medium">
             {config.name}
-            <span className="ml-2 text-[0.72rem] font-normal text-muted-foreground">Kubernetes</span>
+            <span className="ml-2 text-[0.72rem] font-normal text-muted-foreground">
+              {runtime
+                ? `Kubernetes on ${RUNTIME_LABEL[runtime]}${runtime === "podman" ? " with GPU" : ""}`
+                : "Kubernetes"}
+            </span>
             <RunningBadge check={check} />
           </span>
           <span className="truncate text-[0.75rem] text-muted-foreground">
@@ -161,8 +182,15 @@ export function ComputeTab() {
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
   const [supported, setSupported] = useState(true);
-  const [docker, setDocker] = useState(false);
+  const [local, setLocal] = useState<LocalCluster | null>(null);
   const [provisioning, setProvisioning] = useState(false);
+
+  const reloadLocal = useCallback(() => {
+    api
+      .localClusterStatus()
+      .then(setLocal)
+      .catch(() => {});
+  }, []);
 
   const reload = useCallback(() => {
     api
@@ -182,11 +210,8 @@ export function ComputeTab() {
       .computeSupported()
       .then(setSupported)
       .catch(() => setSupported(false));
-    api
-      .dockerAvailable()
-      .then(setDocker)
-      .catch(() => {});
-  }, [reload]);
+    reloadLocal();
+  }, [reload, reloadLocal]);
 
   const changed = () => {
     setProblem("");
@@ -232,14 +257,24 @@ export function ComputeTab() {
     try {
       const name = await api.provisionLocalCluster(setNotice, recreate);
       changed();
-      setNotice(`Provisioned a local k3s cluster in Docker with the ${name} workspace on it.`);
+      setNotice(`Provisioned a local k3s cluster in ${runtimeLabel} with the ${name} workspace on it.`);
     } catch (e) {
       setNotice("");
       setProblem(String(e));
     } finally {
       setProvisioning(false);
+      reloadLocal();
     }
   };
+
+  const choose = (runtime: ClusterRuntime) =>
+    api
+      .saveLocalClusterRuntime(runtime)
+      .then(reloadLocal)
+      .catch((e) => setProblem(String(e)));
+
+  const runtimeLabel = RUNTIME_LABEL[local?.runtime ?? "docker"];
+  const ready = local !== null && !local.problem;
 
   return (
     <>
@@ -270,6 +305,7 @@ export function ComputeTab() {
           <ClusterRow
             key={config.name}
             config={config}
+            runtime={config.name === LOCAL_CLUSTER ? (local?.running ?? null) : null}
             onEdit={() => setEditing({ previous: config.name, draft: clusterDraftOf(config) })}
             onDelete={() => remove(config.name)}
           />
@@ -305,12 +341,12 @@ export function ComputeTab() {
             >
               Detect clusters
             </Button>
-            {docker && (
+            {ready && (
               <Button
                 variant="outline"
                 size="sm"
                 aria-label="Provision local cluster"
-                title="Provision a local k3s cluster in Docker with an ubuntu-desktop workspace on it"
+                title={`Provision a local k3s cluster in ${runtimeLabel} with an ubuntu-desktop workspace on it`}
                 disabled={provisioning || !supported}
                 onClick={() => provision()}
               >
@@ -320,14 +356,47 @@ export function ComputeTab() {
             <span className={HINT_CLASS}>
               Detecting adds every kubeconfig context as a cluster in the infer-workspaces namespace, with the names of
               your saved API keys for its gateway.{" "}
-              {docker
-                ? "The container button runs a k3s cluster in Docker and adds an ubuntu-desktop workspace on it."
-                : "Install and start Docker to provision a local cluster with one click."}
+              {ready
+                ? `The container button runs a k3s cluster in ${runtimeLabel} and adds an ubuntu-desktop workspace on it.`
+                : local?.runtime !== "podman" && local?.problem}
             </span>
           </div>
         )}
       </div>
-      {docker && supported && <ClusterFolders busy={provisioning} onRecreate={() => provision(true)} />}
+      {local && local.runtimes.length > 1 && (
+        <section className="mt-6 flex flex-col gap-2">
+          <h3 className="text-[0.9rem] font-semibold">Local cluster runtime</h3>
+          <div className="flex items-center gap-2">
+            {local.runtimes.map((runtime) => (
+              <Button
+                key={runtime}
+                variant={runtime === local.runtime ? "default" : "outline"}
+                size="xs"
+                aria-label={`Run local cluster on ${RUNTIME_LABEL[runtime]}`}
+                aria-pressed={runtime === local.runtime}
+                title={RUNTIME_HINT[runtime]}
+                disabled={provisioning}
+                onClick={() => choose(runtime)}
+              >
+                {RUNTIME_LABEL[runtime]}
+              </Button>
+            ))}
+            <span className={HINT_CLASS}>
+              {`${RUNTIME_HINT[local.runtime]} `}
+              {local.running ? `The cluster runs on ${RUNTIME_LABEL[local.running]}.` : "No local cluster runs yet."}
+            </span>
+          </div>
+          {local.runtime === "podman" && <Problem text={local.problem ?? ""} />}
+        </section>
+      )}
+      {local && (ready || local.pending) && supported && (
+        <ClusterFolders
+          busy={provisioning}
+          pending={local.pending}
+          onSaved={reloadLocal}
+          onRecreate={() => provision(true)}
+        />
+      )}
     </>
   );
 }

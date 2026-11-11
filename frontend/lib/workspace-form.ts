@@ -25,9 +25,10 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   env: {},
   user_data: "",
   volumes: [],
+  no_gpu: false,
 };
 
-/** The cluster the app provisions in Docker, the only one that can share this computer's folders. */
+/** The cluster the app provisions in a container, the only one that can share this computer's folders. */
 export const LOCAL_CLUSTER = "infer-k3s";
 
 export const EMPTY_VOLUME: WorkspaceVolume = { name: "", claim: "", mount_path: "", read_only: false };

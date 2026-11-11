@@ -1,0 +1,19 @@
+name: cluster runtime - the local cluster is provisioned on Podman, which gives its computers the GPU
+narration:
+  - "Open Settings."
+  - "Switch to the Compute tab."
+  - "The local cluster runs on Docker unless another runtime is chosen."
+  - "Choose Podman, whose libkrun machine reaches this Mac's GPU."
+  - "The choice is on file beside the cluster's folders."
+  - "Provision the cluster - mock mode skips Podman and only registers the cluster and its workspace."
+  - "The cluster shows up in the list."
+  - "It says which runtime it runs on, and that it has the GPU."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Compute" }
+  - wait_for: { button: "Run local cluster on Docker", timeout: 10 }
+  - click: { button: "Run local cluster on Podman" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/cluster_folders.yaml", contains: "runtime: podman", timeout: 10 }
+  - click: { button: "Provision local cluster" }
+  - wait_for: { button: "Edit cluster infer-k3s", timeout: 15 }
+  - wait_for: { text: "Kubernetes on Podman with GPU", timeout: 10 }
