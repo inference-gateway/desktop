@@ -42,8 +42,14 @@ jobs:
                   sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu|g; s|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' "$f"
                 fi
           done
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          for attempt in 1 2 3; do
+              if sudo apt-get update && sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev; then
+                break
+              fi
+              echo "apt failed on attempt $attempt, retrying in 30 s" >&2
+              [ "$attempt" -lt 3 ] || exit 1
+              sleep 30
+          done
 
       - uses: oven-sh/setup-bun@v2.2.0
         with:
