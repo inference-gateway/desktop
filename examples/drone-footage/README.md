@@ -80,6 +80,8 @@ Gyroflow warps every frame, and that is GPU work. On the clip above, in a Linux 
 
 FilmCraft is different. Its export is no faster with the GPU - 20 frames a second on software rendering, 17 to 18 with the GPU allowed - because decoding and encoding video are most of the work, and no Linux VM on a Mac reaches Apple's hardware codecs. The agent's instructions keep FilmCraft on software rendering and leave the GPU to Gyroflow.
 
+Gyroflow also looks for OpenCL before each range it renders, and on these computers that search fails after about ten seconds every time. The agent starts it with `NO_OPENCL=1`, and Gyroflow goes straight to the GPU through Vulkan - four 10 second ranges of the clip above took 132 s instead of 259 s, with the same output.
+
 The app's local cluster has no GPU on Docker, whose VM has none. On Podman with libkrun every computer gets the Mac's GPU - see [the GPU on the local cluster](../../docs/gpu.md).
 
 ## The run this was written from
