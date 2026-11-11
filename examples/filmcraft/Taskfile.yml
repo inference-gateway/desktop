@@ -1,0 +1,43 @@
+version: '3'
+
+vars:
+  VERSION: 0.19.0
+  ARCH:
+    sh: uname -m | sed 's/arm64/aarch64/'
+  PACKAGE: filmcraft-{{.VERSION}}-linux-{{.ARCH}}.deb
+  RELEASE: https://github.com/storytold/filmcraft/releases/download/v{{.VERSION}}
+  FOLDER: '{{.HOME}}/filmcraft'
+  INFER_DIR: '{{.HOME}}/.infer'
+  WORKSPACE: ubuntu-desktop
+
+tasks:
+  up:
+    desc: Everything the app needs from outside it - FilmCraft's package in a folder to share, and the editor agent
+    cmds:
+      - task: download
+      - task: agent:install
+
+  download:
+    desc: Download FilmCraft's Linux package for this computer's architecture into the folder to share, checked against the release's checksums
+    dir: '{{.FOLDER}}'
+    cmds:
+      - curl -fsSLO {{.RELEASE}}/{{.PACKAGE}}
+      - curl -fsSL {{.RELEASE}}/SHA256SUMS.txt | grep ' {{.PACKAGE}}$' | shasum -a 256 -c -
+    status:
+      - test -f {{.PACKAGE}}
+
+  agent:install:
+    desc: Copy the editor agent into ~/.infer/agents, refusing to overwrite an agent of your own
+    preconditions:
+      - sh: '[ ! -e {{.INFER_DIR}}/agents/editor.md ] || grep -q "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/editor.md'
+        msg: ~/.infer/agents already holds an editor agent of your own - move it aside first
+    cmds:
+      - mkdir -p {{.INFER_DIR}}/agents
+      - cp agents/editor.md {{.INFER_DIR}}/agents/editor.md
+
+  down:
+    desc: Delete the package and take the agent back out of ~/.infer
+    cmds:
+      - rm -f {{.FOLDER}}/{{.PACKAGE}}
+      - rmdir {{.FOLDER}} 2>/dev/null || true
+      - '! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/editor.md || rm {{.INFER_DIR}}/agents/editor.md'
