@@ -899,6 +899,8 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
                 &manifest,
             )?;
         }
+        stage("Restoring the workspaces' secrets...");
+        crate::secrets::restore_in(crate::local_cluster::CONTEXT)?;
         stage("Adding the cluster to your kubeconfig...");
         crate::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
