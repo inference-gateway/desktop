@@ -15,8 +15,8 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 
 ## What you need
 
-- `docker`, `task`, and the app's local cluster - the container button under **Settings > Compute**.
-- An `infer` CLI newer than v0.254.0 and operator v0.36.0, which mount the folders.
+- `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**.
+- `infer` CLI v0.255.0 and operator v0.36.0 or newer, which mount the folders.
 - A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet ([#536](https://github.com/inference-gateway/desktop/issues/536)), so today this example runs only with the stopgap described there, on an Apple silicon Mac.
 - An ElevenLabs API key. The sound effects and the music are real API calls and cost credits, so this example cannot run on the mock model.
 - A model that follows long instructions and reads pictures, since the agent looks at frames to judge its picks, its grade and its crops.
@@ -91,16 +91,24 @@ Start the app with `DOCKER_HOST` set to the socket `podman machine inspect --for
 
 ```bash
 task gpu:node     # the render device for every pod, and a fixed address for the node
-task gpu:image    # the computer image with ffmpeg and a Vulkan driver that works on a Mac
+task gpu:driver   # a Vulkan driver that works on a Mac, built into ~/drone-tools
 ```
 
-Then set the workspace's **Image** to `ghcr.io/inference-gateway/computer:gpu` under **Settings > Workspaces** and press **Restart CLI**. `vulkaninfo --summary` on a computer then lists `Virtio-GPU Venus` with the name of the Mac's chip.
+Then open **Settings > Workspaces**, edit `ubuntu-desktop` and add these lines at the end of **User data**. They run as root when a computer boots - if the field is empty, start it with `#!/bin/sh`:
+
+```sh
+apt-get update
+apt-get install -y --no-install-recommends libvulkan1 mesa-vulkan-drivers vulkan-tools
+install -m 0755 /mnt/tools/tools/libvulkan_virtio.so /usr/lib/aarch64-linux-gnu/
+```
+
+Press **Save workspace** and **Restart CLI**. `vulkaninfo --summary` on a new computer then lists `Virtio-GPU Venus` with the name of the Mac's chip.
 
 What the two tasks work around:
 
 - A pod gets the GPU through the node's base container spec, so every pod has it. There is no setting per workspace yet.
 - Podman gives a container a new address on every restart and k3s exits when its address changes, which loops. `task gpu:node` pins the address.
-- Ubuntu's Mesa fails on a Mac, whose memory pages are 16 KiB. `task gpu:image` builds the Venus driver with [the downstream patch](https://gitlab.freedesktop.org/slp/mesa/-/commit/761ef1ec5ff2aae1cc3dc8bbc22b3d06ef04b549) that aligns to them.
+- Ubuntu's Mesa fails on a Mac, whose memory pages are 16 KiB. `task gpu:driver` builds the Venus driver with [the downstream patch](https://gitlab.freedesktop.org/slp/mesa/-/commit/761ef1ec5ff2aae1cc3dc8bbc22b3d06ef04b549) that aligns to them.
 - Once a cluster exists on Podman, the app reports that its folders changed, because Podman lists mounts in another form than Docker. Provision once, with the folders already saved.
 
 The virtual GPU is not solid yet. In one run its device stopped answering about 50 minutes after the VM started, and every process that held it - FilmCraft at the time, probing for hardware decoding - blocked for good until the VM was restarted. With FilmCraft kept off the device the next run went through.
