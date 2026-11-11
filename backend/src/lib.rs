@@ -41,6 +41,7 @@ mod updates;
 mod updates_mock;
 mod workspace_capabilities;
 mod workspace_settings;
+mod workspace_volumes;
 mod workspaces;
 
 use observability::{StoredMetric, StoredSpan, start_collector};

@@ -1,4 +1,5 @@
 use crate::compute_settings::ClusterConfig;
+use crate::workspace_volumes::{WorkspaceVolume, listed_volumes, volumes_of};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -114,6 +115,7 @@ pub(crate) struct WorkspaceConfig {
     env: BTreeMap<String, String>,
     /// The cloud-init script the pod runs as root when it boots.
     user_data: String,
+    volumes: Vec<WorkspaceVolume>,
     /// The Kubernetes Secrets the pod daemon reads, which Settings > Secrets
     /// lists and the tab never edits.
     #[serde(skip)]
@@ -178,6 +180,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         forward_env: names(entry, "forward_env"),
         env: environment(entry),
         user_data: text(entry, "user_data"),
+        volumes: volumes_of(entry),
         secrets: names(entry, "secrets"),
         mcp_servers: names(entry, "mcp_servers"),
     };
@@ -268,6 +271,7 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "forward_env", listed(&config.forward_env));
     set_or_remove(entry, "env", mapped(&config.env));
     set_or_remove(entry, "user_data", filled(&config.user_data));
+    set_or_remove(entry, "volumes", listed_volumes(&config.volumes));
     if !config.compute.trim().is_empty() {
         for key in CLUSTER_KEYS {
             entry.remove(key);
@@ -879,7 +883,56 @@ pub(crate) async fn check_workspace(
     namespace: String,
     name: String,
 ) -> ClusterCheck {
-    check(context, namespace, format!("{WORKSPACE_LABEL}={name}")).await
+    let mut check = check(
+        context.clone(),
+        namespace.clone(),
+        format!("{WORKSPACE_LABEL}={name}"),
+    )
+    .await;
+    if check
+        .prerequisites
+        .iter()
+        .all(|prerequisite| prerequisite.met)
+    {
+        let claims = tokio::task::spawn_blocking(move || {
+            claim_prerequisites(&context, &namespace, &claims_of(&name))
+        })
+        .await
+        .unwrap_or_default();
+        check.prerequisites.extend(claims);
+    }
+    check
+}
+
+/// The claims the workspace called `name` mounts, as `daemon.yaml` lists them.
+fn claims_of(name: &str) -> Vec<String> {
+    workspace_configs()
+        .into_iter()
+        .find(|workspace| workspace.name == name)
+        .map(|workspace| workspace.volumes.into_iter().map(|v| v.claim).collect())
+        .unwrap_or_default()
+}
+
+/// Whether each claim a workspace mounts exists in its namespace. A computer
+/// whose claim is missing never starts, so the check says which one to create.
+fn claim_prerequisites(context: &str, namespace: &str, claims: &[String]) -> Vec<Prerequisite> {
+    claims
+        .iter()
+        .map(|claim| {
+            let exists = kubectl(
+                context,
+                &["get", "persistentvolumeclaim", claim, "-n", namespace],
+            )
+            .is_ok();
+            prerequisite(
+                &format!("Volume claim {claim}"),
+                exists,
+                &format!(
+                    "Create the PersistentVolumeClaim {claim} in {namespace}, or remove the volume."
+                ),
+            )
+        })
+        .collect()
 }
 
 /// The machines a Kubernetes workspace has in its cluster, ready or not, so a
@@ -1049,6 +1102,24 @@ mod tests {
         assert!(merged.contains("mode: all-in-one"));
         assert!(!merged.contains("gateway_env"));
         assert!(!merged.contains("INFER_AGENT_MODEL"));
+    }
+
+    #[test]
+    fn a_workspace_keeps_its_volumes_in_daemon_yaml_until_the_last_one_goes() {
+        let yaml = "workspaces:\n  - name: desktop\n    kind: kubernetes\n    volumes:\n      - name: footage\n        claim: raw-footage\n        mount_path: /mnt/footage\n        read_only: true\n";
+        let read = parse_configs(Some(yaml), &[]).remove(0);
+        assert_eq!(read.volumes.len(), 1);
+        assert_eq!(read.volumes[0].claim, "raw-footage");
+
+        let saved = merge_workspace(Some(yaml), &read, Some("desktop")).unwrap();
+        assert_eq!(parse_configs(Some(&saved), &[])[0], read);
+
+        let emptied = WorkspaceConfig {
+            volumes: Vec::new(),
+            ..read
+        };
+        let saved = merge_workspace(Some(yaml), &emptied, Some("desktop")).unwrap();
+        assert!(!saved.contains("volumes"));
     }
 
     #[test]

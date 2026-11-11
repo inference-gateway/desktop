@@ -32,6 +32,7 @@ import {
   useCheck,
   useRestart,
 } from "./ClusterParts";
+import { WorkspaceVolumes } from "./WorkspaceVolumes";
 import { useDesktop } from "@/store";
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
@@ -407,6 +408,7 @@ function WorkspaceForm({
           other apps.
         </span>
       </div>
+      <WorkspaceVolumes volumes={draft.volumes} onChange={(volumes) => onChange({ ...draft, volumes })} />
       <div className="flex gap-2">
         <Button size="sm" onClick={onSave}>
           Save workspace
