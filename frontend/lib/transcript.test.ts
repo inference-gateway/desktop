@@ -9,6 +9,8 @@ import {
   initialChatState,
   pendingInput,
   subagentParentId,
+  currentTodo,
+  todoElapsedMs,
   todosDiffer,
   todosFrom,
   type ChatAction,
@@ -664,7 +666,7 @@ test("todosFrom returns the latest TodoWrite list with sane status defaults", ()
     JSON.stringify({ todos: [{ id: "1", content: "b", status: "in_progress" }, { content: "c" }] }),
   );
   expect(todosFrom([first, second])).toEqual([
-    { content: "b", status: "in_progress" },
+    { id: "1", content: "b", status: "in_progress" },
     { content: "c", status: "pending" },
   ]);
   expect(todosFrom([first, toolItem("TodoWrite", "not json")])).toEqual([{ content: "a", status: "completed" }]);
@@ -912,4 +914,33 @@ test("a user message from another client renders; the desktop's own echo is dedu
   expect(s.items.map((i) => i.kind)).toEqual(["user"]);
   const t = chatReducer(s, ev({ kind: "UserMessage", content: "Not much" }));
   expect(t.items.map((i) => (i.kind === "user" ? i.text : i.kind))).toEqual(["Hi", "Not much"]);
+});
+
+test("a todo shows the time the CLI stamped on it, counting on while it is in progress", () => {
+  const args = JSON.stringify({ todos: [{ id: "1", content: "cut", status: "in_progress", elapsed_ms: 999999 }] });
+  const stamped = {
+    todos: [
+      { id: "0", content: "plan", status: "completed", elapsed_ms: 61000 },
+      { id: "1", content: "cut", status: "in_progress", started_at: "2026-11-11T10:00:00Z", elapsed_ms: 2000 },
+      { id: "2", content: "export", status: "pending" },
+    ],
+    total_tasks: 3,
+  };
+  const answered = (output: string | null) => ({ ...toolItem("TodoWrite", args, "done"), output }) as TranscriptItem;
+  const [plan, cut, exported] = todosFrom([answered(JSON.stringify(stamped))]);
+  const now = Date.parse("2026-11-11T10:00:05Z");
+  expect(todoElapsedMs(plan, now)).toBe(61000);
+  expect(todoElapsedMs(cut, now)).toBe(7000);
+  expect(todoElapsedMs(exported, now)).toBeNull();
+  expect(cut.id).toBe("1");
+
+  expect(todosFrom([answered(null)])).toHaveLength(1);
+  expect(todosFrom([answered("Todo list updated")])).toHaveLength(1);
+});
+
+test("the todo shown while the list is folded is the one in progress, else the next one", () => {
+  const todo = (content: string, status: "pending" | "in_progress" | "completed") => ({ content, status });
+  expect(currentTodo([todo("a", "completed"), todo("b", "pending"), todo("c", "in_progress")])?.content).toBe("c");
+  expect(currentTodo([todo("a", "completed"), todo("b", "pending")])?.content).toBe("b");
+  expect(currentTodo([todo("a", "completed")])).toBeNull();
 });

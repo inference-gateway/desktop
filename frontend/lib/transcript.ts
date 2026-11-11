@@ -196,7 +196,35 @@ export function delegationsFrom(items: TranscriptItem[], jobs: BackgroundJob[] =
 
 export type TodoStatus = "pending" | "in_progress" | "completed";
 
-export type TodoItem = { content: string; status: TodoStatus };
+/** A todo of the session's list. The CLI stamps the times - `started_at` while it is in progress and `elapsed_ms`
+ * for the stretches that ended - and keeps them by `id`. */
+export type TodoItem = { content: string; status: TodoStatus; id?: string; started_at?: string; elapsed_ms?: number };
+
+/** The list a TodoWrite call ended up with: the one its result carries, which has the times the CLI stamped, or the
+ * one the model wrote while the call has no result yet. A tool's output is the `data` of its result. */
+function writtenTodos(call: { args: string; output: string | null }): unknown {
+  try {
+    const stamped = JSON.parse(call.output ?? "")?.todos;
+    if (Array.isArray(stamped)) return stamped;
+  } catch {
+    // not a result yet, or one from a CLI that answers in plain text
+  }
+  const parsed: unknown = JSON.parse(call.args);
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>).todos : null;
+}
+
+/** How long a todo has been worked on by `now`, the stretch it is in progress for included. Null when the CLI
+ * stamped no time on it. */
+export function todoElapsedMs(todo: TodoItem, now: number): number | null {
+  const running = todo.status === "in_progress" && todo.started_at ? now - Date.parse(todo.started_at) : null;
+  if (running === null && todo.elapsed_ms === undefined) return null;
+  return (todo.elapsed_ms ?? 0) + Math.max(0, running ?? 0);
+}
+
+/** The todo to show when the list is folded away: the one in progress, else the next one to do. */
+export function currentTodo(todos: TodoItem[]): TodoItem | null {
+  return todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status === "pending") ?? null;
+}
 
 // The pinned todo panel shows the list written by the latest TodoWrite call.
 // Scanning backwards covers history reloads and lets partially-streamed or
@@ -206,8 +234,7 @@ export function todosFrom(items: TranscriptItem[]): TodoItem[] {
     const it = items[i];
     if (it.kind !== "tool" || it.name !== "TodoWrite") continue;
     try {
-      const parsed: unknown = JSON.parse(it.args);
-      const todos = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>).todos : null;
+      const todos = writtenTodos(it);
       if (!Array.isArray(todos)) continue;
       const out: TodoItem[] = [];
       for (const raw of todos) {
@@ -216,6 +243,9 @@ export function todosFrom(items: TranscriptItem[]): TodoItem[] {
         out.push({
           content: t.content,
           status: t.status === "in_progress" || t.status === "completed" ? t.status : "pending",
+          ...(typeof t.id === "string" && { id: t.id }),
+          ...(typeof t.started_at === "string" && { started_at: t.started_at }),
+          ...(typeof t.elapsed_ms === "number" && { elapsed_ms: t.elapsed_ms }),
         });
       }
       return out;

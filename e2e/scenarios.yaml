@@ -88,6 +88,23 @@ scenarios:
               content: "should never land"
       - content: "The file was written."
 
+  - name: todo-times
+    match: '(?i)plan the release notes'
+    turns:
+      - tool_calls:
+          - name: TodoWrite
+            args:
+              todos:
+                - { id: "1", content: "Gather the changes", status: "in_progress" }
+                - { id: "2", content: "Write the notes", status: "pending" }
+      - tool_calls:
+          - name: TodoWrite
+            args:
+              todos:
+                - { id: "1", content: "Gather the changes", status: "completed" }
+                - { id: "2", content: "Write the notes", status: "in_progress" }
+      - content: "Notes planned."
+
   - name: todo-batched-with-write
     match: '(?i)plan and create a file named todo-batch\.txt'
     turns:
