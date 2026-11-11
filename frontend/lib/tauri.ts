@@ -175,6 +175,9 @@ export type WorkspaceConfig = {
   /** Whether its computers go without the GPU their cluster gives every computer by default. */
   no_gpu: boolean;
 };
+/** What provisioning the local cluster ended with: the workspace it registered, and the secrets it could not put back
+ * into the cluster, each with the reason. */
+export type Provisioned = { workspace: string; unrestored: string[] };
 /** What runs the local cluster's node. Podman on a libkrun machine is the one that reaches this Mac's GPU. */
 export type ClusterRuntime = "docker" | "podman";
 /** The local cluster: the runtime chosen for it and the ones on offer, the one it runs on, why it cannot be
@@ -605,7 +608,7 @@ export const api = {
   provisionLocalCluster: (onStage: (stage: string) => void, recreate = false) => {
     const stages = new Channel<string>();
     stages.onmessage = onStage;
-    return invoke<string>("provision_local_cluster", { onStage: stages, recreate });
+    return invoke<Provisioned>("provision_local_cluster", { onStage: stages, recreate });
   },
   clusterFolders: () => invoke<ClusterFolder[]>("cluster_folders"),
   saveClusterFolders: (folders: ClusterFolder[]) => invoke<void>("save_cluster_folders", { folders }),

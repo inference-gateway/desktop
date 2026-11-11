@@ -182,6 +182,12 @@ fn child<'a>(parent: &'a mut Mapping, key: &str) -> Option<&'a mut Mapping> {
         .as_mapping_mut()
 }
 
+/// Whether the workspace runs on the local cluster, the only one that gives
+/// its computers a GPU to opt out of.
+fn on_gpu_cluster(config: &WorkspaceConfig) -> bool {
+    config.compute == crate::local_cluster::CONTEXT
+}
+
 /// Writes or clears the entry's GPU opt-out. The CPU and memory amounts the
 /// tab does not edit stay, and a block left empty goes.
 fn set_gpu_opt_out(entry: &mut Mapping, no_gpu: bool) {
@@ -315,7 +321,7 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "env", mapped(&config.env));
     set_or_remove(entry, "user_data", filled(&config.user_data));
     set_or_remove(entry, "volumes", listed_volumes(&config.volumes));
-    set_gpu_opt_out(entry, config.no_gpu);
+    set_gpu_opt_out(entry, config.no_gpu && on_gpu_cluster(config));
     if !config.compute.trim().is_empty() {
         for key in CLUSTER_KEYS {
             entry.remove(key);
@@ -859,10 +865,18 @@ fn user_kubeconfig() -> PathBuf {
     kubeconfig_path(&crate::env::home_dir(), kubeconfig_env.as_deref())
 }
 
+/// What provisioning the local cluster ended with: the workspace it
+/// registered, and the secrets it could not put back into the cluster.
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub(crate) struct Provisioned {
+    workspace: String,
+    unrestored: Vec<String>,
+}
+
 /// Provisions the local cluster, adds it to the user's kubeconfig and
 /// registers its workspace. A workspace of the same name elsewhere stops it
 /// before anything is created. Mock mode registers the workspace only.
-fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, String> {
+fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, String> {
     crate::compute_settings::require_compute()?;
     let existing = workspace_configs();
     let slot = local_workspace_slot(&existing)?;
@@ -871,6 +885,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
         no_gpu: local_workspace_opts_out_of_gpu(&existing),
         ..local_workspace()
     };
+    let mut unrestored = Vec::new();
     if !crate::env::mock_mode() {
         let runtime = crate::cluster_folders::read_runtime();
         if let Some(problem) = runtime_problem(runtime) {
@@ -888,6 +903,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
                 &["apply", "-f", "-"],
                 &crate::cluster_gpu::manifest(DETECTED_NAMESPACE),
             )?;
+            crate::local_cluster::wait_until("the GPU", crate::cluster_gpu::offered)?;
         }
         if let Some(manifest) =
             crate::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
@@ -900,7 +916,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
             )?;
         }
         stage("Restoring the workspaces' secrets...");
-        crate::secrets::restore_in(crate::local_cluster::CONTEXT)?;
+        unrestored = crate::secrets::restore_in(crate::local_cluster::CONTEXT);
         stage("Adding the cluster to your kubeconfig...");
         crate::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -921,7 +937,10 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
     crate::config::update_file(&crate::daemon::config_path(), |existing| {
         merge_workspace(existing, &workspace, slot)
     })?;
-    Ok(LOCAL_WORKSPACE.into())
+    Ok(Provisioned {
+        workspace: LOCAL_WORKSPACE.into(),
+        unrestored,
+    })
 }
 
 fn kubeconfig_path(home: &Path, kubeconfig_env: Option<&str>) -> PathBuf {
@@ -1157,12 +1176,13 @@ pub(crate) fn save_local_cluster_runtime(runtime: Runtime) -> Result<(), String>
 }
 
 /// Provisions a k3s cluster on the chosen runtime and registers it and its
-/// Ubuntu desktop workspace, reporting each step. Answers the workspace's name.
+/// Ubuntu desktop workspace, reporting each step. Answers the workspace's
+/// name and the secrets that could not be restored.
 #[tauri::command]
 pub(crate) async fn provision_local_cluster(
     on_stage: Channel<String>,
     recreate: bool,
-) -> Result<String, String> {
+) -> Result<Provisioned, String> {
     tokio::task::spawn_blocking(move || {
         provision_local(
             |stage| {
@@ -1308,6 +1328,12 @@ mod tests {
             name: LOCAL_WORKSPACE.into(),
             ..reread.clone()
         }]));
+        let moved = WorkspaceConfig {
+            compute: "k3d".into(),
+            ..reread.clone()
+        };
+        let elsewhere = merge_workspace(Some(&saved), &moved, Some("studio")).unwrap();
+        assert!(!elsewhere.contains("devic.es"), "{elsewhere}");
         let with = WorkspaceConfig {
             no_gpu: false,
             ..reread

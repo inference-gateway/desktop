@@ -12,7 +12,9 @@ const SHARES: u32 = 100;
 const VENUS: &str = "Virtio-GPU Venus";
 const COMPUTER_IMAGE: &str = "inference-gateway/computer";
 const PROBE_SECONDS: &str = "30";
-const TIMED_OUT: i32 = 124;
+/// What the node's `timeout` exits with once the probe ran out of time: its
+/// own code, or the one of a probe it had to kill.
+const TIMED_OUT: [i32; 2] = [124, 137];
 const INSTALL_PODMAN: &str = "brew install podman";
 const INSTALL_KRUNKIT: &str = "brew tap slp/krunkit && brew install krunkit";
 const CREATE_MACHINE: &str =
@@ -20,6 +22,7 @@ const CREATE_MACHINE: &str =
 const LIBKRUN: &str = "libkrun";
 const GPU_NAME: &str = "GPU";
 const HUNG: &str = "The virtual GPU stopped answering, so an app that uses it hangs. Restart the VM: podman machine stop && podman machine start. Until then switch GPU off on the workspace";
+const ALLOCATABLE: &str = r"jsonpath={.items[*].status.allocatable.devic\.es/dri}";
 const CONVERSATION_LIMITS: &str = r#"jsonpath={range .items[*]}{.metadata.labels.inference-gateway\.com/conversation}{"\t"}{.spec.containers[*].resources.limits.devic\.es/dri}{"\n"}{end}"#;
 
 /// What gives a cluster on Podman its GPU: a device plugin that offers the
@@ -181,7 +184,7 @@ fn probe_image(images: &str) -> Option<&str> {
 /// Whether the GPU answers, from a run of `vulkaninfo` on the node under a
 /// timeout. A GPU whose device stopped answering blocks it for good.
 fn probe_prerequisite(exit_code: Option<i32>, output: &str) -> Prerequisite {
-    if exit_code == Some(TIMED_OUT) {
+    if exit_code.is_some_and(|code| TIMED_OUT.contains(&code)) {
         return prerequisite(GPU_NAME, false, HUNG);
     }
     prerequisite(
@@ -191,18 +194,20 @@ fn probe_prerequisite(exit_code: Option<i32>, output: &str) -> Prerequisite {
     )
 }
 
+/// A name no earlier probe has, since one that was killed leaves its
+/// container on the node.
+fn probe_name() -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    format!("infer-gpu-probe-{}", now.unwrap_or_default().as_millis())
+}
+
+/// Runs `vulkaninfo` on the node. The time limit kills, because a call
+/// blocked on the GPU does not end when it is asked to.
 fn probe(image: &str) -> Prerequisite {
     let output = crate::local_cluster::node_command(Runtime::Podman)
-        .args([
-            "timeout",
-            PROBE_SECONDS,
-            "ctr",
-            "-n",
-            "k8s.io",
-            "run",
-            "--rm",
-        ])
-        .args(["--device", RENDER_DEVICE, image, "infer-gpu-probe"])
+        .args(["timeout", "-s", "KILL", PROBE_SECONDS])
+        .args(["ctr", "-n", "k8s.io", "run", "--rm"])
+        .args(["--device", RENDER_DEVICE, image, &probe_name()])
         .args(["vulkaninfo", "--summary"])
         .output();
     match output {
@@ -241,7 +246,7 @@ fn conversations_with_gpu(listing: &str) -> BTreeSet<String> {
 /// The chats whose computer on the local cluster has the GPU, for the
 /// Computers view. None anywhere else, and none in mock mode.
 #[tauri::command]
-pub(crate) async fn gpu_computers() -> BTreeSet<String> {
+pub(crate) async fn gpu_computers() -> Result<BTreeSet<String>, String> {
     tokio::task::spawn_blocking(|| {
         let chosen = crate::cluster_folders::read_runtime();
         if crate::env::mock_mode()
@@ -256,7 +261,20 @@ pub(crate) async fn gpu_computers() -> BTreeSet<String> {
         conversations_with_gpu(&listing.unwrap_or_default())
     })
     .await
-    .unwrap_or_default()
+    .map_err(|e| format!("listing task failed: {e}"))
+}
+
+/// Whether the node offers the GPU yet, which a computer needs to be
+/// scheduled. The device plugin registers it a moment after it is applied.
+pub(crate) fn offered() -> Result<String, String> {
+    let amount = crate::workspace_settings::kubectl(
+        crate::local_cluster::CONTEXT,
+        &["get", "nodes", "-o", ALLOCATABLE],
+    )?;
+    match amount.trim() {
+        "" | "0" => Err("the node offers no GPU yet".into()),
+        _ => Ok(amount),
+    }
 }
 
 #[cfg(test)]
@@ -334,8 +352,10 @@ mod tests {
 
     #[test]
     fn a_probe_that_times_out_is_a_gpu_that_stopped_answering() {
-        let hung = probe_prerequisite(Some(TIMED_OUT), "");
-        assert_eq!(hung, prerequisite(GPU_NAME, false, HUNG));
+        for code in TIMED_OUT {
+            let hung = probe_prerequisite(Some(code), "");
+            assert_eq!(hung, prerequisite(GPU_NAME, false, HUNG));
+        }
         let answers = "deviceName = Virtio-GPU Venus (Apple M4 Pro)\ndeviceName = llvmpipe\n";
         assert_eq!(
             probe_prerequisite(Some(0), answers),

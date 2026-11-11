@@ -255,9 +255,13 @@ export function ComputeTab() {
     setProblem("");
     setProvisioning(true);
     try {
-      const name = await api.provisionLocalCluster(setNotice, recreate);
+      const { workspace, unrestored } = await api.provisionLocalCluster(setNotice, recreate);
       changed();
-      setNotice(`Provisioned a local k3s cluster in ${runtimeLabel} with the ${name} workspace on it.`);
+      setNotice(`Provisioned a local k3s cluster in ${runtimeLabel} with the ${workspace} workspace on it.`);
+      if (unrestored.length > 0)
+        setProblem(
+          `The cluster runs, but these secrets did not reach it - save them again under Secrets: ${unrestored.join(". ")}`,
+        );
     } catch (e) {
       setNotice("");
       setProblem(String(e));

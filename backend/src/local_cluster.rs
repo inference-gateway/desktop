@@ -258,7 +258,10 @@ fn port_of(docker_port: &str) -> Option<&str> {
         .filter(|port| !port.is_empty())
 }
 
-fn wait_until(what: &str, check: impl Fn() -> Result<String, String>) -> Result<(), String> {
+pub(crate) fn wait_until(
+    what: &str,
+    check: impl Fn() -> Result<String, String>,
+) -> Result<(), String> {
     let deadline = Instant::now() + READY_TIMEOUT;
     loop {
         match check() {
