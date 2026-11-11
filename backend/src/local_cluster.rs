@@ -11,7 +11,7 @@ const K3S_KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
 const AGENT_SANDBOX: &str =
     "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.8/sandbox.yaml";
 const OPERATOR: &str =
-    "https://github.com/inference-gateway/operator/releases/download/v0.35.0/install.yaml";
+    "https://github.com/inference-gateway/operator/releases/download/v0.36.0/install.yaml";
 const GATEWAY_API_CRD: &str = "crd/gateways.gateway.networking.k8s.io";
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
