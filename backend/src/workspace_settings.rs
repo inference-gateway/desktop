@@ -704,6 +704,16 @@ fn local_workspace() -> WorkspaceConfig {
     }
 }
 
+/// The volumes the local cluster's workspace already mounts. Provisioning
+/// again refreshes the workspace, and the folders it mounts are the user's.
+fn local_workspace_volumes(existing: &[WorkspaceConfig]) -> Vec<WorkspaceVolume> {
+    existing
+        .iter()
+        .find(|workspace| workspace.name == LOCAL_WORKSPACE)
+        .map(|workspace| workspace.volumes.clone())
+        .unwrap_or_default()
+}
+
 /// The entry the local cluster's workspace replaces: its own from an earlier
 /// run, or none. A workspace of that name on another cluster is the user's,
 /// so it is never re-pointed.
@@ -784,7 +794,12 @@ fn user_kubeconfig() -> PathBuf {
 /// before anything is created. Mock mode registers the workspace only.
 fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, String> {
     crate::compute_settings::require_compute()?;
-    let slot = local_workspace_slot(&workspace_configs())?;
+    let existing = workspace_configs();
+    let slot = local_workspace_slot(&existing)?;
+    let workspace = WorkspaceConfig {
+        volumes: local_workspace_volumes(&existing),
+        ..local_workspace()
+    };
     if !crate::env::mock_mode() {
         let folders = crate::cluster_folders::read_folders();
         let binds = crate::cluster_folders::binds(&folders);
@@ -819,7 +834,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
         )
     })?;
     crate::config::update_file(&crate::daemon::config_path(), |existing| {
-        merge_workspace(existing, &local_workspace(), slot)
+        merge_workspace(existing, &workspace, slot)
     })?;
     Ok(LOCAL_WORKSPACE.into())
 }
@@ -1135,6 +1150,16 @@ mod tests {
         assert!(merged.contains("mode: all-in-one"));
         assert!(!merged.contains("gateway_env"));
         assert!(!merged.contains("INFER_AGENT_MODEL"));
+    }
+
+    #[test]
+    fn provisioning_again_keeps_the_volumes_of_the_local_workspace() {
+        let yaml = "workspaces:\n  - name: ubuntu-desktop\n    compute: infer-k3s\n    volumes:\n      - name: footage\n        claim: folder-footage-ro\n        mount_path: /mnt/footage\n        read_only: true\n";
+        let existing = parse_configs(Some(yaml), &[]);
+        let volumes = local_workspace_volumes(&existing);
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].claim, "folder-footage-ro");
+        assert!(local_workspace_volumes(&[]).is_empty());
     }
 
     #[test]
