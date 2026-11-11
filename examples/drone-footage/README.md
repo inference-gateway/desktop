@@ -17,7 +17,7 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 
 - `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**.
 - `infer` CLI v0.255.0 and operator v0.36.0 or newer, which mount the folders.
-- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet ([#536](https://github.com/inference-gateway/desktop/issues/536)), so today this example runs only with the stopgap described there, on an Apple silicon Mac.
+- A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The app cannot give its local cluster one yet ([#536](https://github.com/inference-gateway/desktop/issues/536)), so today this example runs only with the stopgap that issue describes, on an Apple silicon Mac.
 - An ElevenLabs API key. The sound effects and the music are real API calls and cost credits, so this example cannot run on the mock model.
 - A model that follows long instructions and reads pictures, since the agent looks at frames to judge its picks, its grade and its crops.
 - Your own footage, with gyro data. The example was run on one clip from a DJI Avata 2: 3840x2880, 29.97 fps, 10-bit HEVC in D-Log M, with electronic stabilisation off, which is what leaves the gyro data in the file. Gyroflow reads the data of many other cameras. The LUT is DJI's for the Avata 2 - for another camera, put its `.cube` in the tools folder instead.
@@ -78,44 +78,13 @@ Gyroflow warps every frame, and that is GPU work. On the clip above, in a Linux 
 | --- | --- | --- |
 | Stabilise 5 s of 4K (150 frames) | 18 frames after 10 minutes | about 7 s |
 
-FilmCraft is different. Its export is no faster with the GPU - 20 frames a second on software rendering, 17 to 18 with the GPU allowed - because decoding and encoding video are most of the work, and no Linux VM on a Mac reaches Apple's hardware codecs. The agent's instructions keep FilmCraft on software rendering, which also keeps it away from a fault described below.
+FilmCraft is different. Its export is no faster with the GPU - 20 frames a second on software rendering, 17 to 18 with the GPU allowed - because decoding and encoding video are most of the work, and no Linux VM on a Mac reaches Apple's hardware codecs. The agent's instructions keep FilmCraft on software rendering and leave the GPU to Gyroflow.
 
-The app's local cluster runs in Docker, whose VM has no GPU. Until the app can provision the cluster on Podman with libkrun ([#536](https://github.com/inference-gateway/desktop/issues/536)), this is how the example was run on an M4 Pro with macOS 27, Podman 6.2.0 and krunkit 1.3.2:
-
-```bash
-brew tap slp/krunkit && brew install krunkit podman
-CONTAINERS_MACHINE_PROVIDER=libkrun podman machine init --rootful --cpus 12 --memory 24576 --now
-```
-
-Start the app with `DOCKER_HOST` set to the socket `podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'` prints, prefixed with `unix://`. **Provision local cluster** then builds the cluster in the Podman VM. After it finishes:
-
-```bash
-task gpu:node     # the render device for every pod, and a fixed address for the node
-task gpu:driver   # a Vulkan driver that works on a Mac, built into ~/drone-tools
-```
-
-Then open **Settings > Workspaces**, edit `ubuntu-desktop` and add these lines at the end of **User data**. They run as root when a computer boots - if the field is empty, start it with `#!/bin/sh`:
-
-```sh
-apt-get update
-apt-get install -y --no-install-recommends libvulkan1 mesa-vulkan-drivers vulkan-tools
-install -m 0755 /mnt/tools/tools/libvulkan_virtio.so /usr/lib/aarch64-linux-gnu/
-```
-
-Press **Save workspace** and **Restart CLI**. `vulkaninfo --summary` on a new computer then lists `Virtio-GPU Venus` with the name of the Mac's chip.
-
-What the two tasks work around:
-
-- A pod gets the GPU through the node's base container spec, so every pod has it. There is no setting per workspace yet.
-- Podman gives a container a new address on every restart and k3s exits when its address changes, which loops. `task gpu:node` pins the address.
-- Ubuntu's Mesa fails on a Mac, whose memory pages are 16 KiB. `task gpu:driver` builds the Venus driver with [the downstream patch](https://gitlab.freedesktop.org/slp/mesa/-/commit/761ef1ec5ff2aae1cc3dc8bbc22b3d06ef04b549) that aligns to them.
-- Once a cluster exists on Podman, the app reports that its folders changed, because Podman lists mounts in another form than Docker. Provision once, with the folders already saved.
-
-The virtual GPU is not solid yet. In one run its device stopped answering about 50 minutes after the VM started, and every process that held it - FilmCraft at the time, probing for hardware decoding - blocked for good until the VM was restarted. With FilmCraft kept off the device the next run went through.
+The app's local cluster runs in Docker, whose VM has no GPU, so a computer of the local cluster has none either. [#536](https://github.com/inference-gateway/desktop/issues/536) is about giving it one, and describes the stopgap this example was run with: the cluster on Podman with libkrun, which hands the Mac's GPU to the computers.
 
 ## The run this was written from
 
-One run, on the setup above, with `ollama_cloud/glm-5.3-flash`:
+One run, on an M4 Pro with macOS 27 and the stopgap of #536, with `ollama_cloud/glm-5.3-flash`:
 
 | Step | Time |
 | --- | --- |

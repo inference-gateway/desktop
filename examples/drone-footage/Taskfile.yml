@@ -15,9 +15,6 @@ vars:
   TOOLS: '{{.HOME}}/drone-tools'
   INFER_DIR: '{{.HOME}}/.infer'
   WORKSPACE: ubuntu-desktop
-  NODE: infer-k3s
-  NODE_IP: 10.88.0.200
-  GPU_DRIVER: libvulkan_virtio.so
 
 tasks:
   up:
@@ -74,35 +71,9 @@ tasks:
       - mkdir -p {{.INFER_DIR}}/agents
       - cp agents/drone-editor.md {{.INFER_DIR}}/agents/drone-editor.md
 
-  gpu:driver:
-    desc: Build the Vulkan driver that reaches the Mac's GPU into the tools folder, where the workspace's user data installs it from
-    cmds:
-      - docker build --output type=local,dest={{.TOOLS}} gpu
-
-  gpu:node:
-    desc: Hand the GPU's render device to every pod of the local cluster and pin the node's address, which restarts the node once
-    vars:
-      CONTAINERD: /var/lib/rancher/k3s/agent/etc/containerd
-      DEVICE: '{"path":"/dev/dri/renderD128","type":"c","major":226,"minor":128,"fileMode":438,"uid":0,"gid":0}'
-      ALLOW: '{"allow":true,"type":"c","major":226,"minor":128,"access":"rwm"}'
-    cmds:
-      - |
-        podman exec {{.NODE}} ctr oci spec | python3 -c '
-        import json, sys
-        spec = json.load(sys.stdin)
-        linux = spec.setdefault("linux", {})
-        linux.setdefault("devices", []).append(json.loads(sys.argv[1]))
-        linux.setdefault("resources", {}).setdefault("devices", []).append(json.loads(sys.argv[2]))
-        json.dump(spec, sys.stdout)
-        ' '{{.DEVICE}}' '{{.ALLOW}}' | podman exec -i {{.NODE}} sh -c 'cat > /etc/gpu-base-spec.json'
-      - |
-        podman exec {{.NODE}} sh -c "mkdir -p {{.CONTAINERD}}/config-v3.toml.d && printf \"[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]\n  base_runtime_spec = \\\"/etc/gpu-base-spec.json\\\"\n\" > {{.CONTAINERD}}/config-v3.toml.d/gpu.toml"
-      - podman network disconnect podman {{.NODE}}
-      - podman network connect --ip {{.NODE_IP}} podman {{.NODE}}
-
   down:
     desc: Delete the tools and take the agent back out of ~/.infer - the footage folder is never touched
     cmds:
-      - rm -f {{.TOOLS}}/{{.FILMCRAFT_PACKAGE}} {{.TOOLS}}/{{.GYROFLOW_PACKAGE}} {{.TOOLS}}/{{.LUT}} {{.TOOLS}}/{{.GPU_DRIVER}}
+      - rm -f {{.TOOLS}}/{{.FILMCRAFT_PACKAGE}} {{.TOOLS}}/{{.GYROFLOW_PACKAGE}} {{.TOOLS}}/{{.LUT}}
       - rmdir {{.TOOLS}} 2>/dev/null || true
       - '! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/drone-editor.md || rm {{.INFER_DIR}}/agents/drone-editor.md'
