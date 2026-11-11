@@ -1,9 +1,11 @@
+use crate::local_cluster::Runtime;
 use crate::workspace_settings::{named_entries, text};
 use serde_norway::{Mapping, Value};
 use std::path::{Component, Path, PathBuf};
 
 const FOLDERS_FILE: &str = "cluster_folders.yaml";
 const FOLDERS_KEY: &str = "folders";
+const RUNTIME_KEY: &str = "runtime";
 const NAME_MAX: usize = 40;
 /// Where the local cluster's node keeps its folders. It lies on the node's own
 /// disk, which a pod in a user namespace can mount, unlike a folder shared
@@ -100,6 +102,33 @@ fn parse_folders(yaml: Option<&str>) -> Vec<ClusterFolder> {
 /// The folders the local cluster shares, as this computer last saved them.
 pub(crate) fn read_folders() -> Vec<ClusterFolder> {
     parse_folders(std::fs::read_to_string(folders_path()).ok().as_deref())
+}
+
+fn parse_runtime(yaml: Option<&str>) -> Runtime {
+    crate::config::config_mapping(yaml)
+        .get(RUNTIME_KEY)
+        .and_then(|runtime| serde_norway::from_value(runtime.clone()).ok())
+        .unwrap_or_default()
+}
+
+/// The runtime chosen for the local cluster, Docker until one is saved.
+pub(crate) fn read_runtime() -> Runtime {
+    parse_runtime(std::fs::read_to_string(folders_path()).ok().as_deref())
+}
+
+fn merge_runtime(yaml: Option<&str>, runtime: Runtime) -> Result<String, String> {
+    let mut document = crate::config::config_mapping(yaml);
+    let root = document
+        .as_mapping_mut()
+        .ok_or("yaml root is not a mapping")?;
+    let runtime = serde_norway::to_value(runtime).map_err(|e| e.to_string())?;
+    root.insert(RUNTIME_KEY.into(), runtime);
+    serde_norway::to_string(&document).map_err(|e| e.to_string())
+}
+
+/// Saves the runtime the local cluster is provisioned on, beside its folders.
+pub(crate) fn save_runtime(runtime: Runtime) -> Result<(), String> {
+    crate::config::update_file(&folders_path(), |existing| merge_runtime(existing, runtime))
 }
 
 fn folder_entry(folder: &ClusterFolder) -> Value {
@@ -246,6 +275,16 @@ mod tests {
         assert_eq!(saved.matches("read_only: true").count(), 1);
         assert_eq!(parse_folders(Some(&saved)), folders);
         assert!(parse_folders(Some(&merge_folders(Some(&saved), &[]).unwrap())).is_empty());
+    }
+
+    #[test]
+    fn the_runtime_is_docker_until_another_is_saved_and_the_folders_stay() {
+        assert_eq!(parse_runtime(None), Runtime::Docker);
+        let folders = merge_folders(None, &[folder("footage", "/Users/me/raw", true)]).unwrap();
+        let saved = merge_runtime(Some(&folders), Runtime::Podman).unwrap();
+        assert!(saved.contains("runtime: podman"), "{saved}");
+        assert_eq!(parse_runtime(Some(&saved)), Runtime::Podman);
+        assert_eq!(parse_folders(Some(&saved)).len(), 1);
     }
 
     #[test]

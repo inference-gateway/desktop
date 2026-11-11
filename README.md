@@ -40,6 +40,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 
 - [How it works](docs/how-it-works.md) - the gateway and CLI, working directory and sandbox, updates, supported platforms.
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
+- [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
 - [Export / Import](docs/export-import.md) - move your setup to a new machine.

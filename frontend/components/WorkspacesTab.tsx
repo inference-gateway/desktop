@@ -221,6 +221,7 @@ function WorkspaceForm({
   contexts,
   capabilities,
   folders,
+  gpuCluster,
   onChange,
   onSave,
   onCancel,
@@ -230,6 +231,7 @@ function WorkspaceForm({
   contexts: string[];
   capabilities: Capability[];
   folders: ClusterFolder[];
+  gpuCluster: boolean;
   onChange: (draft: WorkspaceDraft) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -384,6 +386,26 @@ function WorkspaceForm({
           <span className={HINT_CLASS}>{capability.hint}</span>
         </div>
       ))}
+      {gpuCluster && draft.compute === LOCAL_CLUSTER && (
+        <div className={FIELD_CLASS}>
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="workspace-gpu"
+              checked={!draft.no_gpu}
+              onChange={(event) => onChange({ ...draft, no_gpu: !event.target.checked })}
+              className="h-4 w-4 accent-primary"
+            />
+            <Label htmlFor="workspace-gpu" className="cursor-pointer">
+              GPU
+            </Label>
+          </div>
+          <span className={HINT_CLASS}>
+            The computers get this Mac's GPU for Vulkan rendering and compute. Switch it off for an app that hangs on it
+            or is no faster with it. Video encoding and decoding stay on the CPU either way.
+          </span>
+        </div>
+      )}
       <div className={FIELD_CLASS}>
         <Label htmlFor="workspace-env">Environment</Label>
         <textarea
@@ -441,6 +463,7 @@ export function WorkspacesTab() {
   const [contexts, setContexts] = useState<string[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [folders, setFolders] = useState<ClusterFolder[]>([]);
+  const [gpuCluster, setGpuCluster] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
@@ -485,6 +508,10 @@ export function WorkspacesTab() {
     api
       .clusterFolders()
       .then(setFolders)
+      .catch(() => {});
+    api
+      .localClusterStatus()
+      .then((local) => setGpuCluster((local.running ?? local.runtime) === "podman"))
       .catch(() => {});
   }, [reload]);
 
@@ -569,6 +596,7 @@ export function WorkspacesTab() {
             contexts={contexts}
             capabilities={capabilities}
             folders={folders}
+            gpuCluster={gpuCluster}
             onChange={(draft) => setEditing({ ...editing, draft })}
             onSave={save}
             onCancel={() => {

@@ -172,6 +172,22 @@ export type WorkspaceConfig = {
   /** The cloud-init script the pod runs as root when it boots, before the agent starts. */
   user_data: string;
   volumes: WorkspaceVolume[];
+  /** Whether its computers go without the GPU their cluster gives every computer by default. */
+  no_gpu: boolean;
+};
+/** What provisioning the local cluster ended with: the workspace it registered, and the secrets it could not put back
+ * into the cluster, each with the reason. */
+export type Provisioned = { workspace: string; unrestored: string[] };
+/** What runs the local cluster's node. Podman on a libkrun machine is the one that reaches this Mac's GPU. */
+export type ClusterRuntime = "docker" | "podman";
+/** The local cluster: the runtime chosen for it and the ones on offer, the one it runs on, why it cannot be
+ * provisioned, and whether what is saved only applies once it is recreated. */
+export type LocalCluster = {
+  runtime: ClusterRuntime;
+  runtimes: ClusterRuntime[];
+  running: ClusterRuntime | null;
+  problem: string | null;
+  pending: boolean;
 };
 /** A folder of this computer the local cluster's workspaces can mount. A read-only one cannot be changed from any
  * workspace. */
@@ -582,18 +598,20 @@ export const api = {
   /** Whether the installed infer reads compute.yaml, which every cluster action needs. */
   computeSupported: () => invoke<boolean>("compute_supported"),
   detectClusters: () => invoke<string[]>("detect_clusters"),
-  dockerAvailable: () => invoke<boolean>("docker_available"),
-  /** Provisions a k3s cluster in Docker, registers it with an Ubuntu desktop workspace and answers the workspace's
-   * name. One that runs with other folders than the saved ones is replaced only when `recreate` is set. */
+  localClusterStatus: () => invoke<LocalCluster>("local_cluster_status"),
+  saveLocalClusterRuntime: (runtime: ClusterRuntime) => invoke<void>("save_local_cluster_runtime", { runtime }),
+  /** The chats whose computer on the local cluster has the GPU. */
+  gpuComputers: () => invoke<string[]>("gpu_computers"),
+  /** Provisions a k3s cluster on the chosen runtime, registers it with an Ubuntu desktop workspace and answers the workspace's
+   * name. One that runs with other folders or on another runtime than saved is replaced only when `recreate` is
+   * set. */
   provisionLocalCluster: (onStage: (stage: string) => void, recreate = false) => {
     const stages = new Channel<string>();
     stages.onmessage = onStage;
-    return invoke<string>("provision_local_cluster", { onStage: stages, recreate });
+    return invoke<Provisioned>("provision_local_cluster", { onStage: stages, recreate });
   },
   clusterFolders: () => invoke<ClusterFolder[]>("cluster_folders"),
   saveClusterFolders: (folders: ClusterFolder[]) => invoke<void>("save_cluster_folders", { folders }),
-  /** Whether the local cluster runs with other folders than the saved ones, so they need it recreated. */
-  clusterFoldersPending: () => invoke<boolean>("cluster_folders_pending"),
   checkWorkspace: (context: string, namespace: string, name: string) =>
     invoke<ClusterCheck>("check_workspace", { context, namespace, name }),
   workspaceMachines: (context: string, namespace: string, name: string) =>

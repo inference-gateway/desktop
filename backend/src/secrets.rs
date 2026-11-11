@@ -384,6 +384,58 @@ fn sync(
     Ok(failures)
 }
 
+/// The namespaces of `context` that need the Secret `name`: the ones of the
+/// workspaces there that list it.
+fn places_listing(workspaces: &[WorkspaceConfig], context: &str, name: &str) -> BTreeSet<Place> {
+    workspaces
+        .iter()
+        .filter(|w| w.context == context && w.secrets.iter().any(|listed| listed == name))
+        .map(place_of)
+        .collect()
+}
+
+/// What kept `label` out of each of `places`: no saved value, which fails
+/// them all, or what `write` answered for a place.
+fn restore_failures(
+    label: &str,
+    value: &str,
+    places: &BTreeSet<Place>,
+    write: impl Fn(&Place) -> Result<(), String>,
+) -> Vec<String> {
+    if places.is_empty() {
+        return Vec::new();
+    }
+    if value.is_empty() {
+        return vec![format!("{label}: no value is saved on this computer")];
+    }
+    places
+        .iter()
+        .filter_map(|place| write(place).err().map(|e| (place, e)))
+        .map(|(place, e)| format!("{label} in {}: {e}", describe(place)))
+        .collect()
+}
+
+/// Writes every stored secret the workspaces in `context` list back into
+/// their namespaces and answers what failed - the rest still applies. A
+/// cluster that was recreated lost them, and a computer whose workspace
+/// names a missing Secret never starts.
+pub(crate) fn restore_in(context: &str) -> Vec<String> {
+    let _edits = EDITS.lock().unwrap_or_else(PoisonError::into_inner);
+    let home = home_dir();
+    let workspaces = workspace_settings::workspace_configs();
+    read_stored_in(&home)
+        .iter()
+        .flat_map(|secret| {
+            let value = config::secret_value_in(&home, &secret.label);
+            let manifest = manifest(&secret.label, &secret.variable, &value);
+            let places = places_listing(&workspaces, context, &kube_secret_name(&secret.label));
+            restore_failures(&secret.label, &value, &places, |place| {
+                write_kube_secret(place, &manifest)
+            })
+        })
+        .collect()
+}
+
 /// Why `secret` cannot be saved now, read against what is stored. The agent
 /// editor asks before it mints a key it would otherwise have nowhere to keep.
 pub(crate) fn check(secret: &Secret, is_new: bool) -> Result<(), String> {
@@ -660,6 +712,30 @@ mod tests {
                 namespace: "own".into(),
             }])
         );
+    }
+
+    #[test]
+    fn a_recreated_cluster_gets_back_the_secrets_its_workspaces_list() {
+        let name = kube_secret_name("elevenlabs");
+        let on = |context: &str, secrets: &[&str]| {
+            let mut studio = workspace("studio", KUBERNETES, "agents", secrets);
+            studio.context = context.into();
+            studio
+        };
+        let workspaces = [on("infer-k3s", &[&name]), on("other", &[&name])];
+        let places = places_listing(&workspaces, "infer-k3s", &name);
+        assert_eq!(places.len(), 1);
+        assert_eq!(places.first().unwrap().namespace, "agents");
+        assert!(places_listing(&workspaces, "infer-k3s", "infer-secret-unlisted").is_empty());
+
+        let refused = |_: &Place| Err("namespaces \"agents\" not found".to_owned());
+        let failed = restore_failures("elevenlabs", "key", &places, refused);
+        assert_eq!(failed.len(), 1);
+        assert!(failed[0].contains("elevenlabs in cluster infer-k3s"));
+        let unsaved = restore_failures("elevenlabs", "", &places, |_| Ok(()));
+        assert!(unsaved[0].contains("no value is saved"));
+        assert!(restore_failures("elevenlabs", "key", &places, |_| Ok(())).is_empty());
+        assert!(restore_failures("elevenlabs", "", &BTreeSet::new(), |_| Ok(())).is_empty());
     }
 
     #[test]

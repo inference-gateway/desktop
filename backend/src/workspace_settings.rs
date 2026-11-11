@@ -1,4 +1,5 @@
 use crate::compute_settings::ClusterConfig;
+use crate::local_cluster::Runtime;
 use crate::workspace_volumes::{WorkspaceVolume, listed_volumes, volumes_of};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
@@ -85,7 +86,7 @@ pub(crate) struct Machine {
     reason: String,
 }
 
-fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite {
+pub(crate) fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite {
     Prerequisite {
         name: name.into(),
         met,
@@ -116,6 +117,9 @@ pub(crate) struct WorkspaceConfig {
     /// The cloud-init script the pod runs as root when it boots.
     user_data: String,
     volumes: Vec<WorkspaceVolume>,
+    /// Whether the workspace's computers go without the GPU their cluster
+    /// gives every computer by default.
+    no_gpu: bool,
     /// The Kubernetes Secrets the pod daemon reads, which Settings > Secrets
     /// lists and the tab never edits.
     #[serde(skip)]
@@ -158,6 +162,50 @@ fn environment(entry: &Value) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
+const RESOURCES_KEY: &str = "resources";
+const LIMITS_KEY: &str = "limits";
+const NO_GPU: &str = "0";
+
+/// Whether the entry asks for none of the GPU, which is how it opts out of
+/// the one its cluster gives by default.
+fn opts_out_of_gpu(entry: &Value) -> bool {
+    entry
+        .get(RESOURCES_KEY)
+        .and_then(|resources| resources.get(LIMITS_KEY))
+        .is_some_and(|limits| text(limits, crate::cluster_gpu::RESOURCE) == NO_GPU)
+}
+
+fn child<'a>(parent: &'a mut Mapping, key: &str) -> Option<&'a mut Mapping> {
+    parent
+        .entry(key.into())
+        .or_insert_with(|| Value::Mapping(Mapping::new()))
+        .as_mapping_mut()
+}
+
+/// Whether the workspace runs on the local cluster, the only one that gives
+/// its computers a GPU to opt out of.
+fn on_gpu_cluster(config: &WorkspaceConfig) -> bool {
+    config.compute == crate::local_cluster::CONTEXT
+}
+
+/// Writes or clears the entry's GPU opt-out. The CPU and memory amounts the
+/// tab does not edit stay, and a block left empty goes.
+fn set_gpu_opt_out(entry: &mut Mapping, no_gpu: bool) {
+    let Some(resources) = child(entry, RESOURCES_KEY) else {
+        return;
+    };
+    if let Some(limits) = child(resources, LIMITS_KEY) {
+        let amount = no_gpu.then(|| NO_GPU.into());
+        set_or_remove(limits, crate::cluster_gpu::RESOURCE, amount);
+        if limits.is_empty() {
+            resources.remove(LIMITS_KEY);
+        }
+    }
+    if resources.is_empty() {
+        entry.remove(RESOURCES_KEY);
+    }
+}
+
 /// A workspace entry as the tab shows it. One on a cluster reads that cluster's
 /// kind, context, namespace and provider keys, so every check and clean-up
 /// reaches the cluster the CLI resolves it to.
@@ -181,6 +229,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         env: environment(entry),
         user_data: text(entry, "user_data"),
         volumes: volumes_of(entry),
+        no_gpu: opts_out_of_gpu(entry),
         secrets: names(entry, "secrets"),
         mcp_servers: names(entry, "mcp_servers"),
     };
@@ -272,6 +321,7 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "env", mapped(&config.env));
     set_or_remove(entry, "user_data", filled(&config.user_data));
     set_or_remove(entry, "volumes", listed_volumes(&config.volumes));
+    set_gpu_opt_out(entry, config.no_gpu && on_gpu_cluster(config));
     if !config.compute.trim().is_empty() {
         for key in CLUSTER_KEYS {
             entry.remove(key);
@@ -417,11 +467,18 @@ fn namespace_prerequisites(namespace: &str, labels: Result<&str, &str>) -> Vec<P
     ]
 }
 
+/// The runtime the local cluster's node is on, or the chosen one before a
+/// node exists.
+fn local_runtime() -> Runtime {
+    let chosen = crate::cluster_folders::read_runtime();
+    crate::local_cluster::running_on(chosen).unwrap_or(chosen)
+}
+
 /// kubectl for `context`. The local cluster's goes through its container, so
 /// checking it needs no kubectl on this machine.
 fn kubectl_for(context: &str) -> std::process::Command {
     if context == crate::local_cluster::CONTEXT {
-        return crate::local_cluster::kubectl_command();
+        return crate::local_cluster::kubectl_command(local_runtime());
     }
     let mut command = crate::env::command("kubectl");
     command
@@ -636,11 +693,22 @@ fn check_cluster(context: &str, namespace: &str, selector: &str) -> ClusterCheck
         namespace,
         labels.as_deref().map_err(String::as_str),
     ));
+    if has_gpu(context) {
+        prerequisites.extend(crate::cluster_gpu::prerequisites());
+    }
     ClusterCheck {
         prerequisites,
         running: counts.map(|(running, _)| running),
         suspended: counts.map(|(_, suspended)| suspended),
     }
+}
+
+/// Whether `context` is the local cluster on Podman, the one cluster the app
+/// gives a GPU. Mock mode runs no cluster.
+fn has_gpu(context: &str) -> bool {
+    context == crate::local_cluster::CONTEXT
+        && !crate::env::mock_mode()
+        && local_runtime() == Runtime::Podman
 }
 
 fn installed_infer_version() -> Option<String> {
@@ -712,6 +780,14 @@ fn local_workspace_volumes(existing: &[WorkspaceConfig]) -> Vec<WorkspaceVolume>
         .find(|workspace| workspace.name == LOCAL_WORKSPACE)
         .map(|workspace| workspace.volumes.clone())
         .unwrap_or_default()
+}
+
+/// Whether the local cluster's workspace already went without the GPU, which
+/// provisioning again keeps.
+fn local_workspace_opts_out_of_gpu(existing: &[WorkspaceConfig]) -> bool {
+    existing
+        .iter()
+        .any(|workspace| workspace.name == LOCAL_WORKSPACE && workspace.no_gpu)
 }
 
 /// The entry the local cluster's workspace replaces: its own from an earlier
@@ -789,23 +865,46 @@ fn user_kubeconfig() -> PathBuf {
     kubeconfig_path(&crate::env::home_dir(), kubeconfig_env.as_deref())
 }
 
+/// What provisioning the local cluster ended with: the workspace it
+/// registered, and the secrets it could not put back into the cluster.
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub(crate) struct Provisioned {
+    workspace: String,
+    unrestored: Vec<String>,
+}
+
 /// Provisions the local cluster, adds it to the user's kubeconfig and
 /// registers its workspace. A workspace of the same name elsewhere stops it
 /// before anything is created. Mock mode registers the workspace only.
-fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, String> {
+fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, String> {
     crate::compute_settings::require_compute()?;
     let existing = workspace_configs();
     let slot = local_workspace_slot(&existing)?;
     let workspace = WorkspaceConfig {
         volumes: local_workspace_volumes(&existing),
+        no_gpu: local_workspace_opts_out_of_gpu(&existing),
         ..local_workspace()
     };
+    let mut unrestored = Vec::new();
     if !crate::env::mock_mode() {
+        let runtime = crate::cluster_folders::read_runtime();
+        if let Some(problem) = runtime_problem(runtime) {
+            return Err(problem);
+        }
         let folders = crate::cluster_folders::read_folders();
         let binds = crate::cluster_folders::binds(&folders);
-        let kubeconfig = crate::local_cluster::provision(&stage, &binds, recreate)?;
+        let kubeconfig = crate::local_cluster::provision(&stage, runtime, &binds, recreate)?;
         stage("Creating the workspace namespace...");
         managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
+        if runtime == Runtime::Podman {
+            stage("Giving the cluster's computers the GPU...");
+            kubectl_with_input(
+                crate::local_cluster::CONTEXT,
+                &["apply", "-f", "-"],
+                &crate::cluster_gpu::manifest(DETECTED_NAMESPACE),
+            )?;
+            crate::local_cluster::wait_until("the GPU", crate::cluster_gpu::offered)?;
+        }
         if let Some(manifest) =
             crate::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
         {
@@ -816,6 +915,8 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
                 &manifest,
             )?;
         }
+        stage("Restoring the workspaces' secrets...");
+        unrestored = crate::secrets::restore_in(crate::local_cluster::CONTEXT);
         stage("Adding the cluster to your kubeconfig...");
         crate::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -836,7 +937,10 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, Strin
     crate::config::update_file(&crate::daemon::config_path(), |existing| {
         merge_workspace(existing, &workspace, slot)
     })?;
-    Ok(LOCAL_WORKSPACE.into())
+    Ok(Provisioned {
+        workspace: LOCAL_WORKSPACE.into(),
+        unrestored,
+    })
 }
 
 fn kubeconfig_path(home: &Path, kubeconfig_env: Option<&str>) -> PathBuf {
@@ -994,37 +1098,91 @@ pub(crate) async fn check(context: String, namespace: String, selector: String) 
         .unwrap_or_else(|e| unreachable(&e.to_string()))
 }
 
-/// Whether the local cluster runs with other folders than the ones saved, so
-/// they only take effect once it is recreated. Mock mode runs no cluster.
-#[tauri::command]
-pub(crate) async fn cluster_folders_pending() -> bool {
-    if crate::env::mock_mode() {
-        return false;
+const NO_DOCKER: &str = "Install and start Docker to provision a local cluster with one click.";
+
+/// Why the local cluster cannot be provisioned on `runtime` right now, with
+/// what fixes it. Docker without a GPU setup needs only its daemon.
+fn runtime_problem(runtime: Runtime) -> Option<String> {
+    match runtime {
+        Runtime::Docker => (!crate::local_cluster::answers(runtime)).then(|| NO_DOCKER.to_owned()),
+        Runtime::Podman => crate::cluster_gpu::podman_problem(),
     }
-    tokio::task::spawn_blocking(|| {
-        let binds = crate::cluster_folders::binds(&crate::cluster_folders::read_folders());
-        crate::local_cluster::folders_pending(&binds)
-    })
-    .await
-    .unwrap_or(false)
 }
 
-/// Whether Docker answers, which is all provisioning a local cluster needs.
+/// The local cluster as the Compute tab shows it: the runtime chosen for it
+/// and the ones on offer, the one it runs on, why it cannot be provisioned,
+/// and whether what is saved only applies once it is recreated.
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub(crate) struct LocalCluster {
+    runtime: Runtime,
+    runtimes: Vec<Runtime>,
+    running: Option<Runtime>,
+    problem: Option<String>,
+    pending: bool,
+}
+
+/// Podman reaches a GPU only on a Mac, so the choice is offered only there.
+fn offered_runtimes() -> Vec<Runtime> {
+    if cfg!(target_os = "macos") || crate::env::mock_mode() {
+        Runtime::ALL.to_vec()
+    } else {
+        vec![Runtime::Docker]
+    }
+}
+
+/// Mock mode runs no cluster. One that was provisioned there counts as
+/// running on the runtime chosen for it.
+fn mock_local_cluster(runtime: Runtime) -> LocalCluster {
+    let provisioned = crate::compute_settings::read_clusters()
+        .iter()
+        .any(|cluster| cluster.name == crate::local_cluster::CONTEXT);
+    LocalCluster {
+        runtime,
+        runtimes: offered_runtimes(),
+        running: provisioned.then_some(runtime),
+        problem: None,
+        pending: false,
+    }
+}
+
+fn local_cluster_now() -> LocalCluster {
+    let runtime = crate::cluster_folders::read_runtime();
+    if crate::env::mock_mode() {
+        return mock_local_cluster(runtime);
+    }
+    let binds = crate::cluster_folders::binds(&crate::cluster_folders::read_folders());
+    LocalCluster {
+        runtime,
+        runtimes: offered_runtimes(),
+        running: crate::local_cluster::running_on(runtime),
+        problem: runtime_problem(runtime),
+        pending: crate::local_cluster::recreate_pending(runtime, &binds),
+    }
+}
+
+/// The local cluster's runtime, state and what stands in its way.
 #[tauri::command]
-pub(crate) async fn docker_available() -> bool {
-    crate::env::mock_mode()
-        || tokio::task::spawn_blocking(crate::local_cluster::docker_running)
-            .await
-            .unwrap_or(false)
+pub(crate) async fn local_cluster_status() -> Result<LocalCluster, String> {
+    tokio::task::spawn_blocking(local_cluster_now)
+        .await
+        .map_err(|e| format!("reading the local cluster stopped: {e}"))
 }
 
-/// Provisions a k3s cluster in Docker and registers it and its Ubuntu desktop
-/// workspace, reporting each step. Answers the workspace's name.
+/// Saves the runtime the local cluster is provisioned on. A cluster that
+/// runs on the other one moves only when it is recreated.
+#[tauri::command]
+pub(crate) fn save_local_cluster_runtime(runtime: Runtime) -> Result<(), String> {
+    crate::cluster_folders::save_runtime(runtime)
+}
+
+/// Provisions a k3s cluster on the chosen runtime and registers it and its
+/// Ubuntu desktop workspace, reporting each step. Answers the workspace's
+/// name and the secrets that could not be restored.
 #[tauri::command]
 pub(crate) async fn provision_local_cluster(
     on_stage: Channel<String>,
     recreate: bool,
-) -> Result<String, String> {
+) -> Result<Provisioned, String> {
     tokio::task::spawn_blocking(move || {
         provision_local(
             |stage| {
@@ -1150,6 +1308,41 @@ mod tests {
         assert!(merged.contains("mode: all-in-one"));
         assert!(!merged.contains("gateway_env"));
         assert!(!merged.contains("INFER_AGENT_MODEL"));
+    }
+
+    #[test]
+    fn a_workspace_opts_out_of_the_gpu_by_asking_for_none_and_its_other_amounts_stay() {
+        let daemon = "workspaces:\n  - name: studio\n    compute: infer-k3s\n    resources:\n      limits:\n        memory: 8Gi\n";
+        let studio = parse_configs(Some(daemon), &[]).remove(0);
+        assert!(!studio.no_gpu);
+        let without = WorkspaceConfig {
+            no_gpu: true,
+            ..studio
+        };
+        let saved = merge_workspace(Some(daemon), &without, Some("studio")).unwrap();
+        assert!(saved.contains("devic.es/dri: '0'"), "{saved}");
+        assert!(saved.contains("memory: 8Gi"), "{saved}");
+        let reread = parse_configs(Some(&saved), &[]).remove(0);
+        assert!(reread.no_gpu);
+        assert!(local_workspace_opts_out_of_gpu(&[WorkspaceConfig {
+            name: LOCAL_WORKSPACE.into(),
+            ..reread.clone()
+        }]));
+        let moved = WorkspaceConfig {
+            compute: "k3d".into(),
+            ..reread.clone()
+        };
+        let elsewhere = merge_workspace(Some(&saved), &moved, Some("studio")).unwrap();
+        assert!(!elsewhere.contains("devic.es"), "{elsewhere}");
+        let with = WorkspaceConfig {
+            no_gpu: false,
+            ..reread
+        };
+        let back = merge_workspace(Some(&saved), &with, Some("studio")).unwrap();
+        assert!(!back.contains("devic.es"), "{back}");
+        assert!(back.contains("memory: 8Gi"), "{back}");
+        let alone = merge_workspace(None, &with, None).unwrap();
+        assert!(!alone.contains("resources"), "{alone}");
     }
 
     #[test]
