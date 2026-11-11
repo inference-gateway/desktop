@@ -1,3 +1,4 @@
+import { onFolderClaim } from "./cluster-folders";
 import type { Capability, WorkspaceConfig, WorkspaceVolume } from "./tauri";
 
 /** A workspace as the Settings form holds it: lists and the environment as the text the person types. */
@@ -25,6 +26,9 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   user_data: "",
   volumes: [],
 };
+
+/** The cluster the app provisions in Docker, the only one that can share this computer's folders. */
+export const LOCAL_CLUSTER = "infer-k3s";
 
 export const EMPTY_VOLUME: WorkspaceVolume = { name: "", claim: "", mount_path: "", read_only: false };
 
@@ -72,7 +76,12 @@ export function configOf(draft: WorkspaceDraft): WorkspaceConfig {
 }
 
 function trimmedVolume(volume: WorkspaceVolume): WorkspaceVolume {
-  return { ...volume, name: volume.name.trim(), claim: volume.claim.trim(), mount_path: volume.mount_path.trim() };
+  return onFolderClaim({
+    ...volume,
+    name: volume.name.trim(),
+    claim: volume.claim.trim(),
+    mount_path: volume.mount_path.trim(),
+  });
 }
 
 /** Why the computers could not mount the volumes as listed, or null when they could. */

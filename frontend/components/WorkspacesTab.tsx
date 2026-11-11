@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import {
   api,
   type Capability,
+  type ClusterFolder,
   type ClusterConfig,
   type Machine,
   type Workspace,
@@ -17,6 +18,7 @@ import {
   draftProblem,
   EMPTY_WORKSPACE,
   hasCapability,
+  LOCAL_CLUSTER,
   withCapability,
   WORKSPACE_KINDS,
   type WorkspaceDraft,
@@ -218,6 +220,7 @@ function WorkspaceForm({
   clusters,
   contexts,
   capabilities,
+  folders,
   onChange,
   onSave,
   onCancel,
@@ -226,6 +229,7 @@ function WorkspaceForm({
   clusters: ClusterConfig[];
   contexts: string[];
   capabilities: Capability[];
+  folders: ClusterFolder[];
   onChange: (draft: WorkspaceDraft) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -408,7 +412,11 @@ function WorkspaceForm({
           other apps.
         </span>
       </div>
-      <WorkspaceVolumes volumes={draft.volumes} onChange={(volumes) => onChange({ ...draft, volumes })} />
+      <WorkspaceVolumes
+        volumes={draft.volumes}
+        folders={draft.compute === LOCAL_CLUSTER ? folders : []}
+        onChange={(volumes) => onChange({ ...draft, volumes })}
+      />
       <div className="flex gap-2">
         <Button size="sm" onClick={onSave}>
           Save workspace
@@ -432,6 +440,7 @@ export function WorkspacesTab() {
   const [known, setKnown] = useState<Record<string, Workspace>>({});
   const [contexts, setContexts] = useState<string[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
+  const [folders, setFolders] = useState<ClusterFolder[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
@@ -472,6 +481,10 @@ export function WorkspacesTab() {
     api
       .workspaceCapabilities()
       .then(setCapabilities)
+      .catch(() => {});
+    api
+      .clusterFolders()
+      .then(setFolders)
       .catch(() => {});
   }, [reload]);
 
@@ -555,6 +568,7 @@ export function WorkspacesTab() {
             clusters={clusters}
             contexts={contexts}
             capabilities={capabilities}
+            folders={folders}
             onChange={(draft) => setEditing({ ...editing, draft })}
             onSave={save}
             onCancel={() => {

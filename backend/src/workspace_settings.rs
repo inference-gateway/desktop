@@ -782,13 +782,25 @@ fn user_kubeconfig() -> PathBuf {
 /// Provisions the local cluster, adds it to the user's kubeconfig and
 /// registers its workspace. A workspace of the same name elsewhere stops it
 /// before anything is created. Mock mode registers the workspace only.
-fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
+fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, String> {
     crate::compute_settings::require_compute()?;
     let slot = local_workspace_slot(&workspace_configs())?;
     if !crate::env::mock_mode() {
-        let kubeconfig = crate::local_cluster::provision(&stage)?;
+        let folders = crate::cluster_folders::read_folders();
+        let binds = crate::cluster_folders::binds(&folders);
+        let kubeconfig = crate::local_cluster::provision(&stage, &binds, recreate)?;
         stage("Creating the workspace namespace...");
         managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
+        if let Some(manifest) =
+            crate::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
+        {
+            stage("Sharing this computer's folders...");
+            kubectl_with_input(
+                crate::local_cluster::CONTEXT,
+                &["apply", "-f", "-"],
+                &manifest,
+            )?;
+        }
         stage("Adding the cluster to your kubeconfig...");
         crate::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -967,6 +979,21 @@ pub(crate) async fn check(context: String, namespace: String, selector: String) 
         .unwrap_or_else(|e| unreachable(&e.to_string()))
 }
 
+/// Whether the local cluster runs with other folders than the ones saved, so
+/// they only take effect once it is recreated. Mock mode runs no cluster.
+#[tauri::command]
+pub(crate) async fn cluster_folders_pending() -> bool {
+    if crate::env::mock_mode() {
+        return false;
+    }
+    tokio::task::spawn_blocking(|| {
+        let binds = crate::cluster_folders::binds(&crate::cluster_folders::read_folders());
+        crate::local_cluster::folders_pending(&binds)
+    })
+    .await
+    .unwrap_or(false)
+}
+
 /// Whether Docker answers, which is all provisioning a local cluster needs.
 #[tauri::command]
 pub(crate) async fn docker_available() -> bool {
@@ -979,11 +1006,17 @@ pub(crate) async fn docker_available() -> bool {
 /// Provisions a k3s cluster in Docker and registers it and its Ubuntu desktop
 /// workspace, reporting each step. Answers the workspace's name.
 #[tauri::command]
-pub(crate) async fn provision_local_cluster(on_stage: Channel<String>) -> Result<String, String> {
+pub(crate) async fn provision_local_cluster(
+    on_stage: Channel<String>,
+    recreate: bool,
+) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        provision_local(|stage| {
-            let _ = on_stage.send(stage.to_owned());
-        })
+        provision_local(
+            |stage| {
+                let _ = on_stage.send(stage.to_owned());
+            },
+            recreate,
+        )
     })
     .await
     .map_err(|e| format!("provisioning stopped: {e}"))?

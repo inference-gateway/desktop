@@ -7,6 +7,7 @@ mod agent_mail;
 mod avatars;
 mod binaries;
 mod cli_install;
+mod cluster_folders;
 mod composer;
 mod compute_settings;
 mod config;
@@ -322,6 +323,9 @@ pub fn run() {
             workspace_capabilities::workspace_capabilities,
             workspace_settings::docker_available,
             workspace_settings::provision_local_cluster,
+            workspace_settings::cluster_folders_pending,
+            cluster_folders::cluster_folders,
+            cluster_folders::save_cluster_folders,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
