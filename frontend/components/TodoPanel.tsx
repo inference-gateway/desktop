@@ -24,6 +24,7 @@ const STATUS_ORDER: TodoStatus[] = ["pending", "in_progress", "completed"];
 const STATUS_ICON = { pending: Circle, in_progress: CircleDot, completed: Check } as const;
 const STATUS_CLASS = { pending: "text-muted-foreground", in_progress: "text-warn", completed: "text-tool" } as const;
 
+const PEEK_MS = 5000;
 const ROW_BUTTON =
   "shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-30";
 const ROW_EDIT = "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100";
@@ -52,7 +53,22 @@ export function TodoPanel() {
   const agentTodos = todosFrom(items);
   const shown = draft ?? agentTodos;
   const dirty = draft !== null && todosDiffer(draft, agentTodos);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const peek = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const written = agentTodos.length > 0;
+
+  // A list the agent just wrote shows itself for a moment, then folds away. One loaded with an old chat stays folded.
+  useEffect(() => {
+    if (!written || !running) return;
+    setOpen(true);
+    peek.current = setTimeout(() => setOpen(false), PEEK_MS);
+    return () => clearTimeout(peek.current);
+  }, [written, draftKey]);
+
+  const show = (next: boolean) => {
+    clearTimeout(peek.current);
+    setOpen(next);
+  };
   const [input, setInput] = useState("");
   const [dropAt, setDropAt] = useState<number | null>(null);
   const dragFrom = useRef<number | null>(null);
@@ -71,7 +87,10 @@ export function TodoPanel() {
     return (
       <div className="flex shrink-0 justify-center pb-1">
         <button
-          onClick={() => setTodoDraft(draftKey, [])}
+          onClick={() => {
+            show(true);
+            setTodoDraft(draftKey, []);
+          }}
           aria-label="Add todo"
           className="flex items-center gap-1 rounded-md px-2 py-1 text-[0.78rem] text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
@@ -115,7 +134,7 @@ export function TodoPanel() {
     <div className="mx-5 mb-1 shrink-0 overflow-hidden rounded-lg border border-tool-border bg-tool-bg text-[0.85rem]">
       <div className="flex items-center gap-2.5 px-3 py-[0.4rem]">
         <button
-          onClick={() => setOpen(!open)}
+          onClick={() => show(!open)}
           aria-expanded={open}
           aria-label="Toggle todo panel"
           className="flex shrink-0 items-center gap-1.5 font-semibold text-tool hover:text-foreground"
