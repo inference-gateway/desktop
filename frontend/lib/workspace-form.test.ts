@@ -7,6 +7,9 @@ import {
   formatEnv,
   hasCapability,
   parseEnv,
+  quantityOf,
+  resourceProblems,
+  runsInCluster,
   splitNames,
   volumesProblem,
   withCapability,
@@ -125,4 +128,25 @@ test("a read-only volume on a local cluster folder is saved on the folder's read
   const draft = { ...draftOf(EMPTY_WORKSPACE), name: "desktop", compute: "infer-k3s" };
   const footage = { name: "footage", claim: "folder-footage", mount_path: "/mnt/raw", read_only: true };
   expect(configOf({ ...draft, volumes: [footage] }).volumes[0].claim).toBe("folder-footage-ro");
+});
+
+test("an amount is a Kubernetes quantity and a request stays at or below its limit", () => {
+  expect(quantityOf("500m")).toBe(0.5);
+  expect(quantityOf(" 4Gi ")).toBe(4 * 2 ** 30);
+  expect(quantityOf("1.5")).toBe(1.5);
+  for (const bad of ["4GB", "two", "-1", "1 Gi", ""]) expect(quantityOf(bad)).toBeNull();
+
+  const empty = EMPTY_WORKSPACE.resources;
+  expect(resourceProblems(empty)).toEqual({});
+  expect(resourceProblems({ ...empty, cpu_request: "2", cpu_limit: "2000m", memory_limit: "8Gi" })).toEqual({});
+  expect(resourceProblems({ ...empty, memory_limit: "8GB" }).memory_limit).toContain("Kubernetes quantity");
+  expect(resourceProblems({ ...empty, memory_request: "8Gi", memory_limit: "4096Mi" }).memory_request).toContain(
+    "above the limit",
+  );
+
+  const draft = draftOf({ ...EMPTY_WORKSPACE, name: "studio", context: "k3d", namespace: "agents" });
+  const wrong = { ...empty, cpu_limit: "lots" };
+  expect(draftProblem({ ...draft, resources: wrong })).toContain("CPU and memory");
+  expect(draftProblem({ ...draft, kind: "machine", resources: wrong })).toBeNull();
+  expect(runsInCluster({ compute: "infer-k3s", kind: "" })).toBe(true);
 });

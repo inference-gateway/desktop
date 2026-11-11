@@ -1,6 +1,5 @@
 use crate::local_cluster::Runtime;
 use crate::workspace_settings::{Prerequisite, prerequisite};
-use std::collections::BTreeSet;
 
 /// The resource the node offers its GPU's render device as, which a computer
 /// asks for to get it.
@@ -23,7 +22,6 @@ const LIBKRUN: &str = "libkrun";
 const GPU_NAME: &str = "GPU";
 const HUNG: &str = "The virtual GPU stopped answering, so an app that uses it hangs. Restart the VM: podman machine stop && podman machine start. Until then switch GPU off on the workspace";
 const ALLOCATABLE: &str = r"jsonpath={.items[*].status.allocatable.devic\.es/dri}";
-const CONVERSATION_LIMITS: &str = r#"jsonpath={range .items[*]}{.metadata.labels.inference-gateway\.com/conversation}{"\t"}{.spec.containers[*].resources.limits.devic\.es/dri}{"\n"}{end}"#;
 
 /// What gives a cluster on Podman its GPU: a device plugin that offers the
 /// node's render device, and a default in `namespace` that hands it to every
@@ -230,40 +228,6 @@ pub(crate) fn prerequisites() -> Vec<Prerequisite> {
     probe_image(&images).map(probe).into_iter().collect()
 }
 
-/// The chats whose computer was given the GPU, from a listing of each pod's
-/// conversation and the amounts its containers were allowed.
-fn conversations_with_gpu(listing: &str) -> BTreeSet<String> {
-    listing
-        .lines()
-        .filter_map(|line| line.split_once('\t'))
-        .filter(|(conversation, amounts)| {
-            !conversation.is_empty() && amounts.split_whitespace().any(|amount| amount != "0")
-        })
-        .map(|(conversation, _)| conversation.to_owned())
-        .collect()
-}
-
-/// The chats whose computer on the local cluster has the GPU, for the
-/// Computers view. None anywhere else, and none in mock mode.
-#[tauri::command]
-pub(crate) async fn gpu_computers() -> Result<BTreeSet<String>, String> {
-    tokio::task::spawn_blocking(|| {
-        let chosen = crate::cluster_folders::read_runtime();
-        if crate::env::mock_mode()
-            || crate::local_cluster::running_on(chosen) != Some(Runtime::Podman)
-        {
-            return BTreeSet::new();
-        }
-        let listing = crate::workspace_settings::kubectl(
-            crate::local_cluster::CONTEXT,
-            &["get", "pods", "--all-namespaces", "-o", CONVERSATION_LIMITS],
-        );
-        conversations_with_gpu(&listing.unwrap_or_default())
-    })
-    .await
-    .map_err(|e| format!("listing task failed: {e}"))
-}
-
 /// Whether the node offers the GPU yet, which a computer needs to be
 /// scheduled. The device plugin registers it a moment after it is applied.
 pub(crate) fn offered() -> Result<String, String> {
@@ -373,15 +337,5 @@ mod tests {
             Some("ghcr.io/inference-gateway/computer:0.256.0")
         );
         assert_eq!(probe_image("docker.io/rancher/mirrored-pause:3.6\n"), None);
-    }
-
-    #[test]
-    fn a_computer_has_the_gpu_unless_it_asked_for_none() {
-        let listing = "chat-a\t1\nchat-b\t0\n\t1\nchat-c\t\nchat-d\t0 1\n";
-        let with_gpu = conversations_with_gpu(listing);
-        assert_eq!(
-            with_gpu.into_iter().collect::<Vec<_>>(),
-            ["chat-a", "chat-d"]
-        );
     }
 }

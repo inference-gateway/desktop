@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chatWorkspace, computerTiles, moveHops, sidebarConversations } from "./computers";
+import { chatWorkspace, computerSummary, computerTiles, moveHops, sidebarConversations } from "./computers";
 import type { MarkdownAgent } from "./tauri";
 import { initialChatState, type ChatState, type TranscriptItem } from "./transcript";
 
@@ -111,4 +111,13 @@ test("a chat on a workspace stays in the sidebar once its run ends, a chat at ho
     { id: "restarted", title: "Hi" },
     { id: "local", title: "Local" },
   ]);
+});
+
+test("a computer says whether it is a sandbox and what it was given", () => {
+  expect(computerSummary(false)).toBe("Real system");
+  expect(computerSummary(true)).toBe("Sandbox");
+  expect(computerSummary(true, { cpu: "8", memory: "", gpus: 0 })).toBe("Sandbox - CPU 8 - Memory default - GPU none");
+  expect(computerSummary(true, { cpu: "", memory: "12Gi", gpus: 1 })).toBe(
+    "Sandbox - CPU default - Memory 12Gi - GPU 1",
+  );
 });

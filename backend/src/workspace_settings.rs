@@ -117,6 +117,7 @@ pub(crate) struct WorkspaceConfig {
     /// The cloud-init script the pod runs as root when it boots.
     user_data: String,
     volumes: Vec<WorkspaceVolume>,
+    resources: WorkspaceResources,
     /// Whether the workspace's computers go without the GPU their cluster
     /// gives every computer by default.
     no_gpu: bool,
@@ -163,16 +164,56 @@ fn environment(entry: &Value) -> BTreeMap<String, String> {
 }
 
 const RESOURCES_KEY: &str = "resources";
+const REQUESTS_KEY: &str = "requests";
 const LIMITS_KEY: &str = "limits";
+const CPU: &str = "cpu";
+const MEMORY: &str = "memory";
 const NO_GPU: &str = "0";
+
+/// The CPU and memory each of a workspace's computers asks for and may use,
+/// as Kubernetes quantities. An empty one leaves that amount to the cluster.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct WorkspaceResources {
+    cpu_request: String,
+    cpu_limit: String,
+    memory_request: String,
+    memory_limit: String,
+}
+
+impl WorkspaceResources {
+    /// Each amount with the block of `resources` and the resource it is for.
+    fn amounts(&self) -> [(&'static str, &'static str, &str); 4] {
+        [
+            (REQUESTS_KEY, CPU, &self.cpu_request),
+            (LIMITS_KEY, CPU, &self.cpu_limit),
+            (REQUESTS_KEY, MEMORY, &self.memory_request),
+            (LIMITS_KEY, MEMORY, &self.memory_limit),
+        ]
+    }
+}
+
+fn amount(entry: &Value, block: &str, resource: &str) -> String {
+    entry
+        .get(RESOURCES_KEY)
+        .and_then(|resources| resources.get(block))
+        .map(|amounts| text(amounts, resource))
+        .unwrap_or_default()
+}
+
+fn resources_of(entry: &Value) -> WorkspaceResources {
+    WorkspaceResources {
+        cpu_request: amount(entry, REQUESTS_KEY, CPU),
+        cpu_limit: amount(entry, LIMITS_KEY, CPU),
+        memory_request: amount(entry, REQUESTS_KEY, MEMORY),
+        memory_limit: amount(entry, LIMITS_KEY, MEMORY),
+    }
+}
 
 /// Whether the entry asks for none of the GPU, which is how it opts out of
 /// the one its cluster gives by default.
 fn opts_out_of_gpu(entry: &Value) -> bool {
-    entry
-        .get(RESOURCES_KEY)
-        .and_then(|resources| resources.get(LIMITS_KEY))
-        .is_some_and(|limits| text(limits, crate::cluster_gpu::RESOURCE) == NO_GPU)
+    amount(entry, LIMITS_KEY, crate::cluster_gpu::RESOURCE) == NO_GPU
 }
 
 fn child<'a>(parent: &'a mut Mapping, key: &str) -> Option<&'a mut Mapping> {
@@ -188,22 +229,29 @@ fn on_gpu_cluster(config: &WorkspaceConfig) -> bool {
     config.compute == crate::local_cluster::CONTEXT
 }
 
-/// Writes or clears the entry's GPU opt-out. The CPU and memory amounts the
+/// Writes or clears one amount of the entry's `resources`. The amounts the
 /// tab does not edit stay, and a block left empty goes.
-fn set_gpu_opt_out(entry: &mut Mapping, no_gpu: bool) {
+fn set_amount(entry: &mut Mapping, block: &str, resource: &str, amount: Option<Value>) {
     let Some(resources) = child(entry, RESOURCES_KEY) else {
         return;
     };
-    if let Some(limits) = child(resources, LIMITS_KEY) {
-        let amount = no_gpu.then(|| NO_GPU.into());
-        set_or_remove(limits, crate::cluster_gpu::RESOURCE, amount);
-        if limits.is_empty() {
-            resources.remove(LIMITS_KEY);
+    if let Some(amounts) = child(resources, block) {
+        set_or_remove(amounts, resource, amount);
+        if amounts.is_empty() {
+            resources.remove(block);
         }
     }
     if resources.is_empty() {
         entry.remove(RESOURCES_KEY);
     }
+}
+
+fn set_resources(entry: &mut Mapping, config: &WorkspaceConfig) {
+    for (block, resource, amount) in config.resources.amounts() {
+        set_amount(entry, block, resource, filled(amount));
+    }
+    let no_gpu = (config.no_gpu && on_gpu_cluster(config)).then(|| NO_GPU.into());
+    set_amount(entry, LIMITS_KEY, crate::cluster_gpu::RESOURCE, no_gpu);
 }
 
 /// A workspace entry as the tab shows it. One on a cluster reads that cluster's
@@ -229,6 +277,7 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         env: environment(entry),
         user_data: text(entry, "user_data"),
         volumes: volumes_of(entry),
+        resources: resources_of(entry),
         no_gpu: opts_out_of_gpu(entry),
         secrets: names(entry, "secrets"),
         mcp_servers: names(entry, "mcp_servers"),
@@ -321,7 +370,7 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "env", mapped(&config.env));
     set_or_remove(entry, "user_data", filled(&config.user_data));
     set_or_remove(entry, "volumes", listed_volumes(&config.volumes));
-    set_gpu_opt_out(entry, config.no_gpu && on_gpu_cluster(config));
+    set_resources(entry, config);
     if !config.compute.trim().is_empty() {
         for key in CLUSTER_KEYS {
             entry.remove(key);
@@ -782,6 +831,16 @@ fn local_workspace_volumes(existing: &[WorkspaceConfig]) -> Vec<WorkspaceVolume>
         .unwrap_or_default()
 }
 
+/// The CPU and memory the local cluster's workspace was already given, which
+/// provisioning again keeps.
+fn local_workspace_resources(existing: &[WorkspaceConfig]) -> WorkspaceResources {
+    existing
+        .iter()
+        .find(|workspace| workspace.name == LOCAL_WORKSPACE)
+        .map(|workspace| workspace.resources.clone())
+        .unwrap_or_default()
+}
+
 /// Whether the local cluster's workspace already went without the GPU, which
 /// provisioning again keeps.
 fn local_workspace_opts_out_of_gpu(existing: &[WorkspaceConfig]) -> bool {
@@ -883,6 +942,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
     let workspace = WorkspaceConfig {
         volumes: local_workspace_volumes(&existing),
         no_gpu: local_workspace_opts_out_of_gpu(&existing),
+        resources: local_workspace_resources(&existing),
         ..local_workspace()
     };
     let mut unrestored = Vec::new();
@@ -1341,8 +1401,43 @@ mod tests {
         let back = merge_workspace(Some(&saved), &with, Some("studio")).unwrap();
         assert!(!back.contains("devic.es"), "{back}");
         assert!(back.contains("memory: 8Gi"), "{back}");
-        let alone = merge_workspace(None, &with, None).unwrap();
+        let plain = WorkspaceConfig {
+            resources: WorkspaceResources::default(),
+            ..with
+        };
+        let alone = merge_workspace(None, &plain, None).unwrap();
         assert!(!alone.contains("resources"), "{alone}");
+    }
+
+    #[test]
+    fn a_workspace_keeps_its_cpu_and_memory_in_daemon_yaml_until_the_last_one_goes() {
+        let daemon = "workspaces:\n  - name: studio\n    kind: kubernetes\n    resources:\n      requests:\n        cpu: 2\n        ephemeral-storage: 1Gi\n      limits:\n        memory: 8Gi\n";
+        let studio = parse_configs(Some(daemon), &[]).remove(0);
+        assert_eq!(studio.resources.cpu_request, "2");
+        assert_eq!(studio.resources.memory_limit, "8Gi");
+        assert_eq!(studio.resources.cpu_limit, "");
+        let edited = WorkspaceConfig {
+            resources: WorkspaceResources {
+                cpu_limit: " 4 ".into(),
+                memory_request: "4Gi".into(),
+                ..WorkspaceResources::default()
+            },
+            ..studio
+        };
+        let saved = merge_workspace(Some(daemon), &edited, Some("studio")).unwrap();
+        let entry = &serde_norway::from_str::<Value>(&saved).unwrap()["workspaces"][0];
+        assert_eq!(entry["resources"]["limits"]["cpu"], "4");
+        assert_eq!(entry["resources"]["requests"]["memory"], "4Gi");
+        assert_eq!(entry["resources"]["requests"]["ephemeral-storage"], "1Gi");
+        assert!(entry["resources"]["requests"].get("cpu").is_none());
+        assert!(entry["resources"]["limits"].get("memory").is_none());
+        let emptied = WorkspaceConfig {
+            resources: WorkspaceResources::default(),
+            ..edited
+        };
+        let plain = "workspaces:\n  - name: studio\n    kind: kubernetes\n    resources:\n      limits:\n        cpu: 4\n";
+        let cleared = merge_workspace(Some(plain), &emptied, Some("studio")).unwrap();
+        assert!(!cleared.contains("resources"), "{cleared}");
     }
 
     #[test]

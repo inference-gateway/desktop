@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import { api, type Screen } from "@/lib/tauri";
-import { computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
+import { api, type ComputerResources, type Screen } from "@/lib/tauri";
+import { computerSummary, computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
 import {
   framePoint,
   isUnsupportedInput,
@@ -63,14 +63,16 @@ function useScreen(sessionId: string, project: string | undefined, live: boolean
 function Tile({
   tile,
   project,
-  gpu,
+  sandbox,
+  resources,
   onOpen,
   onTakeOver,
   onDelete,
 }: {
   tile: ComputerTile;
   project?: string;
-  gpu: boolean;
+  sandbox: boolean;
+  resources?: ComputerResources;
   onOpen: () => void;
   onTakeOver: () => void;
   onDelete: () => void;
@@ -96,19 +98,21 @@ function Tile({
               {tile.lastAction ? ` - ${tile.lastAction}` : ""}
             </span>
           </div>
-          {gpu && (
-            <span
-              title="This computer has the Mac's GPU"
-              className="rounded-full bg-foreground/5 px-2 py-0.5 text-[0.7rem] font-medium text-muted-foreground"
-            >
-              GPU
-            </span>
-          )}
           <span className="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
             <span className={`h-2 w-2 rounded-full ${STATUS_DOT[tile.status]}`} aria-hidden="true" />
             {STATUS_LABEL[tile.status]}
           </span>
         </div>
+        <span
+          title={
+            sandbox
+              ? "A pod of its own in a cluster. What it shows is what this computer started with."
+              : "Not a sandbox - the agent works on a real system."
+          }
+          className="truncate px-3 pb-2 text-[0.72rem] text-muted-foreground"
+        >
+          {computerSummary(sandbox, resources)}
+        </span>
       </button>
       <div className="flex justify-end gap-2 border-t border-border px-3 py-2">
         <button
@@ -301,12 +305,17 @@ export function ComputersView() {
   const { runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
-  const [withGpu, setWithGpu] = useState<string[]>([]);
+  const [given, setGiven] = useState<Record<string, ComputerResources>>({});
+  const [sandboxes, setSandboxes] = useState<Set<string>>(new Set());
   const sessionIds = tiles.map((tile) => tile.sessionId).join(" ");
   useEffect(() => {
     api
-      .gpuComputers()
-      .then(setWithGpu)
+      .computerResources()
+      .then(setGiven)
+      .catch(() => {});
+    api
+      .workspaceConfigs()
+      .then((configs) => setSandboxes(new Set(configs.filter((c) => c.kind === "kubernetes").map((c) => c.name))))
       .catch(() => {});
   }, [sessionIds]);
   const open = (sessionId: string) => {
@@ -338,7 +347,8 @@ export function ComputersView() {
               key={tile.sessionId}
               tile={tile}
               project={projects[tile.sessionId]}
-              gpu={withGpu.includes(tile.sessionId)}
+              sandbox={sandboxes.has(tile.workspace)}
+              resources={given[tile.sessionId]}
               onOpen={() => open(tile.sessionId)}
               onTakeOver={() => takeOver(tile.sessionId)}
               onDelete={() => deleteMachine(tile.sessionId)}

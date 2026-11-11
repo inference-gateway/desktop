@@ -11,6 +11,7 @@ mod cluster_folders;
 mod cluster_gpu;
 mod composer;
 mod compute_settings;
+mod computer_resources;
 mod config;
 mod daemon;
 mod daemon_mock;
@@ -324,7 +325,7 @@ pub fn run() {
             workspace_capabilities::workspace_capabilities,
             workspace_settings::local_cluster_status,
             workspace_settings::save_local_cluster_runtime,
-            cluster_gpu::gpu_computers,
+            computer_resources::computer_resources,
             workspace_settings::provision_local_cluster,
             cluster_folders::cluster_folders,
             cluster_folders::save_cluster_folders,

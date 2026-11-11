@@ -1,5 +1,5 @@
 import { onFolderClaim } from "./cluster-folders";
-import type { Capability, WorkspaceConfig, WorkspaceVolume } from "./tauri";
+import type { Capability, WorkspaceConfig, WorkspaceResources, WorkspaceVolume } from "./tauri";
 
 /** A workspace as the Settings form holds it: lists and the environment as the text the person types. */
 export type WorkspaceDraft = Omit<WorkspaceConfig, "gateway_env" | "forward_env" | "env"> & {
@@ -25,8 +25,56 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   env: {},
   user_data: "",
   volumes: [],
+  resources: { cpu_request: "", cpu_limit: "", memory_request: "", memory_limit: "" },
   no_gpu: false,
 };
+
+const QUANTITY = /^(\d+\.?\d*|\.\d+)(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$/;
+const QUANTITY_SCALE: Record<string, number> = {
+  "": 1,
+  m: 1e-3,
+  k: 1e3,
+  M: 1e6,
+  G: 1e9,
+  T: 1e12,
+  P: 1e15,
+  E: 1e18,
+  Ki: 2 ** 10,
+  Mi: 2 ** 20,
+  Gi: 2 ** 30,
+  Ti: 2 ** 40,
+  Pi: 2 ** 50,
+  Ei: 2 ** 60,
+};
+
+/** The amount a Kubernetes quantity such as `500m`, `2` or `4Gi` stands for, or null when the text is not one. */
+export function quantityOf(text: string): number | null {
+  const match = QUANTITY.exec(text.trim());
+  return match ? Number(match[1]) * QUANTITY_SCALE[match[2] ?? ""] : null;
+}
+
+const NOT_A_QUANTITY = "Not a Kubernetes quantity - write it like 500m, 2 or 4Gi.";
+
+/** What is wrong with each amount, by field: one that is not a quantity, and a request above its limit. A field with
+ * nothing wrong is left out. */
+export function resourceProblems(resources: WorkspaceResources): Partial<Record<keyof WorkspaceResources, string>> {
+  const problems: Partial<Record<keyof WorkspaceResources, string>> = {};
+  for (const key of Object.keys(resources) as (keyof WorkspaceResources)[]) {
+    if (resources[key].trim() && quantityOf(resources[key]) === null) problems[key] = NOT_A_QUANTITY;
+  }
+  for (const resource of ["cpu", "memory"] as const) {
+    const request = quantityOf(resources[`${resource}_request`]);
+    const limit = quantityOf(resources[`${resource}_limit`]);
+    if (request !== null && limit !== null && request > limit)
+      problems[`${resource}_request`] = "The request is above the limit.";
+  }
+  return problems;
+}
+
+/** Whether the draft's computers are pods, the only ones whose CPU and memory a workspace sets. */
+export function runsInCluster(draft: Pick<WorkspaceConfig, "compute" | "kind">): boolean {
+  return Boolean(draft.compute) || draft.kind === "kubernetes";
+}
 
 /** The cluster the app provisions in a container, the only one that can share this computer's folders. */
 export const LOCAL_CLUSTER = "infer-k3s";
@@ -128,6 +176,8 @@ export function draftProblem(draft: WorkspaceDraft): string | null {
     return "Start the user data with #!, like #!/bin/sh - it runs as a script.";
   const volumes = volumesProblem(draft.volumes);
   if (volumes) return volumes;
+  if (runsInCluster(draft) && Object.keys(resourceProblems(draft.resources)).length > 0)
+    return "Fix the CPU and memory fields.";
   if (draft.compute) return null;
   if (draft.kind === "kubernetes" && !draft.context.trim()) return "Pick the Kubernetes context of the cluster.";
   if (draft.kind === "kubernetes" && !draft.namespace.trim()) return "Name the namespace the sessions run in.";
