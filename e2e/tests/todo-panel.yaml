@@ -1,0 +1,19 @@
+name: todo panel - a new todo list shows itself for a moment, then folds away with the todo in progress in view
+narration:
+  - "Open a fresh chat."
+  - "Ask for a plan: the agent writes a todo list."
+  - "The panel opens by itself and shows the list."
+  - "The agent finishes its turn."
+  - "A few seconds later the list folds away by itself, and the todo in progress stays in the panel's header."
+  - "Keep a picture of the folded panel."
+  - "Unfold it."
+  - "Keep a picture of the list, with the time each todo took."
+steps:
+  - new_chat
+  - send: "plan the release notes"
+  - wait_for: { button: "Todo status: in_progress", timeout: 15 }
+  - wait_for: { text: "Notes planned.", timeout: 30 }
+  - wait_for: { text: "Write the notes", timeout: 15 }
+  - screenshot: "todo-panel-folded"
+  - click: { button: "Toggle todo panel" }
+  - screenshot: "todo-panel-open"
