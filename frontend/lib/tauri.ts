@@ -173,6 +173,9 @@ export type WorkspaceConfig = {
   user_data: string;
   volumes: WorkspaceVolume[];
 };
+/** A folder of this computer the local cluster's workspaces can mount. A read-only one cannot be changed from any
+ * workspace. */
+export type ClusterFolder = { name: string; path: string; read_only: boolean };
 /** An existing PersistentVolumeClaim of the workspace's namespace that each of its computers mounts. Read-only is for
  * content an agent copies before it changes it. */
 export type WorkspaceVolume = { name: string; claim: string; mount_path: string; read_only: boolean };
@@ -581,12 +584,16 @@ export const api = {
   detectClusters: () => invoke<string[]>("detect_clusters"),
   dockerAvailable: () => invoke<boolean>("docker_available"),
   /** Provisions a k3s cluster in Docker, registers it with an Ubuntu desktop workspace and answers the workspace's
-   * name. */
-  provisionLocalCluster: (onStage: (stage: string) => void) => {
+   * name. One that runs with other folders than the saved ones is replaced only when `recreate` is set. */
+  provisionLocalCluster: (onStage: (stage: string) => void, recreate = false) => {
     const stages = new Channel<string>();
     stages.onmessage = onStage;
-    return invoke<string>("provision_local_cluster", { onStage: stages });
+    return invoke<string>("provision_local_cluster", { onStage: stages, recreate });
   },
+  clusterFolders: () => invoke<ClusterFolder[]>("cluster_folders"),
+  saveClusterFolders: (folders: ClusterFolder[]) => invoke<void>("save_cluster_folders", { folders }),
+  /** Whether the local cluster runs with other folders than the saved ones, so they need it recreated. */
+  clusterFoldersPending: () => invoke<boolean>("cluster_folders_pending"),
   checkWorkspace: (context: string, namespace: string, name: string) =>
     invoke<ClusterCheck>("check_workspace", { context, namespace, name }),
   workspaceMachines: (context: string, namespace: string, name: string) =>

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type ClusterConfig } from "@/lib/tauri";
 import { clusterConfigOf, clusterDraftOf, clusterProblem, EMPTY_CLUSTER, type ClusterDraft } from "@/lib/cluster-form";
+import { ClusterFolders } from "./ClusterFolders";
 import {
   advanceOnEnter,
   FIELD_CLASS,
@@ -225,11 +226,11 @@ export function ComputeTab() {
     }
   };
 
-  const provision = async () => {
+  const provision = async (recreate = false) => {
     setProblem("");
     setProvisioning(true);
     try {
-      const name = await api.provisionLocalCluster(setNotice);
+      const name = await api.provisionLocalCluster(setNotice, recreate);
       changed();
       setNotice(`Provisioned a local k3s cluster in Docker with the ${name} workspace on it.`);
     } catch (e) {
@@ -311,7 +312,7 @@ export function ComputeTab() {
                 aria-label="Provision local cluster"
                 title="Provision a local k3s cluster in Docker with an ubuntu-desktop workspace on it"
                 disabled={provisioning || !supported}
-                onClick={provision}
+                onClick={() => provision()}
               >
                 <Container size={14} className={provisioning ? "animate-pulse" : ""} />
               </Button>
@@ -326,6 +327,7 @@ export function ComputeTab() {
           </div>
         )}
       </div>
+      {docker && supported && <ClusterFolders busy={provisioning} onRecreate={() => provision(true)} />}
     </>
   );
 }

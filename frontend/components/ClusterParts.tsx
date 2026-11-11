@@ -8,7 +8,7 @@ export const FIELD_CLASS = "flex flex-col gap-1";
 export const HINT_CLASS = "text-[0.72rem] text-muted-foreground";
 
 export function advanceOnEnter(nextId: string) {
-  return (event: KeyboardEvent<HTMLInputElement>) => {
+  return (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
     document.getElementById(nextId)?.focus();

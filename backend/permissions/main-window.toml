@@ -172,4 +172,7 @@ commands.allow = [
     "workspace_capabilities",
     "docker_available",
     "provision_local_cluster",
+    "cluster_folders_pending",
+    "cluster_folders",
+    "save_cluster_folders",
 ]

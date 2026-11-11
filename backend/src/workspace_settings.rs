@@ -704,6 +704,16 @@ fn local_workspace() -> WorkspaceConfig {
     }
 }
 
+/// The volumes the local cluster's workspace already mounts. Provisioning
+/// again refreshes the workspace, and the folders it mounts are the user's.
+fn local_workspace_volumes(existing: &[WorkspaceConfig]) -> Vec<WorkspaceVolume> {
+    existing
+        .iter()
+        .find(|workspace| workspace.name == LOCAL_WORKSPACE)
+        .map(|workspace| workspace.volumes.clone())
+        .unwrap_or_default()
+}
+
 /// The entry the local cluster's workspace replaces: its own from an earlier
 /// run, or none. A workspace of that name on another cluster is the user's,
 /// so it is never re-pointed.
@@ -782,13 +792,30 @@ fn user_kubeconfig() -> PathBuf {
 /// Provisions the local cluster, adds it to the user's kubeconfig and
 /// registers its workspace. A workspace of the same name elsewhere stops it
 /// before anything is created. Mock mode registers the workspace only.
-fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
+fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<String, String> {
     crate::compute_settings::require_compute()?;
-    let slot = local_workspace_slot(&workspace_configs())?;
+    let existing = workspace_configs();
+    let slot = local_workspace_slot(&existing)?;
+    let workspace = WorkspaceConfig {
+        volumes: local_workspace_volumes(&existing),
+        ..local_workspace()
+    };
     if !crate::env::mock_mode() {
-        let kubeconfig = crate::local_cluster::provision(&stage)?;
+        let folders = crate::cluster_folders::read_folders();
+        let binds = crate::cluster_folders::binds(&folders);
+        let kubeconfig = crate::local_cluster::provision(&stage, &binds, recreate)?;
         stage("Creating the workspace namespace...");
         managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
+        if let Some(manifest) =
+            crate::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
+        {
+            stage("Sharing this computer's folders...");
+            kubectl_with_input(
+                crate::local_cluster::CONTEXT,
+                &["apply", "-f", "-"],
+                &manifest,
+            )?;
+        }
         stage("Adding the cluster to your kubeconfig...");
         crate::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -807,7 +834,7 @@ fn provision_local(stage: impl Fn(&str)) -> Result<String, String> {
         )
     })?;
     crate::config::update_file(&crate::daemon::config_path(), |existing| {
-        merge_workspace(existing, &local_workspace(), slot)
+        merge_workspace(existing, &workspace, slot)
     })?;
     Ok(LOCAL_WORKSPACE.into())
 }
@@ -967,6 +994,21 @@ pub(crate) async fn check(context: String, namespace: String, selector: String) 
         .unwrap_or_else(|e| unreachable(&e.to_string()))
 }
 
+/// Whether the local cluster runs with other folders than the ones saved, so
+/// they only take effect once it is recreated. Mock mode runs no cluster.
+#[tauri::command]
+pub(crate) async fn cluster_folders_pending() -> bool {
+    if crate::env::mock_mode() {
+        return false;
+    }
+    tokio::task::spawn_blocking(|| {
+        let binds = crate::cluster_folders::binds(&crate::cluster_folders::read_folders());
+        crate::local_cluster::folders_pending(&binds)
+    })
+    .await
+    .unwrap_or(false)
+}
+
 /// Whether Docker answers, which is all provisioning a local cluster needs.
 #[tauri::command]
 pub(crate) async fn docker_available() -> bool {
@@ -979,11 +1021,17 @@ pub(crate) async fn docker_available() -> bool {
 /// Provisions a k3s cluster in Docker and registers it and its Ubuntu desktop
 /// workspace, reporting each step. Answers the workspace's name.
 #[tauri::command]
-pub(crate) async fn provision_local_cluster(on_stage: Channel<String>) -> Result<String, String> {
+pub(crate) async fn provision_local_cluster(
+    on_stage: Channel<String>,
+    recreate: bool,
+) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        provision_local(|stage| {
-            let _ = on_stage.send(stage.to_owned());
-        })
+        provision_local(
+            |stage| {
+                let _ = on_stage.send(stage.to_owned());
+            },
+            recreate,
+        )
     })
     .await
     .map_err(|e| format!("provisioning stopped: {e}"))?
@@ -1102,6 +1150,16 @@ mod tests {
         assert!(merged.contains("mode: all-in-one"));
         assert!(!merged.contains("gateway_env"));
         assert!(!merged.contains("INFER_AGENT_MODEL"));
+    }
+
+    #[test]
+    fn provisioning_again_keeps_the_volumes_of_the_local_workspace() {
+        let yaml = "workspaces:\n  - name: ubuntu-desktop\n    compute: infer-k3s\n    volumes:\n      - name: footage\n        claim: folder-footage-ro\n        mount_path: /mnt/footage\n        read_only: true\n";
+        let existing = parse_configs(Some(yaml), &[]);
+        let volumes = local_workspace_volumes(&existing);
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].claim, "folder-footage-ro");
+        assert!(local_workspace_volumes(&[]).is_empty());
     }
 
     #[test]

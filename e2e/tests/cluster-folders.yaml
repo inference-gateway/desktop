@@ -1,0 +1,23 @@
+name: cluster folders - a read-only folder of this computer is shared with the local cluster in Settings
+narration:
+  - "Open Settings."
+  - "Switch to the Compute tab."
+  - "Add a folder the local cluster shares with its workspaces."
+  - "Name the folder, which names its claim too."
+  - "Point it at a folder on this computer."
+  - "Make it read-only, so no workspace can change what is in it."
+  - "Save the folders."
+  - "The app confirms it."
+  - "The folder is on file with its path."
+  - "It is read-only there too."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Compute" }
+  - click: { button: "Add folder" }
+  - type: "footage"
+  - type: "/tmp"
+  - click: { button: "Folder 1 read-only" }
+  - click: { button: "Save folders" }
+  - wait_for: { text: "Folders saved.", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/cluster_folders.yaml", contains: "path: /tmp", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/cluster_folders.yaml", contains: "read_only: true", timeout: 10 }

@@ -11,7 +11,7 @@ const K3S_KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
 const AGENT_SANDBOX: &str =
     "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.8/sandbox.yaml";
 const OPERATOR: &str =
-    "https://github.com/inference-gateway/operator/releases/download/v0.35.0/install.yaml";
+    "https://github.com/inference-gateway/operator/releases/download/v0.36.0/install.yaml";
 const GATEWAY_API_CRD: &str = "crd/gateways.gateway.networking.k8s.io";
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -73,14 +73,54 @@ fn free_port() -> Result<u16, String> {
         .map_err(|e| format!("no free port for the cluster's API: {e}"))
 }
 
-/// Starts the k3s container, creating it on first use. Its API listens on a
-/// fixed local port picked then, so the kubeconfig stays valid across restarts.
-fn start_container() -> Result<(), String> {
-    if docker(&["inspect", CONTAINER]).is_ok() {
-        return docker(&["start", CONTAINER]).map(drop);
+/// What provisioning answers when the cluster's folders changed, since Docker
+/// mounts a folder only into a container it creates.
+pub(crate) const FOLDERS_CHANGED: &str = "The local cluster's folders changed. Recreate the cluster to mount them - this deletes its machines and everything on them";
+
+/// The folder mounts a container was created with, sorted, from the JSON
+/// `docker inspect` prints for them.
+fn binds_of(inspected: &str) -> Vec<String> {
+    let mut binds = serde_json::from_str::<Option<Vec<String>>>(inspected.trim())
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    binds.sort();
+    binds
+}
+
+fn container_binds() -> Result<Vec<String>, String> {
+    docker(&[
+        "inspect",
+        "--format",
+        "{{json .HostConfig.Binds}}",
+        CONTAINER,
+    ])
+    .map(|inspected| binds_of(&inspected))
+}
+
+/// Whether the cluster runs with other folders than `binds`, so they only
+/// take effect once it is recreated. A cluster that does not exist yet has
+/// nothing pending.
+pub(crate) fn folders_pending(binds: &[String]) -> bool {
+    container_binds().is_ok_and(|mounted| mounted != binds)
+}
+
+/// Starts the k3s container, creating it on first use with `binds` mounted.
+/// One that runs with other folders is replaced only when `recreate` says so,
+/// because that deletes the cluster. Its API listens on a fixed local port
+/// picked at creation, so the kubeconfig stays valid across restarts.
+fn start_container(binds: &[String], recreate: bool) -> Result<(), String> {
+    if let Ok(mounted) = container_binds() {
+        if mounted == binds {
+            return docker(&["start", CONTAINER]).map(drop);
+        }
+        if !recreate {
+            return Err(FOLDERS_CHANGED.into());
+        }
+        docker(&["rm", "--force", "--volumes", CONTAINER])?;
     }
     let published = format!("127.0.0.1:{}:6443", free_port()?);
-    docker(&[
+    let mut args = vec![
         "run",
         "--detach",
         "--name",
@@ -90,10 +130,12 @@ fn start_container() -> Result<(), String> {
         "unless-stopped",
         "--publish",
         &published,
-        K3S_IMAGE,
-        "server",
-    ])
-    .map(drop)
+    ];
+    for bind in binds {
+        args.extend(["--volume", bind]);
+    }
+    args.extend([K3S_IMAGE, "server"]);
+    docker(&args).map(drop)
 }
 
 /// The local port `docker port` reports for the container's API, as
@@ -181,12 +223,17 @@ fn standalone_kubeconfig(k3s_yaml: &str, port: &str) -> Result<String, String> {
     serde_norway::to_string(&kubeconfig).map_err(|e| e.to_string())
 }
 
-/// Runs k3s in Docker with agent-sandbox and the Inference Gateway operator.
-/// Each step is safe to repeat, so a second run repairs or refreshes the
-/// cluster. Answers the cluster's kubeconfig, reporting each step to `stage`.
-pub(crate) fn provision(stage: impl Fn(&str)) -> Result<String, String> {
+/// Runs k3s in Docker with agent-sandbox and the Inference Gateway operator,
+/// its node mounting `binds`. Each step is safe to repeat, so a second run
+/// repairs or refreshes the cluster. Answers the cluster's kubeconfig,
+/// reporting each step to `stage`.
+pub(crate) fn provision(
+    stage: impl Fn(&str),
+    binds: &[String],
+    recreate: bool,
+) -> Result<String, String> {
     stage("Starting k3s in Docker (the first run downloads it)...");
-    start_container()?;
+    start_container(binds, recreate)?;
     stage("Waiting for the cluster...");
     wait_until("the cluster", || kubectl(&["get", "--raw=/readyz"]))?;
     stage("Installing agent-sandbox...");
@@ -225,6 +272,16 @@ mod tests {
     #[test]
     fn a_kubeconfig_without_a_cluster_is_refused() {
         assert!(standalone_kubeconfig("apiVersion: v1\n", "54321").is_err());
+    }
+
+    #[test]
+    fn a_containers_folder_mounts_are_read_sorted_and_none_reads_as_empty() {
+        assert_eq!(
+            binds_of("[\"/b:/node/b:ro\",\"/a:/node/a\"]\n"),
+            ["/a:/node/a", "/b:/node/b:ro"]
+        );
+        assert!(binds_of("null\n").is_empty());
+        assert!(binds_of("").is_empty());
     }
 
     #[test]

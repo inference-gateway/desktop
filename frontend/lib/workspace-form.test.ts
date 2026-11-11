@@ -120,3 +120,9 @@ test("a workspace with a volume it could not mount cannot be saved, and a saved 
     { name: "footage", claim: "raw-footage", mount_path: "/mnt/footage", read_only: false },
   ]);
 });
+
+test("a read-only volume on a local cluster folder is saved on the folder's read-only claim", () => {
+  const draft = { ...draftOf(EMPTY_WORKSPACE), name: "desktop", compute: "infer-k3s" };
+  const footage = { name: "footage", claim: "folder-footage", mount_path: "/mnt/raw", read_only: true };
+  expect(configOf({ ...draft, volumes: [footage] }).volumes[0].claim).toBe("folder-footage-ro");
+});
