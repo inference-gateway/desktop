@@ -1,6 +1,6 @@
 use crate::workspace_settings::{named_entries, text};
 use serde_norway::{Mapping, Value};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 const FOLDERS_FILE: &str = "cluster_folders.yaml";
 const FOLDERS_KEY: &str = "folders";
@@ -126,6 +126,13 @@ fn valid_name(name: &str) -> bool {
         && !name.ends_with(READ_ONLY_SUFFIX)
 }
 
+/// Whether a directory name in `path` holds a colon, which Docker would read
+/// as the end of the folder. A Windows drive letter is not a directory name.
+fn has_colon_below_root(path: &Path) -> bool {
+    path.components()
+        .any(|part| matches!(part, Component::Normal(name) if name.to_string_lossy().contains(':')))
+}
+
 /// Why the folders cannot be shared as listed, checked before anything is
 /// saved. `is_dir` says whether a path is a directory of this computer.
 fn folders_problem(folders: &[ClusterFolder], is_dir: impl Fn(&Path) -> bool) -> Option<String> {
@@ -144,7 +151,7 @@ fn folders_problem(folders: &[ClusterFolder], is_dir: impl Fn(&Path) -> bool) ->
         {
             return Some(format!("Two folders are named {name}"));
         }
-        if !path.is_absolute() || folder.path.contains(':') {
+        if !path.is_absolute() || has_colon_below_root(path) {
             return Some(format!(
                 "Folder {name} needs an absolute path without a colon"
             ));
@@ -286,21 +293,27 @@ mod tests {
 
     #[test]
     fn folders_need_a_claim_safe_name_of_their_own_and_a_folder_that_exists() {
-        let exists = |path: &Path| path == Path::new("/Users/me/raw");
+        let home = if cfg!(windows) {
+            r"C:\Users\me"
+        } else {
+            "/Users/me"
+        };
+        let raw = format!("{home}/raw");
+        let exists = |path: &Path| path == Path::new(&raw);
         let problem = |folders: &[ClusterFolder]| folders_problem(folders, exists);
-        let footage = folder("footage", "/Users/me/raw", false);
+        let footage = folder("footage", &raw, false);
         assert_eq!(problem(std::slice::from_ref(&footage)), None);
         for name in ["", "Raw", "raw_footage", "-raw", "footage-ro"] {
-            let named = folder(name, "/Users/me/raw", false);
+            let named = folder(name, &raw, false);
             assert!(problem(&[named]).unwrap().contains("needs a name"));
         }
         let twice = problem(&[footage.clone(), footage.clone()]).unwrap();
         assert!(twice.contains("Two folders are named footage"));
         let relative = problem(&[folder("footage", "Movies/raw", false)]).unwrap();
         assert!(relative.contains("absolute path"));
-        let colon = problem(&[folder("footage", "/Users/me/a:b", false)]).unwrap();
+        let colon = problem(&[folder("footage", &format!("{home}/a:b"), false)]).unwrap();
         assert!(colon.contains("absolute path"));
-        let missing = problem(&[folder("footage", "/Users/me/gone", false)]).unwrap();
+        let missing = problem(&[folder("footage", &format!("{home}/gone"), false)]).unwrap();
         assert!(missing.contains("is not a folder"));
     }
 }
