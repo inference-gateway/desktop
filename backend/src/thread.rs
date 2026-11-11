@@ -326,12 +326,9 @@ impl Thread {
     }
 }
 
-/// The daemon sends an artifact of up to 64 MiB as one base64 frame, which is
-/// a third larger and past the default frame limit.
-const MAX_FRAME_BYTES: usize = 128 << 20;
-
 /// Connects to the binding and presents the hello, so the connection is ready
-/// for its first thread frame.
+/// for its first thread frame. Frames have no size limit: the daemon sends an
+/// artifact whole in one base64 frame, and its `max_artifact_mb` is the cap.
 fn dial(binding: &Binding) -> Result<WebSocket<TcpStream>, String> {
     let stream = TcpStream::connect(("127.0.0.1", binding.port)).map_err(|e| {
         format!(
@@ -343,8 +340,8 @@ fn dial(binding: &Binding) -> Result<WebSocket<TcpStream>, String> {
         .set_read_timeout(Some(HELLO_TIMEOUT))
         .map_err(|e| e.to_string())?;
     let limits = tungstenite::protocol::WebSocketConfig::default()
-        .max_message_size(Some(MAX_FRAME_BYTES))
-        .max_frame_size(Some(MAX_FRAME_BYTES));
+        .max_message_size(None)
+        .max_frame_size(None);
     let url = format!("ws://127.0.0.1:{}/ws", binding.port);
     let (mut ws, _) = tungstenite::client::client_with_config(url, stream, Some(limits))
         .map_err(|e| format!("infer daemon refused the connection: {e}"))?;
