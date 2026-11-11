@@ -1,0 +1,33 @@
+name: workspace resources - the CPU and memory of a workspace's computers are set in Settings and land in daemon.yaml
+narration:
+  - "Open Settings."
+  - "Switch to the Workspaces tab."
+  - "Start a new workspace."
+  - "Name it."
+  - "Name the Kubernetes context of its cluster."
+  - "Name the namespace its sessions run in."
+  - "Name the image its computers run."
+  - "Each computer asks for two CPUs."
+  - "It may use up to eight."
+  - "It asks for 4Gi of memory."
+  - "It may use up to 12Gi."
+  - "Save the workspace."
+  - "The daemon's configuration file holds the resources block."
+  - "The requests are in it."
+  - "So are the limits."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Workspaces" }
+  - click: { button: "New workspace" }
+  - type: "e2e-render"
+  - type: "k3d-e2e"
+  - type: "e2e-agents"
+  - type: "ghcr.io/inference-gateway/computer:latest"
+  - type: "2"
+  - type: "8"
+  - type: "4Gi"
+  - type: "12Gi"
+  - click: { button: "Save workspace" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "resources:", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "memory: 4Gi", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "memory: 12Gi", timeout: 10 }

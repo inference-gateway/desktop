@@ -18,6 +18,8 @@ An agent can also get a computer of its own: add the compute under **Settings > 
 
 A chat that already started can move too: **Move to workspace** in its composer sends it to a workspace or brings it back to this computer, between turns.
 
+A Kubernetes workspace sets the **CPU** and **memory** of its computers, each as a request and a limit, in Kubernetes quantities such as `500m`, `2` or `4Gi`. They are saved as the `resources` block of the workspace in `daemon.yaml` and need `infer` CLI v0.255.0 or newer. Empty fields leave the amounts to the cluster. A running computer keeps what it started with, and the next one gets the new values. The **Computers** view shows what each computer was given - its CPUs, its memory and its GPUs - and whether it is a sandbox, a pod of its own in a cluster, or a real system.
+
 A workspace's **User data** is a cloud-init script each of its computers runs as root when it boots, before the agent starts, to install what the agents need. The local cluster's workspace runs the CLI's Ubuntu desktop image, `ghcr.io/inference-gateway/computer`, and its user data installs Firefox with the opentask extension for [browser use](browser-use.md#on-an-agents-computer). A computer boots to an empty desktop - the browser stays closed until an agent opens it for a task that needs the web.
 
 See [examples/computer-use](../examples/computer-use) for three agents on Ubuntu desktops in a local Kubernetes cluster.

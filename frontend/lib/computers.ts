@@ -1,4 +1,4 @@
-import type { Conversation, MarkdownAgent } from "./tauri";
+import type { ComputerResources, Conversation, MarkdownAgent } from "./tauri";
 import { COMPUTER_USE_TOOLS, pendingInput, type ChatState, type TranscriptItem } from "./transcript";
 
 export type ComputerStatus = "running" | "awaiting" | "idle";
@@ -19,6 +19,15 @@ export type ComputerTile = {
   status: ComputerStatus;
   lastAction: string | null;
 };
+
+/** One line on what a computer is and was given: a sandbox with its CPUs, memory and GPUs, or a real system. An
+ * amount the cluster decided reads as its default, and a sandbox not listed yet shows no amounts. */
+export function computerSummary(sandbox: boolean, resources?: ComputerResources): string {
+  if (!sandbox) return "Real system";
+  if (!resources) return "Sandbox";
+  const gpus = resources.gpus > 0 ? String(resources.gpus) : "none";
+  return `Sandbox - CPU ${resources.cpu || "default"} - Memory ${resources.memory || "default"} - GPU ${gpus}`;
+}
 
 /** Where a chat runs: the workspace it started on or was moved to, else its agent's, else this computer. */
 export function chatWorkspace(

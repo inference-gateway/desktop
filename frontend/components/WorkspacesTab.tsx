@@ -16,6 +16,8 @@ import {
   configOf,
   draftOf,
   draftProblem,
+  resourceProblems,
+  runsInCluster,
   EMPTY_WORKSPACE,
   hasCapability,
   LOCAL_CLUSTER,
@@ -36,6 +38,13 @@ import {
 } from "./ClusterParts";
 import { WorkspaceVolumes } from "./WorkspaceVolumes";
 import { useDesktop } from "@/store";
+
+const RESOURCE_FIELDS = [
+  { key: "cpu_request", id: "workspace-cpu-request", label: "CPU request", placeholder: "2" },
+  { key: "cpu_limit", id: "workspace-cpu-limit", label: "CPU limit", placeholder: "8" },
+  { key: "memory_request", id: "workspace-memory-request", label: "Memory request", placeholder: "4Gi" },
+  { key: "memory_limit", id: "workspace-memory-limit", label: "Memory limit", placeholder: "12Gi" },
+] as const;
 
 type Editing = { previous: string | null; draft: WorkspaceDraft };
 
@@ -241,6 +250,7 @@ function WorkspaceForm({
     onChange({ ...draft, [key]: event.target.value });
   const cluster = clusters.find((c) => c.name === draft.compute);
   const ownConnection = !draft.compute;
+  const resourceProblem = resourceProblems(draft.resources);
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
       <h3 className="text-[0.9rem] font-semibold">{editing.previous ? `Edit ${editing.previous}` : "New workspace"}</h3>
@@ -324,6 +334,7 @@ function WorkspaceForm({
           id="workspace-image"
           value={draft.image}
           onChange={set("image")}
+          onKeyDown={advanceOnEnter("workspace-cpu-request")}
           placeholder="ghcr.io/inference-gateway/computer:latest"
         />
         <span className={HINT_CLASS}>
@@ -344,6 +355,38 @@ function WorkspaceForm({
           <Input id="workspace-retention" value={draft.retention} onChange={set("retention")} placeholder="24h" />
         </div>
       </div>
+      {runsInCluster(draft) && (
+        <div className={FIELD_CLASS}>
+          <div className="grid grid-cols-4 gap-3">
+            {RESOURCE_FIELDS.map(({ key, id, label, placeholder }, index) => (
+              <div key={key} className={FIELD_CLASS}>
+                <Label htmlFor={id}>{label}</Label>
+                <Input
+                  id={id}
+                  value={draft.resources[key]}
+                  onChange={(event) =>
+                    onChange({ ...draft, resources: { ...draft.resources, [key]: event.target.value } })
+                  }
+                  onKeyDown={
+                    index + 1 < RESOURCE_FIELDS.length ? advanceOnEnter(RESOURCE_FIELDS[index + 1].id) : undefined
+                  }
+                  placeholder={placeholder}
+                  aria-invalid={Boolean(resourceProblem[key])}
+                />
+                {resourceProblem[key] && (
+                  <span role="alert" className="text-[0.72rem] text-destructive">
+                    {resourceProblem[key]}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+          <span className={HINT_CLASS}>
+            What each computer asks for and may use, as Kubernetes quantities. Empty leaves it to the cluster. A running
+            computer keeps what it started with - the next one gets the new values.
+          </span>
+        </div>
+      )}
       {ownConnection && (
         <div className={FIELD_CLASS}>
           <Label htmlFor="workspace-gateway-env">Provider keys</Label>
