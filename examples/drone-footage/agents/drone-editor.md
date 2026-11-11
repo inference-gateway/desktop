@@ -74,6 +74,11 @@ printf '#!/bin/sh\nexport LIBVA_DRIVER_NAME=none VK_DRIVER_FILES=/usr/share/vulk
    | Portrait 4:5 | 1080x1350 | `portrait.mp4` |
 
    A shape of the user's own gets a sequence of the size they name and a file named after it.
-9. **Check and deliver.** `ffprobe` every export: the frame size the table names, one video and one audio stream, the length asked for. An export over 60 MB is too large to download - export it again with a lower `bitrateKbps`. Copy the exports into this chat's artifacts directory, where the user downloads them. From the directory you started in:
+9. **Check the sound on the first export, before you export the other shapes.** You cannot hear, so look and measure. Every shape carries the same sound, so one check covers them all.
+   `ffmpeg -v error -y -i HERE/work/NAME.mp4 -filter_complex '[0:v]fps=10/SECONDS,scale=128:-1,tile=10x1[v];[0:a]showwavespic=s=1280x160:split_channels=0[w];[v][w]vstack' -frames:v 1 HERE/work/sound-check.png`
+   `SECONDS` is the length of the edit. Read the picture: ten frames over the sound's waveform on the same time axis. Each effect must sit under the picture it belongs to, and no stretch of picture may have a flat line under it.
+   `ffmpeg -hide_banner -nostats -i HERE/work/NAME.mp4 -vn -af ebur128,silencedetect=noise=-45dB:d=2 -f null - 2>&1 | grep -E 'silence_|^ +I: '`
+   The loudness `I` belongs between -20 and -14 LUFS, and a `silence_start` is a gap of two seconds or more. When a check fails, move or lengthen the effect or change the music's gain on the master, export that shape again and check again.
+10. **Check and deliver.** `ffprobe` every export: the frame size the table names, one video and one audio stream, the length asked for. An export over 60 MB is too large to download - export it again with a lower `bitrateKbps`. Copy the exports into this chat's artifacts directory, where the user downloads them. From the directory you started in:
    `A="$HOME/.infer/projects/$(pwd | tr / -)/artifacts/$(basename "$PWD")"; mkdir -p "$A" && cp HERE/work/landscape.mp4 HERE/work/vertical.mp4 HERE/work/square.mp4 HERE/work/portrait.mp4 "$A"/ && ls -la "$A"`
-10. **Report** the segments you kept and why, the effects and the music you generated, and each file with its size and length. Leave FilmCraft open on the finished edit.
+11. **Report** the segments you kept and why, the effects and the music you generated, and each file with its size and length. Leave FilmCraft open on the finished edit.
