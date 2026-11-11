@@ -8,6 +8,7 @@ import {
   hasCapability,
   parseEnv,
   splitNames,
+  volumesProblem,
   withCapability,
 } from "./workspace-form";
 
@@ -50,6 +51,7 @@ test("a draft turns back into the config it came from", () => {
     forward_env: ["GH_TOKEN", "NPM_TOKEN"],
     env: { INFER_AGENT_MODEL: "openai/gpt-4o" },
     user_data: "#!/bin/sh\napt-get install -y firefox-esr\n",
+    volumes: [{ name: "footage", claim: "raw-footage", mount_path: "/mnt/footage", read_only: true }],
   };
   expect(configOf(draftOf(config))).toEqual(config);
 });
@@ -97,4 +99,24 @@ test("a workspace lacks a capability once one of its variables is changed by han
   expect(hasCapability(edited, RECORDING)).toBe(false);
   expect(hasCapability(draftOf(EMPTY_WORKSPACE), RECORDING)).toBe(false);
   expect(hasCapability(draftOf(EMPTY_WORKSPACE), BROWSER)).toBe(false);
+});
+
+test("volumes need a name of their own, a claim and an absolute mount path", () => {
+  const footage = { name: "footage", claim: "raw-footage", mount_path: "/mnt/footage", read_only: true };
+  expect(volumesProblem([])).toBeNull();
+  expect(volumesProblem([footage, { ...footage, name: "resolve", mount_path: "/opt/resolve" }])).toBeNull();
+  expect(volumesProblem([{ ...footage, name: " " }])).toContain("volume 1 a name");
+  expect(volumesProblem([footage, { ...footage, mount_path: "/mnt/other" }])).toContain("named footage");
+  expect(volumesProblem([{ ...footage, claim: "" }])).toContain("claim");
+  expect(volumesProblem([{ ...footage, mount_path: "mnt/footage" }])).toContain("starts with /");
+});
+
+test("a workspace with a volume it could not mount cannot be saved, and a saved one is trimmed", () => {
+  const draft = { ...draftOf(EMPTY_WORKSPACE), name: "desktop", compute: "k3d" };
+  const padded = { name: " footage ", claim: " raw-footage ", mount_path: " /mnt/footage ", read_only: false };
+  expect(draftProblem({ ...draft, volumes: [{ ...padded, claim: "" }] })).toContain("claim");
+  expect(draftProblem({ ...draft, volumes: [padded] })).toBeNull();
+  expect(configOf({ ...draft, volumes: [padded] }).volumes).toEqual([
+    { name: "footage", claim: "raw-footage", mount_path: "/mnt/footage", read_only: false },
+  ]);
 });

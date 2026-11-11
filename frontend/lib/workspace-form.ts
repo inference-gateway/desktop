@@ -1,4 +1,4 @@
-import type { Capability, WorkspaceConfig } from "./tauri";
+import type { Capability, WorkspaceConfig, WorkspaceVolume } from "./tauri";
 
 /** A workspace as the Settings form holds it: lists and the environment as the text the person types. */
 export type WorkspaceDraft = Omit<WorkspaceConfig, "gateway_env" | "forward_env" | "env"> & {
@@ -23,7 +23,10 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   forward_env: [],
   env: {},
   user_data: "",
+  volumes: [],
 };
+
+export const EMPTY_VOLUME: WorkspaceVolume = { name: "", claim: "", mount_path: "", read_only: false };
 
 /** How a cloud-init user-data script starts - the one user-data format a workspace runs. */
 const USER_DATA_SCRIPT_PREFIX = "#!";
@@ -64,7 +67,25 @@ export function configOf(draft: WorkspaceDraft): WorkspaceConfig {
     gateway_env: splitNames(draft.gateway_env),
     forward_env: splitNames(draft.forward_env),
     env: parseEnv(draft.env),
+    volumes: draft.volumes.map(trimmedVolume),
   };
+}
+
+function trimmedVolume(volume: WorkspaceVolume): WorkspaceVolume {
+  return { ...volume, name: volume.name.trim(), claim: volume.claim.trim(), mount_path: volume.mount_path.trim() };
+}
+
+/** Why the computers could not mount the volumes as listed, or null when they could. */
+export function volumesProblem(volumes: WorkspaceVolume[]): string | null {
+  const names = volumes.map((volume) => volume.name.trim());
+  for (const [index, volume] of volumes.entries()) {
+    const name = names[index];
+    if (!name) return `Give volume ${index + 1} a name.`;
+    if (names.indexOf(name) !== index) return `Two volumes are named ${name} - give each its own name.`;
+    if (!volume.claim.trim()) return `Name the claim volume ${name} mounts.`;
+    if (!volume.mount_path.trim().startsWith("/")) return `Give volume ${name} a mount path that starts with /.`;
+  }
+  return null;
 }
 
 /** Whether the draft's environment and user data give its computers the capability. */
@@ -95,6 +116,8 @@ export function draftProblem(draft: WorkspaceDraft): string | null {
   if (!draft.name.trim()) return "Give the workspace a name.";
   if (draft.user_data.trim() && !draft.user_data.trimStart().startsWith(USER_DATA_SCRIPT_PREFIX))
     return "Start the user data with #!, like #!/bin/sh - it runs as a script.";
+  const volumes = volumesProblem(draft.volumes);
+  if (volumes) return volumes;
   if (draft.compute) return null;
   if (draft.kind === "kubernetes" && !draft.context.trim()) return "Pick the Kubernetes context of the cluster.";
   if (draft.kind === "kubernetes" && !draft.namespace.trim()) return "Name the namespace the sessions run in.";

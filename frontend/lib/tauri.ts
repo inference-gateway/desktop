@@ -171,7 +171,11 @@ export type WorkspaceConfig = {
   env: Record<string, string>;
   /** The cloud-init script the pod runs as root when it boots, before the agent starts. */
   user_data: string;
+  volumes: WorkspaceVolume[];
 };
+/** An existing PersistentVolumeClaim of the workspace's namespace that each of its computers mounts. Read-only is for
+ * content an agent copies before it changes it. */
+export type WorkspaceVolume = { name: string; claim: string; mount_path: string; read_only: boolean };
 /** Something a workspace's agents may do on its computers. A workspace has it when its environment holds every
  * entry of `env` and its user data holds `user_data`. */
 export type Capability = { id: string; label: string; hint: string; env: [string, string][]; user_data: string };

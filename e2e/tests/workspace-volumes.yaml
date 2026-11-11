@@ -1,0 +1,33 @@
+name: workspace volumes - a read-only volume is added to a workspace in Settings and lands in daemon.yaml
+narration:
+  - "Open Settings."
+  - "Switch to the Workspaces tab."
+  - "Start a new workspace."
+  - "Name it."
+  - "Name the Kubernetes context of its cluster."
+  - "Name the namespace its sessions run in."
+  - "Add a volume to it."
+  - "Name the volume."
+  - "Name the claim it mounts, which already exists in the namespace."
+  - "Say where the computers mount it."
+  - "Mount it read-only, so the agent copies the footage before editing it."
+  - "Save the workspace."
+  - "The daemon's configuration file holds the volume and its claim."
+  - "It is read-only there too."
+  - "The cluster check finds the claim."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Workspaces" }
+  - click: { button: "New workspace" }
+  - type: "e2e-studio"
+  - type: "k3d-e2e"
+  - type: "e2e-agents"
+  - click: { button: "Add volume" }
+  - type: "footage"
+  - type: "raw-footage"
+  - type: "/mnt/footage"
+  - click: { button: "Volume 1 read-only" }
+  - click: { button: "Save workspace" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "claim: raw-footage", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/daemon.yaml", contains: "read_only: true", timeout: 10 }
+  - wait_for: { text: "Cluster has everything it needs", timeout: 10 }
