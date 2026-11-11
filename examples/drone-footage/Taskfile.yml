@@ -1,12 +1,9 @@
 version: '3'
 
 vars:
-  FILMCRAFT_VERSION: 0.19.0
   GYROFLOW_VERSION: 1.7.0
   ARCH:
     sh: uname -m | sed 's/arm64/aarch64/'
-  FILMCRAFT_PACKAGE: filmcraft-{{.FILMCRAFT_VERSION}}-linux-{{.ARCH}}.deb
-  FILMCRAFT_RELEASE: https://github.com/storytold/filmcraft/releases/download/v{{.FILMCRAFT_VERSION}}
   GYROFLOW_PACKAGE: Gyroflow-linux-arm64.tar.gz
   LUT: dji-avata-2-dlog-m-to-rec709.cube
   LUT_URL: https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/avata2%20d-log/DJI%20Avata%202%20D-Log%20M%20to%20Rec.709%20V1._.cube
@@ -26,11 +23,17 @@ tasks:
       - task: agent:install
 
   filmcraft:
-    desc: Download FilmCraft's Linux package for this computer's architecture, checked against the release's checksums
+    desc: Download the latest FilmCraft Linux package for this computer's architecture, checked against the release's checksums, in place of an older one
     dir: '{{.TOOLS}}'
+    vars:
+      FILMCRAFT_VERSION:
+        sh: curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/storytold/filmcraft/releases/latest | sed 's|.*/tag/v||'
+      FILMCRAFT_PACKAGE: filmcraft-{{.FILMCRAFT_VERSION}}-linux-{{.ARCH}}.deb
+      FILMCRAFT_RELEASE: https://github.com/storytold/filmcraft/releases/download/v{{.FILMCRAFT_VERSION}}
     cmds:
       - curl -fsSLO {{.FILMCRAFT_RELEASE}}/{{.FILMCRAFT_PACKAGE}}
       - curl -fsSL {{.FILMCRAFT_RELEASE}}/SHA256SUMS.txt | grep ' {{.FILMCRAFT_PACKAGE}}$' | shasum -a 256 -c -
+      - find . -maxdepth 1 -name 'filmcraft-*.deb' ! -name '{{.FILMCRAFT_PACKAGE}}' -delete
     status:
       - test -f {{.FILMCRAFT_PACKAGE}}
 
@@ -65,6 +68,6 @@ tasks:
   down:
     desc: Delete the tools and take the agent back out of ~/.infer - the footage folder is never touched
     cmds:
-      - rm -f {{.TOOLS}}/{{.FILMCRAFT_PACKAGE}} {{.TOOLS}}/{{.GYROFLOW_PACKAGE}} {{.TOOLS}}/{{.LUT}}
+      - rm -f {{.TOOLS}}/filmcraft-*.deb {{.TOOLS}}/{{.GYROFLOW_PACKAGE}} {{.TOOLS}}/{{.LUT}}
       - rmdir {{.TOOLS}} 2>/dev/null || true
       - '! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/drone-editor.md || rm {{.INFER_DIR}}/agents/drone-editor.md'
