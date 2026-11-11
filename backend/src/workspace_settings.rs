@@ -1441,6 +1441,14 @@ mod tests {
     }
 
     #[test]
+    fn provisioning_again_keeps_the_cpu_and_memory_of_the_local_workspace() {
+        let yaml = "workspaces:\n  - name: ubuntu-desktop\n    compute: infer-k3s\n    resources:\n      limits:\n        memory: 12Gi\n";
+        let existing = parse_configs(Some(yaml), &[]);
+        assert_eq!(local_workspace_resources(&existing).memory_limit, "12Gi");
+        assert_eq!(local_workspace_resources(&[]).memory_limit, "");
+    }
+
+    #[test]
     fn provisioning_again_keeps_the_volumes_of_the_local_workspace() {
         let yaml = "workspaces:\n  - name: ubuntu-desktop\n    compute: infer-k3s\n    volumes:\n      - name: footage\n        claim: folder-footage-ro\n        mount_path: /mnt/footage\n        read_only: true\n";
         let existing = parse_configs(Some(yaml), &[]);

@@ -29,9 +29,11 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   no_gpu: false,
 };
 
-const QUANTITY = /^(\d+\.?\d*|\.\d+)(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$/;
+const QUANTITY = /^(\d+\.?\d*|\.\d+)(n|u|m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$/;
 const QUANTITY_SCALE: Record<string, number> = {
   "": 1,
+  n: 1e-9,
+  u: 1e-6,
   m: 1e-3,
   k: 1e3,
   M: 1e6,

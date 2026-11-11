@@ -134,6 +134,8 @@ test("an amount is a Kubernetes quantity and a request stays at or below its lim
   expect(quantityOf("500m")).toBe(0.5);
   expect(quantityOf(" 4Gi ")).toBe(4 * 2 ** 30);
   expect(quantityOf("1.5")).toBe(1.5);
+  expect(quantityOf("100n")).toBeCloseTo(1e-7);
+  expect(quantityOf("250u")).toBeCloseTo(2.5e-4);
   for (const bad of ["4GB", "two", "-1", "1 Gi", ""]) expect(quantityOf(bad)).toBeNull();
 
   const empty = EMPTY_WORKSPACE.resources;

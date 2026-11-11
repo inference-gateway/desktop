@@ -70,32 +70,52 @@ fn parse_computers(pods_json: &str) -> BTreeMap<String, ComputerResources> {
         .collect()
 }
 
+/// Where kubectl looks for the pods: the workspace's namespace, or every
+/// namespace for a workspace that names none.
+fn namespace_args(namespace: &str) -> Vec<&str> {
+    if namespace.is_empty() {
+        vec!["--all-namespaces"]
+    } else {
+        vec!["-n", namespace]
+    }
+}
+
 fn computers_in(context: &str, namespace: &str) -> BTreeMap<String, ComputerResources> {
     let mut args = vec!["get", "pods", "-l", CONVERSATION_LABEL, "-o", "json"];
-    if !namespace.is_empty() {
-        args.extend(["-n", namespace]);
-    }
+    args.extend(namespace_args(namespace));
     parse_computers(&kubectl(context, &args).unwrap_or_default())
+}
+
+/// The computers of every cluster, asked at once so one that does not answer
+/// holds the others up no longer than its own time limit.
+fn computers_of(clusters: &BTreeSet<(String, String)>) -> BTreeMap<String, ComputerResources> {
+    std::thread::scope(|scope| {
+        let listings: Vec<_> = clusters
+            .iter()
+            .map(|(context, namespace)| scope.spawn(|| computers_in(context, namespace)))
+            .collect();
+        listings
+            .into_iter()
+            .flat_map(|listing| listing.join().unwrap_or_default())
+            .collect()
+    })
 }
 
 /// What the computer of each chat on a Kubernetes workspace was given, read
 /// from its running pod and not from the workspace's form. A cluster that
 /// does not answer adds none.
 #[tauri::command]
-pub(crate) async fn computer_resources() -> BTreeMap<String, ComputerResources> {
+pub(crate) async fn computer_resources() -> Result<BTreeMap<String, ComputerResources>, String> {
     tokio::task::spawn_blocking(|| {
         let clusters: BTreeSet<(String, String)> = workspace_configs()
             .into_iter()
             .filter(|workspace| workspace.kind == KUBERNETES && !workspace.context.is_empty())
             .map(|workspace| (workspace.context, workspace.namespace))
             .collect();
-        clusters
-            .iter()
-            .flat_map(|(context, namespace)| computers_in(context, namespace))
-            .collect()
+        computers_of(&clusters)
     })
     .await
-    .unwrap_or_default()
+    .map_err(|e| format!("listing task failed: {e}"))
 }
 
 #[cfg(test)]
@@ -134,6 +154,12 @@ mod tests {
                 gpus: 0,
             }
         );
+    }
+
+    #[test]
+    fn a_workspace_without_a_namespace_is_looked_for_in_every_one() {
+        assert_eq!(namespace_args("agents"), ["-n", "agents"]);
+        assert_eq!(namespace_args(""), ["--all-namespaces"]);
     }
 
     #[test]
