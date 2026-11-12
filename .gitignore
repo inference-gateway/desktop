@@ -3,6 +3,7 @@ backend/gen/
 .env
 .infer/
 e2e/artifacts/
+examples/drone-footage/tools/
 
 # Frontend (Bun + Vite)
 node_modules/
