@@ -31,19 +31,8 @@ Put the recording in a folder of its own, for example `~/footage`, and `voice.wa
 1. Open **Settings > Compute**. Press **Add folder**, name it `footage`, point it at your folder as a full path and switch it to read-only. Press **Save folders**.
 2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - a folder is mounted only into a cluster created after it was added, so this deletes the machines of the local cluster.
 3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `footage`, pick the `footage` folder as its source and mount it at `/mnt/footage`.
-4. In the same form, add these lines to **Environment**. They give the agent the `TextToSpeech` tool, with the voice model running on its own computer:
-
-   ```text
-   INFER_TEXT_TO_SPEECH_ENABLED=true
-   INFER_TEXT_TO_SPEECH_ENGINE=qwen3-tts
-   INFER_TEXT_TO_SPEECH_REQUIRE_APPROVAL=false
-   INFER_TEXT_TO_SPEECH_TIMEOUT=900
-   ```
-
-   Press **Save workspace**.
-5. Press **Restart CLI** so the daemon reads the volume and the environment.
-
-Provisioning the local cluster again can reset the workspace's environment. If the agent reports that it has no `TextToSpeech` tool, add the four lines again.
+4. In the same form, check that **Text to speech** is on - it gives the agent the `TextToSpeech` tool, with the voice model running on its own computer. Press **Save workspace**.
+5. Press **Restart CLI** so the daemon reads the volume and the switch.
 
 ## Run it
 
@@ -112,6 +101,6 @@ Expect the first run to need a correction, and report what the agent stopped on.
 task down   # take the agent back out of ~/.infer
 ```
 
-`task down` never touches your footage. It leaves the folder, the volume and the environment in Settings - remove them there, and recreate the cluster once more to stop mounting the folder. The files you saved stay in Downloads.
+`task down` never touches your footage. It leaves the folder and the volume in Settings - remove them there, and recreate the cluster once more to stop mounting the folder. The files you saved stay in Downloads.
 
 The agent uses its computer without asking for approval - it is a pod of its own, not your machine.
