@@ -15,10 +15,10 @@ It builds on [examples/drone-footage](../drone-footage): the same read-only foot
 ## What you need
 
 - `task` and the app's local cluster - the container button under **Settings > Compute**.
-- `infer` CLI v0.258.0 or newer.
+- `infer` CLI newer than v0.258.0 and operator v0.37.0 or newer, which give the workspace's gateway its speech engine and bring your voice samples to the computer.
 - A model that follows long instructions and reads pictures. The recording has no sound, so the agent writes the narration from the frames it looks at.
 - A screen recording in H.264, 8-bit. A macOS screen recording is one.
-- For your own voice, 10 to 30 seconds of you speaking, as `voice.wav`: one speaker, no music, no noise. A sample you recorded under **Settings > Voice samples** sits in `~/.infer/models/tts/samples` and can be copied. Without one the agent uses a stock voice.
+- For your own voice, a sample under **Settings > Voice samples**: 10 to 30 seconds of you speaking, one speaker, no music, no noise. Your samples travel to the agent's computer with the chat. Without one the agent uses a stock voice.
 
 ## Set up
 
@@ -26,12 +26,12 @@ It builds on [examples/drone-footage](../drone-footage): the same read-only foot
 task up     # the feature-editor agent in ~/.infer/agents
 ```
 
-Put the recording in a folder of its own, for example `~/footage`, and `voice.wav` next to it. Then in the app:
+Put the recording in a folder of its own, for example `~/footage`. Then in the app:
 
 1. Open **Settings > Compute**. Press **Add folder**, name it `footage`, point it at your folder as a full path and switch it to read-only. Press **Save folders**.
 2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - a folder is mounted only into a cluster created after it was added, so this deletes the machines of the local cluster.
 3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `footage`, pick the `footage` folder as its source and mount it at `/mnt/footage`.
-4. In the same form, check that **Text to speech** is on - it gives the agent the `TextToSpeech` tool, with the voice model running on its own computer. Press **Save workspace**.
+4. In the same form, check that **Text to speech** is on. It gives the agent the `TextToSpeech` tool and sends your voice samples along with each chat. Press **Save workspace**.
 5. Press **Restart CLI** so the daemon reads the volume and the switch.
 
 ## Run it
@@ -42,11 +42,11 @@ Open the **Agents** filter, select `feature-editor` so the composer reads **Mess
 Edit the recording into a tutorial. It shows how to add a workspace volume.
 ```
 
-Say what the feature is and who the tutorial is for - the agent sees the screen, not your intent.
+Say what the feature is and who the tutorial is for - the agent sees the screen, not your intent. Name the voice sample to speak in, such as `in my Confident voice`. Without a name the agent uses your only sample, or asks which one when you have several.
 
 Open **Computers** in the top bar to watch. The agent stops twice for you:
 
-1. **The edit plan.** A table of beats - the steps it keeps - with what happens to each (kept, sped up, zoomed), the sentence it will say over it, and where the cards go. Nothing is built yet, so this is the cheap place to change things:
+1. **The edit plan.** A table of beats - the steps it keeps - with what happens to each (kept, sped up, zoomed), the sentence it will say over it, where the cards go, and the voice it will speak in. Nothing is built yet, so this is the cheap place to change things:
 
    ```text
    Drop beat 4, and say "workspace" instead of "environment" everywhere.
@@ -79,9 +79,10 @@ A new computer has none of its tools and the agent has no root access, so it fet
 | --- | --- |
 | FilmCraft, the latest package | The edit |
 | Node.js v22 and a headless Chromium | HyperFrames, which renders a card from HTML |
-| The voice model, about 1.4 GB | Text to speech |
 
-The first two survive a restart of the computer. The voice model lives in the computer's home and is downloaded again on a new computer.
+Both survive a restart of the computer.
+
+The voice model is not on the computer. The workspace's gateway runs it: it downloads about 1.4 GB each time it starts, which it does again after every stretch with no chat running, and it holds about 6 GiB of memory while it speaks a sentence. A sentence took 20 seconds when measured on the gateway's 2 CPUs.
 
 If the browser cannot start on the computer, the agent makes the cards as text in FilmCraft instead and says so.
 
@@ -90,7 +91,7 @@ If the browser cannot start on the computer, the agent makes the cards as text i
 The agent's instructions were written from FilmCraft's, HyperFrames' and the CLI's source and documentation. These parts have not run on a computer of the local cluster yet:
 
 - FilmCraft on a variable frame rate screen recording of this size.
-- The voice model on an arm64 computer without a GPU, and how long a sentence takes.
+- A chat that speaks through the workspace's gateway with a sample that came along. The gateway's speech engine and the samples' journey were each measured on their own, not from the app.
 - HyperFrames' browser on the computer image, which may lack a library it needs.
 
 Expect the first run to need a correction, and report what the agent stopped on.

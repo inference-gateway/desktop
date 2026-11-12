@@ -24,6 +24,15 @@ const RECORDING = {
     ["INFER_COMPUTER_USE_RECORDING_REQUIRE_APPROVAL", "false"],
   ] as [string, string][],
   user_data: "",
+  forward_voice_samples: false,
+};
+const SPEECH = {
+  id: "text-to-speech",
+  label: "Text to speech",
+  hint: "",
+  env: [["INFER_TEXT_TO_SPEECH_ENABLED", "true"]] as [string, string][],
+  user_data: "",
+  forward_voice_samples: true,
 };
 const BROWSER = {
   id: "browser-use",
@@ -31,6 +40,7 @@ const BROWSER = {
   hint: "",
   env: [],
   user_data: "#!/bin/sh\ninstall_firefox\n",
+  forward_voice_samples: false,
 };
 
 test("names split on commas, spaces and new lines", () => {
@@ -94,6 +104,20 @@ test("a capability switched on and off again leaves what the person typed", () =
   expect(withCapability(on, BROWSER, true)).toEqual(on);
   const off = withCapability(withCapability(on, BROWSER, false), RECORDING, false);
   expect(off).toEqual(typed);
+});
+
+test("a capability that needs the voice samples forwards them, and no other capability touches that", () => {
+  const speaking = withCapability(draftOf(EMPTY_WORKSPACE), SPEECH, true);
+  expect(speaking.forward_voice_samples).toBe(true);
+  expect(hasCapability(speaking, SPEECH)).toBe(true);
+  expect(configOf(speaking).forward_voice_samples).toBe(true);
+
+  const recording = withCapability(speaking, RECORDING, true);
+  expect(withCapability(recording, RECORDING, false).forward_voice_samples).toBe(true);
+  expect(hasCapability({ ...speaking, forward_voice_samples: false }, SPEECH)).toBe(false);
+
+  const silent = withCapability(speaking, SPEECH, false);
+  expect(silent).toEqual(draftOf(EMPTY_WORKSPACE));
 });
 
 test("a workspace lacks a capability once one of its variables is changed by hand, or it has no boot script", () => {

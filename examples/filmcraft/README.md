@@ -4,7 +4,7 @@ One `editor` agent, a video editor of its own in every chat. Each chat with the 
 
 The folder is shared with the app's local cluster under **Settings > Compute** and mounted read-only on the `ubuntu-desktop` workspace as a volume. A new computer does not have FilmCraft yet and the agent has no root access on it, so its instructions tell it to unpack the package from the mount into its home before it opens the editor. That takes about a second and needs no network.
 
-Needs `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**. The cluster runs operator v0.36.0, which mounts the volume, and the `infer` CLI has to be newer than v0.254.0 to pass it on.
+Needs `docker`, `task` and the app's local cluster - the container button under **Settings > Compute**. The cluster runs operator v0.37.0, which mounts the volume, and the `infer` CLI has to be newer than v0.254.0 to pass it on.
 
 ```bash
 task up     # FilmCraft's package in ~/filmcraft, the editor agent in ~/.infer/agents

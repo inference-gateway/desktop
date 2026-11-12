@@ -22,6 +22,7 @@ export const EMPTY_WORKSPACE: WorkspaceConfig = {
   retention: "",
   gateway_env: [],
   forward_env: [],
+  forward_voice_samples: false,
   env: {},
   user_data: "",
   volumes: [],
@@ -148,13 +149,17 @@ export function volumesProblem(volumes: WorkspaceVolume[]): string | null {
   return null;
 }
 
-/** Whether the draft's environment and user data give its computers the capability. */
+/** Whether the draft's environment, user data and voice samples give its computers the capability. */
 export function hasCapability(draft: WorkspaceDraft, capability: Capability): boolean {
   const env = parseEnv(draft.env);
-  return capability.env.every(([name, value]) => env[name] === value) && draft.user_data.includes(capability.user_data);
+  return (
+    capability.env.every(([name, value]) => env[name] === value) &&
+    draft.user_data.includes(capability.user_data) &&
+    (!capability.forward_voice_samples || draft.forward_voice_samples)
+  );
 }
 
-/** The draft with the capability's variables and boot script added, or taken out. The rest stays as typed. */
+/** The draft with the capability's variables, boot script and voice samples added, or taken out. The rest stays as typed. */
 export function withCapability(draft: WorkspaceDraft, capability: Capability, on: boolean): WorkspaceDraft {
   const names = new Set(capability.env.map(([name]) => name));
   const kept = Object.entries(parseEnv(draft.env)).filter(([name]) => !names.has(name));
@@ -164,6 +169,7 @@ export function withCapability(draft: WorkspaceDraft, capability: Capability, on
     ...draft,
     env: formatEnv(Object.fromEntries(on ? [...kept, ...capability.env] : kept)),
     user_data: on && script ? joinScripts(rest, script) : rest,
+    forward_voice_samples: capability.forward_voice_samples ? on : draft.forward_voice_samples,
   };
 }
 
