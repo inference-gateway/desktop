@@ -75,7 +75,7 @@
           "$HOME/**/.infer/artifacts/**",
           "$HOME/.infer/artifacts/**",
           "$HOME/.infer/projects/*/artifacts/**",
-          "$HOME/.infer/models/tts/samples/**",
+          "$HOME/.infer/voice/samples/**",
           "$HOME/.infer/avatars/**",
           "$HOME/Documents/Inference Gateway Desktop/**"
         ]

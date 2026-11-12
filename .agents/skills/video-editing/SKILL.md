@@ -41,7 +41,7 @@ under `~/.infer`; the only place you write is the working directory.
 - The `ImageDecode` tool (`vision.annotator.enabled` with a vision model, typically
   `ollama/qwen3-vl:2b` for a local setup) and the `TextToSpeech` tool (`text_to_speech.enabled`).
 - A voice sample: a 10-30 s `.wav` of the user speaking, kept by the desktop in
-  `~/.infer/models/tts/samples/`. `TextToSpeech` takes a bare file name and looks it up in the
+  `~/.infer/voice/samples/`. `TextToSpeech` takes a bare file name and looks it up in the
   working directory, then in that library, so pass the sample's name as is (e.g. `eden.wav`) and
   never copy it into the project. See Picking the voice for which one.
 - For avatar clips only: the `TextToVideo` tool (`text_to_video.enabled`) and an avatar, a folder of
@@ -68,7 +68,7 @@ Never choose the voice silently: it is the one thing only the user can judge.
    desktop's dropdowns. Use exactly that one, keep the field as written, and do not ask - a redo
    prompt that names a sample is that pick, not an invitation to ask again. Only when the user says
    they want a different voice do you go to step 2.
-2. Otherwise list the library, `ls ~/.infer/models/tts/samples/`, and ask with `AskUserQuestion`:
+2. Otherwise list the library, `ls ~/.infer/voice/samples/`, and ask with `AskUserQuestion`:
    one option per sample, plus `Random`, plus `My voice from the recording` when `source_audio` is
    `transcribe`. Put the track's current `voice_sample` first when it has one. Ask once per run,
    never per clip, and only for the questions above - never ask about the script, the timing or the

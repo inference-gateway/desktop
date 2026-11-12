@@ -1,17 +1,36 @@
 // Voice-sample library for TTS voice cloning, stored flat in
-// ~/.infer/models/tts/samples/ (next to the CLI's TTS model cache
-// ~/.infer/models/tts/). Upload is a native file picker + std::fs::copy; the
+// ~/.infer/voice/samples/. Upload is a native file picker + std::fs::copy; the
 // CLI's TextToSpeech tool resolves bare `voice_sample` names here after the
-// working directory (cli internal/agent/tools/text_to_speech.go).
+// working directory (cli internal/tools/text_to_speech.go).
 use crate::env::infer_dir;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
-/// The samples directory (created on first use).
+/// The samples directory, created on first use. Samples left in the model
+/// cache, where the library lived before, are moved in first.
 pub(crate) fn samples_dir() -> PathBuf {
-    let dir = infer_dir().join("models").join("tts").join("samples");
+    let dir = infer_dir().join("voice").join("samples");
     let _ = std::fs::create_dir_all(&dir);
+    move_legacy_samples(
+        &infer_dir().join("models").join("tts").join("samples"),
+        &dir,
+    );
     dir
+}
+
+/// Moves every sample of the old library into `dir`, keeping a sample `dir`
+/// already has under that name, then removes the old library once it is empty.
+fn move_legacy_samples(legacy: &Path, dir: &Path) {
+    let Ok(samples) = list_wavs(legacy) else {
+        return;
+    };
+    for sample in samples {
+        let moved = dir.join(&sample.name);
+        if !moved.exists() {
+            let _ = std::fs::rename(&sample.path, moved);
+        }
+    }
+    let _ = std::fs::remove_dir(legacy);
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -143,6 +162,36 @@ mod tests {
             assert!(sample_path(dir, bad).is_err(), "{bad:?} should be rejected");
         }
         assert_eq!(sample_path(dir, "me.wav").unwrap(), dir.join("me.wav"));
+    }
+
+    #[test]
+    fn legacy_samples_move_in_without_replacing_a_newer_one() {
+        let legacy = TempDir::new("legacy");
+        let library = TempDir::new("library");
+        std::fs::write(legacy.join("old.wav"), b"old").unwrap();
+        std::fs::write(legacy.join("both.wav"), b"stale").unwrap();
+        std::fs::write(library.join("both.wav"), b"fresh").unwrap();
+
+        move_legacy_samples(&legacy, &library);
+        move_legacy_samples(&legacy, &library);
+
+        assert_eq!(std::fs::read(library.join("old.wav")).unwrap(), b"old");
+        assert_eq!(std::fs::read(library.join("both.wav")).unwrap(), b"fresh");
+        assert!(!legacy.join("old.wav").exists());
+        assert_eq!(std::fs::read(legacy.join("both.wav")).unwrap(), b"stale");
+    }
+
+    #[test]
+    fn an_emptied_legacy_library_is_removed() {
+        let root = TempDir::new("emptied");
+        let legacy = root.join("legacy");
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("old.wav"), b"old").unwrap();
+
+        move_legacy_samples(&legacy, &root);
+
+        assert!(!legacy.exists());
+        assert_eq!(std::fs::read(root.join("old.wav")).unwrap(), b"old");
     }
 
     #[test]
