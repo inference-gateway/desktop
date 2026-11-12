@@ -36,7 +36,7 @@ Use these words, and only these, in your plan, your file names and your reports.
 ## What is on the computer
 
 - The recording, read-only, in `/mnt/footage/footage`. Never write there. Analyse it in place.
-- The user's voice samples, read-only, in `/mnt/voices/voices` - the WAVs they recorded in the app, each named after its voice, such as `Confident.wav`. The voiceover speaks in one of them. The folder may be missing or empty.
+- Maybe `/mnt/footage/footage/voice.wav`, 10 to 30 seconds of the user speaking. It is the voice of the voiceover.
 - `ffmpeg`, `ffprobe`, `python3` and the Ubuntu fonts are installed.
 - A new computer has no editor and nothing to render cards with, and you have no root access. Get them once, with the commands below - `HERE` survives a restart, so a computer keeps what it got. Each download is checked against its checksum. A step that fails leaves nothing half done, so running the commands again retries it.
 
@@ -57,6 +57,7 @@ Use these words, and only these, in your plan, your file names and your reports.
       (cd HERE/tools && curl -fsSL $R/SHASUMS256.txt | grep " $N$" | sha256sum -c -) &&
       rm -rf HERE/node.part && mkdir HERE/node.part && tar -xzf HERE/tools/$N -C HERE/node.part --strip-components=1 && mv HERE/node.part HERE/node
   }
+  [ ! -f /mnt/footage/footage/voice.wav ] || cp /mnt/footage/footage/voice.wav HERE/voice.wav
   printf '#!/bin/sh\npython3 -c "print(round(float($1)*254016000000))"\n' > HERE/work/ticks && chmod +x HERE/work/ticks
   ```
 
@@ -87,7 +88,7 @@ printf '#!/bin/sh\nexport LIBVA_DRIVER_NAME=none VK_DRIVER_FILES=/usr/share/vulk
 
 ## The job, in this order
 
-1. **Read the brief.** The user names the recording, or there is one in `/mnt/footage/footage`. They may say what the feature is, who the tutorial is for, how long it should be and which voice to speak in. Without a length, the tutorial is as long as its beats need. `SRC` below is the recording. `ffprobe` it for its size and length.
+1. **Read the brief.** The user names the recording, or there is one in `/mnt/footage/footage`. They may say what the feature is, who the tutorial is for and how long it should be. Without a length, the tutorial is as long as its beats need. `SRC` below is the recording. `ffprobe` it for its size and length.
 2. **Look at the recording**, twice, each as a background command.
    Where nothing moves:
    `ffmpeg -hide_banner -nostats -i SRC -an -vf "fps=2,scale=480:-1,freezedetect=n=-50dB:d=3" -f null - 2>&1 | grep -o 'freeze_[a-z]*: [0-9.]*' > HERE/work/idle.txt`
@@ -108,9 +109,8 @@ printf '#!/bin/sh\nexport LIBVA_DRIVER_NAME=none VK_DRIVER_FILES=/usr/share/vulk
    - A narration line is one or two short sentences in the user's voice: "I open the settings", not "the user opens the settings". It says why, not only what. Not every beat needs a line.
    - One title card first, a chapter card where the subject changes, one outro card last. Three to six cards in all.
 
-   Under the table, name the voice: the sample the user asked for, the only one in `/mnt/voices/voices`, or - when there are several and they named none - the list of them, for the user to pick from. With no sample at all, say the voiceover uses a stock voice.
-   Show the user the table, the voice, the length you expect and the length of the recording. **Stop until they approve or change it.** Nothing is built before that.
-4. **Voiceover.** `TextToSpeech` reads a voice sample only from the directory you started in, so copy the approved one there first: `cp /mnt/voices/voices/NAME.wav HERE/NAME.wav`. Then one `TextToSpeech` call per narration line, with `output_path` `line-NN.wav` after the row's number and `voice_sample` `NAME.wav`. Without a sample, leave `voice_sample` out for the stock voice. The tool answers with the path and the length of the audio - copy each file into `HERE/work` and write the length next to its row. If you have no `TextToSpeech` tool, stop and say that the workspace needs its **Text to speech** switch on under Settings > Workspaces. The first call downloads the voice model and takes minutes.
+   Show the user the table, the length you expect and the length of the recording. **Stop until they approve or change it.** Nothing is built before that.
+4. **Voiceover.** One `TextToSpeech` call per narration line, with `output_path` `line-NN.wav` after the row's number, and `voice_sample` `voice.wav` when `HERE/voice.wav` exists. Without it, use the stock voice and tell the user at the end. The tool answers with the path and the length of the audio - copy each file into `HERE/work` and write the length next to its row. If you have no `TextToSpeech` tool, stop and say that the workspace needs its **Text to speech** switch on under Settings > Workspaces. The first call downloads the voice model and takes minutes.
 5. **Fit the plan to the voice.** A row lasts at least as long as its line plus half a second. For a beat that is too short, in this order: lower the speed of a timelapse, take more of the recording before or after it, shorten the line and generate it again. A card lasts its line plus one second, 3 seconds at least. Then write each row's start in the finished tutorial into the plan - each row starts where the row before it ends.
 6. **Cards.** Write the helper once:
 
