@@ -133,6 +133,7 @@ test("volumes need a name of their own, a claim and an absolute mount path", () 
   expect(volumesProblem([])).toBeNull();
   expect(volumesProblem([footage, { ...footage, name: "resolve", mount_path: "/opt/resolve" }])).toBeNull();
   expect(volumesProblem([{ ...footage, name: " " }])).toContain("volume 1 a name");
+  expect(volumesProblem([{ ...footage, name: "Footage" }])).toContain("lowercase");
   expect(volumesProblem([footage, { ...footage, mount_path: "/mnt/other" }])).toContain("named footage");
   expect(volumesProblem([{ ...footage, claim: "" }])).toContain("claim");
   expect(volumesProblem([{ ...footage, mount_path: "mnt/footage" }])).toContain("starts with /");
