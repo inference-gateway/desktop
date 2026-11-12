@@ -7,7 +7,10 @@ narration:
   - "The button now names plan mode."
   - "Ask for a file - in plan mode the agent submits a plan instead of writing it."
   - "The plan card offers Accept, Approve each step and Reject."
+  - "The card shows the plan itself for review."
+  - "Capture the plan card."
   - "Accept the plan - like the CLI, it runs in auto mode."
+  - "The card records the decision."
   - "The mode button follows the plan into auto mode."
   - "The plan runs without an approval card and planned.txt lands."
   - "The agent reports the plan is done."
@@ -17,7 +20,10 @@ steps:
   - wait_for: { button: "Plan mode - the agent plans before it changes anything", timeout: 15 }
   - send: "plan a file named planned.txt"
   - wait_for: { button: "Approve each step", timeout: 30 }
+  - wait_for: { text: "Write planned.txt with a greeting", timeout: 5 }
+  - screenshot: "plan-card"
   - click: { button: "Accept" }
+  - wait_for: { text: "Plan accepted - running in auto mode", timeout: 15 }
   - wait_for: { button: "Auto mode - tool actions run without asking", timeout: 15 }
   - wait_for: { file: "planned.txt", timeout: 30 }
   - wait_for: { text: "The plan is done.", timeout: 15 }
