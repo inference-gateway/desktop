@@ -1,48 +1,14 @@
 use crate::agent::infer::{run_infer_blocking, run_infer_in};
 use serde_json::Value;
 
-/// Config pointers into the full `infer config get` dump mapped to the CLI
-/// registry's tool names. Most tools live under `tools.<key>`, but the media
-/// tools are top-level sections the CLI registers on their own flag.
-/// ponytail: a new CLI tool needs an entry here - the dropdown derives from the
-/// effective config, while execution still validates enablement inside the CLI.
-const TOOLS: &[(&str, &str)] = &[
-    ("/tools/bash/enabled", "Bash"),
-    ("/tools/read/enabled", "Read"),
-    ("/tools/write/enabled", "Write"),
-    ("/tools/edit/enabled", "Edit"),
-    ("/tools/delete/enabled", "Delete"),
-    ("/tools/grep/enabled", "Grep"),
-    ("/tools/tree/enabled", "Tree"),
-    ("/tools/web_fetch/enabled", "WebFetch"),
-    ("/tools/web_search/enabled", "WebSearch"),
-    ("/tools/todo_write/enabled", "TodoWrite"),
-    ("/tools/image_generation/enabled", "ImageGeneration"),
-    ("/tools/image_edit/enabled", "ImageEdit"),
-    ("/tools/image_variation/enabled", "ImageVariation"),
-    ("/text_to_speech/enabled", "TextToSpeech"),
-    ("/text_to_video/enabled", "TextToVideo"),
-    ("/tools/computer/enabled", "Computer"),
-];
-
-/// Enabled tool names parsed from a `infer config get --format json` dump
-/// (effective config: built-in defaults + user/project yaml + INFER_* env),
-/// all gated by the `tools.enabled` master switch. Runs from the default agent
-/// cwd; a project-level tools override would need the cwd - ponytail: pass one
-/// through if that bites.
-pub(crate) fn enabled_tools_in(dump: &str) -> Vec<String> {
-    let Ok(value) = serde_json::from_str::<Value>(dump) else {
-        return Vec::new();
-    };
-    let flag = |pointer: &str| value.pointer(pointer).and_then(Value::as_bool) == Some(true);
-    if !flag("/tools/enabled") {
-        return Vec::new();
-    }
-    TOOLS
-        .iter()
-        .filter(|(pointer, _)| flag(pointer))
-        .map(|(_, name)| (*name).to_string())
-        .collect()
+/// The tools the agent can call, from an `infer tools list --format json`
+/// dump. The CLI's registry owns the list, so the desktop keeps no copy of it.
+/// Anything unparseable yields nothing.
+pub(crate) fn tool_names_in(dump: &str) -> Vec<String> {
+    serde_json::from_str::<Value>(dump)
+        .ok()
+        .and_then(|v| serde_json::from_value(v.get("tools")?.clone()).ok())
+        .unwrap_or_default()
 }
 
 /// Slash commands the composer offers, in display order. Everything else the
@@ -78,8 +44,8 @@ pub(crate) async fn list_shortcuts() -> Result<Vec<Shortcut>, String> {
 
 #[tauri::command]
 pub(crate) async fn list_tools() -> Result<Vec<String>, String> {
-    let dump = run_infer_in(None, &["config", "get", "--format", "json"]).await?;
-    Ok(enabled_tools_in(&dump))
+    let dump = run_infer_in(None, &["tools", "list", "--format", "json"]).await?;
+    Ok(tool_names_in(&dump))
 }
 
 /// `infer mcp status --format json`: the counts the status bar shows and the
@@ -212,41 +178,14 @@ mod tests {
     }
 
     #[test]
-    fn enabled_tools_respects_the_master_switch_and_per_tool_flags() {
-        let dump = r#"{
-            "tools": {
-                "enabled": true,
-                "safety": {"require_approval": true},
-                "bash": {"enabled": true, "mode": {"all": {"allow": ["ls"]}}},
-                "read": {"enabled": true},
-                "write": {"enabled": false},
-                "grep": {"backend": "auto"}
-            },
-            "text_to_speech": {"enabled": false}
-        }"#;
-        assert_eq!(enabled_tools_in(dump), vec!["Bash", "Read"]);
+    fn tool_names_read_the_cli_tool_list() {
+        let dump = r#"{"tools": ["Agent", "Bash", "Read"], "total": 3}"#;
+        assert_eq!(tool_names_in(dump), vec!["Agent", "Bash", "Read"]);
     }
 
     #[test]
-    fn enabled_tools_reads_top_level_media_sections() {
-        let dump = r#"{
-            "tools": {"enabled": true, "read": {"enabled": true}},
-            "text_to_speech": {"enabled": true},
-            "text_to_video": {"enabled": true}
-        }"#;
-        assert_eq!(
-            enabled_tools_in(dump),
-            vec!["Read", "TextToSpeech", "TextToVideo"]
-        );
-    }
-
-    #[test]
-    fn enabled_tools_empty_when_tools_disabled_or_dump_unparseable() {
-        let disabled = r#"{
-            "tools": {"enabled": false, "read": {"enabled": true}},
-            "text_to_speech": {"enabled": true}
-        }"#;
-        assert!(enabled_tools_in(disabled).is_empty());
-        assert!(enabled_tools_in("not json").is_empty());
+    fn tool_names_empty_when_dump_unparseable() {
+        assert!(tool_names_in("not json").is_empty());
+        assert!(tool_names_in(r#"{"total": 0}"#).is_empty());
     }
 }
