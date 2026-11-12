@@ -17,6 +17,7 @@ const BACKGROUND_JOBS_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Listing wakes a suspended workspace first.
 const ARTIFACTS_TIMEOUT: Duration = Duration::from_secs(120);
+const REWIND_TIMEOUT: Duration = Duration::from_secs(30);
 const ARTIFACT_TIMEOUT: Duration = Duration::from_secs(300);
 /// The daemon gives a workspace a minute to delete a session's machine.
 const STOP_TIMEOUT: Duration = Duration::from_secs(70);
@@ -130,6 +131,26 @@ fn parse_artifacts(frame: &Value) -> Option<Vec<Artifact>> {
         return None;
     }
     Some(serde_json::from_value(frame["artifacts"].clone()).unwrap_or_default())
+}
+
+/// One of the user's prompts as the worker finds it: by its text, and by which
+/// of the times the user sent that text it is, 1 being the last.
+#[derive(serde::Deserialize)]
+pub(crate) struct PromptRef {
+    text: String,
+    occurrence: u32,
+}
+
+/// Whether a `conversation_rewound` answer says the worker rewound, or why it
+/// left the conversation as it was.
+fn parse_rewound(frame: &Value) -> Option<Result<(), String>> {
+    if frame["type"] != "conversation_rewound" {
+        return None;
+    }
+    Some(match frame["error"].as_str() {
+        Some(error) if !error.is_empty() => Err(error.to_string()),
+        _ => Ok(()),
+    })
 }
 
 /// The background jobs a `tasks` answer lists, running and recently finished.
@@ -315,6 +336,36 @@ pub(crate) async fn list_artifacts(
     })
     .await
     .map_err(|e| format!("artifacts task failed: {e}"))?
+}
+
+/// Drops a prompt of the session's conversation and everything after it, as
+/// the CLI's message history does, so the prompt can be sent again. An infer
+/// from before the frame never answers.
+#[tauri::command]
+pub(crate) async fn rewind_conversation(
+    session_id: String,
+    project: Option<String>,
+    prompt: PromptRef,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let project_dir = crate::agent::thread_dir(project.as_deref());
+        let mut request = session_frame(
+            "rewind_conversation",
+            &session_id,
+            &project_dir.to_string_lossy(),
+        );
+        request["content"] = prompt.text.into();
+        request["occurrence"] = prompt.occurrence.into();
+        ask(
+            crate::daemon::binding,
+            request,
+            REWIND_TIMEOUT,
+            parse_rewound,
+        )
+        .map_err(|e| format!("the session's infer did not rewind the conversation: {e}"))?
+    })
+    .await
+    .map_err(|e| format!("rewind task failed: {e}"))?
 }
 
 /// A session's background jobs with what each printed so far, asked of the
@@ -516,6 +567,16 @@ mod tests {
 
     fn mock_answer(request: Value) -> Value {
         crate::daemon_mock::answer(&request).expect("the mock daemon answers this request")
+    }
+
+    #[test]
+    fn a_rewound_answer_says_it_rewound_or_why_it_was_refused() {
+        let rewound = json!({ "type": "conversation_rewound", "id": "s", "messages": [] });
+        assert_eq!(parse_rewound(&rewound), Some(Ok(())));
+        let refused =
+            json!({ "type": "conversation_rewound", "messages": null, "error": "no such prompt" });
+        assert_eq!(parse_rewound(&refused), Some(Err("no such prompt".into())));
+        assert_eq!(parse_rewound(&json!({ "type": "artifacts" })), None);
     }
 
     #[test]

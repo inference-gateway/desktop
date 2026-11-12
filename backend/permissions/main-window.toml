@@ -150,6 +150,7 @@ commands.allow = [
     "list_workspaces",
     "screen_frame",
     "list_artifacts",
+    "rewind_conversation",
     "list_background_jobs",
     "save_artifact",
     "read_artifact",

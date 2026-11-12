@@ -17,6 +17,7 @@ import {
   delegationsFrom,
   initialChatState,
   pendingInput,
+  promptRef,
   COMPUTER_USE_TOOLS,
   autoApproves,
   type ChatAction,
@@ -952,6 +953,31 @@ function useDesktopStore() {
     ],
   );
 
+  const resendingRef = useRef(false);
+  const resendPrompt = useCallback(
+    async (itemId: string) => {
+      const id = activeId;
+      if (!id || resendingRef.current || runningIds.has(id) || movingRef.current[id]) return;
+      const prompt = promptRef(transcriptsRef.current[id]?.items ?? [], itemId);
+      if (!prompt) return;
+      if (!model && !isBashCommand(prompt.text)) {
+        setError("Please select a model first");
+        return;
+      }
+      resendingRef.current = true;
+      try {
+        await api.rewindConversation(id, projects[id], prompt);
+        dispatchTo(id, { type: "rewind", itemId });
+        await sendPrompt(id, prompt.text, projects[id]);
+      } catch (err) {
+        setError(`Could not resend the prompt: ${err}`);
+      } finally {
+        resendingRef.current = false;
+      }
+    },
+    [activeId, runningIds, model, projects, sendPrompt, setError, dispatchTo],
+  );
+
   const send = useCallback(async () => {
     const el = composerRef.current;
     const text = el?.value.trim() ?? "";
@@ -1451,6 +1477,7 @@ function useDesktopStore() {
     bulkDelete,
     send,
     sendText,
+    resendPrompt,
     cancel,
     queuedPrompt,
     discardQueued,

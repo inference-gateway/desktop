@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Download, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, Download, Loader2, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
@@ -26,11 +26,25 @@ import {
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
-function UserBubble({ text }: { text: string }) {
+function UserBubble({ id, text }: { id: string; text: string }) {
+  const { running, resendPrompt } = useDesktop();
   return (
     <div className="flex max-w-[min(72ch,82%)] flex-col items-end gap-1 self-end">
       <div className={cn(BUBBLE, "rounded-br-[4px] bg-user text-user-foreground")}>{text}</div>
-      <CopyButton text={text} />
+      <div className="flex gap-1">
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="secondary"
+          disabled={running}
+          aria-label="Resend prompt"
+          title="Resend this prompt - everything after it is dropped"
+          onClick={() => void resendPrompt(id)}
+        >
+          <RotateCcw />
+        </Button>
+        <CopyButton text={text} />
+      </div>
     </div>
   );
 }
@@ -508,7 +522,7 @@ function Item({
 }) {
   switch (item.kind) {
     case "user":
-      return isBashCommand(item.text) ? null : <UserBubble text={item.text} />;
+      return isBashCommand(item.text) ? null : <UserBubble id={item.id} text={item.text} />;
     case "assistant":
       return <AssistantBubble chunks={item.chunks} />;
     case "reasoning":
