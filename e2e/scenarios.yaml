@@ -476,3 +476,12 @@ scenarios:
       - tool_calls:
           - { name: Computer, args: { action: screenshot } }
       - content: "Screenshot taken."
+
+  # A draft lands in the chat's artifacts for the user to review before the
+  # final export (used by artifacts-draft-review).
+  - name: draft-review
+    match: '(?i)export a draft for review'
+    turns:
+      - tool_calls:
+          - { name: Bash, args: { command: "mkdir -p ~/.infer/mock-artifacts && say -o ~/.infer/mock-artifacts/draft-v1.wav --file-format=WAVE --data-format=LEI16@22050 'Draft one'" } }
+      - content: "Draft v1 is in Artifacts. Does it work, or what should change?"

@@ -61,7 +61,7 @@
         "img-src": "'self' asset: http://asset.localhost data: blob: https: http:",
         "media-src": "'self' asset: http://asset.localhost data: blob:",
         "font-src": "'self' data:",
-        "connect-src": "'self' ipc: http://ipc.localhost asset: http://asset.localhost https: http://localhost:* http://127.0.0.1:*",
+        "connect-src": "'self' ipc: http://ipc.localhost asset: http://asset.localhost blob: https: http://localhost:* http://127.0.0.1:*",
         "object-src": "'none'",
         "base-uri": "'self'"
       },

@@ -1,0 +1,27 @@
+name: artifacts - a new draft lights up Artifacts and plays in the dialog
+narration:
+  - "Open a fresh chat."
+  - "Ask the agent for a draft to review."
+  - "Producing the draft asks for approval."
+  - "Approve it."
+  - "The agent says the draft is ready."
+  - "Artifacts lights up - there are files the chat has not looked at."
+  - "Open the chat's artifacts."
+  - "The draft is listed."
+  - "Preview it."
+  - "A player opens in the dialog."
+  - "Play it."
+  - "It plays."
+steps:
+  - new_chat
+  - send: "export a draft for review"
+  - wait_for: { button: "Approve", timeout: 15 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Draft v1 is in Artifacts", timeout: 30 }
+  - wait_for: { text: "new artifact", timeout: 15 }
+  - click: { button: "Artifacts" }
+  - wait_for: { button: "Preview draft-v1.wav", timeout: 10 }
+  - click: { button: "Preview draft-v1.wav" }
+  - wait_for: { button: "Play draft-v1.wav", timeout: 10 }
+  - click: { button: "Play draft-v1.wav" }
+  - wait_for: { button: "Pause draft-v1.wav", timeout: 10 }

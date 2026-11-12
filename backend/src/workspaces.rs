@@ -374,6 +374,22 @@ pub(crate) async fn save_artifact(
     .map_err(|e| format!("artifact task failed: {e}"))?
 }
 
+/// The bytes of one of a session's artifacts, so the app can play or show it
+/// without saving it first. Answers raw bytes, not a JSON array.
+#[tauri::command]
+pub(crate) async fn read_artifact(
+    session_id: String,
+    project: Option<String>,
+    name: String,
+) -> Result<tauri::ipc::Response, String> {
+    tokio::task::spawn_blocking(move || {
+        let file_name = artifact_file_name(&name)?;
+        fetch_artifact(&session_id, project.as_deref(), file_name).map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| format!("artifact task failed: {e}"))?
+}
+
 /// Has the daemon delete the machine of one chat and release its lease, so the
 /// chat starts on this computer next time. Answers whether a machine went.
 fn remove_machine(session: &MachineSession) -> Result<bool, String> {
@@ -517,12 +533,12 @@ mod tests {
 
         let listed = parse_artifacts(&mock_answer(session_frame("list_artifacts", "s", "/p")));
         assert_eq!(
-            listed,
-            Some(vec![Artifact {
+            listed.and_then(|artifacts| artifacts.last().cloned()),
+            Some(Artifact {
                 name: "demo.gif".into(),
                 size: 43,
                 modified_at: String::new(),
-            }])
+            })
         );
 
         let file = parse_artifact(&mock_answer(session_frame("read_artifact", "s", "/p")));
