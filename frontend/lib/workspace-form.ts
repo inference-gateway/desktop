@@ -83,6 +83,7 @@ export function runsInCluster(draft: Pick<WorkspaceConfig, "compute" | "kind">):
 export const LOCAL_CLUSTER = "infer-k3s";
 
 export const EMPTY_VOLUME: WorkspaceVolume = { name: "", claim: "", mount_path: "", read_only: false };
+const VOLUME_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 /** How a cloud-init user-data script starts - the one user-data format a workspace runs. */
 const USER_DATA_SCRIPT_PREFIX = "#!";
@@ -142,6 +143,7 @@ export function volumesProblem(volumes: WorkspaceVolume[]): string | null {
   for (const [index, volume] of volumes.entries()) {
     const name = names[index];
     if (!name) return `Give volume ${index + 1} a name.`;
+    if (!VOLUME_NAME.test(name)) return `Name volume ${index + 1} with lowercase letters, digits or dashes.`;
     if (names.indexOf(name) !== index) return `Two volumes are named ${name} - give each its own name.`;
     if (!volume.claim.trim()) return `Name the claim volume ${name} mounts.`;
     if (!volume.mount_path.trim().startsWith("/")) return `Give volume ${name} a mount path that starts with /.`;
