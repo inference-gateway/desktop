@@ -304,6 +304,7 @@ pub fn run() {
             workspaces::list_artifacts,
             workspaces::list_background_jobs,
             workspaces::save_artifact,
+            workspaces::read_artifact,
             workspaces::clean_machines,
             workspaces::delete_machine,
             workspaces::screen_control,

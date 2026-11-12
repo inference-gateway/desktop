@@ -48,7 +48,16 @@ Open the **Agents** filter, select `drone-editor` so the composer reads **Messag
 Make a 40 second clip from the footage in all four shapes.
 ```
 
-Open **Computers** in the top bar to watch. The agent opens FilmCraft on its computer and sends every edit to that window, so the timeline, the grade and the exports appear there as it works. When it reports, open **Artifacts** and press **Save artifact** on the exports you want.
+Open **Computers** in the top bar to watch. The agent opens FilmCraft on its computer and sends every edit to that window, so the timeline, the grade and the exports appear there as it works.
+
+Before the expensive exports it stops on a low-bitrate draft. **Artifacts** in the status bar lights up when `draft-v1.mp4` arrives - open it and press **Preview** to watch the draft with its sound in the app. Approve it, or say what to change:
+
+```text
+The wind on the second shot is too loud.
+Make the effect on the dive softer and shorter.
+```
+
+Each round leaves a new draft, `draft-v2.mp4` and so on, and a regenerated effect keeps the earlier one as `sfx-2-v1.mp3` next to `sfx-2-v2.mp3`, so you can ask for an earlier version back. Once you approve, the agent exports every shape. When it reports, open **Artifacts** and press **Save artifact** on the exports you want.
 
 Ask for less, or for something else, in the same sentence:
 

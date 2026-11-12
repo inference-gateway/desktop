@@ -645,6 +645,8 @@ export const api = {
     invoke<BackgroundJob[]>("list_background_jobs", { sessionId, project }),
   saveArtifact: (sessionId: string, project: string | undefined, name: string) =>
     invoke<string>("save_artifact", { sessionId, project, name }),
+  readArtifact: (sessionId: string, project: string | undefined, name: string) =>
+    invoke<ArrayBuffer>("read_artifact", { sessionId, project, name }),
   cleanMachines: (sessions: { id: string; project?: string }[]) => invoke<number>("clean_machines", { sessions }),
   deleteMachine: (session: { id: string; project?: string }) => invoke<boolean>("delete_machine", { session }),
   screenFrame: (sessionId: string, project?: string, have?: string) =>

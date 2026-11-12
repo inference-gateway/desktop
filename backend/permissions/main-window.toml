@@ -151,6 +151,7 @@ commands.allow = [
     "list_artifacts",
     "list_background_jobs",
     "save_artifact",
+    "read_artifact",
     "clean_machines",
     "delete_machine",
     "screen_control",
