@@ -1,0 +1,25 @@
+version: '3'
+
+vars:
+  INFER_DIR: '{{.HOME}}/.infer'
+  WORKSPACE: ubuntu-desktop
+
+tasks:
+  up:
+    desc: Copy the feature-editor agent into ~/.infer/agents. The agent downloads FilmCraft, Node and its browser itself
+    cmds:
+      - task: agent:install
+
+  agent:install:
+    desc: Copy the feature-editor agent into ~/.infer/agents, refusing to overwrite an agent of your own
+    preconditions:
+      - sh: '[ ! -e {{.INFER_DIR}}/agents/feature-editor.md ] || grep -q "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/feature-editor.md'
+        msg: ~/.infer/agents already holds a feature-editor agent of your own - move it aside first
+    cmds:
+      - mkdir -p {{.INFER_DIR}}/agents
+      - cp agents/feature-editor.md {{.INFER_DIR}}/agents/feature-editor.md
+
+  down:
+    desc: Take the agent back out of ~/.infer - the footage folder is never touched
+    cmds:
+      - '! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/feature-editor.md || rm {{.INFER_DIR}}/agents/feature-editor.md'
