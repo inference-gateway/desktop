@@ -6,36 +6,17 @@ vars:
     sh: uname -m | sed 's/arm64/aarch64/'
   GYROFLOW_PACKAGE: Gyroflow-linux-arm64.tar.gz
   LUT: dji-avata-2-dlog-m-to-rec709.cube
-  LUT_URL: https://terra-1-g.djicdn.com/851d20f7b9f64838a34cd02351370894/avata2%20d-log/DJI%20Avata%202%20D-Log%20M%20to%20Rec.709%20V1._.cube
-  LUT_SHA256: b18162854ab47702068410c33afa98a8cb6eef159fc5a04ce0e65fad0fd8947e
   TOOLS: '{{.HOME}}/drone-tools'
   INFER_DIR: '{{.HOME}}/.infer'
   WORKSPACE: ubuntu-desktop
 
 tasks:
   up:
-    desc: Everything the app needs from outside it - FilmCraft, Gyroflow and DJI's LUT in a folder to share, and the drone-editor agent
+    desc: Everything the app needs from outside it - Gyroflow in a folder to share, and the drone-editor agent. The agent downloads FilmCraft and DJI's LUT itself
     cmds:
       - mkdir -p {{.TOOLS}}
-      - task: filmcraft
       - task: gyroflow
-      - task: lut
       - task: agent:install
-
-  filmcraft:
-    desc: Download the latest FilmCraft Linux package for this computer's architecture, checked against the release's checksums, in place of an older one
-    dir: '{{.TOOLS}}'
-    vars:
-      FILMCRAFT_VERSION:
-        sh: curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/storytold/filmcraft/releases/latest | sed 's|.*/tag/v||'
-      FILMCRAFT_PACKAGE: filmcraft-{{.FILMCRAFT_VERSION}}-linux-{{.ARCH}}.deb
-      FILMCRAFT_RELEASE: https://github.com/storytold/filmcraft/releases/download/v{{.FILMCRAFT_VERSION}}
-    cmds:
-      - curl -fsSLO {{.FILMCRAFT_RELEASE}}/{{.FILMCRAFT_PACKAGE}}
-      - curl -fsSL {{.FILMCRAFT_RELEASE}}/SHA256SUMS.txt | grep ' {{.FILMCRAFT_PACKAGE}}$' | shasum -a 256 -c -
-      - find . -maxdepth 1 -name 'filmcraft-*.deb' ! -name '{{.FILMCRAFT_PACKAGE}}' -delete
-    status:
-      - test -f {{.FILMCRAFT_PACKAGE}}
 
   gyroflow:
     desc: Build Gyroflow for arm64 Linux from source in Docker - Gyroflow publishes no build for it
@@ -46,15 +27,6 @@ tasks:
       - docker build --build-arg VERSION={{.GYROFLOW_VERSION}} --output type=local,dest={{.TOOLS}} gyroflow
     status:
       - test -f {{.TOOLS}}/{{.GYROFLOW_PACKAGE}}
-
-  lut:
-    desc: Download DJI's D-Log M to Rec.709 LUT for the Avata 2, checked against the checksum of the file the example was run with
-    dir: '{{.TOOLS}}'
-    cmds:
-      - curl -fsSL -o {{.LUT}} '{{.LUT_URL}}'
-      - echo '{{.LUT_SHA256}}  {{.LUT}}' | shasum -a 256 -c -
-    status:
-      - test -f {{.LUT}}
 
   agent:install:
     desc: Copy the drone-editor agent into ~/.infer/agents, refusing to overwrite an agent of your own

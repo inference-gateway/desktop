@@ -25,10 +25,12 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 ## Set up
 
 ```bash
-task up     # FilmCraft, Gyroflow and DJI's LUT in ~/drone-tools, the drone-editor agent in ~/.infer/agents
+task up     # Gyroflow in ~/drone-tools, the drone-editor agent in ~/.infer/agents
 ```
 
-`task up` downloads FilmCraft's latest package for this computer's architecture and checks it against the release's checksums - run it again when FilmCraft offers an update, and it replaces the older package. It also downloads DJI's LUT and checks it against the checksum of the file the example was run with. Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker, which takes about ten minutes the first time. That makes the example arm64-only for now.
+Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker, which takes about ten minutes the first time. That makes the example arm64-only for now.
+
+FilmCraft and DJI's LUT need no setup. The agent downloads FilmCraft's latest package and the LUT on its computer the first time it works there, checks each against its checksum and keeps them, so a computer stays on the FilmCraft it started with. To move one to a newer FilmCraft, ask the agent to remove its `filmcraft` folder - it downloads the latest on its next start.
 
 Put your footage in a folder of its own, for example `~/footage`. Then in the app:
 
