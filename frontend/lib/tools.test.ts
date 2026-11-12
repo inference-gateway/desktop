@@ -83,7 +83,8 @@ test("safeAudioSrc allows tts and samples wavs, rejects others, non-wav files, a
     expect(safeAudioSrc("/Users/x/.infer/tmp/media/tts/speech-1.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/tmp/tts/speech-1.wav")).not.toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/projects/-Users-x-proj/tmp/media/tts/speech-1.wav")).not.toBeNull();
-    expect(safeAudioSrc("/Users/x/.infer/models/tts/samples/me.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/voice/samples/me.wav")).not.toBeNull();
+    expect(safeAudioSrc("/Users/x/.infer/models/tts/samples/me.wav")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/uploads/me.wav")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/tmp/out.wav")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/projects/-Users-x-proj/tmp/media/voice/infer-voice-1.wav")).toBeNull();

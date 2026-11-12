@@ -24,11 +24,11 @@ const SAFE_IMAGE_PATH =
 
 // infer's TextToSpeech writes WAVs to tmp/media/tts (tmp/tts before the media
 // root) under ~/.infer or a project's ~/.infer/projects/<slug>, and voice samples
-// live in ~/.infer/models/tts/samples. All are in the asset protocol scope
+// live in ~/.infer/voice/samples. All are in the asset protocol scope
 // (tauri.conf.json). ponytail: a custom text_to_speech.output_dir outside these
 // dirs falls back to the plain tool card.
 const SAFE_AUDIO_PATH =
-  /\.infer\/(?:(?:projects\/(?!\.\.\/)[^/\0]+\/)?tmp\/(?:media\/)?tts|models\/tts\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
+  /\.infer\/(?:(?:projects\/(?!\.\.\/)[^/\0]+\/)?tmp\/(?:media\/)?tts|voice\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
 
 export function prettyJson(str: string): string {
   try {

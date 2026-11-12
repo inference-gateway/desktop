@@ -55,11 +55,11 @@ pub(crate) fn safe_audio_source(path: &str, home: &Path) -> Result<PathBuf, Stri
     let ok = p.starts_with(home)
         && !p.components().any(|c| c == Component::ParentDir)
         && (in_infer_runtime_dir(path, &["tmp/media/tts", "tmp/tts"])
-            || path.contains("/.infer/models/tts/samples/"))
+            || path.contains("/.infer/voice/samples/"))
         && path.to_ascii_lowercase().ends_with(".wav");
     if !ok {
         return Err(format!(
-            "Refusing to save audio outside the .infer tts or models/tts/samples dirs: {path}"
+            "Refusing to save audio outside the .infer tts or voice/samples dirs: {path}"
         ));
     }
     Ok(p.to_path_buf())
@@ -161,7 +161,7 @@ mod tests {
         for ok in [
             "/Users/x/.infer/tmp/media/tts/speech-1.wav",
             "/Users/x/.infer/projects/-Users-x-proj/tmp/media/tts/speech-1.wav",
-            "/Users/x/.infer/models/tts/samples/me.wav",
+            "/Users/x/.infer/voice/samples/me.wav",
         ] {
             assert!(safe_audio_source(ok, home).is_ok(), "{ok}");
         }
