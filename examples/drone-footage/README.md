@@ -2,7 +2,7 @@
 
 One `drone-editor` agent turns raw drone footage into a finished clip on a computer of its own, and you only download the result.
 
-Ask it for "a 40 second clip" and it reads the footage from a read-only folder, finds the stretches with movement, stabilises them with [Gyroflow](https://github.com/gyroflow/gyroflow), builds and grades the edit in [FilmCraft](https://github.com/storytold/filmcraft) starting from DJI's own LUT, generates sound effects and then music with ElevenLabs, and exports the edit once per platform shape. The exports show up under the chat's **Artifacts** menu, where **Save artifact** puts one in Downloads.
+Ask it for "a 40 second clip" and it reads the footage from a read-only folder, finds the stretches with movement, stabilises them with [Gyroflow](https://github.com/gyroflow/gyroflow), builds the edit in [FilmCraft](https://github.com/storytold/filmcraft), puts DJI's own LUT on the clips whose file names end in `_D` or wherever you ask for it, generates sound effects and then music with ElevenLabs, and exports the edit once per platform shape. The exports show up under the chat's **Artifacts** menu, where **Save artifact** puts one in Downloads.
 
 It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a folder shared with the local cluster, plus the three things that example leaves out - content the agent works on, a secret, and a deliverable.
 
