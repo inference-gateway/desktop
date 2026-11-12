@@ -16,7 +16,7 @@ pub(crate) struct Capability {
 
 /// A workspace's computer is a pod of its own, not the user's machine, so what
 /// it is given runs without asking.
-pub(crate) const CAPABILITIES: [Capability; 3] = [
+pub(crate) const CAPABILITIES: [Capability; 4] = [
     Capability {
         id: "computer-use",
         label: "Computer use",
@@ -48,6 +48,18 @@ pub(crate) const CAPABILITIES: [Capability; 3] = [
         ],
         user_data: "",
     },
+    Capability {
+        id: "text-to-speech",
+        label: "Text to speech",
+        hint: "The agent speaks text with TextToSpeech. The computer downloads the voice model, about 1.4 GB, on first use.",
+        env: &[
+            ("INFER_TEXT_TO_SPEECH_ENABLED", "true"),
+            ("INFER_TEXT_TO_SPEECH_ENGINE", "qwen3-tts"),
+            ("INFER_TEXT_TO_SPEECH_REQUIRE_APPROVAL", "false"),
+            ("INFER_TEXT_TO_SPEECH_TIMEOUT", "900"),
+        ],
+        user_data: "",
+    },
 ];
 
 /// The capabilities the workspace form offers as switches.
@@ -70,6 +82,24 @@ mod tests {
             .flat_map(|c| c.env.iter().map(|(name, _)| *name))
             .collect();
         assert_eq!(names.iter().collect::<BTreeSet<_>>().len(), names.len());
+    }
+
+    #[test]
+    fn text_to_speech_runs_the_voice_model_on_the_computer() {
+        let speech = CAPABILITIES
+            .iter()
+            .find(|c| c.id == "text-to-speech")
+            .unwrap();
+        assert!(
+            speech
+                .env
+                .contains(&("INFER_TEXT_TO_SPEECH_ENABLED", "true"))
+        );
+        assert!(
+            speech
+                .env
+                .contains(&("INFER_TEXT_TO_SPEECH_ENGINE", "qwen3-tts"))
+        );
     }
 
     #[test]
