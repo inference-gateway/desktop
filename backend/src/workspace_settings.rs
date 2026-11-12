@@ -113,6 +113,9 @@ pub(crate) struct WorkspaceConfig {
     retention: String,
     gateway_env: Vec<String>,
     forward_env: Vec<String>,
+    /// Whether a teleport carries this machine's voice samples to the
+    /// workspace's computers.
+    forward_voice_samples: bool,
     env: BTreeMap<String, String>,
     /// The cloud-init script the pod runs as root when it boots.
     user_data: String,
@@ -274,6 +277,8 @@ fn config_of(entry: &Value, clusters: &[ClusterConfig]) -> Option<WorkspaceConfi
         retention: text(entry, "retention"),
         gateway_env: names(entry, "gateway_env"),
         forward_env: names(entry, "forward_env"),
+        forward_voice_samples: entry.get("forward_voice_samples").and_then(Value::as_bool)
+            == Some(true),
         env: environment(entry),
         user_data: text(entry, "user_data"),
         volumes: volumes_of(entry),
@@ -367,6 +372,11 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
     set_or_remove(entry, "retention", filled(&config.retention));
     set_or_remove(entry, "gateway_env", listed(&config.gateway_env));
     set_or_remove(entry, "forward_env", listed(&config.forward_env));
+    set_or_remove(
+        entry,
+        "forward_voice_samples",
+        config.forward_voice_samples.then(|| true.into()),
+    );
     set_or_remove(entry, "env", mapped(&config.env));
     set_or_remove(entry, "user_data", filled(&config.user_data));
     set_or_remove(entry, "volumes", listed_volumes(&config.volumes));
@@ -817,6 +827,9 @@ fn local_workspace() -> WorkspaceConfig {
             .iter()
             .map(|capability| capability.user_data)
             .collect(),
+        forward_voice_samples: capabilities
+            .iter()
+            .any(|capability| capability.forward_voice_samples),
         ..WorkspaceConfig::default()
     }
 }
@@ -1371,6 +1384,22 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_forwards_the_voice_samples_only_while_it_says_so() {
+        let forwarding = WorkspaceConfig {
+            forward_voice_samples: true,
+            ..kubernetes("studio")
+        };
+        let written = merge_workspace(None, &forwarding, None).unwrap();
+        assert!(written.contains("forward_voice_samples: true"));
+        assert!(parse_configs(Some(&written), &[])[0].forward_voice_samples);
+
+        let stopped =
+            merge_workspace(Some(&written), &kubernetes("studio"), Some("studio")).unwrap();
+        assert!(!stopped.contains("forward_voice_samples"));
+        assert!(!parse_configs(Some(&stopped), &[])[0].forward_voice_samples);
+    }
+
+    #[test]
     fn a_workspace_opts_out_of_the_gpu_by_asking_for_none_and_its_other_amounts_stay() {
         let daemon = "workspaces:\n  - name: studio\n    compute: infer-k3s\n    resources:\n      limits:\n        memory: 8Gi\n";
         let studio = parse_configs(Some(daemon), &[]).remove(0);
@@ -1625,6 +1654,11 @@ mod tests {
             "true"
         );
         assert_eq!(workspace.env["INFER_TOOLS_BASH_ALLOW_APPEND"], ".*");
+        assert_eq!(
+            workspace.env["INFER_TEXT_TO_SPEECH_MODEL"],
+            "local/qwen3-tts"
+        );
+        assert!(workspace.forward_voice_samples);
     }
 
     #[test]

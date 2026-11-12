@@ -170,6 +170,8 @@ export type WorkspaceConfig = {
   retention: string;
   gateway_env: string[];
   forward_env: string[];
+  /** Whether a teleport carries this machine's voice samples to the workspace's computers. */
+  forward_voice_samples: boolean;
   env: Record<string, string>;
   /** The cloud-init script the pod runs as root when it boots, before the agent starts. */
   user_data: string;
@@ -210,7 +212,15 @@ export type ClusterFolder = { name: string; path: string; read_only: boolean };
 export type WorkspaceVolume = { name: string; claim: string; mount_path: string; read_only: boolean };
 /** Something a workspace's agents may do on its computers. A workspace has it when its environment holds every
  * entry of `env` and its user data holds `user_data`. */
-export type Capability = { id: string; label: string; hint: string; env: [string, string][]; user_data: string };
+export type Capability = {
+  id: string;
+  label: string;
+  hint: string;
+  env: [string, string][];
+  user_data: string;
+  /** Whether the capability needs the user's voice samples on the computer. */
+  forward_voice_samples: boolean;
+};
 export type Workspace = { name: string; kind: string; reachable: boolean; error: string | null };
 /** A cluster of ~/.infer/compute.yaml as the Compute tab edits it. Every workspace on it shares its namespace and
  * gateway. */

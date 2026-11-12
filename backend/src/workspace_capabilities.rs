@@ -12,6 +12,9 @@ pub(crate) struct Capability {
     hint: &'static str,
     pub(crate) env: &'static [(&'static str, &'static str)],
     pub(crate) user_data: &'static str,
+    /// Whether the capability needs the user's voice samples on the computer,
+    /// which a teleport then carries there.
+    pub(crate) forward_voice_samples: bool,
 }
 
 /// A workspace's computer is a pod of its own, not the user's machine, so what
@@ -26,6 +29,7 @@ pub(crate) const CAPABILITIES: [Capability; 4] = [
             ("INFER_COMPUTER_USE_APPROVAL", "never"),
         ],
         user_data: "",
+        forward_voice_samples: false,
     },
     Capability {
         id: "browser-use",
@@ -33,6 +37,7 @@ pub(crate) const CAPABILITIES: [Capability; 4] = [
         hint: "The computer installs Firefox with the opentask extension when it boots. Needs an Ubuntu or Debian image.",
         env: &[],
         user_data: BROWSER_USER_DATA,
+        forward_voice_samples: false,
     },
     Capability {
         id: "recording",
@@ -47,18 +52,19 @@ pub(crate) const CAPABILITIES: [Capability; 4] = [
             ),
         ],
         user_data: "",
+        forward_voice_samples: false,
     },
     Capability {
         id: "text-to-speech",
         label: "Text to speech",
-        hint: "The agent speaks text with TextToSpeech. The computer downloads the voice model, about 1.4 GB, on first use.",
+        hint: "The agent speaks text with TextToSpeech, in your voice samples too. The workspace's gateway runs the voice model and downloads it, about 1.4 GB, when it starts.",
         env: &[
             ("INFER_TEXT_TO_SPEECH_ENABLED", "true"),
-            ("INFER_TEXT_TO_SPEECH_ENGINE", "qwen3-tts"),
+            ("INFER_TEXT_TO_SPEECH_MODEL", "local/qwen3-tts"),
             ("INFER_TEXT_TO_SPEECH_REQUIRE_APPROVAL", "false"),
-            ("INFER_TEXT_TO_SPEECH_TIMEOUT", "900"),
         ],
         user_data: "",
+        forward_voice_samples: true,
     },
 ];
 
@@ -85,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn text_to_speech_runs_the_voice_model_on_the_computer() {
+    fn text_to_speech_speaks_through_the_gateway_and_brings_the_voice_samples() {
         let speech = CAPABILITIES
             .iter()
             .find(|c| c.id == "text-to-speech")
@@ -98,7 +104,21 @@ mod tests {
         assert!(
             speech
                 .env
-                .contains(&("INFER_TEXT_TO_SPEECH_ENGINE", "qwen3-tts"))
+                .contains(&("INFER_TEXT_TO_SPEECH_MODEL", "local/qwen3-tts"))
+        );
+        assert!(
+            speech
+                .env
+                .iter()
+                .all(|(name, _)| *name != "INFER_TEXT_TO_SPEECH_ENGINE")
+        );
+        assert!(speech.forward_voice_samples);
+        assert!(
+            CAPABILITIES
+                .iter()
+                .filter(|c| c.forward_voice_samples)
+                .count()
+                == 1
         );
     }
 
