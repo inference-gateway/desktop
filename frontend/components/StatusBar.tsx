@@ -139,126 +139,136 @@ export function StatusBar() {
   return (
     <div
       id="status-bar"
-      className="mx-auto mb-[0.45rem] flex max-w-[52rem] items-center gap-[0.4rem] px-1 text-[0.72rem] font-medium"
+      className="mx-auto mb-[0.45rem] flex max-w-[52rem] flex-col gap-0.5 px-1 text-[0.72rem] font-medium"
     >
-      <div ref={dropdownRef} className="relative" role="status" aria-live="polite">
-        {label && (
-          <button
-            aria-expanded={open}
-            aria-haspopup="menu"
-            aria-label="Agent status"
-            onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-[0.4rem] rounded px-1 py-0.5 hover:bg-secondary"
-          >
-            <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[tone])} />
-            <span className={isError ? "text-err" : "text-muted-foreground"}>{label}</span>
-            {statusError && (
-              <span
-                role="button"
-                aria-label="Dismiss error"
-                title="Dismiss"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearError();
-                }}
-                className="ml-1 rounded px-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                ×
-              </span>
-            )}
-            {runningCount > 0 && (
-              <span
-                title={`${runningCount} orchestrator${runningCount === 1 ? "" : "s"} running`}
-                className="min-w-[1.1rem] rounded-full bg-primary/15 px-1 text-center text-[0.65rem] font-semibold text-primary"
-              >
-                {runningCount}
-              </span>
-            )}
-          </button>
-        )}
-        {open && (
-          <div
-            role="menu"
-            aria-label="Agents"
-            className="absolute bottom-full left-0 z-50 mb-1 min-w-[18rem] max-w-[26rem] rounded-md border border-border bg-popover p-1 shadow-md"
-          >
-            {agents.length === 0 && <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>}
-            {agents.map((a) => (
-              <Fragment key={a.id}>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    openConversation(a.id);
+      <div className="flex items-center gap-[0.4rem]">
+        <div ref={dropdownRef} className="relative min-w-0" role="status" aria-live="polite">
+          {label && (
+            <button
+              aria-expanded={open}
+              aria-haspopup="menu"
+              aria-label="Agent status"
+              onClick={() => setOpen((v) => !v)}
+              className="flex max-w-full items-center gap-[0.4rem] whitespace-nowrap rounded px-1 py-0.5 hover:bg-secondary"
+            >
+              <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[tone])} />
+              <span className={cn("truncate", isError ? "text-err" : "text-muted-foreground")}>{label}</span>
+              {statusError && (
+                <span
+                  role="button"
+                  aria-label="Dismiss error"
+                  title="Dismiss"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearError();
                   }}
-                  className={cn(
-                    "flex w-full items-center gap-[0.4rem] rounded px-2 py-1.5 text-left hover:bg-secondary",
-                    a.id === sessionId && "bg-secondary/60",
-                  )}
+                  className="ml-1 rounded px-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
                 >
-                  <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[a.tone])} />
-                  <span className="truncate text-foreground">{a.title}</span>
-                  <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground/60">{a.id.slice(0, 5)}</span>
-                  <span className={cn("ml-auto shrink-0 pl-3", a.status.error ? "text-err" : "text-muted-foreground")}>
-                    {a.status.label}
-                  </span>
-                </button>
-                {a.delegations.map((d) => (
+                  ×
+                </span>
+              )}
+              {runningCount > 0 && (
+                <span
+                  title={`${runningCount} orchestrator${runningCount === 1 ? "" : "s"} running`}
+                  className="min-w-[1.1rem] rounded-full bg-primary/15 px-1 text-center text-[0.65rem] font-semibold text-primary"
+                >
+                  {runningCount}
+                </span>
+              )}
+            </button>
+          )}
+          {open && (
+            <div
+              role="menu"
+              aria-label="Agents"
+              className="absolute bottom-full left-0 z-50 mb-1 min-w-[18rem] max-w-[26rem] rounded-md border border-border bg-popover p-1 shadow-md"
+            >
+              {agents.length === 0 && <div className="px-2 py-1.5 text-muted-foreground">No orchestrators running</div>}
+              {agents.map((a) => (
+                <Fragment key={a.id}>
                   <button
-                    key={d.id}
                     role="menuitem"
-                    aria-label={
-                      d.kind === "shell" ? `View shell ${d.label}` : `${BADGE[d.kind]} ${d.label} under ${a.title}`
-                    }
                     onClick={() => {
                       setOpen(false);
-                      if (d.kind === "shell") {
-                        setViewedShell({ sessionId: a.id, project: projects[a.id], jobId: d.id.slice("job:".length) });
-                        return;
-                      }
-                      openConversation(delegationSessionId(a.id, d, conversations) ?? a.id);
+                      openConversation(a.id);
                     }}
-                    className="flex w-full items-center gap-[0.4rem] rounded py-1 pl-6 pr-2 text-left hover:bg-secondary"
+                    className={cn(
+                      "flex w-full items-center gap-[0.4rem] rounded px-2 py-1.5 text-left hover:bg-secondary",
+                      a.id === sessionId && "bg-secondary/60",
+                    )}
                   >
-                    <span className={cn("h-[0.35rem] w-[0.35rem] shrink-0 rounded-full", DOT.running)} />
-                    <span className="truncate text-muted-foreground">{d.label}</span>
-                    <span className="ml-auto shrink-0 rounded-full bg-secondary px-1.5 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                      {BADGE[d.kind]}
+                    <span className={cn("h-[0.45rem] w-[0.45rem] shrink-0 rounded-full", DOT[a.tone])} />
+                    <span className="truncate text-foreground">{a.title}</span>
+                    <span className="shrink-0 font-mono text-[0.68rem] text-muted-foreground/60">
+                      {a.id.slice(0, 5)}
+                    </span>
+                    <span
+                      className={cn("ml-auto shrink-0 pl-3", a.status.error ? "text-err" : "text-muted-foreground")}
+                    >
+                      {a.status.label}
                     </span>
                   </button>
-                ))}
-              </Fragment>
-            ))}
-          </div>
-        )}
+                  {a.delegations.map((d) => (
+                    <button
+                      key={d.id}
+                      role="menuitem"
+                      aria-label={
+                        d.kind === "shell" ? `View shell ${d.label}` : `${BADGE[d.kind]} ${d.label} under ${a.title}`
+                      }
+                      onClick={() => {
+                        setOpen(false);
+                        if (d.kind === "shell") {
+                          setViewedShell({
+                            sessionId: a.id,
+                            project: projects[a.id],
+                            jobId: d.id.slice("job:".length),
+                          });
+                          return;
+                        }
+                        openConversation(delegationSessionId(a.id, d, conversations) ?? a.id);
+                      }}
+                      className="flex w-full items-center gap-[0.4rem] rounded py-1 pl-6 pr-2 text-left hover:bg-secondary"
+                    >
+                      <span className={cn("h-[0.35rem] w-[0.35rem] shrink-0 rounded-full", DOT.running)} />
+                      <span className="truncate text-muted-foreground">{d.label}</span>
+                      <span className="ml-auto shrink-0 rounded-full bg-secondary px-1.5 text-[0.6rem] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                        {BADGE[d.kind]}
+                      </span>
+                    </button>
+                  ))}
+                </Fragment>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1">
+          <BrowserBridgeDot />
+          <ArtifactsButton />
+          <button
+            aria-label={autoModeDescription}
+            aria-pressed={autoMode}
+            title={`${autoModeDescription} (Shift+Tab in composer)`}
+            onClick={() => setAutoMode(!autoMode)}
+            className={cn(
+              "inline-flex size-7 items-center justify-center rounded-full",
+              autoMode
+                ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            )}
+          >
+            <Zap size={16} aria-hidden="true" />
+          </button>
+        </span>
       </div>
-      <span className="flex items-center gap-1 text-muted-foreground">
+      <span className="flex flex-wrap items-center gap-x-1 px-1 tabular-nums text-muted-foreground">
         {stats.map(([name, n], i) => (
           <Fragment key={name}>
             {i > 0 && <span className="opacity-40">&middot;</span>}
-            <span>
+            <span className="whitespace-nowrap">
               {name}: {n}
             </span>
           </Fragment>
         ))}
-      </span>
-      <span className="ml-auto inline-flex items-center gap-1">
-        <BrowserBridgeDot />
-        <ArtifactsButton />
-        <button
-          aria-label={autoModeDescription}
-          aria-pressed={autoMode}
-          title={`${autoModeDescription} (Shift+Tab in composer)`}
-          onClick={() => setAutoMode(!autoMode)}
-          className={cn(
-            "inline-flex size-7 items-center justify-center rounded-full",
-            autoMode
-              ? "bg-primary text-primary-foreground hover:bg-primary-hover"
-              : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-          )}
-        >
-          <Zap size={16} aria-hidden="true" />
-        </button>
       </span>
       <ShellOutputDialog shell={viewedShell} onClose={() => setViewedShell(null)} />
     </div>
