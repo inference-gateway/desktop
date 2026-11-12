@@ -318,6 +318,21 @@ test("skipping a question and expiring it on run end", () => {
   expect(s.items[0]).toMatchObject({ kind: "question", status: "expired" });
 });
 
+test("a plan waits for its decision, records it once and expires on run end", () => {
+  let s = run([
+    { type: "userSend", text: "plan it" },
+    ev({ kind: "PlanApprovalRequest", plan_id: "p1", plan: "## Changes" }),
+  ]);
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "pending", planId: "p1", plan: "## Changes" });
+  expect(pendingInput(s.items)).toBe("plan");
+  const decided = chatReducer(s, { type: "setPlan", planId: "p1", action: "accept_standard" });
+  expect(decided.items[1]).toMatchObject({ kind: "plan", status: "accept_standard" });
+  expect(pendingInput(decided.items)).toBeNull();
+  expect(chatReducer(decided, { type: "setPlan", planId: "p1", action: "reject" })).toBe(decided);
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "expired" });
+});
+
 test("setApproval for an unknown callId leaves state untouched", () => {
   const s = run([{ type: "userSend", text: "write" }]);
   expect(chatReducer(s, { type: "setApproval", callId: "nope", status: "denied" })).toBe(s);

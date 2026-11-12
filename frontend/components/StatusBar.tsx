@@ -7,7 +7,8 @@ import { useChatStream, useDesktop } from "@/store";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatus, useStatusActions } from "@/stores/status";
-import { Zap } from "lucide-react";
+import { ClipboardList, Scale, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
+import { MODE_DESCRIPTIONS, MODE_LABELS, nextMode, type AgentMode } from "@/lib/agent-mode";
 import { ArtifactsButton } from "./ArtifactsButton";
 import { BrowserBridgeDot } from "./BrowserBridgeDot";
 import { ShellOutputDialog, type ViewedShell } from "./ShellOutputDialog";
@@ -25,6 +26,13 @@ const BADGE: Record<Delegation["kind"], string> = { a2a: "A2A", subagent: "agent
 
 const formatCost = (cost: number) => `$${cost.toFixed(cost < 0.01 ? 4 : cost < 1 ? 3 : 2)}`;
 
+const MODE_ICONS: Record<AgentMode, LucideIcon> = {
+  standard: ShieldCheck,
+  plan: ClipboardList,
+  auto: Zap,
+  "auto-with-judge": Scale,
+};
+
 export function StatusBar() {
   const { ready, tools, mcpStatus, a2aStatus } = useBackend();
   const { projects } = useSidebar();
@@ -37,8 +45,8 @@ export function StatusBar() {
     conversations,
     openConversation,
     runningCount,
-    autoMode,
-    setAutoMode,
+    agentMode,
+    setAgentMode,
     turnStartedAt,
     lastTurnMs,
     showStatusBar,
@@ -108,9 +116,7 @@ export function StatusBar() {
           : ready
             ? "ready"
             : "idle";
-  const autoModeDescription = autoMode
-    ? "Auto approval is on - tool actions run without asking"
-    : "Auto approval is off - protected tool actions ask first";
+  const ModeIcon = MODE_ICONS[agentMode];
   const contextPct =
     tokenUsage.context_window > 0 ? Math.round((tokenUsage.last_input / tokenUsage.context_window) * 100) : null;
   const stats: [string, string][] = [
@@ -245,18 +251,18 @@ export function StatusBar() {
           <BrowserBridgeDot />
           <ArtifactsButton />
           <button
-            aria-label={autoModeDescription}
-            aria-pressed={autoMode}
-            title={`${autoModeDescription} (Shift+Tab in composer)`}
-            onClick={() => setAutoMode(!autoMode)}
+            aria-label={MODE_DESCRIPTIONS[agentMode]}
+            title={`${MODE_DESCRIPTIONS[agentMode]} - click or press Shift+Tab in the composer for ${MODE_LABELS[nextMode(agentMode)]}`}
+            onClick={() => setAgentMode(nextMode(agentMode))}
             className={cn(
-              "inline-flex size-7 items-center justify-center rounded-full",
-              autoMode
-                ? "bg-primary text-primary-foreground hover:bg-primary-hover"
-                : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              "inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-full px-1.5 text-[0.75rem] font-medium",
+              agentMode === "standard"
+                ? "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                : "bg-primary text-primary-foreground hover:bg-primary-hover",
             )}
           >
-            <Zap size={16} aria-hidden="true" />
+            <ModeIcon size={16} aria-hidden="true" />
+            {agentMode !== "standard" && <span aria-hidden="true">{MODE_LABELS[agentMode]}</span>}
           </button>
         </span>
       </div>

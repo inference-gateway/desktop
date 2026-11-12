@@ -50,7 +50,7 @@ fn agent_commit_message(prompt: &str) -> String {
 /// the first open, since the daemon applies them once.
 fn thread_options(
     model: &str,
-    auto_mode: bool,
+    mode: &str,
     system_prompt: Option<&str>,
     extra_instructions: Option<&str>,
     cwd: &Path,
@@ -58,7 +58,7 @@ fn thread_options(
 ) -> ThreadOptions {
     ThreadOptions {
         model: model.to_string(),
-        mode: if auto_mode { "auto" } else { "standard" }.to_string(),
+        mode: mode.to_string(),
         system_prompt: system_prompt
             .filter(|s| !s.trim().is_empty())
             .map(str::to_owned),
@@ -245,14 +245,14 @@ pub(crate) async fn open_thread(
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
-    auto_mode: bool,
+    mode: String,
     project: Option<String>,
     agent: Option<String>,
 ) -> Result<String, String> {
     let cwd = thread_dir(project.as_deref());
     let options = thread_options(
         &model,
-        auto_mode,
+        &mode,
         system_prompt.as_deref(),
         extra_instructions.as_deref(),
         &cwd,
@@ -308,7 +308,7 @@ pub(crate) async fn send_message(
     state: tauri::State<'_, AppState>,
     system_prompt: Option<String>,
     extra_instructions: Option<String>,
-    auto_mode: bool,
+    mode: String,
     project: Option<String>,
     workspace: Option<String>,
     agent: Option<String>,
@@ -329,13 +329,12 @@ pub(crate) async fn send_message(
     }
     let options = thread_options(
         &model,
-        auto_mode,
+        &mode,
         system_prompt.as_deref(),
         extra_instructions.as_deref(),
         &cwd,
         agent.as_deref(),
     );
-    let mode = options.mode.clone();
     let open = open_on_daemon(app, session_id.clone(), &cwd, options);
     let thread = thread_for_prompt(
         &state.threads,
@@ -476,6 +475,23 @@ pub(crate) async fn send_question_answers(
         None => serde_json::json!({ "interruptId": tool_call_id, "status": "cancelled" }),
     };
     thread_for(&state.threads, &session_id)?.resume(entry)
+}
+
+/// Answers the plan a run suspended on with the CLI's plan action: `accept`
+/// runs it in auto mode, `accept_standard` approves each step, and `reject`
+/// keeps planning.
+#[tauri::command]
+pub(crate) async fn send_plan_decision(
+    session_id: String,
+    plan_id: String,
+    action: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    thread_for(&state.threads, &session_id)?.resume(serde_json::json!({
+        "interruptId": plan_id,
+        "status": "resolved",
+        "payload": { "action": action },
+    }))
 }
 
 /// Continues a thread after a stopped run with a new, empty run: how a

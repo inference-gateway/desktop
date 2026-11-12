@@ -25,7 +25,7 @@ const cases: [string, Partial<KeyInput>, Shortcut | null][] = [
   ["escape", { key: "Escape" }, "cancel"],
   ["escape still cancels when a popover preventDefaulted it", { key: "Escape", defaultPrevented: true }, "cancel"],
   ["escape with modifier", { key: "Escape", ctrlKey: true }, null],
-  ["shift+tab in composer", { key: "Tab", shiftKey: true, inComposer: true }, "autoModeToggle"],
+  ["shift+tab in composer", { key: "Tab", shiftKey: true, inComposer: true }, "cycleMode"],
   ["shift+tab outside composer keeps focus nav", { key: "Tab", shiftKey: true }, null],
   ["plain tab in composer", { key: "Tab", inComposer: true }, null],
   ["held key repeat", { key: "Escape", repeat: true }, null],

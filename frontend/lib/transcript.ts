@@ -11,6 +11,7 @@ import type {
   UserQuestionAnswer,
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+import type { PlanAction } from "./agent-mode";
 
 export type ToolState = "running" | "done" | "failed" | "cancelled";
 
@@ -43,6 +44,13 @@ export type TranscriptItem =
       questions: UserQuestion[];
       answers: UserQuestionAnswer[];
       status: "pending" | "answered" | "skipped" | "expired";
+    }
+  | {
+      kind: "plan";
+      id: string;
+      planId: string;
+      plan: string;
+      status: "pending" | PlanAction | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
@@ -96,10 +104,17 @@ function endTurn(state: ChatState, now: number): ChatState {
  * it stops or the process exits. */
 export type AgentRecording = { area?: RecordedArea; path?: string; inputs: InputEvent[] };
 
-/** The run is blocked on the user: a pending approval or question card. */
-export function pendingInput(items: TranscriptItem[]): "approval" | "question" | null {
-  const it = items.find((i) => (i.kind === "approval" || i.kind === "question") && i.status === "pending");
-  return it ? (it.kind as "approval" | "question") : null;
+type DecisionItem = Extract<TranscriptItem, { kind: "approval" | "question" | "plan" }>;
+
+/** An item that waits on the user: a tool approval, a question form or a plan. */
+function isDecision(it: TranscriptItem): it is DecisionItem {
+  return it.kind === "approval" || it.kind === "question" || it.kind === "plan";
+}
+
+/** The run is blocked on the user: a pending approval, question or plan card. */
+export function pendingInput(items: TranscriptItem[]): "approval" | "question" | "plan" | null {
+  const it = items.find((i) => isDecision(i) && i.status === "pending");
+  return it ? (it.kind as "approval" | "question" | "plan") : null;
 }
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
@@ -304,6 +319,7 @@ export type ChatAction =
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
   | { type: "setQuestion"; callId: string; answers: UserQuestionAnswer[] | null }
+  | { type: "setPlan"; planId: string; action: PlanAction }
   | { type: "dismissSuggestion" }
   | { type: "error"; text: string };
 
@@ -371,6 +387,18 @@ export function chatReducer(state: ChatState, action: ChatAction, now: number = 
         ),
       };
     }
+    case "setPlan": {
+      if (!state.items.some((it) => it.kind === "plan" && it.planId === action.planId && it.status === "pending")) {
+        return state;
+      }
+      return {
+        ...state,
+        typing: true,
+        items: state.items.map((it) =>
+          it.kind === "plan" && it.planId === action.planId ? { ...it, status: action.action } : it,
+        ),
+      };
+    }
     case "event":
       return applyEvent(state, action.event, now);
   }
@@ -427,6 +455,14 @@ function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState
         callId: event.tool_call_id,
         questions: Array.isArray(event.questions) ? event.questions : [],
         answers: [],
+        status: "pending",
+      });
+    case "PlanApprovalRequest":
+      return insertBeforeErrors(state, {
+        kind: "plan",
+        id: String(state.seq),
+        planId: event.plan_id,
+        plan: event.plan,
         status: "pending",
       });
     case "AgentError": {
@@ -693,7 +729,7 @@ function finalizeTools(state: ChatState, unfinished: ToolState): ChatState {
       changed = true;
       return { ...it, state: it.state === "running" ? unfinished : it.state, skeleton: false };
     }
-    if ((it.kind === "approval" || it.kind === "question") && it.status === "pending") {
+    if (isDecision(it) && it.status === "pending") {
       changed = true;
       return { ...it, status: "expired" as const };
     }

@@ -28,6 +28,7 @@ import { chatWorkspace, moveHops, sidebarConversations, THIS_COMPUTER } from "@/
 import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
+import { modeAfterPlan, nextMode, parseMode, type AgentMode, type PlanAction } from "@/lib/agent-mode";
 import { isBashCommand } from "@/lib/tools";
 import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
@@ -39,7 +40,12 @@ import { GitProvider, useGit } from "@/stores/git";
 import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 import { AgentsProvider, useAgents } from "@/stores/agents";
 
-const AUTO_MODE_KEY = "autoMode";
+const AGENT_MODE_KEY = "agentMode";
+const AWAITING_LABELS = {
+  approval: "Awaiting approval...",
+  question: "Awaiting answer...",
+  plan: "Awaiting plan review...",
+} as const;
 import type { ProjectType } from "@/lib/sidebar-document";
 import { WINDOW_EVENTS } from "@/lib/events";
 export type { ProjectType };
@@ -156,8 +162,8 @@ function useDesktopStore() {
     setProjectContext,
   } = useSidebar();
   const { gitProjects, refreshGitProjects, cleanupProject } = useGit();
-  const [autoMode, setAutoModeState] = useState(() => localStorage.getItem(AUTO_MODE_KEY) === "true");
-  const [autoModes, setAutoModes] = useState<Record<string, boolean>>({});
+  const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
+  const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [maxSessions, setMaxSessionsState] = useState<number>(() => {
@@ -201,10 +207,10 @@ function useDesktopStore() {
   useEffect(() => {
     runningIdsRef.current = runningIds;
   }, [runningIds]);
-  const autoModesRef = useRef<Record<string, boolean>>(autoModes);
+  const agentModesRef = useRef<Record<string, AgentMode>>(agentModes);
   useEffect(() => {
-    autoModesRef.current = autoModes;
-  }, [autoModes]);
+    agentModesRef.current = agentModes;
+  }, [agentModes]);
 
   // Todo panel drafts are keyed by session so switching sessions never
   // leaks a user-edited list into another chat (#196); null clears it.
@@ -265,12 +271,12 @@ function useDesktopStore() {
     if (id) dropQueued(id);
   }, [dropQueued]);
 
-  const setAutoMode = useCallback((enabled: boolean) => {
+  const setAgentMode = useCallback((mode: AgentMode) => {
     const id = activeIdRef.current;
-    if (id) setAutoModes((prev) => ({ ...prev, [id]: enabled }));
+    if (id) setAgentModes((prev) => ({ ...prev, [id]: mode }));
     else {
-      setAutoModeState(enabled);
-      localStorage.setItem(AUTO_MODE_KEY, String(enabled));
+      setAgentModeState(mode);
+      localStorage.setItem(AGENT_MODE_KEY, mode);
     }
   }, []);
 
@@ -464,7 +470,7 @@ function useDesktopStore() {
             refreshConversations();
             break;
           case "ApprovalRequest":
-            if (autoModesRef.current[runId] && autoApproves(event.tool_name)) {
+            if (agentModesRef.current[runId] === "auto" && autoApproves(event.tool_name)) {
               resolveApproval(runId, event.tool_call_id, true);
               break;
             }
@@ -531,12 +537,12 @@ function useDesktopStore() {
         ),
         onEvent: chatEvents(id),
         ...(await threadPrompts(projectName, undefined, agentName)),
-        autoMode: autoModes[id] ?? autoMode,
+        mode: agentModes[id] ?? agentMode,
         project: projectName,
         agent: agentName,
       });
     },
-    [projects, agentOf, agents, model, autoModes, autoMode, threadPrompts, chatEvents],
+    [projects, agentOf, agents, model, agentModes, agentMode, threadPrompts, chatEvents],
   );
 
   const leaveConversation = useCallback(
@@ -755,7 +761,8 @@ function useDesktopStore() {
       if (isInit && projectName) logActivity(projectName, "Init", "running");
       try {
         const ch = chatEvents(runId, isInit ? projectName : undefined);
-        if (!(runId in autoModes)) setAutoModes((p) => ({ ...p, [runId]: isInit || autoMode }));
+        const mode = isInit ? "auto" : (agentModes[runId] ?? agentMode);
+        if (!(runId in agentModes)) setAgentModes((p) => ({ ...p, [runId]: mode }));
         const runsOn =
           runId in workspaceOfRef.current
             ? workspaceOfRef.current[runId]
@@ -779,7 +786,7 @@ function useDesktopStore() {
           sessionId: runId,
           onEvent: ch,
           ...(await threadPrompts(projectName, extraInstruction, agentName)),
-          autoMode: isInit || (autoModes[runId] ?? autoMode),
+          mode,
           project: projectName,
           workspace: runsOn || undefined,
           agent: agentName,
@@ -803,8 +810,8 @@ function useDesktopStore() {
       model,
       agents,
       agentOf,
-      autoMode,
-      autoModes,
+      agentMode,
+      agentModes,
       threadPrompts,
       setError,
       logActivity,
@@ -1011,6 +1018,22 @@ function useDesktopStore() {
         dispatchTo(id, { type: "setQuestion", callId, answers });
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Answer failed: ${err}` });
+      }
+    },
+    [dispatchTo],
+  );
+
+  const decidePlan = useCallback(
+    async (planId: string, action: PlanAction) => {
+      const id = activeIdRef.current;
+      if (!id) return;
+      try {
+        await api.sendPlanDecision(id, planId, action);
+        dispatchTo(id, { type: "setPlan", planId, action });
+        const mode = modeAfterPlan(action);
+        if (mode) setAgentModes((prev) => ({ ...prev, [id]: mode }));
+      } catch (err) {
+        dispatchTo(id, { type: "error", text: `Plan decision failed: ${err}` });
       }
     },
     [dispatchTo],
@@ -1303,7 +1326,7 @@ function useDesktopStore() {
 
   const active = (activeId && transcripts[activeId]) || initialChatState;
   const running = activeId != null && runningIds.has(activeId);
-  const activeAutoMode = (activeId != null ? autoModes[activeId] : undefined) ?? autoMode;
+  const activeAgentMode = (activeId != null ? agentModes[activeId] : undefined) ?? agentMode;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1323,21 +1346,21 @@ function useDesktopStore() {
       } else if (shortcut === "cancel" && running) {
         e.preventDefault();
         void cancel();
-      } else if (shortcut === "autoModeToggle") {
+      } else if (shortcut === "cycleMode") {
         e.preventDefault();
-        setAutoMode(!activeAutoMode);
+        setAgentMode(nextMode(activeAgentMode));
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [running, cancel, newChat, activeAutoMode, setAutoMode]);
+  }, [running, cancel, newChat, activeAgentMode, setAgentMode]);
 
   const runLabel = useCallback(
     (id: string): { label: string; error: boolean } | null => {
       const chat = transcripts[id];
       const pending = pendingInput(chat?.items ?? []);
       if (pending) {
-        return { label: pending === "approval" ? "Awaiting approval..." : "Awaiting answer...", error: false };
+        return { label: AWAITING_LABELS[pending], error: false };
       }
       if (runningIds.has(id)) {
         const starting = Object.entries(chat?.agentStartup ?? {})[0];
@@ -1411,8 +1434,8 @@ function useDesktopStore() {
     dismissSuggestion,
     running,
     enabled: ready && !running,
-    autoMode: activeAutoMode,
-    setAutoMode,
+    agentMode: activeAgentMode,
+    setAgentMode,
     maxSessions,
     setMaxSessions,
     conversations: displayConversations,
@@ -1434,6 +1457,7 @@ function useDesktopStore() {
     popQueued,
     approve,
     answerQuestions,
+    decidePlan,
     openConversation,
     newChat,
     selectProject,

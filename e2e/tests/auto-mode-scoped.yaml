@@ -3,19 +3,21 @@ cleanup:
   - auto-approve.txt
 narration:
   - "Open a fresh chat."
-  - "Run a bash command - that opens the session the toggle will be scoped to."
-  - "Toggle auto approval on for this chat only."
-  - "The toggle flips to its on label."
-  - "Ask for a file; in auto mode the Write runs without prompting."
+  - "Run a bash command - that opens the session the mode will be scoped to."
+  - "Click the mode button - standard moves on to plan."
+  - "Click it again to switch this chat to auto mode."
+  - "The button now names auto mode."
+  - "Ask for a file - in auto mode the Write runs without prompting."
   - "auto-approve.txt lands with no approval card in between."
-  - "Open a brand-new chat; auto mode stays behind with the old session."
-  - "The same ask now goes to the new, manual-approval session."
+  - "Open a brand-new chat - auto mode stays behind with the old session."
+  - "The same ask now goes to the new, standard-mode session."
   - "The approval card appears - a fresh chat prompts again."
 steps:
   - new_chat
-  - send: "!echo scoping this toggle to a session"
-  - click: { button: "Auto approval is off - protected tool actions ask first" }
-  - wait_for: { button: "Auto approval is on - tool actions run without asking", timeout: 15 }
+  - send: "!echo scoping this mode to a session"
+  - click: { button: "Standard mode - protected tool actions ask first" }
+  - click: { button: "Plan mode - the agent plans before it changes anything" }
+  - wait_for: { button: "Auto mode - tool actions run without asking", timeout: 15 }
   - send: "create a file named auto-approve.txt"
   - wait_for: { file: "auto-approve.txt", timeout: 30 }
   - new_chat

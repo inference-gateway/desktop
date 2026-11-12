@@ -3,6 +3,7 @@
 // names, so the discriminated unions below use snake_case fields.
 import { invoke, Channel, convertFileSrc } from "@tauri-apps/api/core";
 import type { ScreenInput } from "./screen-input";
+import type { AgentMode, PlanAction } from "./agent-mode";
 
 export { Channel, convertFileSrc };
 
@@ -36,6 +37,7 @@ export type AgentEvent =
   | { kind: "ToolResult"; content: string; tool_call_id: string }
   | { kind: "ApprovalRequest"; tool_name: string; tool_args: string; tool_call_id: string }
   | { kind: "UserQuestionRequest"; tool_call_id: string; questions: UserQuestion[] }
+  | { kind: "PlanApprovalRequest"; plan_id: string; plan: string }
   | { kind: "RunStarted" }
   | { kind: "AgentError"; message: string }
   | { kind: "RawLine"; line: string }
@@ -420,7 +422,7 @@ export const api = {
     onEvent: Channel<AgentEvent>;
     systemPrompt?: string;
     extraInstructions?: string;
-    autoMode: boolean;
+    mode: AgentMode;
     project?: string;
     workspace?: string;
     agent?: string;
@@ -432,7 +434,7 @@ export const api = {
     onEvent: Channel<AgentEvent>;
     systemPrompt?: string;
     extraInstructions?: string;
-    autoMode: boolean;
+    mode: AgentMode;
     project?: string;
     agent?: string;
   }) => invoke<string>("open_thread", args).then((json) => JSON.parse(json) as SnapshotMessage[]),
@@ -443,6 +445,8 @@ export const api = {
   sendUserMessage: (sessionId: string, content: string) => invoke<void>("send_user_message", { sessionId, content }),
   sendQuestionAnswers: (sessionId: string, toolCallId: string, answers: UserQuestionAnswer[] | null) =>
     invoke<void>("send_question_answers", { sessionId, toolCallId, answers }),
+  sendPlanDecision: (sessionId: string, planId: string, action: PlanAction) =>
+    invoke<void>("send_plan_decision", { sessionId, planId, action }),
   /** Continues a thread after a stop with a new run (resumes paused computer use). */
   resumeAgent: (sessionId: string) => invoke<void>("resume_agent", { sessionId }),
   cancelAgent: (sessionId: string) => invoke<void>("cancel_agent", { sessionId }),

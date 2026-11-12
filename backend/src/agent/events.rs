@@ -36,6 +36,11 @@ pub(crate) enum AgentEvent {
         tool_call_id: String,
         questions: serde_json::Value,
     },
+    /// A plan-mode run submitted its plan and waits for the user's decision.
+    PlanApprovalRequest {
+        plan_id: String,
+        plan: String,
+    },
     /// The thread started a run, whichever client or worker started it.
     RunStarted,
     AgentError {
@@ -612,10 +617,20 @@ impl AgentParser {
     }
 
     /// Maps the interrupt a run suspended on: an approval for the tool call
-    /// it names, or the AskUserQuestion form whose questions are the args of
-    /// the call with the interrupt's id.
+    /// it names, the AskUserQuestion form whose questions are the args of
+    /// the call with the interrupt's id, or a plan waiting for its decision.
     fn interrupt(&self, interrupt: &serde_json::Value) -> Option<AgentEvent> {
         let id = interrupt.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if interrupt.get("reason").and_then(|v| v.as_str()) == Some("plan_approval") {
+            return Some(AgentEvent::PlanApprovalRequest {
+                plan_id: id.to_string(),
+                plan: interrupt
+                    .pointer("/metadata/plan")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            });
+        }
         let tool_call_id = interrupt
             .get("toolCallId")
             .and_then(|v| v.as_str())
@@ -1083,6 +1098,17 @@ mod tests {
             matches!(&events[3], AgentEvent::UserQuestionRequest { tool_call_id, questions }
             if tool_call_id == "call-2" && questions[0]["options"][0]["label"] == "Go")
         );
+    }
+
+    #[test]
+    fn test_parse_plan_interrupt_carries_the_plan() {
+        let (events, _) = parse_all(&[
+            r#"{"type":"RUN_FINISHED","threadId":"t","runId":"r1","outcome":{"type":"interrupt","interrupts":[{"id":"plan-1","reason":"plan_approval","metadata":{"planId":"plan-1","plan":"Ship it"}}]}}"#,
+        ]);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            AgentEvent::PlanApprovalRequest { plan_id, plan } if plan_id == "plan-1" && plan == "Ship it"
+        )));
     }
 
     #[test]
