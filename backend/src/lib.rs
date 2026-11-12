@@ -171,6 +171,7 @@ pub fn run() {
             agent::move_session,
             agent::send_user_message,
             agent::send_question_answers,
+            agent::send_plan_decision,
             agent::resume_agent,
             agent::cancel_agent,
             agent::open_thread,

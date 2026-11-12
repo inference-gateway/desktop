@@ -11,6 +11,7 @@ import type {
   UserQuestionAnswer,
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+import type { PlanAction } from "./agent-mode";
 
 export type ToolState = "running" | "done" | "failed" | "cancelled";
 
@@ -43,6 +44,14 @@ export type TranscriptItem =
       questions: UserQuestion[];
       answers: UserQuestionAnswer[];
       status: "pending" | "answered" | "skipped" | "expired";
+    }
+  | {
+      kind: "plan";
+      id: string;
+      planId: string;
+      callId: string | null;
+      plan: string;
+      status: "pending" | PlanAction | "expired";
     }
   | { kind: "image"; id: string; src: string; filename: string; path: string }
   | { kind: "audio"; id: string; src: string; filename: string; path: string }
@@ -96,15 +105,41 @@ function endTurn(state: ChatState, now: number): ChatState {
  * it stops or the process exits. */
 export type AgentRecording = { area?: RecordedArea; path?: string; inputs: InputEvent[] };
 
-/** The run is blocked on the user: a pending approval or question card. */
-export function pendingInput(items: TranscriptItem[]): "approval" | "question" | null {
-  const it = items.find((i) => (i.kind === "approval" || i.kind === "question") && i.status === "pending");
-  return it ? (it.kind as "approval" | "question") : null;
+type DecisionItem = Extract<TranscriptItem, { kind: "approval" | "question" | "plan" }>;
+
+/** An item that waits on the user: a tool approval, a question form or a plan. */
+function isDecision(it: TranscriptItem): it is DecisionItem {
+  return it.kind === "approval" || it.kind === "question" || it.kind === "plan";
+}
+
+/** The run is blocked on the user: a pending approval, question or plan card. */
+export function pendingInput(items: TranscriptItem[]): "approval" | "question" | "plan" | null {
+  const it = items.find((i) => isDecision(i) && i.status === "pending");
+  return it ? (it.kind as "approval" | "question" | "plan") : null;
 }
 
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
 export const SANDBOX_ACCESS_TOOL = "SandboxAccess";
+
+export const PLAN_APPROVAL_TOOL = "RequestPlanApproval";
+
+/** The call id of the latest RequestPlanApproval row, the call a new plan card answers. */
+function lastPlanCallId(items: TranscriptItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "tool" && it.name === PLAN_APPROVAL_TOOL) return it.callId;
+  }
+  return null;
+}
+
+/** The items to render: a plan card stands in for the RequestPlanApproval call that submitted it,
+ * so that call's row is left out. A reopened chat has no plan cards and keeps its rows. */
+export function visibleItems(items: TranscriptItem[]): TranscriptItem[] {
+  const answered = new Set(items.flatMap((it) => (it.kind === "plan" && it.callId ? [it.callId] : [])));
+  if (answered.size === 0) return items;
+  return items.filter((it) => !(it.kind === "tool" && it.callId !== null && answered.has(it.callId)));
+}
 
 /** Auto mode answers approvals for the user, except a path outside the sandbox, which the user decides. */
 export function autoApproves(toolName: string): boolean {
@@ -304,6 +339,7 @@ export type ChatAction =
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
   | { type: "setQuestion"; callId: string; answers: UserQuestionAnswer[] | null }
+  | { type: "setPlan"; planId: string; action: PlanAction }
   | { type: "dismissSuggestion" }
   | { type: "error"; text: string };
 
@@ -371,6 +407,18 @@ export function chatReducer(state: ChatState, action: ChatAction, now: number = 
         ),
       };
     }
+    case "setPlan": {
+      if (!state.items.some((it) => it.kind === "plan" && it.planId === action.planId && it.status === "pending")) {
+        return state;
+      }
+      return {
+        ...state,
+        typing: true,
+        items: state.items.map((it) =>
+          it.kind === "plan" && it.planId === action.planId ? { ...it, status: action.action } : it,
+        ),
+      };
+    }
     case "event":
       return applyEvent(state, action.event, now);
   }
@@ -427,6 +475,15 @@ function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState
         callId: event.tool_call_id,
         questions: Array.isArray(event.questions) ? event.questions : [],
         answers: [],
+        status: "pending",
+      });
+    case "PlanApprovalRequest":
+      return insertBeforeErrors(state, {
+        kind: "plan",
+        id: String(state.seq),
+        planId: event.plan_id,
+        callId: lastPlanCallId(state.items),
+        plan: event.plan,
         status: "pending",
       });
     case "AgentError": {
@@ -693,7 +750,7 @@ function finalizeTools(state: ChatState, unfinished: ToolState): ChatState {
       changed = true;
       return { ...it, state: it.state === "running" ? unfinished : it.state, skeleton: false };
     }
-    if ((it.kind === "approval" || it.kind === "question") && it.status === "pending") {
+    if (isDecision(it) && it.status === "pending") {
       changed = true;
       return { ...it, status: "expired" as const };
     }

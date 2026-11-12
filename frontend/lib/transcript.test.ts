@@ -18,6 +18,7 @@ import {
   type Delegation,
   type TodoItem,
   type TranscriptItem,
+  visibleItems,
 } from "./transcript";
 import type { AgentEvent } from "./tauri";
 
@@ -316,6 +317,35 @@ test("skipping a question and expiring it on run end", () => {
   });
   s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
   expect(s.items[0]).toMatchObject({ kind: "question", status: "expired" });
+});
+
+test("a plan waits for its decision, records it once and expires on run end", () => {
+  let s = run([
+    { type: "userSend", text: "plan it" },
+    ev({ kind: "PlanApprovalRequest", plan_id: "p1", plan: "## Changes" }),
+  ]);
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "pending", planId: "p1", plan: "## Changes" });
+  expect(pendingInput(s.items)).toBe("plan");
+  const decided = chatReducer(s, { type: "setPlan", planId: "p1", action: "accept_standard" });
+  expect(decided.items[1]).toMatchObject({ kind: "plan", status: "accept_standard" });
+  expect(pendingInput(decided.items)).toBeNull();
+  expect(chatReducer(decided, { type: "setPlan", planId: "p1", action: "reject" })).toBe(decided);
+  s = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }));
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "expired" });
+});
+
+test("a plan card replaces the row of the call that submitted it, a reopened chat keeps the row", () => {
+  const planCall = ev({
+    kind: "AssistantMessage",
+    content: "",
+    reasoning_content: null,
+    tool_calls: [{ id: "c1", name: "RequestPlanApproval", args: '{"title":"Ship"}' }],
+  });
+  const reopened = run([planCall]);
+  expect(visibleItems(reopened.items)).toEqual(reopened.items);
+  const live = chatReducer(reopened, ev({ kind: "PlanApprovalRequest", plan_id: "p1", plan: "## Changes" }));
+  expect(live.items.find((i) => i.kind === "plan")).toMatchObject({ callId: "c1" });
+  expect(visibleItems(live.items).map((i) => i.kind)).toEqual(["plan"]);
 });
 
 test("setApproval for an unknown callId leaves state untouched", () => {

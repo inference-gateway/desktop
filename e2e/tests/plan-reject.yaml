@@ -1,0 +1,23 @@
+name: plan mode - a rejected plan keeps planning
+cleanup:
+  - planned.txt
+narration:
+  - "Open a fresh chat."
+  - "Click the mode button to switch to plan mode."
+  - "The button now names plan mode."
+  - "Ask for a file - the agent submits a plan for review."
+  - "The plan card appears."
+  - "Reject the plan."
+  - "The card records the rejection."
+  - "The chat stays in plan mode."
+  - "Nothing ran - planned.txt was never created."
+steps:
+  - new_chat
+  - click: { button: "Standard mode - protected tool actions ask first" }
+  - wait_for: { button: "Plan mode - the agent plans before it changes anything", timeout: 15 }
+  - send: "plan a file named planned.txt"
+  - wait_for: { button: "Reject", timeout: 30 }
+  - click: { button: "Reject" }
+  - wait_for: { text: "Plan rejected", timeout: 15 }
+  - wait_for: { button: "Plan mode - the agent plans before it changes anything", timeout: 5 }
+  - assert_absent: { file: planned.txt }

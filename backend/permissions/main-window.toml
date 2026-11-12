@@ -18,6 +18,7 @@ commands.allow = [
     "move_session",
     "send_user_message",
     "send_question_answers",
+    "send_plan_decision",
     "resume_agent",
     "cancel_agent",
     "open_thread",

@@ -88,6 +88,28 @@ scenarios:
               content: "should never land"
       - content: "The file was written."
 
+  # Plan mode: the agent submits its plan and the run stops at the plan
+  # card. An accepted plan runs in a fresh session that the CLI opens with
+  # its plan execution prompt, answered by plan-executed.
+  - name: plan-requested
+    match: '(?i)plan a file named planned\.txt'
+    turns:
+      - tool_calls:
+          - name: RequestPlanApproval
+            args:
+              title: "Write planned.txt"
+              plan: "## Changes\n\n- Write planned.txt with a greeting"
+
+  - name: plan-executed
+    match: '(?i)the plan has been approved'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "planned.txt"
+              content: "written from the plan"
+      - content: "The plan is done."
+
   - name: todo-times
     match: '(?i)plan the release notes'
     turns:

@@ -1,0 +1,27 @@
+name: plan mode - approve each step runs the plan with approvals
+cleanup:
+  - planned.txt
+narration:
+  - "Open a fresh chat."
+  - "Click the mode button to switch to plan mode."
+  - "The button now names plan mode."
+  - "Ask for a file - the agent submits a plan for review."
+  - "The plan card appears."
+  - "Choose Approve each step - the plan runs in standard mode."
+  - "The card records the decision."
+  - "The mode button follows the plan into standard mode."
+  - "The plan's Write still asks first."
+  - "Press 'a' to approve it."
+  - "planned.txt lands once the step is approved."
+steps:
+  - new_chat
+  - click: { button: "Standard mode - protected tool actions ask first" }
+  - wait_for: { button: "Plan mode - the agent plans before it changes anything", timeout: 15 }
+  - send: "plan a file named planned.txt"
+  - wait_for: { button: "Approve each step", timeout: 30 }
+  - click: { button: "Approve each step" }
+  - wait_for: { text: "Plan accepted - approving each step", timeout: 15 }
+  - wait_for: { button: "Standard mode - protected tool actions ask first", timeout: 15 }
+  - wait_for: { button: "Approve", timeout: 30 }
+  - keypress: "a"
+  - wait_for: { file: "planned.txt", timeout: 15 }

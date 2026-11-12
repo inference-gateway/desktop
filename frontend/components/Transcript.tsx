@@ -13,11 +13,13 @@ import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
 import { isBashCommand, prettyJson } from "@/lib/tools";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
+import type { PlanAction } from "@/lib/agent-mode";
 import {
   COMPUTER_USE_TOOLS,
   SANDBOX_ACCESS_TOOL,
   backgroundNoteHeader,
   followsBottom,
+  visibleItems,
   type ToolState,
   type TranscriptItem,
 } from "@/lib/transcript";
@@ -229,6 +231,72 @@ function ApprovalCard({
   );
 }
 
+const PLAN_OUTCOMES: Record<PlanAction | "expired", string> = {
+  accept: "✓ Plan accepted - running in auto mode",
+  accept_standard: "✓ Plan accepted - approving each step",
+  reject: "✕ Plan rejected",
+  expired: "Session ended",
+};
+
+// The CLI's plan choices with its labels: Accept runs the plan in auto mode,
+// Approve each step keeps per-action approval, Reject keeps planning.
+function PlanCard({
+  item,
+  decide,
+}: {
+  item: Extract<TranscriptItem, { kind: "plan" }>;
+  decide: (planId: string, action: PlanAction) => void;
+}) {
+  const plan = (
+    <div
+      className="md max-h-[320px] overflow-y-auto rounded-md border border-border bg-card p-2"
+      onClick={(e) => handleLinkClick(e, (url) => api.openUrl(url).catch(() => {}))}
+      dangerouslySetInnerHTML={{ __html: renderMarkdown(item.plan) }}
+    />
+  );
+  if (item.status !== "pending") {
+    return (
+      <details className="self-stretch text-[0.8rem]">
+        <summary
+          className={cn(
+            "cursor-pointer",
+            item.status === "reject" || item.status === "expired" ? "text-muted-foreground" : "text-tool",
+          )}
+        >
+          {PLAN_OUTCOMES[item.status]}
+        </summary>
+        <div className="mt-1 text-[0.85rem]">{plan}</div>
+      </details>
+    );
+  }
+  return (
+    <div className="self-stretch rounded-xl border border-warn bg-warn-bg p-3 text-[0.85rem]">
+      <div className="mb-2 font-bold text-warn">Review the plan</div>
+      <div className="mb-2">{plan}</div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => decide(item.planId, "accept")}
+          className="rounded-md bg-primary px-4 py-[0.4rem] text-[0.85rem] text-primary-foreground hover:bg-primary-hover"
+        >
+          Accept
+        </button>
+        <button
+          onClick={() => decide(item.planId, "accept_standard")}
+          className="rounded-md border border-border bg-card px-4 py-[0.4rem] text-[0.85rem] hover:bg-secondary"
+        >
+          Approve each step
+        </button>
+        <button
+          onClick={() => decide(item.planId, "reject")}
+          className="rounded-md bg-destructive px-4 py-[0.4rem] text-[0.85rem] text-white hover:bg-danger-hover"
+        >
+          Reject
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const OTHER = "Other";
 const RECOMMENDED = /\(Recommended\)\s*$/;
 
@@ -431,10 +499,12 @@ function Item({
   item,
   approve,
   answer,
+  decide,
 }: {
   item: TranscriptItem;
   approve: (callId: string, approved: boolean, scope?: "always") => void;
   answer: (callId: string, answers: UserQuestionAnswer[] | null) => void;
+  decide: (planId: string, action: PlanAction) => void;
 }) {
   switch (item.kind) {
     case "user":
@@ -451,6 +521,8 @@ function Item({
       return <ApprovalCard item={item} approve={approve} />;
     case "question":
       return <QuestionCard item={item} answer={answer} />;
+    case "plan":
+      return <PlanCard item={item} decide={decide} />;
     case "image":
       return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
     case "audio":
@@ -556,7 +628,7 @@ const SCROLL_THRESHOLD = 2;
 
 export function Transcript() {
   const { items, runLabel } = useChatStream();
-  const { typing, approve, answerQuestions, sessionId, composerRef, turnStartedAt } = useDesktop();
+  const { typing, approve, answerQuestions, decidePlan, sessionId, composerRef, turnStartedAt } = useDesktop();
   const ref = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
@@ -663,8 +735,8 @@ export function Transcript() {
         {items.length === 0 && !typing && (
           <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
         )}
-        {items.map((item) => (
-          <Item key={item.id} item={item} approve={approve} answer={answerQuestions} />
+        {visibleItems(items).map((item) => (
+          <Item key={item.id} item={item} approve={approve} answer={answerQuestions} decide={decidePlan} />
         ))}
         {typing && (
           <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} startedAt={turnStartedAt} />
