@@ -25,18 +25,18 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 ## Set up
 
 ```bash
-task up     # Gyroflow in ~/drone-tools, the drone-editor agent in ~/.infer/agents
+task up     # Gyroflow in tools/ next to this README, the drone-editor agent in ~/.infer/agents
 ```
 
-Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker, which takes about ten minutes the first time. That makes the example arm64-only for now.
+Gyroflow publishes no Linux build for arm64, so `task up` builds v1.7.0 from source in Docker into `tools/` - the folder you mount below. The first build takes about eight minutes and 11 GB of Docker's disk on an M4 Pro. That makes the example arm64-only for now.
 
 FilmCraft and DJI's LUT need no setup. The agent downloads FilmCraft's latest package and the LUT on its computer the first time it works there, checks each against its checksum and keeps them, so a computer stays on the FilmCraft it started with. To move one to a newer FilmCraft, ask the agent to remove its `filmcraft` folder - it downloads the latest on its next start.
 
 Put your footage in a folder of its own, for example `~/footage`. Then in the app:
 
-1. Open **Settings > Compute**. Press **Add folder**, name it `tools`, point it at `~/drone-tools` as a full path and switch it to read-only. Add a second folder named `footage` for your footage folder, read-only too. Press **Save folders**.
+1. Open **Settings > Compute**. Press **Add folder**, name it `tools`, point it at this example's `tools` folder as a full path - `examples/drone-footage/tools` in your checkout - and switch it to read-only. Add a second folder named `footage` for your footage folder, read-only too. Press **Save folders**.
 2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - Docker mounts a folder only into a cluster it creates, so this deletes the machines of the local cluster.
-3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `tools`, pick `~/drone-tools` as its source and mount it at `/mnt/tools`. Add a second volume named `footage`, pick your footage folder and mount it at `/mnt/footage`. Press **Save workspace**.
+3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `tools`, pick the `tools` folder as its source and mount it at `/mnt/tools`. Add a second volume named `footage`, pick your footage folder and mount it at `/mnt/footage`. Press **Save workspace**.
 4. Open **Settings > Secrets** and press **New secret**. Label it `elevenlabs`, name its variable `ELEVENLABS_KEY`, paste your key and tick **Workspace ubuntu-desktop**. Press **Save secret**. The app refuses the name `ELEVENLABS_API_KEY` here, because that one is a provider key of the gateway and belongs under **API Keys**.
 5. Press **Restart CLI** so the daemon reads the volumes and the secret.
 

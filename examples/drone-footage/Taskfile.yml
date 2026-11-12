@@ -5,8 +5,7 @@ vars:
   ARCH:
     sh: uname -m | sed 's/arm64/aarch64/'
   GYROFLOW_PACKAGE: Gyroflow-linux-arm64.tar.gz
-  LUT: dji-avata-2-dlog-m-to-rec709.cube
-  TOOLS: '{{.HOME}}/drone-tools'
+  TOOLS: '{{.TASKFILE_DIR}}/tools'
   INFER_DIR: '{{.HOME}}/.infer'
   WORKSPACE: ubuntu-desktop
 
@@ -40,6 +39,6 @@ tasks:
   down:
     desc: Delete the tools and take the agent back out of ~/.infer - the footage folder is never touched
     cmds:
-      - rm -f {{.TOOLS}}/filmcraft-*.deb {{.TOOLS}}/{{.GYROFLOW_PACKAGE}} {{.TOOLS}}/{{.LUT}}
+      - rm -f {{.TOOLS}}/{{.GYROFLOW_PACKAGE}}
       - rmdir {{.TOOLS}} 2>/dev/null || true
       - '! grep -qs "^workspace: {{.WORKSPACE}}$" {{.INFER_DIR}}/agents/drone-editor.md || rm {{.INFER_DIR}}/agents/drone-editor.md'
