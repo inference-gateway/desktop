@@ -19,6 +19,7 @@ import {
   SANDBOX_ACCESS_TOOL,
   backgroundNoteHeader,
   followsBottom,
+  visibleItems,
   type ToolState,
   type TranscriptItem,
 } from "@/lib/transcript";
@@ -734,7 +735,7 @@ export function Transcript() {
         {items.length === 0 && !typing && (
           <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
         )}
-        {items.map((item) => (
+        {visibleItems(items).map((item) => (
           <Item key={item.id} item={item} approve={approve} answer={answerQuestions} decide={decidePlan} />
         ))}
         {typing && (

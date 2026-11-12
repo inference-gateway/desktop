@@ -49,6 +49,7 @@ export type TranscriptItem =
       kind: "plan";
       id: string;
       planId: string;
+      callId: string | null;
       plan: string;
       status: "pending" | PlanAction | "expired";
     }
@@ -120,6 +121,25 @@ export function pendingInput(items: TranscriptItem[]): "approval" | "question" |
 export const COMPUTER_USE_TOOLS = new Set(["Computer", "GetLatestFrame"]);
 
 export const SANDBOX_ACCESS_TOOL = "SandboxAccess";
+
+export const PLAN_APPROVAL_TOOL = "RequestPlanApproval";
+
+/** The call id of the latest RequestPlanApproval row, the call a new plan card answers. */
+function lastPlanCallId(items: TranscriptItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.kind === "tool" && it.name === PLAN_APPROVAL_TOOL) return it.callId;
+  }
+  return null;
+}
+
+/** The items to render: a plan card stands in for the RequestPlanApproval call that submitted it,
+ * so that call's row is left out. A reopened chat has no plan cards and keeps its rows. */
+export function visibleItems(items: TranscriptItem[]): TranscriptItem[] {
+  const answered = new Set(items.flatMap((it) => (it.kind === "plan" && it.callId ? [it.callId] : [])));
+  if (answered.size === 0) return items;
+  return items.filter((it) => !(it.kind === "tool" && it.callId !== null && answered.has(it.callId)));
+}
 
 /** Auto mode answers approvals for the user, except a path outside the sandbox, which the user decides. */
 export function autoApproves(toolName: string): boolean {
@@ -462,6 +482,7 @@ function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState
         kind: "plan",
         id: String(state.seq),
         planId: event.plan_id,
+        callId: lastPlanCallId(state.items),
         plan: event.plan,
         status: "pending",
       });
