@@ -18,7 +18,7 @@ It builds on [examples/drone-footage](../drone-footage): the same read-only foot
 - `infer` CLI v0.258.0 or newer.
 - A model that follows long instructions and reads pictures. The recording has no sound, so the agent writes the narration from the frames it looks at.
 - A screen recording in H.264, 8-bit. A macOS screen recording is one.
-- For your own voice, 10 to 30 seconds of you speaking, as `voice.wav`: one speaker, no music, no noise. A sample you recorded under **Settings > Voice samples** sits in `~/.infer/models/tts/samples` and can be copied. Without one the agent uses a stock voice.
+- For your own voice, a sample under **Settings > Voice samples**: 10 to 30 seconds of you speaking, one speaker, no music, no noise. The agent reads the samples you already have, and one you record later shows up on its computer as soon as it is saved. Without one the agent uses a stock voice.
 
 ## Set up
 
@@ -26,11 +26,11 @@ It builds on [examples/drone-footage](../drone-footage): the same read-only foot
 task up     # the feature-editor agent in ~/.infer/agents
 ```
 
-Put the recording in a folder of its own, for example `~/footage`, and `voice.wav` next to it. Then in the app:
+Put the recording in a folder of its own, for example `~/footage`. Then in the app:
 
-1. Open **Settings > Compute**. Press **Add folder**, name it `footage`, point it at your folder as a full path and switch it to read-only. Press **Save folders**.
+1. Open **Settings > Compute**. Press **Add folder**, name it `footage`, point it at your folder as a full path and switch it to read-only. Add a second folder named `voices` for `~/.infer/models/tts/samples`, where the app keeps your voice samples - as a full path, `/Users/<you>/.infer/models/tts/samples`, and read-only too. Press **Save folders**.
 2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - a folder is mounted only into a cluster created after it was added, so this deletes the machines of the local cluster.
-3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `footage`, pick the `footage` folder as its source and mount it at `/mnt/footage`.
+3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `footage`, pick the `footage` folder as its source and mount it at `/mnt/footage`. Add a second volume named `voices`, pick the `voices` folder and mount it at `/mnt/voices`.
 4. In the same form, add these lines to **Environment**. They give the agent the `TextToSpeech` tool, with the voice model running on its own computer:
 
    ```text
@@ -53,11 +53,11 @@ Open the **Agents** filter, select `feature-editor` so the composer reads **Mess
 Edit the recording into a tutorial. It shows how to add a workspace volume.
 ```
 
-Say what the feature is and who the tutorial is for - the agent sees the screen, not your intent.
+Say what the feature is and who the tutorial is for - the agent sees the screen, not your intent. Name the voice sample to speak in, such as `in my Confident voice`. Without a name the agent uses your only sample, or asks which one when you have several.
 
 Open **Computers** in the top bar to watch. The agent stops twice for you:
 
-1. **The edit plan.** A table of beats - the steps it keeps - with what happens to each (kept, sped up, zoomed), the sentence it will say over it, and where the cards go. Nothing is built yet, so this is the cheap place to change things:
+1. **The edit plan.** A table of beats - the steps it keeps - with what happens to each (kept, sped up, zoomed), the sentence it will say over it, where the cards go, and the voice it will speak in. Nothing is built yet, so this is the cheap place to change things:
 
    ```text
    Drop beat 4, and say "workspace" instead of "environment" everywhere.
@@ -78,9 +78,9 @@ Ask for something else in the same sentence:
 Edit the recording into a 90 second tutorial, no captions in the picture.
 ```
 
-### The recording stays as it is
+### The recording and the samples stay as they are
 
-The footage folder is read-only twice: under **Settings > Compute** and on the workspace's volume. The agent analyses the recording in place, and everything it writes goes into its own working directory.
+Both folders are read-only twice: under **Settings > Compute** and on the workspace's volumes. The agent analyses the recording in place, copies the one voice sample it speaks in, and writes everything else into its own working directory.
 
 ## What the agent downloads
 
@@ -112,6 +112,6 @@ Expect the first run to need a correction, and report what the agent stopped on.
 task down   # take the agent back out of ~/.infer
 ```
 
-`task down` never touches your footage. It leaves the folder, the volume and the environment in Settings - remove them there, and recreate the cluster once more to stop mounting the folder. The files you saved stay in Downloads.
+`task down` never touches your footage. It leaves the folders, the volumes and the environment in Settings - remove them there, and recreate the cluster once more to stop mounting the folder. The files you saved stay in Downloads.
 
 The agent uses its computer without asking for approval - it is a pod of its own, not your machine.
