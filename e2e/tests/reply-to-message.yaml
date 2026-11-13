@@ -1,0 +1,17 @@
+name: reply to message - a reply quotes the assistant message above the prompt so the agent knows what it is about
+narration:
+  - "Open a fresh chat."
+  - "Ask something the agent answers with plain text."
+  - "The answer arrives."
+  - "Press Reply to message under the answer."
+  - "The composer shows what is being replied to."
+  - "Send the reply."
+  - "The agent sees the quoted message above the prompt and answers to it."
+steps:
+  - new_chat
+  - send: "say hi"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - click: { button: "Reply to message" }
+  - wait_for: { text: "[Replying to message: Done.]", timeout: 5 }
+  - send: "make it shorter"
+  - wait_for: { text: "Shortened the message you replied to.", timeout: 30 }

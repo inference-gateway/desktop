@@ -42,6 +42,11 @@ scenarios:
   # (e2e/src/driver.rs AGENT_MODEL), so the reply proves the CLI ran the
   # agent chat on it instead of the app's default model. The mock matches the
   # request body's model, which arrives without its provider prefix.
+  - name: reply-to-message
+    match: '(?s)^\[Replying to message: .*\]\s+make it shorter'
+    turns:
+      - content: "Shortened the message you replied to."
+
   - name: agent-own-model
     model: claude-sonnet-4-5
     match: '(?i)which model are you running on'

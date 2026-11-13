@@ -8,12 +8,14 @@ import {
   MonitorUp,
   Music,
   Plus,
+  Reply,
   Square,
   Terminal,
   Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { withReply } from "@/lib/reply";
 import { useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
@@ -242,6 +244,8 @@ export function Composer() {
     cancelInitSelection,
     suggestion,
     dismissSuggestion,
+    reply,
+    setReply,
   } = useDesktop();
   const { setStatus, setError } = useStatusActions();
   const selCount = initSelection.size;
@@ -458,8 +462,16 @@ export function Composer() {
 
   const mentionRows = menuRows(mention, files, issues);
 
+  useEffect(() => {
+    setReply(null);
+  }, [sessionId, setReply]);
+
   const onSend = () => {
     const composer = composerRef.current;
+    if (composer && reply) {
+      composer.value = withReply(reply, composer.value.trim());
+      setReply(null);
+    }
     if (composer && composer.value.trimStart().startsWith("!!")) {
       composer.value = composer.value.replace(/[\u201c\u201d]/g, '"');
     }
@@ -701,6 +713,21 @@ export function Composer() {
             <span>
               <span className="font-medium text-warn">tool mode</span> - Enter runs the tool call directly
             </span>
+          </div>
+        )}
+        {reply && (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[0.78rem] text-muted-foreground">
+            <Reply size={13} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate" title={reply}>
+              {reply}
+            </span>
+            <button
+              aria-label="Clear reply"
+              onClick={() => setReply(null)}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-background hover:text-foreground"
+            >
+              <X size={12} />
+            </button>
           </div>
         )}
         {pending.length > 0 && (

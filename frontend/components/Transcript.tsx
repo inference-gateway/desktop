@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Download, Loader2, RotateCcw, X } from "lucide-react";
+import { Check, ChevronDown, Download, Loader2, Reply, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { CopyButton } from "@/components/CopyButton";
@@ -13,6 +13,7 @@ import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
 import { matchApprovalShortcut } from "@/lib/shortcuts";
 import { api } from "@/lib/tauri";
 import { isBashCommand, prettyJson } from "@/lib/tools";
+import { replyMarker } from "@/lib/reply";
 import type { ScheduleJob, UserQuestionAnswer } from "@/lib/tauri";
 import type { PlanAction } from "@/lib/agent-mode";
 import {
@@ -61,7 +62,29 @@ function SpeechPlayer({ item }: { item: Extract<TranscriptItem, { kind: "audio" 
   return (
     <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
       <AudioPlayer src={src} ariaLabel={`generated speech ${item.filename}`} path={item.path} save={save} />
+      <ReplyButton kind="audio" text={item.path} />
     </div>
+  );
+}
+
+/** Starts a reply to an assistant message or a generated file: the composer shows what is quoted and
+ * sends it above the prompt. */
+function ReplyButton({ kind, text }: { kind: "message" | "audio"; text: string }) {
+  const { setReply, composerRef } = useDesktop();
+  return (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="secondary"
+      aria-label={`Reply to ${kind}`}
+      title={`Reply to this ${kind}`}
+      onClick={() => {
+        setReply(replyMarker(kind, text));
+        composerRef.current?.focus();
+      }}
+    >
+      <Reply />
+    </Button>
   );
 }
 
@@ -109,7 +132,10 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
         onClick={(e) => handleLinkClick(e, (url) => api.openUrl(url).catch(() => {}))}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(merged) }}
       />
-      <CopyButton text={merged} />
+      <div className="flex gap-1">
+        <CopyButton text={merged} />
+        <ReplyButton kind="message" text={merged} />
+      </div>
     </div>
   );
 }

@@ -201,6 +201,7 @@ function useDesktopStore() {
   const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const [reply, setReply] = useState<string | null>(null);
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
   const lastClickedIndex = useRef(-1);
@@ -1505,6 +1506,8 @@ function useDesktopStore() {
     todoDrafts,
     setTodoDraft,
     insertSnippet,
+    reply,
+    setReply,
     turnStartedAt: active.turnStartedAt,
     lastTurnMs: active.lastTurnMs,
     showStatusBar,
