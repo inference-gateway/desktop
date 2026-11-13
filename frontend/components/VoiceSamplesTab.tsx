@@ -117,9 +117,10 @@ function LevelMeter({ level }: { level: number }) {
 function testHint(speech: SpeechSetup | null): string {
   if (!speech) return "";
   if (!speech.enabled) return "Text to speech is off. Turn it on in General to test a sample.";
-  const reading = `Test reads the text below in a sample's voice with ${speechModelLabel(speech.model)}, exactly as an agent would.`;
-  if (isLocalSpeechModel(speech.model)) return reading;
-  return `${reading} A hosted model uploads the sample to its provider, once, to clone the voice there.`;
+  const model = speechModelLabel(speech.model);
+  if (!isLocalSpeechModel(speech.model))
+    return `The speech model in General (${model}) speaks in its own voice id and does not use voice samples. Choose the local model there to speak in a sample's voice.`;
+  return `Test reads the text below in a sample's voice with ${model}, exactly as an agent would.`;
 }
 
 function SampleCard({
@@ -241,7 +242,7 @@ export function VoiceSamplesTab() {
       .catch(() => {});
   }, []);
 
-  const canTest = !!speech?.enabled && testing === null;
+  const canTest = !!speech?.enabled && isLocalSpeechModel(speech.model) && testing === null;
 
   const test = async (name: string) => {
     setTesting(name);

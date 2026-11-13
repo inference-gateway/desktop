@@ -476,14 +476,14 @@ export function GeneralTab() {
                   id="tts-voice"
                   value={config.text_to_speech_voice}
                   onChange={(e) => set("text_to_speech_voice", e.target.value)}
-                  placeholder="Optional voice id from your provider's voice library"
+                  placeholder="Voice id from your provider's voice library"
                   className="max-w-sm"
                 />
               </div>
               <p className="text-[0.75rem] text-muted-foreground">
-                A hosted model sends the text to its provider and needs that provider's key under API Keys. When the
-                agent names a voice sample, the sample is uploaded there once and cloned - an ElevenLabs key needs the
-                Voices read and write permissions for that. Without a sample it speaks in this voice.
+                A hosted model sends the text to its provider and needs that provider's key under API Keys. It speaks in
+                this voice. For your own voice, clone it in the provider's account and paste its voice id here - voice
+                samples are used by the local model only.
               </p>
             </>
           )}
