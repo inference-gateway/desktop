@@ -48,13 +48,13 @@ export function StatusBar() {
     agentMode,
     setAgentMode,
     turnStartedAt,
-    lastTurnMs,
+    elapsedMs,
     showStatusBar,
   } = useDesktop();
   const { statusText, statusError } = useStatus();
   const { clearError } = useStatusActions();
   const now = useNow(turnStartedAt !== null);
-  const turnMs = turnStartedAt !== null ? now - turnStartedAt : lastTurnMs;
+  const sessionMs = turnStartedAt !== null ? now - turnStartedAt : elapsedMs;
   const [open, setOpen] = useState(false);
   const [viewedShell, setViewedShell] = useState<ViewedShell | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -140,7 +140,7 @@ export function StatusBar() {
   ];
   if (contextPct !== null) stats.unshift(["Context", `${contextPct}%`]);
   if (tokenUsage.cost > 0) stats.push(["cost", formatCost(tokenUsage.cost)]);
-  if (turnMs !== null) stats.push(["time", formatElapsed(turnMs)]);
+  if (sessionMs !== null) stats.push(["time", formatElapsed(sessionMs)]);
   if (!showStatusBar) return null;
   return (
     <div

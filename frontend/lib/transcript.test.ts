@@ -33,12 +33,14 @@ function runAt(steps: [number, Parameters<typeof chatReducer>[1]][]): ChatState 
   return steps.reduce((state, [now, action]) => chatReducer(state, action, now), initialChatState);
 }
 
-test("a turn is timed from the send to Done", () => {
+test("the time stat is a running total across turns, paused while idle", () => {
   const running = runAt([[1000, { type: "userSend", text: "hi" }]]);
   expect(running.turnStartedAt).toBe(1000);
   const done = chatReducer(running, ev({ kind: "Done", exit_code: 0, stderr: "" }), 13000);
   expect(done.turnStartedAt).toBeNull();
-  expect(done.lastTurnMs).toBe(12000);
+  expect(done.elapsedMs).toBe(12000);
+  const resumed = chatReducer(done, { type: "userSend", text: "more" }, 60000);
+  expect(resumed.turnStartedAt).toBe(48000);
 });
 
 test("the Done after Cancelled keeps the cancelled turn's duration", () => {
@@ -47,7 +49,7 @@ test("the Done after Cancelled keeps the cancelled turn's duration", () => {
     [4000, ev({ kind: "Cancelled" })],
     [9000, ev({ kind: "Done", exit_code: 0, stderr: "" })],
   ]);
-  expect(s.lastTurnMs).toBe(3000);
+  expect(s.elapsedMs).toBe(3000);
 });
 
 test("the send after Cancelled resumes the clock from the paused duration", () => {
@@ -58,9 +60,6 @@ test("the send after Cancelled resumes the clock from the paused duration", () =
     [60000, { type: "userSend", text: "go on" }],
   ]);
   expect(s.turnStartedAt).toBe(30000);
-  const done = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }), 65000);
-  expect(done.lastTurnMs).toBe(35000);
-  expect(chatReducer(done, { type: "userSend", text: "again" }, 70000).turnStartedAt).toBe(70000);
 });
 
 test("RunStarted starts the clock and a follow-up mid-turn does not restart it", () => {
