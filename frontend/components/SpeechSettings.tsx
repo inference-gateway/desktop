@@ -169,8 +169,9 @@ export function SpeechSettings({ config, status, error, save }: SpeechConfig) {
           {keepsSamples ? (
             <p className={HINT}>
               Sends the text to ElevenLabs and needs its key under API Keys. A voice sample the agent names is cloned
-              into your ElevenLabs account the first time it is used, and stays there until you delete it. Without a
-              sample it speaks in this voice.
+              into your ElevenLabs account the first time it is used, and stays there until you delete it. A restricted
+              key needs the Voices permission, read and write, as well as Text to Speech. Without a sample it speaks in
+              this voice.
             </p>
           ) : (
             <p className={HINT}>
