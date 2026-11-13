@@ -90,16 +90,24 @@ export type ChatState = {
   suggestion: string;
   turnStartedAt: number | null;
   lastTurnMs: number | null;
+  pausedTurnMs: number | null;
 };
 
+/** Starts the clock, or resumes a turn the user stopped with Esc from where it paused. */
 function startTurn(state: ChatState, now: number): ChatState {
-  return state.turnStartedAt === null ? { ...state, turnStartedAt: now } : state;
+  if (state.turnStartedAt !== null) return state;
+  return { ...state, turnStartedAt: now - (state.pausedTurnMs ?? 0), pausedTurnMs: null };
 }
 
 function endTurn(state: ChatState, now: number): ChatState {
   return state.turnStartedAt === null
     ? state
     : { ...state, turnStartedAt: null, lastTurnMs: now - state.turnStartedAt };
+}
+
+function pauseTurn(state: ChatState, now: number): ChatState {
+  const ended = endTurn(state, now);
+  return ended === state ? state : { ...ended, pausedTurnMs: ended.lastTurnMs };
 }
 
 /** The agent recording this session's process owns, from RecordingStarted until
@@ -330,6 +338,7 @@ export const initialChatState: ChatState = {
   suggestion: "",
   turnStartedAt: null,
   lastTurnMs: null,
+  pausedTurnMs: null,
 };
 
 export type ChatAction =
@@ -563,7 +572,7 @@ function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState
       };
     }
     case "Cancelled": {
-      const finalized = finalizeTools(endTurn(state, now), "cancelled");
+      const finalized = finalizeTools(pauseTurn(state, now), "cancelled");
       let seq = finalized.seq;
       const items = [...finalized.items, { kind: "cancelled", id: String(seq++) } as TranscriptItem];
       return {
@@ -860,5 +869,6 @@ function loadHistory(state: ChatState, messages: SnapshotMessage[]): ChatState {
     seenImages,
     turnStartedAt: state.turnStartedAt,
     lastTurnMs: state.lastTurnMs,
+    pausedTurnMs: state.pausedTurnMs,
   };
 }
