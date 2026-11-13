@@ -50,6 +50,19 @@ test("the Done after Cancelled keeps the cancelled turn's duration", () => {
   expect(s.lastTurnMs).toBe(3000);
 });
 
+test("the send after Cancelled resumes the clock from the paused duration", () => {
+  const s = runAt([
+    [1000, { type: "userSend", text: "hi" }],
+    [31000, ev({ kind: "Cancelled" })],
+    [35000, ev({ kind: "Done", exit_code: 0, stderr: "" })],
+    [60000, { type: "userSend", text: "go on" }],
+  ]);
+  expect(s.turnStartedAt).toBe(30000);
+  const done = chatReducer(s, ev({ kind: "Done", exit_code: 0, stderr: "" }), 65000);
+  expect(done.lastTurnMs).toBe(35000);
+  expect(chatReducer(done, { type: "userSend", text: "again" }, 70000).turnStartedAt).toBe(70000);
+});
+
 test("RunStarted starts the clock and a follow-up mid-turn does not restart it", () => {
   const s = runAt([
     [2000, ev({ kind: "RunStarted" })],
