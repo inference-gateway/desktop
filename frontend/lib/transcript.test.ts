@@ -555,6 +555,12 @@ test("loadHistory rebuilds user/assistant/tool items from the thread's snapshot"
   expect(s.items[2]).toMatchObject({ output: expect.stringContaining("Success") });
 });
 
+test("loadHistory keeps an error the thread reported before its history arrived", () => {
+  const errored = chatReducer(initialChatState, ev({ kind: "AgentError", message: "history stayed on workspace k8s" }));
+  const s = chatReducer(errored, { type: "loadHistory", messages: [{ id: "1", role: "user", content: "hello" }] });
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "error"]);
+});
+
 test("loadHistory skips system-reminder user messages and keeps task results", () => {
   const messages = [
     { id: "1", role: "user", content: "<system-reminder>\ninjected context\n</system-reminder>" },
