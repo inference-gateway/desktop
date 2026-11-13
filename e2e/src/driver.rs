@@ -187,39 +187,32 @@ fn seed_project_agent(home: &Path, name: &str, project: &str) -> Result<()> {
     Ok(())
 }
 
-const SEEDED_SAMPLE_SECONDS: u32 = 12;
-const SEEDED_SAMPLE_RATE: u32 = 8000;
-
-/// A silent 16-bit mono WAV, long enough to pass for a voice sample.
-fn silent_wav() -> Vec<u8> {
-    let data_len = SEEDED_SAMPLE_SECONDS * SEEDED_SAMPLE_RATE * 2;
-    let mut wav = Vec::with_capacity(44 + data_len as usize);
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&SEEDED_SAMPLE_RATE.to_le_bytes());
-    wav.extend_from_slice(&(SEEDED_SAMPLE_RATE * 2).to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    wav.resize(44 + data_len as usize, 0);
-    wav
-}
-
-/// A voice sample in the library of a HOME that has text to speech on.
-fn seed_voice_sample(home: &Path, name: &str) -> Result<()> {
-    let infer = home.join(".infer");
-    let samples = infer.join("voice").join("samples");
+/// A voice sample in the library of a HOME that has text to speech on. The
+/// mock gateway speaks it, so no audio is made up here.
+fn seed_voice_sample(home: &Path, name: &str, infer: &Path) -> Result<()> {
+    let infer_home = home.join(".infer");
+    let samples = infer_home.join("voice").join("samples");
     std::fs::create_dir_all(&samples)?;
-    std::fs::write(samples.join(format!("{name}.wav")), silent_wav())?;
     std::fs::write(
-        infer.join("config.yaml"),
+        infer_home.join("config.yaml"),
         "text_to_speech:\n  enabled: true\n",
     )?;
+    let sample = format!("{name}.wav");
+    Command::new(infer)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("INFER_GATEWAY_MOCK", "true")
+        .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", &samples)
+        .args(["tools", "execute", "TextToSpeech"])
+        .arg(format!(
+            r#"{{"text":"A voice sample.","output_path":"{sample}"}}"#
+        ))
+        .arg("--approved")
+        .output()
+        .context("speaking the voice sample through the mock gateway")?;
+    if !samples.join(&sample).exists() {
+        bail!("the mock gateway did not speak the voice sample {sample}");
+    }
     Ok(())
 }
 
@@ -286,11 +279,14 @@ impl AppDriver {
                     .context("project_agent needs a content_project to default to")?;
                 seed_project_agent(&home, name, project)?;
             }
-            if let Some(name) = seeds.voice_sample {
-                seed_voice_sample(&home, name)?;
-            }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);
+        if let (true, Some(name)) = (mock, seeds.voice_sample) {
+            let infer = resolved_infer
+                .as_deref()
+                .context("voice_sample needs an infer binary to speak it")?;
+            seed_voice_sample(&home, name, infer)?;
+        }
 
         let child = if let Some(app_bundle) = app_bundle {
             let _ = std::fs::File::create(&log_path)?;
