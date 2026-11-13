@@ -26,6 +26,12 @@ Activate the pre-commit hook before making changes - it is inert until you do. T
 
 The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate builds `dist/` first**.
 
+To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BIN`. The desktop runs that file in place of `~/.infer/bin/inference-gateway` and never installs over it, so an update or a reinstall leaves it alone. `INFER_BIN` does the same for the CLI:
+
+```bash
+INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
+```
+
 ## Verifying the UI
 
 `task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu) runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
