@@ -238,7 +238,6 @@ export function Composer() {
     selectAgent,
     sessionId,
     drivenId,
-    takeOver,
     handBack,
     initSelecting,
     cancelInitSelection,
@@ -603,7 +602,6 @@ export function Composer() {
   };
 
   const runsOn = sessionId !== null ? chatWorkspace(sessionId, workspaceOf, agentOf, agents) : THIS_COMPUTER;
-  const onOwnComputer = runsOn !== THIS_COMPUTER;
   const driving = sessionId !== null && drivenId === sessionId;
   const agentEmail = agents.find((a) => a.name === currentAgent)?.email.trim() ?? "";
 
@@ -622,13 +620,13 @@ export function Composer() {
             {agentEmail && <span className="block truncate text-[0.7rem] text-muted-foreground/70">{agentEmail}</span>}
           </span>
           {sessionId === null && <AgentProjectMenu />}
-          {onOwnComputer && sessionId !== null && (
+          {driving && (
             <button
-              onClick={() => (driving ? handBack() : takeOver(sessionId))}
-              title={driving ? "Hand the screen back to the agent" : "Drive this agent's computer yourself"}
+              onClick={handBack}
+              title="Hand the screen back to the agent"
               className="shrink-0 rounded-md border border-border-strong bg-card px-2 py-0.5 text-[0.75rem] font-medium text-foreground hover:border-primary/60"
             >
-              {driving ? "Hand back" : "Take over"}
+              Hand back
             </button>
           )}
           {currentAgent === activeAgent && (

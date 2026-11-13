@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Check, ChevronDown, Download, Loader2, Reply, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
+import { ChatComputer } from "@/components/ChatComputer";
 import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -818,22 +819,25 @@ export function Transcript() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <ScheduledJobs />
-      <div
-        id="chat-transcript"
-        role="log"
-        aria-label="Chat transcript"
-        ref={ref}
-        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
-      >
-        {items.length === 0 && !typing && (
-          <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
-        )}
-        {visibleItems(items).map((item) => (
-          <Item key={item.id} item={item} approve={approve} answer={answerQuestions} decide={decidePlan} />
-        ))}
-        {typing && (
-          <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} startedAt={turnStartedAt} />
-        )}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          id="chat-transcript"
+          role="log"
+          aria-label="Chat transcript"
+          ref={ref}
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-5 [&>*]:shrink-0"
+        >
+          {items.length === 0 && !typing && (
+            <div className="m-auto text-[0.95rem] text-muted-foreground">Start a conversation</div>
+          )}
+          {visibleItems(items).map((item) => (
+            <Item key={item.id} item={item} approve={approve} answer={answerQuestions} decide={decidePlan} />
+          ))}
+          {typing && (
+            <TypingBubble label={sessionId ? (runLabel(sessionId)?.label ?? null) : null} startedAt={turnStartedAt} />
+          )}
+        </div>
+        <ChatComputer />
       </div>
       {showScrollButton && (
         <button
