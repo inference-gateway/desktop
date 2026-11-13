@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
-import { ArrowLeft, Trash2 } from "lucide-react";
-import { api, type ComputerResources, type Screen } from "@/lib/tauri";
-import { computerSummary, computerTiles, type ComputerStatus, type ComputerTile } from "@/lib/computers";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type WheelEvent } from "react";
+import { ArrowLeft } from "lucide-react";
+import { api } from "@/lib/tauri";
+import { computerTiles, type ComputerTile } from "@/lib/computers";
 import {
   framePoint,
   isUnsupportedInput,
@@ -11,139 +11,17 @@ import {
   wheelInputs,
   type ScreenInput,
 } from "@/lib/screen-input";
+import { useComputerFacts } from "@/hooks/useComputerFacts";
+import { useScreen } from "@/hooks/useScreen";
 import { useChatStream, useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useStatusActions } from "@/stores/status";
 import { AgentAvatar } from "./AgentAvatar";
+import { ComputerCard } from "./ComputerCard";
 
-const FRAME_POLL_MS = 2000;
 const DRIVEN_POLL_MS = 300;
 const ESCAPE_TWICE_MS = 2000;
-
-const STATUS_LABEL: Record<ComputerStatus, string> = {
-  running: "Working",
-  awaiting: "Waiting for you",
-  idle: "Idle",
-};
-
-const STATUS_DOT: Record<ComputerStatus, string> = {
-  running: "animate-pulse bg-emerald-500",
-  awaiting: "bg-amber-500",
-  idle: "bg-muted-foreground/40",
-};
-
-/** The latest screen of a session's computer, polled every `pollMs` while `live` and the window is visible. */
-function useScreen(sessionId: string, project: string | undefined, live: boolean, pollMs: number): Screen | null {
-  const [screen, setScreen] = useState<Screen | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    let pending = false;
-    let shownFrame: string | undefined;
-    const poll = async () => {
-      if (pending || document.hidden) return;
-      pending = true;
-      const frame = await api.screenFrame(sessionId, project, shownFrame).catch(() => null);
-      pending = false;
-      if (!frame || cancelled) return;
-      shownFrame = frame.id;
-      setScreen(frame);
-    };
-    poll();
-    if (!live) return () => void (cancelled = true);
-    const timer = setInterval(poll, pollMs);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [sessionId, project, live, pollMs]);
-  return screen;
-}
-
-function Tile({
-  tile,
-  project,
-  sandbox,
-  resources,
-  onOpen,
-  onTakeOver,
-  onDelete,
-}: {
-  tile: ComputerTile;
-  project?: string;
-  sandbox: boolean;
-  resources?: ComputerResources;
-  onOpen: () => void;
-  onTakeOver: () => void;
-  onDelete: () => void;
-}) {
-  const screen = useScreen(tile.sessionId, project, tile.status !== "idle", FRAME_POLL_MS);
-  const [deleteArmed, setDeleteArmed] = useState(false);
-  return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card hover:border-primary/60">
-      <button aria-label={`Open computer ${tile.agent.name}`} onClick={onOpen} className="flex flex-col text-left">
-        <div className="flex aspect-[16/10] w-full items-center justify-center bg-black/80">
-          {screen ? (
-            <img src={screen.src} alt={`Screen of ${tile.agent.name}`} className="h-full w-full object-contain" />
-          ) : (
-            <span className="text-[0.75rem] text-muted-foreground">No screen yet</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 px-3 py-2">
-          <AgentAvatar agent={tile.agent} size={24} />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[0.85rem] font-medium">{tile.agent.name}</span>
-            <span className="truncate text-[0.72rem] text-muted-foreground">
-              {tile.workspace}
-              {tile.lastAction ? ` - ${tile.lastAction}` : ""}
-            </span>
-          </div>
-          <span className="flex items-center gap-1.5 text-[0.72rem] text-muted-foreground">
-            <span className={`h-2 w-2 rounded-full ${STATUS_DOT[tile.status]}`} aria-hidden="true" />
-            {STATUS_LABEL[tile.status]}
-          </span>
-        </div>
-        <span
-          title={
-            sandbox
-              ? "A pod of its own in a cluster. What it shows is what this computer started with."
-              : "Not a sandbox - the agent works on a real system."
-          }
-          className="truncate px-3 pb-2 text-[0.72rem] text-muted-foreground"
-        >
-          {computerSummary(sandbox, resources)}
-        </span>
-      </button>
-      <div className="flex justify-end gap-2 border-t border-border px-3 py-2">
-        <button
-          aria-label={`Delete computer ${tile.agent.name}`}
-          title={
-            deleteArmed
-              ? "Click again to delete this computer and the chat that lives on it"
-              : `Delete the computer of ${tile.agent.name}`
-          }
-          onClick={() => {
-            if (deleteArmed) onDelete();
-            setDeleteArmed(!deleteArmed);
-          }}
-          onBlur={() => setDeleteArmed(false)}
-          className={`rounded-md border px-2 py-1 ${
-            deleteArmed ? "border-destructive text-destructive" : "border-border-strong hover:border-destructive/60"
-          }`}
-        >
-          <Trash2 size={14} />
-        </button>
-        <button
-          onClick={onTakeOver}
-          title={`Drive the computer of ${tile.agent.name} yourself`}
-          className="rounded-md border border-border-strong px-2.5 py-1 text-[0.78rem] font-medium hover:border-primary/60"
-        >
-          Take over
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // The screen of a computer the person took over: clicks, the wheel and keys
 // inside it drive that computer, one input after the other, until they hand
@@ -305,19 +183,7 @@ export function ComputersView() {
   const { runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
-  const [given, setGiven] = useState<Record<string, ComputerResources>>({});
-  const [sandboxes, setSandboxes] = useState<Set<string>>(new Set());
-  const sessionIds = tiles.map((tile) => tile.sessionId).join(" ");
-  useEffect(() => {
-    api
-      .computerResources()
-      .then(setGiven)
-      .catch(() => {});
-    api
-      .workspaceConfigs()
-      .then((configs) => setSandboxes(new Set(configs.filter((c) => c.kind === "kubernetes").map((c) => c.name))))
-      .catch(() => {});
-  }, [sessionIds]);
+  const { resources, sandboxes } = useComputerFacts(tiles.map((tile) => tile.sessionId));
   const open = (sessionId: string) => {
     setCurrentView("chat");
     openConversation(sessionId);
@@ -343,12 +209,12 @@ export function ComputersView() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] gap-4">
           {tiles.map((tile) => (
-            <Tile
+            <ComputerCard
               key={tile.sessionId}
               tile={tile}
               project={projects[tile.sessionId]}
               sandbox={sandboxes.has(tile.workspace)}
-              resources={given[tile.sessionId]}
+              resources={resources[tile.sessionId]}
               onOpen={() => open(tile.sessionId)}
               onTakeOver={() => takeOver(tile.sessionId)}
               onDelete={() => deleteMachine(tile.sessionId)}
