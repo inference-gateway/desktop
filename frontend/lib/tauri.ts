@@ -207,6 +207,11 @@ export type LocalCluster = {
 /** A folder of this computer the local cluster's workspaces can mount. A read-only one cannot be changed from any
  * workspace. */
 export type ClusterFolder = { name: string; path: string; read_only: boolean };
+/** How the worker is told which prompt to rewind to: its text, and which of the
+ * times the user sent that text it is, counted from the newest, which is 1.
+ * A transcript and the worker's conversation share no message ids. */
+export type PromptRef = { text: string; occurrence: number };
+
 /** An existing PersistentVolumeClaim of the workspace's namespace that each of its computers mounts. Read-only is for
  * content an agent copies before it changes it. */
 export type WorkspaceVolume = { name: string; claim: string; mount_path: string; read_only: boolean };
@@ -655,6 +660,8 @@ export const api = {
     return invoke<void>("move_session", { sessionId, project, target, remote, onStage: stages });
   },
   listArtifacts: (sessionId: string, project?: string) => invoke<Artifact[]>("list_artifacts", { sessionId, project }),
+  rewindConversation: (sessionId: string, project: string | undefined, prompt: PromptRef) =>
+    invoke<void>("rewind_conversation", { sessionId, project, prompt }),
   listBackgroundJobs: (sessionId: string, project?: string) =>
     invoke<BackgroundJob[]>("list_background_jobs", { sessionId, project }),
   saveArtifact: (sessionId: string, project: string | undefined, name: string) =>

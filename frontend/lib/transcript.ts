@@ -9,6 +9,7 @@ import type {
   RecordedArea,
   UserQuestion,
   UserQuestionAnswer,
+  PromptRef,
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 import type { PlanAction } from "./agent-mode";
@@ -336,6 +337,7 @@ export type ChatAction =
   | { type: "loadHistory"; messages: SnapshotMessage[] }
   | { type: "setUsage"; usage: TokenUsage }
   | { type: "userSend"; text: string }
+  | { type: "rewind"; itemId: string }
   | { type: "event"; event: AgentEvent }
   | { type: "setApproval"; callId: string; status: "approved" | "denied" }
   | { type: "setQuestion"; callId: string; answers: UserQuestionAnswer[] | null }
@@ -359,6 +361,10 @@ export function chatReducer(state: ChatState, action: ChatAction, now: number = 
       return loadHistory(state, action.messages);
     case "setUsage":
       return { ...state, usage: action.usage };
+    case "rewind": {
+      const at = state.items.findIndex((item) => item.id === action.itemId);
+      return at < 0 ? state : { ...state, items: state.items.slice(0, at) };
+    }
     case "userSend": {
       let seq = state.seq;
       const items = [...state.items, { kind: "user", id: String(seq++), text: action.text } as TranscriptItem];
@@ -757,6 +763,15 @@ function finalizeTools(state: ChatState, unfinished: ToolState): ChatState {
     return it;
   });
   return changed ? { ...state, items } : state;
+}
+
+/** The ref of the prompt a transcript item shows, or null for any other item. */
+export function promptRef(items: TranscriptItem[], itemId: string): PromptRef | null {
+  const at = items.findIndex((item) => item.id === itemId);
+  const prompt = items[at];
+  if (prompt?.kind !== "user") return null;
+  const sentAgain = items.slice(at).filter((item) => item.kind === "user" && item.text === prompt.text);
+  return { text: prompt.text, occurrence: sentAgain.length };
 }
 
 /** Rebuilds the transcript from the thread's MESSAGES_SNAPSHOT: assistant

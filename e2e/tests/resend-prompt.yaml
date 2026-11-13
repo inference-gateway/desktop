@@ -1,0 +1,33 @@
+name: resend prompt - a prompt runs again and everything after it is dropped
+cleanup:
+  - approved.txt
+narration:
+  - "Open a fresh chat."
+  - "Ask for a file; the Write tool call pauses for approval."
+  - "The approval card shows Deny."
+  - "Deny it, so the run ends and no file is written."
+  - "The denial is reported."
+  - "Move on and ask for a screenshot."
+  - "Its thumbnail sits in the transcript."
+  - "The run is over, so prompts can be resent."
+  - "Press Resend prompt on the first prompt."
+  - "The screenshot turn is dropped - the conversation is back where that prompt was sent."
+  - "The prompt runs again, and the Write asks for approval again."
+  - "Approve it this time."
+  - "approved.txt lands."
+  - "The agent confirms the file was written."
+steps:
+  - new_chat
+  - send: "create a file named approved.txt"
+  - wait_for: { button: "Deny", timeout: 30 }
+  - click: { button: "Deny" }
+  - wait_for: { text: "Denied", timeout: 15 }
+  - send: "take a screenshot now"
+  - wait_for: { button: "View image", timeout: 30 }
+  - wait_gone: { button: "Stop", timeout: 15 }
+  - click: { button: "Resend prompt" }
+  - wait_gone: { button: "View image", timeout: 15 }
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { file: "approved.txt", timeout: 15 }
+  - wait_for: { text: "The file was written.", timeout: 15 }

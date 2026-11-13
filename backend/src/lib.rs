@@ -303,6 +303,7 @@ pub fn run() {
             workspaces::list_workspaces,
             workspaces::screen_frame,
             workspaces::list_artifacts,
+            workspaces::rewind_conversation,
             workspaces::list_background_jobs,
             workspaces::save_artifact,
             workspaces::read_artifact,

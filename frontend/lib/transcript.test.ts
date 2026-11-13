@@ -3,6 +3,7 @@ import {
   autoApproves,
   backgroundNoteHeader,
   chatReducer,
+  promptRef,
   delegationsFrom,
   delegationSessionId,
   followsBottom,
@@ -973,4 +974,37 @@ test("the todo shown while the list is folded is the one in progress, else the n
   expect(currentTodo([todo("a", "completed"), todo("b", "pending"), todo("c", "in_progress")])?.content).toBe("c");
   expect(currentTodo([todo("a", "completed"), todo("b", "pending")])?.content).toBe("b");
   expect(currentTodo([todo("a", "completed")])).toBeNull();
+});
+
+test("a prompt is named by its text and how many times it was sent from there on", () => {
+  const s = run([
+    { type: "userSend", text: "again" },
+    ev({ kind: "AssistantMessage", content: "first reply", reasoning_content: null, tool_calls: [] }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+    { type: "userSend", text: "other" },
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+    { type: "userSend", text: "again" },
+  ]);
+  const prompts = s.items.filter((item) => item.kind === "user");
+  expect(promptRef(s.items, prompts[0].id)).toEqual({ text: "again", occurrence: 2 });
+  expect(promptRef(s.items, prompts[1].id)).toEqual({ text: "other", occurrence: 1 });
+  expect(promptRef(s.items, prompts[2].id)).toEqual({ text: "again", occurrence: 1 });
+  const reply = s.items.find((item) => item.kind === "assistant");
+  expect(promptRef(s.items, reply?.id ?? "")).toBeNull();
+  expect(promptRef(s.items, "missing")).toBeNull();
+});
+
+test("rewind drops a prompt and everything after it", () => {
+  const s = run([
+    { type: "userSend", text: "first" },
+    ev({ kind: "AssistantMessage", content: "first reply", reasoning_content: null, tool_calls: [] }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+    { type: "userSend", text: "second" },
+    ev({ kind: "AssistantMessage", content: "second reply", reasoning_content: null, tool_calls: [] }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  const second = s.items.filter((item) => item.kind === "user")[1];
+  const rewound = chatReducer(s, { type: "rewind", itemId: second.id });
+  expect(rewound.items.map((item) => item.kind)).toEqual(["user", "assistant"]);
+  expect(chatReducer(s, { type: "rewind", itemId: "missing" })).toBe(s);
 });
