@@ -20,6 +20,7 @@ import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_CONFIG, type StorageField } from "@/lib/desktop-config";
+import { effectiveSpeechModel, isLocalSpeechModel, speechModelOptions } from "@/lib/speech-models";
 
 const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const;
 
@@ -441,6 +442,53 @@ export function GeneralTab() {
           Enable Text to Speech
         </Label>
       </div>
+      {config.text_to_speech_enabled && (
+        <div className="mb-5 flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <Label htmlFor="tts-model" className="w-24 text-[0.8rem] font-medium">
+              Speech model
+            </Label>
+            <select
+              id="tts-model"
+              value={effectiveSpeechModel(config.text_to_speech_model)}
+              onChange={(e) => set("text_to_speech_model", e.target.value)}
+              className="w-full max-w-sm rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
+            >
+              {speechModelOptions(config.text_to_speech_model).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {isLocalSpeechModel(config.text_to_speech_model) ? (
+            <p className="text-[0.75rem] text-muted-foreground">
+              Runs on this computer and clones a voice sample when the agent names one. Hear each sample in the Voice
+              samples tab.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <Label htmlFor="tts-voice" className="w-24 text-[0.8rem] font-medium">
+                  Voice
+                </Label>
+                <Input
+                  id="tts-voice"
+                  value={config.text_to_speech_voice}
+                  onChange={(e) => set("text_to_speech_voice", e.target.value)}
+                  placeholder="Optional voice id from your provider's voice library"
+                  className="max-w-sm"
+                />
+              </div>
+              <p className="text-[0.75rem] text-muted-foreground">
+                A hosted model sends the text to its provider and needs that provider's key under API Keys. When the
+                agent names a voice sample, the sample is uploaded there once and cloned - an ElevenLabs key needs the
+                Voices read and write permissions for that. Without a sample it speaks in this voice.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Text to video */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Text to video</h3>

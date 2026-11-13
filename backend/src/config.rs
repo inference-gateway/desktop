@@ -235,6 +235,14 @@ pub(crate) struct DesktopConfig {
     /// config); the desktop never synthesizes audio itself.
     #[serde(default)]
     pub(crate) text_to_speech_enabled: bool,
+    /// The speech model the tool synthesizes with, as "provider/model"
+    /// (text_to_speech.model). Empty leaves the CLI on its local default.
+    #[serde(default)]
+    pub(crate) text_to_speech_model: String,
+    /// The provider's voice id a hosted speech model speaks in when the agent
+    /// names no voice sample (text_to_speech.voice).
+    #[serde(default)]
+    pub(crate) text_to_speech_voice: String,
     /// Enable the CLI's TextToVideo tool (text_to_video.enabled in the CLI
     /// config). Off by default: every render sends a portrait and a voice clip
     /// to a third-party video provider.
@@ -312,6 +320,8 @@ pub(crate) fn default_config() -> DesktopConfig {
         projects_allowed_mimes:
             "pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,webm,mp3,wav,m4a,aac,txt,md,csv".into(),
         text_to_speech_enabled: false,
+        text_to_speech_model: String::new(),
+        text_to_speech_voice: String::new(),
         text_to_video_enabled: false,
         status_bar_enabled: true,
         next_step_suggestions_enabled: false,
@@ -456,6 +466,8 @@ pub(crate) fn config_from_value(
         ])
         .unwrap_or(d.scheduler_github_artifacts_rate_limit_backoff),
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
+        text_to_speech_model: str_at(&["text_to_speech", "model"]).unwrap_or_default(),
+        text_to_speech_voice: str_at(&["text_to_speech", "voice"]).unwrap_or_default(),
         text_to_video_enabled: bool_at(&["text_to_video", "enabled"]).unwrap_or(false),
         status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
         next_step_suggestions_enabled: bool_at(&["chat", "suggestions", "enabled"])
@@ -620,7 +632,11 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
     set_section(
         map,
         "text_to_speech",
-        vec![("enabled", cfg.text_to_speech_enabled.into())],
+        vec![
+            ("enabled", cfg.text_to_speech_enabled.into()),
+            ("model", cfg.text_to_speech_model.clone().into()),
+            ("voice", cfg.text_to_speech_voice.clone().into()),
+        ],
     );
     set_section(
         map,
@@ -1087,6 +1103,23 @@ mod tests {
 
         let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
         assert!(cfg2.text_to_speech_enabled);
+    }
+
+    #[test]
+    fn merge_config_round_trips_the_speech_model_and_voice() {
+        let mut cfg = default_config();
+        cfg.text_to_speech_model = "elevenlabs/eleven_v4_turbo".into();
+        cfg.text_to_speech_voice = "voice-id".into();
+        let val =
+            parse_yaml(&merge_config(Some("text_to_speech:\n  output_dir: /x\n"), &cfg).unwrap());
+        assert_eq!(
+            str_field(&val, &["text_to_speech", "output_dir"]),
+            Some("/x")
+        );
+
+        let read_back = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert_eq!(read_back.text_to_speech_model, "elevenlabs/eleven_v4_turbo");
+        assert_eq!(read_back.text_to_speech_voice, "voice-id");
     }
 
     #[test]

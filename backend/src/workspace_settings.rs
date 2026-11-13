@@ -1654,10 +1654,8 @@ mod tests {
             "true"
         );
         assert_eq!(workspace.env["INFER_TOOLS_BASH_ALLOW_APPEND"], ".*");
-        assert_eq!(
-            workspace.env["INFER_TEXT_TO_SPEECH_MODEL"],
-            "local/qwen3-tts"
-        );
+        assert_eq!(workspace.env["INFER_TEXT_TO_SPEECH_ENABLED"], "true");
+        assert!(!workspace.env.contains_key("INFER_TEXT_TO_SPEECH_MODEL"));
         assert!(workspace.forward_voice_samples);
     }
 

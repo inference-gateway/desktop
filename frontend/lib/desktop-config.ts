@@ -51,6 +51,8 @@ export const DEFAULT_CONFIG: DesktopConfig = {
   projects_max_file_size_mb: "500",
   projects_allowed_mimes: "",
   text_to_speech_enabled: false,
+  text_to_speech_model: "",
+  text_to_speech_voice: "",
   text_to_video_enabled: false,
   status_bar_enabled: true,
   next_step_suggestions_enabled: false,
