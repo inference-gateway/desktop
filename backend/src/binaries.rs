@@ -112,12 +112,12 @@ fn parse_status(stdout: &str) -> Vec<(String, BinaryState)> {
 }
 
 /// The CLI's error from stderr, its padded `ERROR` banner flattened to one line.
-fn cli_error(stderr: &[u8]) -> String {
+pub(crate) fn cli_error(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let words: Vec<&str> = text.split_whitespace().collect();
     let message = words.strip_prefix(&["ERROR"]).unwrap_or(&words).join(" ");
     if message.is_empty() {
-        "infer binaries failed without an error message".into()
+        "infer failed without an error message".into()
     } else {
         message
     }
@@ -221,9 +221,6 @@ llama-tts    missing  /home/u/.infer/bin/tools/llama-tts
             cli_error(stderr),
             "install.sh failed for ffmpeg: exit status 1: curl: (6) Could not resolve host"
         );
-        assert_eq!(
-            cli_error(b""),
-            "infer binaries failed without an error message"
-        );
+        assert_eq!(cli_error(b""), "infer failed without an error message");
     }
 }
