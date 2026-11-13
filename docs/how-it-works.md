@@ -1,6 +1,6 @@
 # How it works
 
-On first run, the app downloads the `infer` CLI binary and installs it to `~/.infer/bin/infer`. The desktop itself downloads, runs and restarts the gateway server, which routes requests to whatever provider you configure - OpenAI, Anthropic, Google, local Ollama models, or any OpenAI-compatible endpoint. The `infer` CLI detects the running gateway and does not start its own.
+On first run, the app downloads the `infer` CLI binary and installs it to `~/.infer/bin/infer`. The CLI then installs the gateway (`infer gateway install`), and the desktop itself runs and restarts that gateway server, which routes requests to whatever provider you configure - OpenAI, Anthropic, Google, local Ollama models, or any OpenAI-compatible endpoint. The `infer` CLI detects the running gateway and does not start its own.
 
 The gateway binary lands at `~/.infer/bin/inference-gateway` (`inference-gateway.exe` on Windows) and config lives under `~/.infer/`. On Windows the desktop does not download the gateway automatically, so either that binary must already be installed at the path above, or a gateway must already be running at the configured gateway URL - the app reuses one it finds serving that URL.
 
@@ -12,7 +12,7 @@ The app also installs a bundled `desktop-projects` skill under `~/.infer/skills/
 
 ## Updating
 
-The app updates itself. When a newer release is available the top bar shows an update button (the same one is in Settings under Updates). Clicking it reinstalls the `infer` CLI and gateway binaries, then downloads the new app bundle, verifies its signature and relaunches. Checks run at startup and every 6 hours.
+The app updates itself. When a newer release is available the top bar shows an update button (the same one is in Settings under Updates). Clicking it reinstalls the `infer` CLI and gateway binaries, the gateway through the CLI, then downloads the new app bundle, verifies its signature and relaunches. Checks run at startup and every 6 hours. The gateway release picked there is saved as the CLI's `gateway.version`, so the CLI keeps the gateway on it - updating to the newest one sets it back to `latest`.
 
 On Windows the gateway reinstall step does not run, for the same reason as above: the gateway is not downloaded automatically there, so the binary at `~/.infer/bin/inference-gateway.exe` is left as is unless you update it yourself or point the gateway URL at a gateway you run, and the gateway already serving that URL keeps running across the update.
 

@@ -136,6 +136,14 @@ pub(crate) fn reachable(port: u16) -> bool {
     TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), PROBE).is_ok()
 }
 
+/// The daemon starts a gateway of its own when none serves yet, and stops it
+/// again. Booted beside a first install, it took the port from the desktop's
+/// gateway, which then never served. So the desktop's gateway comes up first,
+/// and a failure is left to the gateway's own start to report.
+fn start_gateway_first(processes: &ProcessSupervisor) {
+    let _ = processes.start_gateway(crate::gateway::GatewayStart::Reuse, None);
+}
+
 /// Makes sure a daemon listens on the binding: one that already does is
 /// reused, else `infer daemon` starts with the app's env and the binding
 /// switched on, and the port is awaited.
@@ -147,6 +155,7 @@ pub(crate) fn ensure_running(
     if reachable(binding.port) {
         return Ok(binding);
     }
+    start_gateway_first(processes);
     let log = Arc::clone(scheduler_log);
     let spawn_binding = binding.clone();
     processes.restart_scheduler(move || {

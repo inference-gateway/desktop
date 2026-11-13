@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 // --- Gateway lifecycle (desktop-owned) ---
-// The desktop downloads and runs the inference-gateway binary itself so /v1/models
+// The desktop installs the inference-gateway binary through the CLI and runs it itself so /v1/models
 // stays served. Once it's up, `infer agent` detects it (its own isBinaryRunning
 // health check) and won't start a competing gateway.
 
@@ -51,28 +51,6 @@ pub(crate) fn gateway_bin_path() -> PathBuf {
     bin_dir().join(name)
 }
 
-/// Release asset name for the gateway binary, matching goreleaser's naming.
-pub(crate) fn gateway_asset_name() -> Option<String> {
-    let os = match std::env::consts::OS {
-        "macos" => "Darwin",
-        "linux" => "Linux",
-        "windows" => "Windows",
-        _ => return None,
-    };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "arm64",
-        "arm" => "armv7",
-        _ => return None,
-    };
-    let ext = if cfg!(target_os = "windows") {
-        "zip"
-    } else {
-        "tar.gz"
-    };
-    Some(format!("inference-gateway_{}_{}.{}", os, arch, ext))
-}
-
 pub(crate) fn gateway_reachable() -> bool {
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let config = ureq::Agent::config_builder()
@@ -105,23 +83,32 @@ pub(crate) fn reuse_running_gateway(
     Ok(true)
 }
 
-/// Release download URL for the gateway binary: `releases/download/<tag>/<asset>`
-/// when `tag` is pinned, `releases/latest/download/<asset>` otherwise.
-fn gateway_release_url(asset: &str, tag: Option<&str>) -> String {
-    match tag {
-        Some(tag) => format!(
-            "https://github.com/inference-gateway/inference-gateway/releases/download/{tag}/{asset}"
-        ),
-        None => format!(
-            "https://github.com/inference-gateway/inference-gateway/releases/latest/download/{asset}"
-        ),
-    }
+/// The CLI's `gateway.version` that follows the newest gateway release.
+const LATEST_GATEWAY_VERSION: &str = "latest";
+
+/// The `gateway.version` a reinstall leaves in the CLI config: the release the
+/// user picked, or the latest one. The CLI then keeps the gateway on it.
+fn chosen_gateway_version(tag: Option<&str>) -> &str {
+    tag.unwrap_or(LATEST_GATEWAY_VERSION)
 }
 
-/// Download and extract the gateway binary if it isn't already present.
-/// `Reinstall` re-downloads over an existing binary; the caller must have
-/// stopped it first, otherwise the extraction hits ETXTBSY. `tag` pins the
-/// release to download, `None` means latest.
+fn run_infer(args: &[&str]) -> Result<(), String> {
+    let output = crate::env::command(crate::env::infer_bin_path())
+        .args(args)
+        .env("HOME", crate::env::home_dir())
+        .envs(crate::env::infer_env())
+        .output()
+        .map_err(|e| format!("Failed to run infer {}: {e}", args.join(" ")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(crate::binaries::cli_error(&output.stderr))
+}
+
+/// Install the gateway binary through the CLI, the single owner of it, when
+/// it is missing or a reinstall is asked for. A reinstall first records the
+/// release to run as the CLI's `gateway.version`, so the CLI does not replace
+/// it with another one later. The desktop downloads nothing itself.
 pub(crate) fn ensure_gateway_binary(
     mode: GatewayStart,
     tag: Option<&str>,
@@ -134,50 +121,18 @@ pub(crate) fn ensure_gateway_binary(
         return Err("Automatic gateway download is not supported on Windows yet".into());
     }
 
-    let asset = gateway_asset_name().ok_or_else(|| {
-        format!(
-            "Unsupported platform for gateway binary: {}-{}",
-            std::env::consts::OS,
-            std::env::consts::ARCH
-        )
-    })?;
-    let bin_dir = bin_dir();
-    std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-
-    let url = gateway_release_url(&asset, tag);
-    let archive = bin_dir.join(&asset);
-    let _ = std::fs::remove_file(&bin);
-
-    let resp = ureq::get(&url)
-        .call()
-        .map_err(|e| format!("Failed to download gateway: {}", e))?;
-    let mut reader = resp.into_body().into_reader();
-    let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
-    std::io::copy(&mut reader, &mut file).map_err(|e| e.to_string())?;
-    drop(file);
-
-    let status = crate::env::command("tar")
-        .arg("-xzf")
-        .arg(&archive)
-        .arg("-C")
-        .arg(&bin_dir)
-        .arg("inference-gateway")
-        .status()
-        .map_err(|e| format!("Failed to extract gateway: {}", e))?;
-    let _ = std::fs::remove_file(&archive);
-
-    if !status.success() || !bin.exists() {
-        return Err("Failed to extract gateway binary from release archive".into());
+    if mode == GatewayStart::Reinstall {
+        run_infer(&[
+            "config",
+            "set",
+            "gateway.version",
+            chosen_gateway_version(tag),
+        ])?;
     }
+    run_infer(&["gateway", "install"])?;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&bin)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&bin, perms).map_err(|e| e.to_string())?;
+    if !bin.exists() {
+        return Err("infer gateway install left no gateway binary".into());
     }
     Ok(bin)
 }
@@ -252,15 +207,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gateway_release_url_pins_the_tag() {
-        assert_eq!(
-            gateway_release_url("inference-gateway_Linux_x86_64.tar.gz", Some("v0.63.1")),
-            "https://github.com/inference-gateway/inference-gateway/releases/download/v0.63.1/inference-gateway_Linux_x86_64.tar.gz"
-        );
-        assert_eq!(
-            gateway_release_url("inference-gateway_Linux_x86_64.tar.gz", None),
-            "https://github.com/inference-gateway/inference-gateway/releases/latest/download/inference-gateway_Linux_x86_64.tar.gz"
-        );
+    fn a_reinstall_records_the_picked_release_or_the_latest() {
+        assert_eq!(chosen_gateway_version(Some("v0.63.1")), "v0.63.1");
+        assert_eq!(chosen_gateway_version(None), LATEST_GATEWAY_VERSION);
     }
 
     #[test]
