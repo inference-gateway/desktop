@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { replyMarker, withReply } from "./reply";
+import { replyMarker, splitReply, withReply } from "./reply";
 
 test("a message reply quotes a flattened excerpt", () => {
   expect(replyMarker("message", "Rows 1-2\n\nare in.  ")).toBe("[Replying to message: Rows 1-2 are in.]");
@@ -22,4 +22,10 @@ test("the marker goes above the prompt and stands alone without one", () => {
   );
   expect(withReply("[Replying to audio: a.wav]", "")).toBe("[Replying to audio: a.wav]");
   expect(withReply(null, "hi")).toBe("hi");
+});
+
+test("a sent prompt splits into the quoted reply and the user's text", () => {
+  expect(splitReply("[Replying to audio: /tmp/a.wav]\n\nslower")).toEqual({ quote: "/tmp/a.wav", rest: "slower" });
+  expect(splitReply("[Replying to message: Done.]")).toEqual({ quote: "Done.", rest: "" });
+  expect(splitReply("plain prompt")).toEqual({ quote: null, rest: "plain prompt" });
 });

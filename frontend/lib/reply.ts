@@ -12,3 +12,12 @@ export function withReply(marker: string | null, text: string): string {
   if (!marker) return text;
   return text ? `${marker}\n\n${text}` : marker;
 }
+
+const MARKER = /^\[Replying to (message|audio|image): ([\s\S]*?)\]\n*/;
+
+/** Splits a sent prompt into the reply it quotes, if any, and the user's own text. */
+export function splitReply(text: string): { quote: string | null; rest: string } {
+  const match = MARKER.exec(text);
+  if (!match) return { quote: null, rest: text };
+  return { quote: match[2], rest: text.slice(match[0].length) };
+}
