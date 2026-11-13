@@ -1506,7 +1506,7 @@ function useDesktopStore() {
     setTodoDraft,
     insertSnippet,
     turnStartedAt: active.turnStartedAt,
-    lastTurnMs: active.lastTurnMs,
+    elapsedMs: active.elapsedMs,
     showStatusBar,
     setShowStatusBar,
     currentProject,
