@@ -319,6 +319,9 @@ export type DesktopConfig = {
   text_to_speech_enabled: boolean;
   text_to_speech_model: string;
   text_to_speech_voice: string;
+  text_to_speech_auto_download: boolean;
+  text_to_speech_output_dir: string;
+  text_to_speech_require_approval: boolean;
   text_to_video_enabled: boolean;
   status_bar_enabled: boolean;
   next_step_suggestions_enabled: boolean;

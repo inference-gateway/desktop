@@ -185,11 +185,17 @@ pub(crate) fn ensure_gateway_binary(
 /// Env vars that switch on /v1/audio/speech in the gateway so the CLI's
 /// TextToSpeech tool (engine "gateway") can reach it; the gateway defaults
 /// audio off. Read at spawn, so toggling TTS needs a gateway restart.
-pub(crate) fn audio_env(tts_enabled: bool) -> Vec<(&'static str, &'static str)> {
+pub(crate) fn audio_env(
+    tts_enabled: bool,
+    auto_download: bool,
+) -> Vec<(&'static str, &'static str)> {
     if tts_enabled {
         vec![
             ("AUDIO_ENABLED", "true"),
-            ("AUDIO_LOCAL_AUTO_DOWNLOAD", "true"),
+            (
+                "AUDIO_LOCAL_AUTO_DOWNLOAD",
+                if auto_download { "true" } else { "false" },
+            ),
         ]
     } else {
         vec![]
@@ -207,7 +213,10 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
     crate::env::command(bin)
         .envs(auth_env())
         .envs(collector_env())
-        .envs(audio_env(cfg.text_to_speech_enabled))
+        .envs(audio_env(
+            cfg.text_to_speech_enabled,
+            cfg.text_to_speech_auto_download,
+        ))
         .envs(video_env(cfg.text_to_video_enabled))
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
@@ -297,13 +306,17 @@ mod tests {
 
     #[test]
     fn audio_env_sets_audio_vars_only_when_tts_enabled() {
-        assert!(audio_env(false).is_empty());
+        assert!(audio_env(false, true).is_empty());
         assert_eq!(
-            audio_env(true),
+            audio_env(true, true),
             vec![
                 ("AUDIO_ENABLED", "true"),
                 ("AUDIO_LOCAL_AUTO_DOWNLOAD", "true")
             ]
+        );
+        assert_eq!(
+            audio_env(true, false)[1],
+            ("AUDIO_LOCAL_AUTO_DOWNLOAD", "false")
         );
     }
 }

@@ -49,9 +49,9 @@ under `~/.infer`; the only place you write is the working directory.
   (e.g. `presenter`); never copy the portraits into the project.
 
 If any of these is missing, stop and tell the user exactly which one: tools and the model are
-installed by switching the project to Content in Settings > Projects; the agent tools are
-enabled in Settings > General; voice samples are recorded in Settings > Voice samples; avatars are
-created in Settings > Avatars.
+installed by switching the project to Content in Settings > Projects; text to video is enabled
+in Settings > General; text to speech is enabled, and voice samples are recorded, in
+Settings > Voice samples; avatars are created in Settings > Avatars.
 
 Media lives in `media/` inside the working directory: the recordings and music the user added
 (the desktop shows this folder as the media pool) and every voice clip you synthesize. Timeline

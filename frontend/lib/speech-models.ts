@@ -32,3 +32,11 @@ export function speechModelLabel(configured: string): string {
   const current = effectiveSpeechModel(configured);
   return SPEECH_MODELS.find((m) => m.id === current)?.label ?? current;
 }
+
+type GatewaySpeech = { text_to_speech_enabled: boolean; text_to_speech_auto_download: boolean };
+
+/** Whether a saved change only reaches the gateway once it restarts: it reads both at spawn. */
+export function speechRestartsGateway(before: GatewaySpeech, after: GatewaySpeech): boolean {
+  if (before.text_to_speech_enabled !== after.text_to_speech_enabled) return true;
+  return after.text_to_speech_enabled && before.text_to_speech_auto_download !== after.text_to_speech_auto_download;
+}

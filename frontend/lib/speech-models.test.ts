@@ -6,6 +6,7 @@ import {
   isLocalSpeechModel,
   speechModelLabel,
   speechModelOptions,
+  speechRestartsGateway,
 } from "./speech-models";
 
 test("an unset speech model is the local default", () => {
@@ -21,4 +22,14 @@ test("a model set by hand stays selectable and labelled by its id", () => {
     label: "openai/gpt-4o-mini-tts",
   });
   expect(speechModelLabel("openai/gpt-4o-mini-tts")).toBe("openai/gpt-4o-mini-tts");
+});
+
+test("the gateway restarts when speech turns on or off, or its download setting changes while on", () => {
+  const off = { text_to_speech_enabled: false, text_to_speech_auto_download: true };
+  const on = { text_to_speech_enabled: true, text_to_speech_auto_download: true };
+  expect(speechRestartsGateway(off, on)).toBe(true);
+  expect(speechRestartsGateway(on, off)).toBe(true);
+  expect(speechRestartsGateway(on, on)).toBe(false);
+  expect(speechRestartsGateway(on, { ...on, text_to_speech_auto_download: false })).toBe(true);
+  expect(speechRestartsGateway(off, { ...off, text_to_speech_auto_download: false })).toBe(false);
 });

@@ -17,6 +17,7 @@ import {
   trimSilence,
 } from "@/lib/audio";
 import { isLocalSpeechModel, speechModelLabel } from "@/lib/speech-models";
+import { SpeechSettings, useSpeechConfig } from "@/components/SpeechSettings";
 
 // Managed library of WAV reference recordings for voice cloning, backed by the
 // list/add/delete voice-sample commands (backend/src/tts_samples.rs). Upload is
@@ -116,10 +117,10 @@ function LevelMeter({ level }: { level: number }) {
 
 function testHint(speech: SpeechSetup | null): string {
   if (!speech) return "";
-  if (!speech.enabled) return "Text to speech is off. Turn it on in General to test a sample.";
+  if (!speech.enabled) return "Text to speech is off. Turn it on above to test a sample.";
   const model = speechModelLabel(speech.model);
   if (!isLocalSpeechModel(speech.model))
-    return `The speech model in General (${model}) speaks in its own voice id and does not use voice samples. Choose the local model there to speak in a sample's voice.`;
+    return `The speech model above (${model}) speaks in its own voice id and does not use voice samples. Choose the local model to speak in a sample's voice.`;
   return `Test reads the text below in a sample's voice with ${model}, exactly as an agent would.`;
 }
 
@@ -204,7 +205,11 @@ export function VoiceSamplesTab() {
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
   const [level, setLevel] = useState(0);
-  const [speech, setSpeech] = useState<SpeechSetup | null>(null);
+  const speechConfig = useSpeechConfig();
+  const speech: SpeechSetup | null = speechConfig.config && {
+    enabled: speechConfig.config.text_to_speech_enabled,
+    model: speechConfig.config.text_to_speech_model,
+  };
   const [testing, setTesting] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, { path: string; at: number }>>({});
   const [testErrors, setTestErrors] = useState<Record<string, string>>({});
@@ -234,13 +239,6 @@ export function VoiceSamplesTab() {
   }, []);
 
   useEffect(refresh, [refresh]);
-
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((c) => setSpeech({ enabled: c.text_to_speech_enabled, model: c.text_to_speech_model }))
-      .catch(() => {});
-  }, []);
 
   const canTest = !!speech?.enabled && isLocalSpeechModel(speech.model) && testing === null;
 
@@ -351,6 +349,7 @@ export function VoiceSamplesTab() {
         Reference WAV recordings for voice cloning, stored in ~/.infer/voice/samples. Ask the agent to speak in a
         sample's voice by its full file name, e.g. "read this in the voice of my-voice.wav".
       </p>
+      <SpeechSettings {...speechConfig} />
       <div className="mb-4 rounded-lg border border-border bg-card p-3 text-[0.8rem]">
         <p>
           A good reference, recorded or uploaded: a quiet room, a consistent distance from the mic, natural delivery,

@@ -20,7 +20,6 @@ import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useSnippets } from "@/stores/snippets";
 import { DEFAULT_CONFIG, type StorageField } from "@/lib/desktop-config";
-import { effectiveSpeechModel, isLocalSpeechModel, speechModelOptions } from "@/lib/speech-models";
 
 const STORAGE_BACKENDS = ["jsonl", "sqlite", "postgres", "redis", "d1"] as const;
 
@@ -71,7 +70,6 @@ export function GeneralTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [savedTts, setSavedTts] = useState(false);
   const [savedTtv, setSavedTtv] = useState(false);
   const [recordKeep, setRecordKeepState] = useState(screenRecordKeep());
 
@@ -86,7 +84,6 @@ export function GeneralTab() {
       .getConfig()
       .then((c) => {
         setConfigs(c);
-        setSavedTts(c.text_to_speech_enabled);
         setSavedTtv(c.text_to_video_enabled);
       })
       .catch(() => {});
@@ -113,10 +110,9 @@ export function GeneralTab() {
       setDirty(false);
       setSaved(true);
       setError("");
-      // The gateway reads AUDIO_* and VIDEOS_ENABLED env at spawn, so a TTS or
-      // TTV toggle needs a restart (same path as saving an API key).
-      if (savedTts !== config.text_to_speech_enabled || savedTtv !== config.text_to_video_enabled) {
-        setSavedTts(config.text_to_speech_enabled);
+      // The gateway reads VIDEOS_ENABLED env at spawn, so a TTV toggle needs a
+      // restart (same path as saving an API key).
+      if (savedTtv !== config.text_to_video_enabled) {
         setSavedTtv(config.text_to_video_enabled);
         await api.startGateway(false, true);
       }
@@ -423,72 +419,6 @@ export function GeneralTab() {
           Suggest a next step after each reply
         </Label>
       </div>
-
-      {/* Text to speech */}
-      <h3 className="mt-5 text-[0.9rem] font-semibold">Text to speech</h3>
-      <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Lets the agent generate spoken audio with the CLI's TextToSpeech tool. Off by default; saving restarts the
-        gateway. Manage reference recordings in the Voice samples tab.
-      </p>
-      <div className="mb-5 flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="tts-enabled"
-          checked={config.text_to_speech_enabled}
-          onChange={(e) => set("text_to_speech_enabled", e.target.checked)}
-          className="h-4 w-4 accent-primary"
-        />
-        <Label htmlFor="tts-enabled" className="cursor-pointer text-[0.8rem] font-medium">
-          Enable Text to Speech
-        </Label>
-      </div>
-      {config.text_to_speech_enabled && (
-        <div className="mb-5 flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <Label htmlFor="tts-model" className="w-24 text-[0.8rem] font-medium">
-              Speech model
-            </Label>
-            <select
-              id="tts-model"
-              value={effectiveSpeechModel(config.text_to_speech_model)}
-              onChange={(e) => set("text_to_speech_model", e.target.value)}
-              className="w-full max-w-sm rounded border border-border bg-secondary px-2 py-1.5 text-[0.85rem] text-foreground"
-            >
-              {speechModelOptions(config.text_to_speech_model).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {isLocalSpeechModel(config.text_to_speech_model) ? (
-            <p className="text-[0.75rem] text-muted-foreground">
-              Runs on this computer and clones a voice sample when the agent names one. Hear each sample in the Voice
-              samples tab.
-            </p>
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <Label htmlFor="tts-voice" className="w-24 text-[0.8rem] font-medium">
-                  Voice
-                </Label>
-                <Input
-                  id="tts-voice"
-                  value={config.text_to_speech_voice}
-                  onChange={(e) => set("text_to_speech_voice", e.target.value)}
-                  placeholder="Voice id from your provider's voice library"
-                  className="max-w-sm"
-                />
-              </div>
-              <p className="text-[0.75rem] text-muted-foreground">
-                A hosted model sends the text to its provider and needs that provider's key under API Keys. It speaks in
-                this voice. For your own voice, clone it in the provider's account and paste its voice id here - voice
-                samples are used by the local model only.
-              </p>
-            </>
-          )}
-        </div>
-      )}
 
       {/* Text to video */}
       <h3 className="mt-5 text-[0.9rem] font-semibold">Text to video</h3>

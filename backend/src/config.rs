@@ -243,6 +243,18 @@ pub(crate) struct DesktopConfig {
     /// names no voice sample (text_to_speech.voice).
     #[serde(default)]
     pub(crate) text_to_speech_voice: String,
+    /// Whether the gateway may download what the local speech model needs
+    /// (text_to_speech.auto_download), about 1.4 GB on first use.
+    #[serde(default = "enabled_by_default")]
+    pub(crate) text_to_speech_auto_download: bool,
+    /// Where generated speech is written (text_to_speech.output_dir). Empty
+    /// leaves the CLI on its media directory.
+    #[serde(default)]
+    pub(crate) text_to_speech_output_dir: String,
+    /// Whether the agent asks before it speaks
+    /// (text_to_speech.require_approval). Off leaves the tool's own policy.
+    #[serde(default)]
+    pub(crate) text_to_speech_require_approval: bool,
     /// Enable the CLI's TextToVideo tool (text_to_video.enabled in the CLI
     /// config). Off by default: every render sends a portrait and a voice clip
     /// to a third-party video provider.
@@ -322,6 +334,9 @@ pub(crate) fn default_config() -> DesktopConfig {
         text_to_speech_enabled: false,
         text_to_speech_model: String::new(),
         text_to_speech_voice: String::new(),
+        text_to_speech_auto_download: true,
+        text_to_speech_output_dir: String::new(),
+        text_to_speech_require_approval: false,
         text_to_video_enabled: false,
         status_bar_enabled: true,
         next_step_suggestions_enabled: false,
@@ -468,6 +483,10 @@ pub(crate) fn config_from_value(
         text_to_speech_enabled: bool_at(&["text_to_speech", "enabled"]).unwrap_or(false),
         text_to_speech_model: str_at(&["text_to_speech", "model"]).unwrap_or_default(),
         text_to_speech_voice: str_at(&["text_to_speech", "voice"]).unwrap_or_default(),
+        text_to_speech_auto_download: bool_at(&["text_to_speech", "auto_download"]).unwrap_or(true),
+        text_to_speech_output_dir: str_at(&["text_to_speech", "output_dir"]).unwrap_or_default(),
+        text_to_speech_require_approval: bool_at(&["text_to_speech", "require_approval"])
+            .unwrap_or(false),
         text_to_video_enabled: bool_at(&["text_to_video", "enabled"]).unwrap_or(false),
         status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
         next_step_suggestions_enabled: bool_at(&["chat", "suggestions", "enabled"])
@@ -524,6 +543,37 @@ pub(crate) fn set_section(
         for (k, v) in kvs {
             m.insert(k.into(), v);
         }
+    }
+}
+
+fn enabled_by_default() -> bool {
+    true
+}
+
+/// Write the CLI's `text_to_speech` block. An approval that is off is left
+/// out, because the CLI reads a missing key as the tool's own policy.
+fn set_speech_section(map: &mut serde_norway::Mapping, cfg: &DesktopConfig) {
+    set_section(
+        map,
+        "text_to_speech",
+        vec![
+            ("enabled", cfg.text_to_speech_enabled.into()),
+            ("model", cfg.text_to_speech_model.clone().into()),
+            ("voice", cfg.text_to_speech_voice.clone().into()),
+            ("auto_download", cfg.text_to_speech_auto_download.into()),
+            ("output_dir", cfg.text_to_speech_output_dir.clone().into()),
+        ],
+    );
+    let Some(speech) = map
+        .get_mut("text_to_speech")
+        .and_then(serde_norway::Value::as_mapping_mut)
+    else {
+        return;
+    };
+    if cfg.text_to_speech_require_approval {
+        speech.insert("require_approval".into(), true.into());
+    } else {
+        speech.remove("require_approval");
     }
 }
 
@@ -629,15 +679,7 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         );
     }
 
-    set_section(
-        map,
-        "text_to_speech",
-        vec![
-            ("enabled", cfg.text_to_speech_enabled.into()),
-            ("model", cfg.text_to_speech_model.clone().into()),
-            ("voice", cfg.text_to_speech_voice.clone().into()),
-        ],
-    );
+    set_speech_section(map, cfg);
     set_section(
         map,
         "text_to_video",
@@ -1074,7 +1116,7 @@ mod tests {
 
     #[test]
     fn merge_config_round_trips_text_to_speech() {
-        let existing = "text_to_speech:\n  engine: qwen3-tts\n  output_dir: /x\n";
+        let existing = "text_to_speech:\n  engine: qwen3-tts\n";
         let val = parse_yaml(&merge_config(Some(existing), &default_config()).unwrap());
         assert_eq!(
             val.get("text_to_speech")
@@ -1085,10 +1127,6 @@ mod tests {
         assert_eq!(
             str_field(&val, &["text_to_speech", "engine"]),
             Some("qwen3-tts")
-        );
-        assert_eq!(
-            str_field(&val, &["text_to_speech", "output_dir"]),
-            Some("/x")
         );
 
         let mut cfg = default_config();
@@ -1111,15 +1149,47 @@ mod tests {
         cfg.text_to_speech_model = "elevenlabs/eleven_v4_turbo".into();
         cfg.text_to_speech_voice = "voice-id".into();
         let val =
-            parse_yaml(&merge_config(Some("text_to_speech:\n  output_dir: /x\n"), &cfg).unwrap());
+            parse_yaml(&merge_config(Some("text_to_speech:\n  engine: gateway\n"), &cfg).unwrap());
         assert_eq!(
-            str_field(&val, &["text_to_speech", "output_dir"]),
-            Some("/x")
+            str_field(&val, &["text_to_speech", "engine"]),
+            Some("gateway")
         );
 
         let read_back = config_from_value(&val, std::path::Path::new("/home/tester"));
         assert_eq!(read_back.text_to_speech_model, "elevenlabs/eleven_v4_turbo");
         assert_eq!(read_back.text_to_speech_voice, "voice-id");
+    }
+
+    #[test]
+    fn merge_config_round_trips_the_speech_download_output_and_approval() {
+        let home = std::path::Path::new("/home/tester");
+        let by_hand =
+            "text_to_speech:\n  auto_download: false\n  output_dir: /x\n  require_approval: true\n";
+        let read = config_from_value(&parse_yaml(by_hand), home);
+        assert!(!read.text_to_speech_auto_download);
+        assert_eq!(read.text_to_speech_output_dir, "/x");
+        assert!(read.text_to_speech_require_approval);
+
+        let kept = config_from_value(
+            &parse_yaml(&merge_config(Some(by_hand), &read).unwrap()),
+            home,
+        );
+        assert!(!kept.text_to_speech_auto_download);
+        assert_eq!(kept.text_to_speech_output_dir, "/x");
+        assert!(kept.text_to_speech_require_approval);
+
+        let defaults = parse_yaml(&merge_config(Some(by_hand), &default_config()).unwrap());
+        let speech = defaults.get("text_to_speech").unwrap();
+        assert_eq!(
+            speech.get("auto_download").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert!(speech.get("require_approval").is_none());
+        assert!(
+            config_from_value(&defaults, home)
+                .text_to_speech_output_dir
+                .is_empty()
+        );
     }
 
     #[test]
