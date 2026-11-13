@@ -69,7 +69,15 @@ function SpeechPlayer({ item }: { item: Extract<TranscriptItem, { kind: "audio" 
 
 /** Starts a reply to an assistant message or a generated file: the composer shows what is quoted and
  * sends it above the prompt. */
-function ReplyButton({ kind, text }: { kind: "message" | "audio"; text: string }) {
+function ReplyButton({
+  kind,
+  text,
+  className,
+}: {
+  kind: "message" | "audio" | "image";
+  text: string;
+  className?: string;
+}) {
   const { setReply, composerRef } = useDesktop();
   return (
     <Button
@@ -78,6 +86,7 @@ function ReplyButton({ kind, text }: { kind: "message" | "audio"; text: string }
       variant="secondary"
       aria-label={`Reply to ${kind}`}
       title={`Reply to this ${kind}`}
+      className={className}
       onClick={() => {
         setReply(replyMarker(kind, text));
         composerRef.current?.focus();
@@ -570,6 +579,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
           <Icon className={cn(status === "saving" && "animate-spin")} />
         </Button>
       )}
+      {path && <ReplyButton kind="image" text={path} className="absolute right-2 top-11 shadow-sm backdrop-blur-sm" />}
     </div>
   );
 }
