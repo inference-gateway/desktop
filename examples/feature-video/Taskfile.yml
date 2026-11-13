@@ -6,7 +6,7 @@ vars:
 
 tasks:
   up:
-    desc: Copy the feature-editor agent into ~/.infer/agents. The agent downloads FilmCraft, Node and its browser itself
+    desc: Copy the feature-editor agent into ~/.infer/agents. The agent downloads FilmCraft itself
     cmds:
       - task: agent:install
 

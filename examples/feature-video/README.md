@@ -2,7 +2,7 @@
 
 One `feature-editor` agent turns a raw screen recording into a tutorial on a computer of its own, and you only approve and download.
 
-Give it a recording of you using a feature and it cuts the stretches where nothing happens, speeds up the slow parts, zooms in where the action is, writes a narration and speaks it in your voice, adds captions, and renders title, chapter and outro cards. It edits in [FilmCraft](https://github.com/storytold/filmcraft), speaks with the `infer` CLI's text to speech and renders the cards with [HyperFrames](https://github.com/heygen-com/hyperframes). The result shows up under the chat's **Artifacts** menu.
+Give it a recording of you using a feature and it cuts the stretches where nothing happens, speeds up the slow parts, zooms in where the action is, writes a narration and speaks it in your voice, adds captions and title, chapter and outro cards, and introduces you with a name tag when you ask. It edits in [FilmCraft](https://github.com/storytold/filmcraft), which also makes the cards, and speaks with the `infer` CLI's text to speech. The result shows up under the chat's **Artifacts** menu.
 
 It builds on [examples/drone-footage](../drone-footage): the same read-only footage folder and the same draft you approve before the final export. It needs no GPU, no API key and no tools folder.
 
@@ -44,7 +44,7 @@ Edit the recording into a tutorial. It shows how to add a workspace volume.
 
 Say what the feature is and who the tutorial is for - the agent sees the screen, not your intent. Name the voice sample to speak in, such as `in my Confident voice`. Without a name the agent uses your only sample, or asks which one when you have several.
 
-Open **Computers** in the top bar to watch. The agent stops twice for you:
+Open **Computers** in the top bar to watch. FilmCraft opens first and the whole job shows in its window: the playhead moves to what the agent looks at, each beat of the plan is a coloured marker on the recording, and the tutorial is built row by row. The agent stops twice and asks you a question:
 
 1. **The edit plan.** A table of beats - the steps it keeps - with what happens to each (kept, sped up, zoomed), the sentence it will say over it, where the cards go, and the voice it will speak in. Nothing is built yet, so this is the cheap place to change things:
 
@@ -73,26 +73,13 @@ The footage folder is read-only twice: under **Settings > Compute** and on the w
 
 ## What the agent downloads
 
-A new computer has none of its tools and the agent has no root access, so it fetches them into its working directory the first time, each checked against its checksum:
-
-| What | For |
-| --- | --- |
-| FilmCraft, the latest package | The edit |
-| Node.js v22 and a headless Chromium | HyperFrames, which renders a card from HTML |
-
-Both survive a restart of the computer.
+A new computer has no editor and the agent has no root access, so it fetches FilmCraft, the latest package, into its working directory the first time and checks it against its checksum. It survives a restart of the computer. Without the editor the agent stops and reports - it never edits around it.
 
 The voice model is not on the computer. The workspace's gateway runs it: it downloads about 1.4 GB each time it starts, which it does again after every stretch with no chat running, and it holds about 6 GiB of memory while it speaks a sentence. A sentence took 20 seconds when measured on the gateway's 2 CPUs.
 
-If the browser cannot start on the computer, the agent makes the cards as text in FilmCraft instead and says so.
-
 ## Not run end to end yet
 
-The agent's instructions were written from FilmCraft's, HyperFrames' and the CLI's source and documentation. These parts have not run on a computer of the local cluster yet:
-
-- FilmCraft on a variable frame rate screen recording of this size.
-- A chat that speaks through the workspace's gateway with a sample that came along. The gateway's speech engine and the samples' journey were each measured on their own, not from the app.
-- HyperFrames' browser on the computer image, which may lack a library it needs.
+One full run on the local cluster built and exported a tutorial from an 11 minute recording, speaking in a sample that came along, with an earlier version of these instructions. The current ones have not run end to end yet. Their FilmCraft commands - the markers, the cards, the name tag and the export's loudness - were each checked against FilmCraft 0.20.1 without its window.
 
 Expect the first run to need a correction, and report what the agent stopped on.
 
