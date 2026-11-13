@@ -57,6 +57,7 @@ export const DEFAULT_CONFIG: DesktopConfig = {
   text_to_speech_output_dir: "",
   text_to_speech_require_approval: false,
   text_to_video_enabled: false,
+  text_to_video_avatar_model: "",
   status_bar_enabled: true,
   next_step_suggestions_enabled: false,
   vision_annotator_model: "",
