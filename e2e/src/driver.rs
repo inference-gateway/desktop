@@ -187,16 +187,23 @@ fn seed_project_agent(home: &Path, name: &str, project: &str) -> Result<()> {
     Ok(())
 }
 
+/// The CLI config of a HOME that has text to speech on, on the speech model
+/// a test names or on the CLI's own default.
+fn speech_config(model: Option<&str>) -> String {
+    let model = model.map(|model| format!("  model: {model}\n"));
+    format!(
+        "text_to_speech:\n  enabled: true\n{}",
+        model.unwrap_or_default()
+    )
+}
+
 /// A voice sample in the library of a HOME that has text to speech on. The
 /// mock gateway speaks it, so no audio is made up here.
-fn seed_voice_sample(home: &Path, name: &str, infer: &Path) -> Result<()> {
+fn seed_voice_sample(home: &Path, name: &str, model: Option<&str>, infer: &Path) -> Result<()> {
     let infer_home = home.join(".infer");
     let samples = infer_home.join("voice").join("samples");
     std::fs::create_dir_all(&samples)?;
-    std::fs::write(
-        infer_home.join("config.yaml"),
-        "text_to_speech:\n  enabled: true\n",
-    )?;
+    std::fs::write(infer_home.join("config.yaml"), speech_config(model))?;
     let sample = format!("{name}.wav");
     Command::new(infer)
         .current_dir(home)
@@ -224,6 +231,7 @@ pub struct Seeds<'a> {
     pub model_agent: Option<&'a str>,
     pub project_agent: Option<&'a str>,
     pub voice_sample: Option<&'a str>,
+    pub speech_model: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -285,7 +293,7 @@ impl AppDriver {
             let infer = resolved_infer
                 .as_deref()
                 .context("voice_sample needs an infer binary to speak it")?;
-            seed_voice_sample(&home, name, infer)?;
+            seed_voice_sample(&home, name, seeds.speech_model, infer)?;
         }
 
         let child = if let Some(app_bundle) = app_bundle {

@@ -5,6 +5,7 @@ import { api, type DesktopConfig } from "@/lib/tauri";
 import {
   effectiveSpeechModel,
   isLocalSpeechModel,
+  keepsVoiceSamples,
   speechModelOptions,
   speechRestartsGateway,
 } from "@/lib/speech-models";
@@ -81,6 +82,7 @@ export function SpeechSettings({ config, status, error, save }: SpeechConfig) {
   }
 
   const local = isLocalSpeechModel(config.text_to_speech_model);
+  const keepsSamples = keepsVoiceSamples(config.text_to_speech_model);
   const saveText = (key: "text_to_speech_voice" | "text_to_speech_output_dir") => (e: FocusEvent<HTMLInputElement>) => {
     const value = e.target.value.trim();
     if (value !== config[key]) save({ [key]: value });
@@ -158,15 +160,24 @@ export function SpeechSettings({ config, status, error, save }: SpeechConfig) {
               defaultValue={config.text_to_speech_voice}
               onBlur={saveText("text_to_speech_voice")}
               onKeyDown={blurOnEnter}
-              placeholder="Voice id from your provider's voice library"
+              placeholder={
+                keepsSamples ? "Optional - a voice id for speech without a sample" : "Voice id from your provider"
+              }
               className="max-w-sm"
             />
           </div>
-          <p className={HINT}>
-            A hosted model sends the text to its provider and needs that provider's key under API Keys. It speaks in
-            this voice. For your own voice, clone it in the provider's account and paste its voice id here - voice
-            samples are used by the local model only.
-          </p>
+          {keepsSamples ? (
+            <p className={HINT}>
+              Sends the text to ElevenLabs and needs its key under API Keys. A voice sample the agent names is cloned
+              into your ElevenLabs account the first time it is used, and stays there until you delete it. Without a
+              sample it speaks in this voice.
+            </p>
+          ) : (
+            <p className={HINT}>
+              A hosted model sends the text to its provider and needs that provider's key under API Keys. It speaks in
+              this voice and does not clone voice samples.
+            </p>
+          )}
         </>
       )}
 

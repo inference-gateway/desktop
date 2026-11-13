@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import {
   LOCAL_SPEECH_MODEL,
   SPEECH_MODELS,
+  clonesVoiceSamples,
   effectiveSpeechModel,
   isLocalSpeechModel,
+  keepsVoiceSamples,
   speechModelLabel,
   speechModelOptions,
   speechRestartsGateway,
@@ -32,4 +34,13 @@ test("the gateway restarts when speech turns on or off, or its download setting 
   expect(speechRestartsGateway(on, on)).toBe(false);
   expect(speechRestartsGateway(on, { ...on, text_to_speech_auto_download: false })).toBe(true);
   expect(speechRestartsGateway(off, { ...off, text_to_speech_auto_download: false })).toBe(false);
+});
+
+test("the local model and ElevenLabs speak in a voice sample, and only ElevenLabs keeps it", () => {
+  expect(clonesVoiceSamples("")).toBe(true);
+  expect(clonesVoiceSamples("elevenlabs/eleven_v4_turbo")).toBe(true);
+  expect(clonesVoiceSamples("openai/gpt-4o-mini-tts")).toBe(false);
+  expect(keepsVoiceSamples("")).toBe(false);
+  expect(keepsVoiceSamples("elevenlabs/eleven_v4_turbo")).toBe(true);
+  expect(keepsVoiceSamples("openai/gpt-4o-mini-tts")).toBe(false);
 });

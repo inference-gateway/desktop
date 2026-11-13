@@ -16,7 +16,7 @@ import {
   sampleIssues,
   trimSilence,
 } from "@/lib/audio";
-import { isLocalSpeechModel, speechModelLabel } from "@/lib/speech-models";
+import { clonesVoiceSamples, keepsVoiceSamples, speechModelLabel } from "@/lib/speech-models";
 import { SpeechSettings, useSpeechConfig } from "@/components/SpeechSettings";
 
 // Managed library of WAV reference recordings for voice cloning, backed by the
@@ -119,9 +119,12 @@ function testHint(speech: SpeechSetup | null): string {
   if (!speech) return "";
   if (!speech.enabled) return "Text to speech is off. Turn it on above to test a sample.";
   const model = speechModelLabel(speech.model);
-  if (!isLocalSpeechModel(speech.model))
-    return `The speech model above (${model}) speaks in its own voice id and does not use voice samples. Choose the local model to speak in a sample's voice.`;
-  return `Test reads the text below in a sample's voice with ${model}, exactly as an agent would.`;
+  if (!clonesVoiceSamples(speech.model))
+    return `The speech model above (${model}) speaks in its own voice id and does not clone voice samples. Choose the local model or an ElevenLabs one to speak in a sample's voice.`;
+  const test = `Test reads the text below in a sample's voice with ${model}, exactly as an agent would.`;
+  if (keepsVoiceSamples(speech.model))
+    return `${test} The first test of a sample stores it as a voice in your ElevenLabs account.`;
+  return test;
 }
 
 function SampleCard({
@@ -240,7 +243,7 @@ export function VoiceSamplesTab() {
 
   useEffect(refresh, [refresh]);
 
-  const canTest = !!speech?.enabled && isLocalSpeechModel(speech.model) && testing === null;
+  const canTest = !!speech?.enabled && clonesVoiceSamples(speech.model) && testing === null;
 
   const test = async (name: string) => {
     setTesting(name);

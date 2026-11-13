@@ -16,8 +16,25 @@ export function effectiveSpeechModel(configured: string): string {
   return configured.trim() || LOCAL_SPEECH_MODEL;
 }
 
+const LOCAL_PROVIDER = "local";
+const ELEVENLABS_PROVIDER = "elevenlabs";
+
+function speechProvider(configured: string): string {
+  return effectiveSpeechModel(configured).split("/")[0];
+}
+
 export function isLocalSpeechModel(configured: string): boolean {
-  return effectiveSpeechModel(configured).startsWith("local/");
+  return speechProvider(configured) === LOCAL_PROVIDER;
+}
+
+/** Whether the provider keeps a voice sample: ElevenLabs stores its clone in the account of the key. */
+export function keepsVoiceSamples(configured: string): boolean {
+  return speechProvider(configured) === ELEVENLABS_PROVIDER;
+}
+
+/** Whether the model speaks in a voice sample the agent names. */
+export function clonesVoiceSamples(configured: string): boolean {
+  return isLocalSpeechModel(configured) || keepsVoiceSamples(configured);
 }
 
 /** The picker's options, keeping a model set by hand in config.yaml selectable. */
