@@ -57,10 +57,9 @@ pub(crate) const CAPABILITIES: [Capability; 4] = [
     Capability {
         id: "text-to-speech",
         label: "Text to speech",
-        hint: "The agent speaks text with TextToSpeech, in your voice samples too. The workspace's gateway runs the voice model and downloads it, about 1.4 GB, when it starts.",
+        hint: "The agent speaks text with TextToSpeech, in your voice samples too. The workspace's gateway runs the local voice model and downloads it, about 1.4 GB, when it starts. Set INFER_TEXT_TO_SPEECH_MODEL in the environment for another speech model.",
         env: &[
             ("INFER_TEXT_TO_SPEECH_ENABLED", "true"),
-            ("INFER_TEXT_TO_SPEECH_MODEL", "local/qwen3-tts"),
             ("INFER_TEXT_TO_SPEECH_REQUIRE_APPROVAL", "false"),
         ],
         user_data: "",
@@ -91,7 +90,7 @@ mod tests {
     }
 
     #[test]
-    fn text_to_speech_speaks_through_the_gateway_and_brings_the_voice_samples() {
+    fn text_to_speech_leaves_the_speech_model_to_the_workspace_and_brings_the_voice_samples() {
         let speech = CAPABILITIES
             .iter()
             .find(|c| c.id == "text-to-speech")
@@ -104,13 +103,9 @@ mod tests {
         assert!(
             speech
                 .env
-                .contains(&("INFER_TEXT_TO_SPEECH_MODEL", "local/qwen3-tts"))
-        );
-        assert!(
-            speech
-                .env
                 .iter()
-                .all(|(name, _)| *name != "INFER_TEXT_TO_SPEECH_ENGINE")
+                .all(|(name, _)| *name != "INFER_TEXT_TO_SPEECH_MODEL"
+                    && *name != "INFER_TEXT_TO_SPEECH_ENGINE")
         );
         assert!(speech.forward_voice_samples);
         assert!(

@@ -1,0 +1,19 @@
+name: voice sample test - an ElevenLabs model speaks in a sample too
+voice_sample: narrator
+speech_model: elevenlabs/eleven_v4_turbo
+narration:
+  - "Open Settings."
+  - "Switch to the Voice samples tab."
+  - "The voice id is optional: a sample is enough."
+  - "The tab says the sample is kept as a voice in the ElevenLabs account."
+  - "Test it, as with the local model."
+  - "The reading is a WAV of its own."
+  - "It plays right under the sample."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Voice samples" }
+  - wait_for: { text: "cloned into your ElevenLabs account the first time it is used", timeout: 10 }
+  - wait_for: { text: "The first test of a sample stores it as a voice in your ElevenLabs account.", timeout: 10 }
+  - click: { button: "Test voice narrator.wav" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/tmp/media/tts/voice-test-narrator.wav", timeout: 60 }
+  - wait_for: { text: "How an agent sounds in this voice", timeout: 10 }

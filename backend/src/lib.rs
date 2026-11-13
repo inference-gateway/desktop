@@ -233,6 +233,7 @@ pub fn run() {
             tts_samples::add_voice_sample,
             tts_samples::save_voice_sample,
             tts_samples::delete_voice_sample,
+            tts_samples::test_voice_sample,
             avatars::list_avatars,
             avatars::import_avatar,
             avatars::snapshot_avatar,

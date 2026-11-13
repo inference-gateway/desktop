@@ -187,6 +187,42 @@ fn seed_project_agent(home: &Path, name: &str, project: &str) -> Result<()> {
     Ok(())
 }
 
+/// The CLI config of a HOME that has text to speech on, on the speech model
+/// a test names or on the CLI's own default.
+fn speech_config(model: Option<&str>) -> String {
+    let model = model.map(|model| format!("  model: {model}\n"));
+    format!(
+        "text_to_speech:\n  enabled: true\n{}",
+        model.unwrap_or_default()
+    )
+}
+
+/// A voice sample in the library of a HOME that has text to speech on. The
+/// mock gateway speaks it, so no audio is made up here.
+fn seed_voice_sample(home: &Path, name: &str, model: Option<&str>, infer: &Path) -> Result<()> {
+    let infer_home = home.join(".infer");
+    let samples = infer_home.join("voice").join("samples");
+    std::fs::create_dir_all(&samples)?;
+    std::fs::write(infer_home.join("config.yaml"), speech_config(model))?;
+    let sample = format!("{name}.wav");
+    Command::new(infer)
+        .current_dir(home)
+        .env("HOME", home)
+        .env("INFER_GATEWAY_MOCK", "true")
+        .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", &samples)
+        .args(["tools", "execute", "TextToSpeech"])
+        .arg(format!(
+            r#"{{"text":"A voice sample.","output_path":"{sample}"}}"#
+        ))
+        .arg("--approved")
+        .output()
+        .context("speaking the voice sample through the mock gateway")?;
+    if !samples.join(&sample).exists() {
+        bail!("the mock gateway did not speak the voice sample {sample}");
+    }
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
@@ -194,6 +230,8 @@ pub struct Seeds<'a> {
     pub workspace_agent: Option<&'a str>,
     pub model_agent: Option<&'a str>,
     pub project_agent: Option<&'a str>,
+    pub voice_sample: Option<&'a str>,
+    pub speech_model: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -251,6 +289,12 @@ impl AppDriver {
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);
+        if let (true, Some(name)) = (mock, seeds.voice_sample) {
+            let infer = resolved_infer
+                .as_deref()
+                .context("voice_sample needs an infer binary to speak it")?;
+            seed_voice_sample(&home, name, seeds.speech_model, infer)?;
+        }
 
         let child = if let Some(app_bundle) = app_bundle {
             let _ = std::fs::File::create(&log_path)?;

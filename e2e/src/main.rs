@@ -191,6 +191,8 @@ fn run_test(
             workspace_agent: test.workspace_agent.as_deref(),
             model_agent: test.model_agent.as_deref(),
             project_agent: test.project_agent.as_deref(),
+            voice_sample: test.voice_sample.as_deref(),
+            speech_model: test.speech_model.as_deref(),
         },
     )?;
     clean(&app, &test.cleanup);

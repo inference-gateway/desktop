@@ -80,6 +80,7 @@ commands.allow = [
     "add_voice_sample",
     "save_voice_sample",
     "delete_voice_sample",
+    "test_voice_sample",
     "list_avatars",
     "import_avatar",
     "snapshot_avatar",

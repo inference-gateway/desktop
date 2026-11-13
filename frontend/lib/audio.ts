@@ -44,6 +44,44 @@ export function computePeaks(samples: Float32Array, bars: number): number[] {
   return max > 0 ? peaks.map((p) => p / max) : peaks;
 }
 
+export function peakLevel(samples: Float32Array): number {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+  return peak;
+}
+
+const SILENCE_LEVEL = 0.01;
+const TRIM_PADDING_SECONDS = 0.15;
+
+/** Cuts the silence before the first and after the last sound, keeping a short pad around them. */
+export function trimSilence(samples: Float32Array, sampleRate: number): Float32Array {
+  let first = 0;
+  while (first < samples.length && Math.abs(samples[first]) < SILENCE_LEVEL) first++;
+  if (first === samples.length) return samples;
+  let last = samples.length - 1;
+  while (Math.abs(samples[last]) < SILENCE_LEVEL) last--;
+  const pad = Math.floor(TRIM_PADDING_SECONDS * sampleRate);
+  return samples.subarray(Math.max(0, first - pad), Math.min(samples.length, last + pad + 1));
+}
+
+export const MIN_SAMPLE_SECONDS = 10;
+export const QUIET_PEAK = 0.1;
+export const CLIPPING_PEAK = 0.99;
+const CLIPPED_SHARE = 0.001;
+
+export type SampleIssue = "too short" | "too quiet" | "clipped";
+
+/** What makes a recording a weak cloning reference: its length, a low level, or a clipped signal. */
+export function sampleIssues(samples: Float32Array, sampleRate: number): SampleIssue[] {
+  const issues: SampleIssue[] = [];
+  if (samples.length / sampleRate < MIN_SAMPLE_SECONDS) issues.push("too short");
+  if (peakLevel(samples) < QUIET_PEAK) issues.push("too quiet");
+  let clipped = 0;
+  for (let i = 0; i < samples.length; i++) if (Math.abs(samples[i]) >= CLIPPING_PEAK) clipped++;
+  if (clipped > samples.length * CLIPPED_SHARE) issues.push("clipped");
+  return issues;
+}
+
 export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);

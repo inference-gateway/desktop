@@ -317,6 +317,11 @@ export type DesktopConfig = {
   projects_max_file_size_mb: string;
   projects_allowed_mimes: string;
   text_to_speech_enabled: boolean;
+  text_to_speech_model: string;
+  text_to_speech_voice: string;
+  text_to_speech_auto_download: boolean;
+  text_to_speech_output_dir: string;
+  text_to_speech_require_approval: boolean;
   text_to_video_enabled: boolean;
   status_bar_enabled: boolean;
   next_step_suggestions_enabled: boolean;
@@ -532,6 +537,7 @@ export const api = {
   addVoiceSample: () => invoke<VoiceSample | null>("add_voice_sample"),
   saveVoiceSample: (name: string, wav: number[]) => invoke<VoiceSample>("save_voice_sample", { name, wav }),
   deleteVoiceSample: (name: string) => invoke<void>("delete_voice_sample", { name }),
+  testVoiceSample: (name: string, text: string) => invoke<string>("test_voice_sample", { name, text }),
   listAvatars: () => invoke<Avatar[]>("list_avatars"),
   importAvatar: (name: string, onLine: Channel<string>) => invoke<boolean>("import_avatar", { name, onLine }),
   snapshotAvatar: (name: string, jpeg: number[], onLine: Channel<string>) =>

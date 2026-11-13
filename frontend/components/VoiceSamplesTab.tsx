@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Mic, Square, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Mic, Square, Trash2, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { api, type VoiceSample } from "@/lib/tauri";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { safeAudioSrc } from "@/lib/tools";
-import { encodeWav, mergeChunks } from "@/lib/audio";
+import {
+  CLIPPING_PEAK,
+  QUIET_PEAK,
+  type SampleIssue,
+  encodeWav,
+  mergeChunks,
+  peakLevel,
+  sampleIssues,
+  trimSilence,
+} from "@/lib/audio";
+import { clonesVoiceSamples, keepsVoiceSamples, speechModelLabel } from "@/lib/speech-models";
+import { SpeechSettings, useSpeechConfig } from "@/components/SpeechSettings";
 
 // Managed library of WAV reference recordings for voice cloning, backed by the
 // list/add/delete voice-sample commands (backend/src/tts_samples.rs). Upload is
@@ -42,11 +53,170 @@ const SAMPLE_READINGS = [
 
 const RECOMMENDED_SAMPLES = SAMPLE_READINGS.length;
 
+const TEST_READING =
+  "Here's the idea. You describe the change you want, and the agent plans it, writes the code, and shows you every step before anything runs. It sounds simple, and it is. But why does that matter? Because you stay in control the whole time, from the first line to the last.";
+
+const ISSUE_ADVICE: Record<SampleIssue, string> = {
+  "too short": "Under 10 seconds - record a longer take.",
+  "too quiet": "Very quiet - move closer to the microphone.",
+  clipped: "Distorted peaks - move back or lower the input level.",
+};
+
+// A cloning reference wants the raw microphone: the browser's own processing smears the voice.
+const RAW_MICROPHONE = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+
+type SampleQuality = { seconds: number; issues: SampleIssue[] };
+type SpeechSetup = { enabled: boolean; model: string };
+
+function newAudioContext(): AudioContext {
+  const Ctx: typeof AudioContext =
+    window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  return new Ctx();
+}
+
+function useSampleQuality(src: string | null): SampleQuality | null {
+  const [quality, setQuality] = useState<SampleQuality | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    let alive = true;
+    (async () => {
+      try {
+        const ctx = newAudioContext();
+        const decoded = await ctx.decodeAudioData(await (await fetch(src)).arrayBuffer());
+        const issues = sampleIssues(decoded.getChannelData(0), decoded.sampleRate);
+        if (alive) setQuality({ seconds: decoded.duration, issues });
+        await ctx.close();
+      } catch {
+        if (alive) setQuality(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  return quality;
+}
+
+function levelAdvice(level: number): { text: string; bar: string } {
+  if (level >= CLIPPING_PEAK) return { text: "Too loud - move back", bar: "bg-destructive" };
+  if (level < QUIET_PEAK) return { text: "Too quiet - move closer", bar: "bg-amber-500" };
+  return { text: "Good level", bar: "bg-emerald-500" };
+}
+
+function LevelMeter({ level }: { level: number }) {
+  const advice = levelAdvice(level);
+  return (
+    <div className="flex items-center gap-2" role="status" aria-label="Microphone level">
+      <div className="h-2 w-28 overflow-hidden rounded bg-secondary">
+        <div className={cn("h-full", advice.bar)} style={{ width: `${Math.min(1, level) * 100}%` }} />
+      </div>
+      <span className="text-[0.75rem] text-muted-foreground">{advice.text}</span>
+    </div>
+  );
+}
+
+function testHint(speech: SpeechSetup | null): string {
+  if (!speech) return "";
+  if (!speech.enabled) return "Text to speech is off. Turn it on above to test a sample.";
+  const model = speechModelLabel(speech.model);
+  if (!clonesVoiceSamples(speech.model))
+    return `The speech model above (${model}) speaks in its own voice id and does not clone voice samples. Choose the local model or an ElevenLabs one to speak in a sample's voice.`;
+  const test = `Test reads the text below in a sample's voice with ${model}, exactly as an agent would.`;
+  if (keepsVoiceSamples(speech.model))
+    return `${test} The first test of a sample stores it as a voice in your ElevenLabs account.`;
+  return test;
+}
+
+function SampleCard({
+  sample,
+  canTest,
+  testing,
+  test,
+  testError,
+  onTest,
+  onDelete,
+}: {
+  sample: VoiceSample;
+  canTest: boolean;
+  testing: boolean;
+  test?: { path: string; at: number };
+  testError?: string;
+  onTest: () => void;
+  onDelete: () => void;
+}) {
+  const src = safeAudioSrc(sample.path);
+  const quality = useSampleQuality(src);
+  const testSrc = safeAudioSrc(test?.path);
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[0.8rem] font-medium">{sample.name}</span>
+        {quality && <span className="text-[0.75rem] text-muted-foreground">{quality.seconds.toFixed(1)} s</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Test voice ${sample.name}`}
+          title="Hear this sample read the test text"
+          disabled={!canTest || testing}
+          className="ml-auto"
+          onClick={onTest}
+        >
+          {testing ? <Loader2 size={14} className="animate-spin" /> : <Volume2 size={14} />}
+          {testing ? "Speaking..." : "Test"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Delete ${sample.name}`}
+          title="Delete sample"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 size={14} />
+        </Button>
+      </div>
+      {src && <AudioPlayer src={src} ariaLabel={sample.name} path={sample.path} />}
+      {quality?.issues.map((issue) => (
+        <p key={issue} className="mt-2 flex items-center gap-1 text-[0.75rem] text-amber-500">
+          <AlertTriangle size={12} aria-hidden="true" />
+          {ISSUE_ADVICE[issue]}
+        </p>
+      ))}
+      {testSrc && test && (
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="mb-2 text-[0.75rem] text-muted-foreground">How an agent sounds in this voice</p>
+          <AudioPlayer
+            key={test.at}
+            src={`${testSrc}?at=${test.at}`}
+            ariaLabel={`Test of ${sample.name}`}
+            path={test.path}
+          />
+        </div>
+      )}
+      {testError && (
+        <p role="status" className="mt-2 text-[0.75rem] text-err">
+          {testError}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function VoiceSamplesTab() {
   const [samples, setSamples] = useState<VoiceSample[]>([]);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [level, setLevel] = useState(0);
+  const speechConfig = useSpeechConfig();
+  const speech: SpeechSetup | null = speechConfig.config && {
+    enabled: speechConfig.config.text_to_speech_enabled,
+    model: speechConfig.config.text_to_speech_model,
+  };
+  const [testing, setTesting] = useState<string | null>(null);
+  const [tests, setTests] = useState<Record<string, { path: string; at: number }>>({});
+  const [testErrors, setTestErrors] = useState<Record<string, string>>({});
+  const testText = useRef<HTMLTextAreaElement>(null);
 
   const mediaStream = useRef<MediaStream | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
@@ -72,6 +242,21 @@ export function VoiceSamplesTab() {
   }, []);
 
   useEffect(refresh, [refresh]);
+
+  const canTest = !!speech?.enabled && clonesVoiceSamples(speech.model) && testing === null;
+
+  const test = async (name: string) => {
+    setTesting(name);
+    setTestErrors((errors) => ({ ...errors, [name]: "" }));
+    try {
+      const path = await api.testVoiceSample(name, testText.current?.value.trim() || TEST_READING);
+      setTests((done) => ({ ...done, [name]: { path, at: Date.now() } }));
+    } catch (e) {
+      setTestErrors((errors) => ({ ...errors, [name]: String(e) }));
+    } finally {
+      setTesting(null);
+    }
+  };
 
   const add = async () => {
     setAdding(true);
@@ -114,8 +299,9 @@ export function VoiceSamplesTab() {
       audioCtx.current = null;
     }
 
-    const samples = mergeChunks(recChunks.current);
+    const samples = trimSilence(mergeChunks(recChunks.current), rate);
     recChunks.current = [];
+    setLevel(0);
     if (samples.length === 0) {
       setError("No audio captured");
       return;
@@ -137,20 +323,20 @@ export function VoiceSamplesTab() {
     }
     setError("");
     try {
-      mediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStream.current = await navigator.mediaDevices.getUserMedia({ audio: RAW_MICROPHONE });
     } catch {
       setError("Microphone access denied");
       return;
     }
-    const Ctx: typeof AudioContext =
-      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
+    const ctx = newAudioContext();
     audioCtx.current = ctx;
     recChunks.current = [];
     const source = ctx.createMediaStreamSource(mediaStream.current);
     const node = ctx.createScriptProcessor(4096, 1, 1);
     node.onaudioprocess = (e) => {
-      recChunks.current.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      const chunk = new Float32Array(e.inputBuffer.getChannelData(0));
+      recChunks.current.push(chunk);
+      setLevel(peakLevel(chunk));
     };
     source.connect(node);
     node.connect(ctx.destination);
@@ -166,6 +352,7 @@ export function VoiceSamplesTab() {
         Reference WAV recordings for voice cloning, stored in ~/.infer/voice/samples. Ask the agent to speak in a
         sample's voice by its full file name, e.g. "read this in the voice of my-voice.wav".
       </p>
+      <SpeechSettings {...speechConfig} />
       <div className="mb-4 rounded-lg border border-border bg-card p-3 text-[0.8rem]">
         <p>
           A good reference, recorded or uploaded: a quiet room, a consistent distance from the mic, natural delivery,
@@ -216,11 +403,25 @@ export function VoiceSamplesTab() {
         >
           {recording ? <Square size={14} /> : <Mic size={14} />}
         </Button>
+        {recording && <LevelMeter level={level} />}
         {error && (
           <span role="status" className="text-[0.75rem] text-err">
             {error}
           </span>
         )}
+      </div>
+      <div className="mb-4">
+        <label htmlFor="voice-test-text" className="text-[0.8rem] font-medium">
+          Test text
+        </label>
+        <p className="mb-2 text-[0.75rem] text-muted-foreground">{testHint(speech)}</p>
+        <textarea
+          id="voice-test-text"
+          ref={testText}
+          defaultValue={TEST_READING}
+          rows={3}
+          className="w-full rounded border border-border bg-secondary px-2 py-1.5 text-[0.8rem] text-foreground"
+        />
       </div>
       <p className="mb-2 text-[0.8rem] text-muted-foreground">
         {samples.length} of {RECOMMENDED_SAMPLES} recommended samples
@@ -236,22 +437,16 @@ export function VoiceSamplesTab() {
       ) : (
         <div className="flex flex-col gap-3">
           {samples.map((s) => (
-            <div key={s.name} className="rounded-lg border border-border bg-card p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[0.8rem] font-medium">{s.name}</span>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={`Delete ${s.name}`}
-                  title="Delete sample"
-                  className="ml-auto text-muted-foreground hover:text-destructive"
-                  onClick={() => remove(s.name)}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-              {safeAudioSrc(s.path) && <AudioPlayer src={safeAudioSrc(s.path)!} ariaLabel={s.name} path={s.path} />}
-            </div>
+            <SampleCard
+              key={s.name}
+              sample={s}
+              canTest={canTest}
+              testing={testing === s.name}
+              test={tests[s.name]}
+              testError={testErrors[s.name]}
+              onTest={() => void test(s.name)}
+              onDelete={() => remove(s.name)}
+            />
           ))}
         </div>
       )}

@@ -70,7 +70,6 @@ export function GeneralTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [savedTts, setSavedTts] = useState(false);
   const [savedTtv, setSavedTtv] = useState(false);
   const [recordKeep, setRecordKeepState] = useState(screenRecordKeep());
 
@@ -85,7 +84,6 @@ export function GeneralTab() {
       .getConfig()
       .then((c) => {
         setConfigs(c);
-        setSavedTts(c.text_to_speech_enabled);
         setSavedTtv(c.text_to_video_enabled);
       })
       .catch(() => {});
@@ -112,10 +110,9 @@ export function GeneralTab() {
       setDirty(false);
       setSaved(true);
       setError("");
-      // The gateway reads AUDIO_* and VIDEOS_ENABLED env at spawn, so a TTS or
-      // TTV toggle needs a restart (same path as saving an API key).
-      if (savedTts !== config.text_to_speech_enabled || savedTtv !== config.text_to_video_enabled) {
-        setSavedTts(config.text_to_speech_enabled);
+      // The gateway reads VIDEOS_ENABLED env at spawn, so a TTV toggle needs a
+      // restart (same path as saving an API key).
+      if (savedTtv !== config.text_to_video_enabled) {
         setSavedTtv(config.text_to_video_enabled);
         await api.startGateway(false, true);
       }
@@ -420,25 +417,6 @@ export function GeneralTab() {
         />
         <Label htmlFor="next-step-suggestions-enabled" className="cursor-pointer text-[0.8rem] font-medium">
           Suggest a next step after each reply
-        </Label>
-      </div>
-
-      {/* Text to speech */}
-      <h3 className="mt-5 text-[0.9rem] font-semibold">Text to speech</h3>
-      <p className="mb-3 text-[0.75rem] text-muted-foreground">
-        Lets the agent generate spoken audio with the CLI's TextToSpeech tool. Off by default; saving restarts the
-        gateway. Manage reference recordings in the Voice samples tab.
-      </p>
-      <div className="mb-5 flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="tts-enabled"
-          checked={config.text_to_speech_enabled}
-          onChange={(e) => set("text_to_speech_enabled", e.target.checked)}
-          className="h-4 w-4 accent-primary"
-        />
-        <Label htmlFor="tts-enabled" className="cursor-pointer text-[0.8rem] font-medium">
-          Enable Text to Speech
         </Label>
       </div>
 

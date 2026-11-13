@@ -1,0 +1,15 @@
+name: speech settings - the Voice samples tab sets the speech options and saves each as it changes
+narration:
+  - "Open Settings."
+  - "Switch to the Voice samples tab."
+  - "The speech model is chosen here, next to the samples it clones."
+  - "Have the agent ask before it speaks."
+  - "The option is saved at once, with no save button."
+  - "The CLI's config holds it."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Voice samples" }
+  - wait_for: { text: "Speech model", timeout: 10 }
+  - click: { button: "Ask before the agent speaks" }
+  - wait_for: { text: "Saved", timeout: 10 }
+  - wait_for: { file: "e2e/artifacts/home/.infer/config.yaml", contains: "require_approval: true", timeout: 10 }
