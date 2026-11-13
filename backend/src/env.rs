@@ -127,6 +127,9 @@ pub(crate) fn absolute_storage_path(configured: &str, home: &Path) -> String {
 /// path lets the CLI use its home-anchored default,
 /// ~/.infer/projects/<slug>/conversations), plus the CLI mock switch when
 /// the desktop runs in mock mode.
+/// The CLI's `gateway.run` as an environment variable.
+const CLI_RUNS_GATEWAY: &str = "INFER_GATEWAY_RUN";
+
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
     env.extend(crate::secrets::computer_env());
@@ -147,6 +150,9 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
     env.push(("INFER_AGENT_MAX_TURNS".into(), "500".into()));
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
+    }
+    if crate::gateway::desktop_runs_gateway() {
+        env.push((CLI_RUNS_GATEWAY.into(), "false".into()));
     }
     env
 }
@@ -263,12 +269,21 @@ mod tests {
         unsafe { std::env::set_var("DESKTOP_MOCK", "true") };
         assert!(mock_mode());
         assert!(infer_env().contains(&("INFER_GATEWAY_MOCK".to_string(), "true".to_string())));
+        assert!(
+            infer_env().iter().all(|(name, _)| name != CLI_RUNS_GATEWAY),
+            "mock mode has no gateway for the desktop to run"
+        );
         assert!(infer_env().contains(&(
             "INFER_COMPUTER_USE_APPROVAL".to_string(),
             "destructive".to_string()
         )));
         unsafe { std::env::set_var("DESKTOP_MOCK", "false") };
         assert!(!mock_mode());
+        assert_eq!(
+            infer_env().contains(&(CLI_RUNS_GATEWAY.to_string(), "false".to_string())),
+            crate::gateway::gateway_download_supported(),
+            "a CLI child runs no gateway where the desktop runs it"
+        );
         unsafe { std::env::remove_var("DESKTOP_MOCK") };
     }
 

@@ -42,6 +42,15 @@ pub(crate) fn gateway_download_supported() -> bool {
     !cfg!(target_os = "windows")
 }
 
+/// Whether the desktop runs the gateway itself, so that no CLI child may run
+/// one. A child that found no gateway for a moment, while the desktop was
+/// restarting its own, started a second one, took the port and later stopped
+/// it. On Windows the desktop cannot install the gateway, and the CLI's own
+/// stays the fallback.
+pub(crate) fn desktop_runs_gateway() -> bool {
+    gateway_download_supported() && !crate::env::mock_mode()
+}
+
 pub(crate) fn gateway_bin_path() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
         "inference-gateway.exe"
