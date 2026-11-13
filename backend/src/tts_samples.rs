@@ -46,7 +46,7 @@ fn list_wavs(dir: &Path) -> Result<Vec<VoiceSample>, String> {
 }
 
 /// Confine a sample file name to the samples directory: bare names only.
-fn sample_path(dir: &Path, name: &str) -> Result<PathBuf, String> {
+pub(crate) fn sample_path(dir: &Path, name: &str) -> Result<PathBuf, String> {
     if name.is_empty()
         || name == "."
         || name == ".."
@@ -132,7 +132,7 @@ pub(crate) async fn delete_voice_sample(name: String) -> Result<(), String> {
 
 /// Where a sample's test reading lands: one file per sample, so a new test
 /// replaces the last one. The transcript's player already serves this folder.
-fn voice_test_dir() -> PathBuf {
+pub(crate) fn voice_test_dir() -> PathBuf {
     infer_dir().join("tmp").join("media").join("tts")
 }
 
@@ -152,7 +152,7 @@ struct ToolOutcome {
     error: String,
 }
 
-fn tool_outcome(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
+pub(crate) fn tool_outcome(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
     match serde_json::from_slice::<ToolOutcome>(stdout) {
         Ok(outcome) if outcome.success => Ok(()),
         Ok(outcome) => Err(outcome.error),
@@ -160,14 +160,25 @@ fn tool_outcome(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
     }
 }
 
-fn speak_as_sample_blocking(sample: &str, text: &str) -> Result<String, String> {
+/// What the TextToSpeech tool is asked to do: read `text` into `file_name`,
+/// in a sample's voice or, with none, in the voice of the speech settings.
+fn speech_arguments(text: &str, voice_sample: Option<&str>, file_name: &str) -> serde_json::Value {
+    let mut arguments = serde_json::json!({ "text": text, "output_path": file_name });
+    if let Some(sample) = voice_sample {
+        arguments["voice_sample"] = sample.into();
+    }
+    arguments
+}
+
+/// Reads `text` into `file_name` under the voice test folder with the CLI's
+/// TextToSpeech tool, the path an agent takes. Returns the WAV it wrote.
+pub(crate) fn speak_blocking(
+    text: &str,
+    voice_sample: Option<&str>,
+    file_name: &str,
+) -> Result<String, String> {
     let dir = voice_test_dir();
-    let file_name = voice_test_file_name(sample);
-    let arguments = serde_json::json!({
-        "text": text,
-        "voice_sample": sample,
-        "output_path": file_name,
-    });
+    let arguments = speech_arguments(text, voice_sample, file_name);
     let output = crate::agent::infer_command(&crate::env::home_dir())
         .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", &dir)
         .args(["tools", "execute", "TextToSpeech"])
@@ -179,15 +190,16 @@ fn speak_as_sample_blocking(sample: &str, text: &str) -> Result<String, String> 
     Ok(dir.join(file_name).display().to_string())
 }
 
-/// Reads `text` in a sample's voice with the CLI's TextToSpeech tool, the
-/// path an agent takes, so the user hears the voice before an agent uses it.
-/// Returns the WAV it wrote.
+/// Reads `text` in a sample's voice, so the user hears the voice before an
+/// agent uses it. Returns the WAV it wrote.
 #[tauri::command]
 pub(crate) async fn test_voice_sample(name: String, text: String) -> Result<String, String> {
     sample_path(&samples_dir(), &name)?;
-    tauri::async_runtime::spawn_blocking(move || speak_as_sample_blocking(&name, &text))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        speak_blocking(&text, Some(&name), &voice_test_file_name(&name))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -200,6 +212,18 @@ mod tests {
         assert_eq!(
             voice_test_file_name("Confident.wav"),
             "voice-test-Confident.wav"
+        );
+    }
+
+    #[test]
+    fn speech_names_a_voice_sample_only_when_one_is_chosen() {
+        assert_eq!(
+            speech_arguments("Hi.", Some("me.wav"), "line.wav"),
+            serde_json::json!({"text": "Hi.", "voice_sample": "me.wav", "output_path": "line.wav"})
+        );
+        assert_eq!(
+            speech_arguments("Hi.", None, "line.wav"),
+            serde_json::json!({"text": "Hi.", "output_path": "line.wav"})
         );
     }
 

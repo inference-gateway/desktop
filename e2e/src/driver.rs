@@ -223,6 +223,24 @@ fn seed_voice_sample(home: &Path, name: &str, model: Option<&str>, infer: &Path)
     Ok(())
 }
 
+/// An avatar in the library of a HOME that can make it talk: text to speech
+/// and text to video are both on, and the portrait is the app's own logo.
+fn seed_avatar(home: &Path, name: &str, repo_root: &Path) -> Result<()> {
+    let infer_home = home.join(".infer");
+    let avatar = infer_home.join("avatars").join(name);
+    std::fs::create_dir_all(&avatar)?;
+    std::fs::copy(
+        repo_root.join("frontend/public/logo.png"),
+        avatar.join("01-front.png"),
+    )
+    .context("seeding the avatar's portrait")?;
+    std::fs::write(
+        infer_home.join("config.yaml"),
+        "text_to_speech:\n  enabled: true\ntext_to_video:\n  enabled: true\n",
+    )?;
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
@@ -232,6 +250,7 @@ pub struct Seeds<'a> {
     pub project_agent: Option<&'a str>,
     pub voice_sample: Option<&'a str>,
     pub speech_model: Option<&'a str>,
+    pub avatar: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -286,6 +305,9 @@ impl AppDriver {
                     .content_project
                     .context("project_agent needs a content_project to default to")?;
                 seed_project_agent(&home, name, project)?;
+            }
+            if let Some(name) = seeds.avatar {
+                seed_avatar(&home, name, repo_root)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

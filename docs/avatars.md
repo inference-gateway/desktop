@@ -21,3 +21,12 @@ Each avatar is a folder of portraits of one person, and the CLI owns the library
 Use only your own likeness or one you have rights to. The photo is sent to the image edit provider (`tools.image_edit.model`, OpenAI by default) when the extra views are generated. The portrait and the voice clip are sent to the video provider on every render. Nothing is stored as an avatar at the provider.
 
 Renders go through the gateway's Videos API with ElevenLabs `creatify-aurora`, so add an ElevenLabs key under Settings > API Keys. Saving the toggle restarts the gateway with `VIDEOS_ENABLED=true`.
+
+## Testing an avatar
+
+**Test** on an avatar shows how it looks and sounds before an agent uses it. It speaks the test line with `TextToSpeech`, lip-syncs the avatar's first image to that line with `TextToVideo`, and plays the clip under the avatar. These are the same two calls an agent makes.
+
+- The clip lasts as long as the line. The default line is about five seconds, and the video provider bills by length, so keep it short.
+- **Voice** picks a voice sample from Settings > Voice samples, or the voice of the speech settings. It starts on the settings voice, or on the first sample when the settings name none.
+- A test needs text to speech (Settings > Voice samples) and text to video (Settings > General) turned on. The tab says which one is off.
+- Each avatar keeps one test clip, `~/.infer/tmp/media/video/avatar-test-<name>.mp4`. A new test replaces it.
