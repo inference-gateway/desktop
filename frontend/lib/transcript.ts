@@ -852,9 +852,10 @@ function loadHistory(state: ChatState, messages: SnapshotMessage[]): ChatState {
     }
   }
 
+  const openErrors = state.items.filter((item) => item.kind === "error");
   return {
     ...initialChatState,
-    items,
+    items: [...items, ...openErrors],
     seq,
     seenImages,
     turnStartedAt: state.turnStartedAt,
