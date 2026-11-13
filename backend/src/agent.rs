@@ -2,7 +2,6 @@ pub(crate) mod a2a;
 pub(crate) mod conversations;
 pub(crate) mod events;
 pub(crate) mod files;
-pub(crate) mod history;
 pub(crate) mod infer;
 pub(crate) mod models;
 

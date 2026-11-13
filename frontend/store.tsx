@@ -30,6 +30,7 @@ import { workspaceModel } from "@/lib/workspace-model";
 import { autoGrow } from "@/lib/textarea";
 import { matchShortcut } from "@/lib/shortcuts";
 import { modeAfterPlan, nextMode, parseMode, type AgentMode, type PlanAction } from "@/lib/agent-mode";
+import { coalesce } from "@/lib/coalesce";
 import { isBashCommand } from "@/lib/tools";
 import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
@@ -175,7 +176,6 @@ function useDesktopStore() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
-  const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
@@ -225,15 +225,8 @@ function useDesktopStore() {
     });
   }, []);
 
-  const recordHistory = useCallback((text: string) => {
-    if (isBashCommand(text)) {
-      api.appendBashHistory(text).catch(() => {});
-      setBashHistory((h) => [...h, text]);
-    } else {
-      api.appendHistory(text).catch(() => {});
-      setHistory((h) => [...h, text]);
-    }
-  }, []);
+  const currentProjectRef = useRef<string | null>(null);
+  const refreshHistory = useMemo(() => coalesce(() => api.listHistory(currentProjectRef.current).then(setHistory)), []);
 
   const queuePrompt = useCallback((id: string, text: string) => {
     const next = enqueue(queuedRef.current, id, text);
@@ -378,14 +371,6 @@ function useDesktopStore() {
         }
       })
       .catch(() => {});
-    api
-      .readHistory()
-      .then(setHistory)
-      .catch(() => {});
-    api
-      .readBashHistory()
-      .then(setBashHistory)
-      .catch(() => {});
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -463,6 +448,7 @@ function useDesktopStore() {
         switch (event.kind) {
           case "RunStarted":
             setRunningIds((prev) => (prev.has(runId) ? prev : new Set(prev).add(runId)));
+            refreshHistory();
             break;
           case "AssistantMessage":
             if (event.tool_calls.some((tc) => tc.name === "Agent")) setTimeout(refreshConversations, 1000);
@@ -523,7 +509,7 @@ function useDesktopStore() {
       };
       return ch;
     },
-    [dispatchTo, refreshStatus, refreshConversations, resolveApproval, recordTerminal, logActivity],
+    [dispatchTo, refreshStatus, refreshConversations, refreshHistory, resolveApproval, recordTerminal, logActivity],
   );
 
   const followThread = useCallback(
@@ -908,7 +894,6 @@ function useDesktopStore() {
         return false;
       }
       if (activeId && runningIds.has(activeId)) {
-        recordHistory(text);
         queuePrompt(activeId, text);
         return true;
       }
@@ -925,7 +910,6 @@ function useDesktopStore() {
       if (!activeId && activeAgent) assignAgent(runId, activeAgent);
       setActiveId(runId);
       activeIdRef.current = runId;
-      recordHistory(text);
       await sendPrompt(
         runId,
         text,
@@ -948,7 +932,6 @@ function useDesktopStore() {
       agentOf,
       sendPrompt,
       setError,
-      recordHistory,
       queuePrompt,
     ],
   );
@@ -996,8 +979,6 @@ function useDesktopStore() {
         el.value = "";
         autoGrow(el);
       }
-      api.appendHistory(text).catch(() => {});
-      setHistory((h) => [...h, text]);
       setInitSelecting(false);
       setInitSelection(new Set());
       await broadcastPrompt(names, text);
@@ -1344,6 +1325,11 @@ function useDesktopStore() {
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
   const currentAgent = (activeId ? agentOf[activeId] : null) ?? activeAgent;
 
+  currentProjectRef.current = currentProject;
+  useEffect(() => {
+    refreshHistory();
+  }, [currentProject, refreshHistory]);
+
   const queuedItems = activeId != null ? queuedPrompts[activeId] : undefined;
   const queuedPrompt =
     queuedItems && queuedItems.length > 0
@@ -1516,7 +1502,6 @@ function useDesktopStore() {
     saveConfig,
     composerRef,
     history,
-    bashHistory,
     todoDrafts,
     setTodoDraft,
     insertSnippet,

@@ -70,6 +70,13 @@ pub(crate) async fn list_issues(app: tauri::AppHandle, project: Option<String>) 
     ask_project(app, project, "list_issues", "issues").await
 }
 
+/// The prompts the composer's arrow-up recalls, oldest first: the project's
+/// input history the CLI keeps for every client, fed by each `run_agent_input`.
+#[tauri::command]
+pub(crate) async fn list_history(app: tauri::AppHandle, project: Option<String>) -> Vec<String> {
+    ask_project(app, project, "list_history", "history").await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
