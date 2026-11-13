@@ -23,11 +23,13 @@ export function AudioPlayer({
   src,
   ariaLabel,
   path,
+  save: saveTo,
   volume = 1,
 }: {
   src: string;
   ariaLabel: string;
   path?: string;
+  save?: () => Promise<unknown>;
   volume?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -86,12 +88,9 @@ export function AudioPlayer({
   };
 
   const save = () => {
-    if (!path || saveStatus === "saving") return;
+    if ((!path && !saveTo) || saveStatus === "saving") return;
     setSaveStatus("saving");
-    api
-      .saveAudio(path)
-      .then(() => setSaveStatus("saved"))
-      .catch(() => setSaveStatus("error"));
+    (saveTo ? saveTo() : api.saveAudio(path!)).then(() => setSaveStatus("saved")).catch(() => setSaveStatus("error"));
   };
 
   const progress = duration > 0 ? time / duration : 0;
@@ -148,7 +147,7 @@ export function AudioPlayer({
       <span className="shrink-0 text-[0.7rem] tabular-nums text-muted-foreground">
         {playing || time > 0 ? `${fmt(time)} / ${fmt(duration)}` : fmt(duration)}
       </span>
-      {path && (
+      {(path || saveTo) && (
         <button
           aria-label={`Download ${ariaLabel}`}
           title={saveStatus === "saved" ? "Saved to Downloads" : "Save to Downloads"}

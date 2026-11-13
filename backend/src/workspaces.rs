@@ -179,10 +179,16 @@ fn parse_artifact(frame: &Value) -> Option<Result<Vec<u8>, String>> {
     )
 }
 
-/// An artifact is a bare file name, so a saved one cannot land outside Downloads.
+/// An artifact is a bare file name, or an absolute path to a media file the
+/// workspace's daemon vets, so a saved one cannot land outside Downloads.
 fn artifact_file_name(name: &str) -> Result<&str, String> {
-    let bare = !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\']);
-    bare.then_some(name)
+    let file = if name.starts_with('/') {
+        name.rsplit('/').next().unwrap_or_default()
+    } else {
+        name
+    };
+    let bare = !file.is_empty() && file != "." && file != ".." && !file.contains(['/', '\\']);
+    bare.then_some(file)
         .ok_or_else(|| format!("{name:?} is not an artifact file name"))
 }
 
@@ -411,7 +417,7 @@ pub(crate) async fn save_artifact(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let file_name = artifact_file_name(&name)?;
-        let bytes = fetch_artifact(&session_id, project.as_deref(), file_name)?;
+        let bytes = fetch_artifact(&session_id, project.as_deref(), &name)?;
         let downloads = crate::env::home_dir().join("Downloads");
         std::fs::create_dir_all(&downloads).map_err(|e| e.to_string())?;
         let saved = downloads.join(file_name);
@@ -434,8 +440,8 @@ pub(crate) async fn read_artifact(
     name: String,
 ) -> Result<tauri::ipc::Response, String> {
     tokio::task::spawn_blocking(move || {
-        let file_name = artifact_file_name(&name)?;
-        fetch_artifact(&session_id, project.as_deref(), file_name).map(tauri::ipc::Response::new)
+        artifact_file_name(&name)?;
+        fetch_artifact(&session_id, project.as_deref(), &name).map(tauri::ipc::Response::new)
     })
     .await
     .map_err(|e| format!("artifact task failed: {e}"))?
@@ -677,9 +683,13 @@ mod tests {
     }
 
     #[test]
-    fn only_a_bare_file_name_is_an_artifact() {
+    fn an_artifact_is_a_bare_file_name_or_an_absolute_path() {
         assert_eq!(artifact_file_name("demo.gif"), Ok("demo.gif"));
-        for name in ["", ".", "..", "../x", "a/b", "a\\b", "/etc/passwd"] {
+        assert_eq!(
+            artifact_file_name("/home/a/.infer/tmp/media/tts/line.wav"),
+            Ok("line.wav")
+        );
+        for name in ["", ".", "..", "../x", "a/b", "a\\b", "/", "/x/.."] {
             assert!(artifact_file_name(name).is_err(), "{name}");
         }
     }

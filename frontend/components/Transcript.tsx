@@ -6,6 +6,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useChatStream, useDesktop } from "@/store";
+import { useSidebar } from "@/stores/sidebar";
 import { useNow } from "@/hooks/useNow";
 import { formatElapsed } from "@/lib/elapsed";
 import { handleLinkClick, renderMarkdown } from "@/lib/markdown";
@@ -25,6 +26,44 @@ import {
 } from "@/lib/transcript";
 
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
+
+/** Fetches the WAV through the chat's daemon, since a remote machine's file is not on this disk. */
+function SpeechPlayer({ item }: { item: Extract<TranscriptItem, { kind: "audio" }> }) {
+  const { sessionId } = useDesktop();
+  const { projects } = useSidebar();
+  const project = sessionId ? projects[sessionId] : undefined;
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setSrc(item.src);
+      return;
+    }
+    let alive = true;
+    let url: string | null = null;
+    api
+      .readArtifact(sessionId, project, item.path)
+      .then((bytes) => {
+        url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+        if (alive) setSrc(url);
+      })
+      .catch(() => {
+        if (alive) setSrc(item.src);
+      });
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [sessionId, project, item.path, item.src]);
+
+  if (!src) return null;
+  const save = sessionId ? () => api.saveArtifact(sessionId, project, item.path) : undefined;
+  return (
+    <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
+      <AudioPlayer src={src} ariaLabel={`generated speech ${item.filename}`} path={item.path} save={save} />
+    </div>
+  );
+}
 
 function UserBubble({ id, text }: { id: string; text: string }) {
   const { running, resendPrompt } = useDesktop();
@@ -540,11 +579,7 @@ function Item({
     case "image":
       return <ImageDownload filename={item.filename} src={item.src} path={item.path} />;
     case "audio":
-      return (
-        <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
-          <AudioPlayer src={item.src} ariaLabel={`generated speech ${item.filename}`} path={item.path} />
-        </div>
-      );
+      return <SpeechPlayer item={item} />;
     case "error":
       return (
         <div className="max-w-[min(72ch,82%)] self-start rounded-md border border-err-border bg-err-bg px-3 py-2 text-err">
