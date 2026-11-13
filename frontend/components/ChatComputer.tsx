@@ -26,17 +26,19 @@ function ShownComputer({
   const { takeOver, deleteMachine } = useDesktop();
   const { resources, sandboxes } = useComputerFacts([tile.sessionId]);
   return (
-    <div className="absolute right-4 top-1/2 z-10 w-[min(22rem,60%)] -translate-y-1/2 rounded-lg shadow-md">
-      <ComputerCard
-        tile={tile}
-        project={project}
-        sandbox={sandboxes.has(tile.workspace)}
-        resources={resources[tile.sessionId]}
-        openLabel={`Minimize computer ${tile.agent.name}`}
-        onOpen={onMinimize}
-        onTakeOver={() => takeOver(tile.sessionId)}
-        onDelete={() => deleteMachine(tile.sessionId)}
-      />
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-end py-2 pr-4 [container-type:size]">
+      <div className="pointer-events-auto max-h-full w-[min(22rem,60cqw,max(10rem,calc((100cqh_-_8rem)_*_1.6)))] overflow-y-auto rounded-lg shadow-md">
+        <ComputerCard
+          tile={tile}
+          project={project}
+          sandbox={sandboxes.has(tile.workspace)}
+          resources={resources[tile.sessionId]}
+          openLabel={`Minimize computer ${tile.agent.name}`}
+          onOpen={onMinimize}
+          onTakeOver={() => takeOver(tile.sessionId)}
+          onDelete={() => deleteMachine(tile.sessionId)}
+        />
+      </div>
     </div>
   );
 }
