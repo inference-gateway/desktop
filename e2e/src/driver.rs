@@ -187,6 +187,42 @@ fn seed_project_agent(home: &Path, name: &str, project: &str) -> Result<()> {
     Ok(())
 }
 
+const SEEDED_SAMPLE_SECONDS: u32 = 12;
+const SEEDED_SAMPLE_RATE: u32 = 8000;
+
+/// A silent 16-bit mono WAV, long enough to pass for a voice sample.
+fn silent_wav() -> Vec<u8> {
+    let data_len = SEEDED_SAMPLE_SECONDS * SEEDED_SAMPLE_RATE * 2;
+    let mut wav = Vec::with_capacity(44 + data_len as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&SEEDED_SAMPLE_RATE.to_le_bytes());
+    wav.extend_from_slice(&(SEEDED_SAMPLE_RATE * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.resize(44 + data_len as usize, 0);
+    wav
+}
+
+/// A voice sample in the library of a HOME that has text to speech on.
+fn seed_voice_sample(home: &Path, name: &str) -> Result<()> {
+    let infer = home.join(".infer");
+    let samples = infer.join("voice").join("samples");
+    std::fs::create_dir_all(&samples)?;
+    std::fs::write(samples.join(format!("{name}.wav")), silent_wav())?;
+    std::fs::write(
+        infer.join("config.yaml"),
+        "text_to_speech:\n  enabled: true\n",
+    )?;
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
@@ -194,6 +230,7 @@ pub struct Seeds<'a> {
     pub workspace_agent: Option<&'a str>,
     pub model_agent: Option<&'a str>,
     pub project_agent: Option<&'a str>,
+    pub voice_sample: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -248,6 +285,9 @@ impl AppDriver {
                     .content_project
                     .context("project_agent needs a content_project to default to")?;
                 seed_project_agent(&home, name, project)?;
+            }
+            if let Some(name) = seeds.voice_sample {
+                seed_voice_sample(&home, name)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

@@ -44,6 +44,10 @@ pub struct Test {
     /// The project picker in the agent editor is a native `<select>` too.
     #[serde(default)]
     pub project_agent: Option<String>,
+    /// Seed this voice sample into the fresh HOME with text to speech on. The
+    /// AX driver has no voice to record one with.
+    #[serde(default)]
+    pub voice_sample: Option<String>,
     pub steps: Vec<Step>,
 }
 

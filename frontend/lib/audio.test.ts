@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { computePeaks, downsample, encodeWav, mergeChunks } from "./audio";
+import { computePeaks, downsample, encodeWav, mergeChunks, peakLevel, sampleIssues, trimSilence } from "./audio";
 
 test("mergeChunks concatenates in order", () => {
   const out = mergeChunks([new Float32Array([1, 2]), new Float32Array([3])]);
@@ -41,4 +41,24 @@ test("encodeWav writes a valid 44-byte RIFF/WAVE header + PCM", () => {
   expect(view.getUint32(24, true)).toBe(16000); // sample rate
   expect(view.getInt16(44 + 2, true)).toBe(0x7fff); // full-scale positive clamps
   expect(view.getInt16(44 + 4, true)).toBe(-0x8000); // full-scale negative clamps
+});
+
+test("trimSilence keeps the speech and a short pad around it", () => {
+  const rate = 1000;
+  const samples = new Float32Array(3000);
+  samples.fill(0.5, 1000, 2000);
+  const trimmed = trimSilence(samples, rate);
+  expect(trimmed.length).toBe(1300);
+  expect(trimmed[150]).toBeCloseTo(0.5);
+  expect(trimSilence(new Float32Array(100), rate).length).toBe(100);
+});
+
+test("sampleIssues names what weakens a cloning reference", () => {
+  const rate = 100;
+  const good = new Float32Array(12 * rate).fill(0.4);
+  expect(sampleIssues(good, rate)).toEqual([]);
+  expect(sampleIssues(good.subarray(0, 5 * rate), rate)).toEqual(["too short"]);
+  expect(sampleIssues(new Float32Array(12 * rate).fill(0.02), rate)).toEqual(["too quiet"]);
+  expect(sampleIssues(new Float32Array(12 * rate).fill(1), rate)).toEqual(["clipped"]);
+  expect(peakLevel(new Float32Array([0.1, -0.7, 0.3]))).toBeCloseTo(0.7);
 });

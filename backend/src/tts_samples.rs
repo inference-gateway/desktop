@@ -130,10 +130,94 @@ pub(crate) async fn delete_voice_sample(name: String) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| e.to_string())
 }
 
+/// Where a sample's test reading lands: one file per sample, so a new test
+/// replaces the last one. The transcript's player already serves this folder.
+fn voice_test_dir() -> PathBuf {
+    infer_dir().join("tmp").join("media").join("tts")
+}
+
+fn voice_test_file_name(sample: &str) -> String {
+    let stem = Path::new(sample)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(sample);
+    format!("voice-test-{stem}.wav")
+}
+
+/// What the CLI prints for `tools execute --format json`.
+#[derive(serde::Deserialize)]
+struct ToolOutcome {
+    success: bool,
+    #[serde(default)]
+    error: String,
+}
+
+fn tool_outcome(stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
+    match serde_json::from_slice::<ToolOutcome>(stdout) {
+        Ok(outcome) if outcome.success => Ok(()),
+        Ok(outcome) => Err(outcome.error),
+        Err(_) => Err(String::from_utf8_lossy(stderr).trim().to_string()),
+    }
+}
+
+fn speak_as_sample_blocking(sample: &str, text: &str) -> Result<String, String> {
+    let dir = voice_test_dir();
+    let file_name = voice_test_file_name(sample);
+    let arguments = serde_json::json!({
+        "text": text,
+        "voice_sample": sample,
+        "output_path": file_name,
+    });
+    let output = crate::agent::infer_command(&crate::env::home_dir())
+        .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", &dir)
+        .args(["tools", "execute", "TextToSpeech"])
+        .arg(arguments.to_string())
+        .args(["--format", "json", "--approved"])
+        .output()
+        .map_err(|e| format!("Failed to run infer: {e}"))?;
+    tool_outcome(&output.stdout, &output.stderr)?;
+    Ok(dir.join(file_name).display().to_string())
+}
+
+/// Reads `text` in a sample's voice with the CLI's TextToSpeech tool, the
+/// path an agent takes, so the user hears the voice before an agent uses it.
+/// Returns the WAV it wrote.
+#[tauri::command]
+pub(crate) async fn test_voice_sample(name: String, text: String) -> Result<String, String> {
+    sample_path(&samples_dir(), &name)?;
+    tauri::async_runtime::spawn_blocking(move || speak_as_sample_blocking(&name, &text))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn a_voice_test_is_one_file_per_sample() {
+        assert_eq!(
+            voice_test_file_name("Confident.wav"),
+            "voice-test-Confident.wav"
+        );
+    }
+
+    #[test]
+    fn tool_outcome_reports_the_tools_own_error() {
+        assert_eq!(
+            tool_outcome(br#"{"success":true,"output":"saved"}"#, b""),
+            Ok(())
+        );
+        assert_eq!(
+            tool_outcome(br#"{"success":false,"output":"","error":"no voice"}"#, b""),
+            Err("no voice".to_string())
+        );
+        assert_eq!(
+            tool_outcome(b"", b"unknown tool TextToSpeech\n"),
+            Err("unknown tool TextToSpeech".to_string())
+        );
+    }
 
     #[test]
     fn sample_path_rejects_traversal_and_accepts_bare_names() {
