@@ -231,7 +231,6 @@ export function Composer() {
     discardQueued,
     popQueued,
     history,
-    bashHistory,
     currentProject,
     currentAgent,
     selectAgent,
@@ -563,7 +562,7 @@ export function Composer() {
         return;
       }
     }
-    const recall = bashMode ? bashHistory : history;
+    const recall = history;
     if (e.key === "ArrowUp" && recall.length > 0) {
       e.preventDefault();
       if (cursorRef.current === -1) {

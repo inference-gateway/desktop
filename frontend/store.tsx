@@ -174,7 +174,6 @@ function useDesktopStore() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
-  const [bashHistory, setBashHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
@@ -224,14 +223,12 @@ function useDesktopStore() {
     });
   }, []);
 
+  // Mirrors the entry the CLI records from the run_agent_input (trimmed, a
+  // consecutive duplicate skipped) so arrow-up is fresh without a refetch.
   const recordHistory = useCallback((text: string) => {
-    if (isBashCommand(text)) {
-      api.appendBashHistory(text).catch(() => {});
-      setBashHistory((h) => [...h, text]);
-    } else {
-      api.appendHistory(text).catch(() => {});
-      setHistory((h) => [...h, text]);
-    }
+    const entry = text.trim();
+    if (!entry) return;
+    setHistory((h) => (h[h.length - 1] === entry ? h : [...h, entry]));
   }, []);
 
   const queuePrompt = useCallback((id: string, text: string) => {
@@ -376,14 +373,6 @@ function useDesktopStore() {
           localStorage.setItem(MODEL_STORAGE_KEY, cfg.default_model);
         }
       })
-      .catch(() => {});
-    api
-      .readHistory()
-      .then(setHistory)
-      .catch(() => {});
-    api
-      .readBashHistory()
-      .then(setBashHistory)
       .catch(() => {});
   }, []);
 
@@ -970,8 +959,7 @@ function useDesktopStore() {
         el.value = "";
         autoGrow(el);
       }
-      api.appendHistory(text).catch(() => {});
-      setHistory((h) => [...h, text]);
+      recordHistory(text);
       setInitSelecting(false);
       setInitSelection(new Set());
       await broadcastPrompt(names, text);
@@ -985,7 +973,7 @@ function useDesktopStore() {
       el.value = text;
       autoGrow(el);
     }
-  }, [initSelecting, initSelection, model, setError, broadcastPrompt, sendText]);
+  }, [initSelecting, initSelection, model, setError, broadcastPrompt, sendText, recordHistory]);
 
   const cancel = useCallback(async () => {
     if (!activeId || !runningIds.has(activeId)) return;
@@ -1318,6 +1306,19 @@ function useDesktopStore() {
   const currentProject = (activeId ? projects[activeId] : null) ?? activeProject;
   const currentAgent = (activeId ? agentOf[activeId] : null) ?? activeAgent;
 
+  useEffect(() => {
+    let stale = false;
+    api
+      .listHistory(currentProject)
+      .then((entries) => {
+        if (!stale) setHistory(entries);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [currentProject]);
+
   const queuedItems = activeId != null ? queuedPrompts[activeId] : undefined;
   const queuedPrompt =
     queuedItems && queuedItems.length > 0
@@ -1489,7 +1490,6 @@ function useDesktopStore() {
     saveConfig,
     composerRef,
     history,
-    bashHistory,
     todoDrafts,
     setTodoDraft,
     insertSnippet,
