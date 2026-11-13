@@ -954,8 +954,13 @@ mod tests {
             status,
         )
         .unwrap();
-        wait_for(&events, 3);
+        wait_for(&events, 4);
         let seen = events.lock().unwrap();
+        assert_eq!(
+            seen.len(),
+            4,
+            "the run's start, the error that ends it, its end and the later error"
+        );
         let errors: Vec<&str> = seen
             .iter()
             .filter_map(|e| match e {
