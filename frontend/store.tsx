@@ -223,8 +223,6 @@ function useDesktopStore() {
     });
   }, []);
 
-  // Mirrors the entry the CLI records from the run_agent_input (trimmed, a
-  // consecutive duplicate skipped) so arrow-up is fresh without a refetch.
   const recordHistory = useCallback((text: string) => {
     const entry = text.trim();
     if (!entry) return;

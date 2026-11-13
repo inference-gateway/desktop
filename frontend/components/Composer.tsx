@@ -562,26 +562,25 @@ export function Composer() {
         return;
       }
     }
-    const recall = history;
-    if (e.key === "ArrowUp" && recall.length > 0) {
+    if (e.key === "ArrowUp" && history.length > 0) {
       e.preventDefault();
       if (cursorRef.current === -1) {
         draftRef.current = el.value;
-        cursorRef.current = recall.length - 1;
+        cursorRef.current = history.length - 1;
       } else if (cursorRef.current > 0) {
         cursorRef.current--;
       } else {
         return;
       }
-      el.value = recall[cursorRef.current];
+      el.value = history[cursorRef.current];
       autoGrow(el);
       return;
     }
-    if (e.key === "ArrowDown" && recall.length > 0 && cursorRef.current !== -1) {
+    if (e.key === "ArrowDown" && history.length > 0 && cursorRef.current !== -1) {
       e.preventDefault();
-      if (cursorRef.current < recall.length - 1) {
+      if (cursorRef.current < history.length - 1) {
         cursorRef.current++;
-        el.value = recall[cursorRef.current];
+        el.value = history[cursorRef.current];
       } else {
         cursorRef.current = -1;
         el.value = draftRef.current;
