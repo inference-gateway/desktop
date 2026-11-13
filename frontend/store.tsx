@@ -555,7 +555,19 @@ function useDesktopStore() {
       setActiveAgent(agentOf[id] ?? null);
       if (transcriptsRef.current[id]) return;
       try {
-        dispatchTo(id, { type: "loadHistory", messages: await followThread(id) });
+        const messages = await followThread(id);
+        dispatchTo(id, { type: "loadHistory", messages });
+        const computer = workspaceOfRef.current[id];
+        const explained = hasError(transcriptsRef.current[id]);
+        if (messages.length === 0 && computer && computer !== THIS_COMPUTER && !explained) {
+          dispatchTo(id, {
+            type: "event",
+            event: {
+              kind: "AgentError",
+              message: `No messages of this chat reached this computer. It was placed on ${computer}, where it may never have started or which may be gone.`,
+            },
+          });
+        }
       } catch (err) {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
@@ -1558,6 +1570,8 @@ function DesktopStoreProvider({ children }: { children: ReactNode }) {
 /** Every store the app reads. The feature stores sit outside the main one,
  * which uses them, and each has its own context so its readers re-render only
  * when that feature changes. */
+const hasError = (state?: ChatState) => state?.items.some((item) => item.kind === "error") ?? false;
+
 export function DesktopProvider({ children }: { children: ReactNode }) {
   return (
     <StatusProvider>
