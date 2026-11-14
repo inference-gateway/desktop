@@ -21,6 +21,7 @@ mod error;
 mod events;
 mod export;
 mod gateway;
+mod hub_models;
 mod input_capture;
 mod kubectl_mock;
 mod local_cluster;
@@ -238,6 +239,11 @@ pub fn run() {
             avatars::import_avatar,
             avatars::snapshot_avatar,
             avatars::delete_avatar,
+            hub_models::search_hub_models,
+            hub_models::list_hub_model_files,
+            hub_models::download_hub_model,
+            hub_models::list_downloaded_models,
+            hub_models::delete_downloaded_model,
             timeline::list_timelines,
             timeline::watch_project,
             timeline::read_timeline,

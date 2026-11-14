@@ -52,6 +52,10 @@ pub struct Test {
     /// picker is a native `<select>`, which the AX driver cannot drive.
     #[serde(default)]
     pub speech_model: Option<String>,
+    /// Seed this Hugging Face model (`owner/name`) into the fresh HOME as a
+    /// downloaded one, so a test never fetches from the Hub.
+    #[serde(default)]
+    pub hub_model: Option<String>,
     pub steps: Vec<Step>,
 }
 
