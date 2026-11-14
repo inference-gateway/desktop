@@ -31,7 +31,7 @@ test("a test starts on the settings voice, or on the first sample when the setti
 
 test("the lip-sync picker starts on the CLI default and keeps a hand-set model selectable", () => {
   expect(effectiveLipSyncModel("")).toBe("elevenlabs/creatify-aurora");
-  expect(effectiveLipSyncModel(" fal/fal-ai/creatify/aurora ")).toBe("fal/fal-ai/creatify/aurora");
+  expect(effectiveLipSyncModel(" local/musetalk ")).toBe("local/musetalk");
   expect(lipSyncModelOptions("")).toBe(LIP_SYNC_MODELS);
   expect(lipSyncModelOptions("acme/talking-head").map((m) => m.id)).toEqual([
     ...LIP_SYNC_MODELS.map((m) => m.id),

@@ -1210,13 +1210,10 @@ mod tests {
     fn merge_config_round_trips_the_avatar_model_once_one_is_picked() {
         let existing = "text_to_video:\n  avatar_model: elevenlabs/creatify-aurora\n";
         let mut cfg = default_config();
-        cfg.text_to_video_avatar_model = "fal/fal-ai/creatify/aurora".into();
+        cfg.text_to_video_avatar_model = "local/musetalk".into();
         let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
         let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
-        assert_eq!(
-            cfg2.text_to_video_avatar_model,
-            "fal/fal-ai/creatify/aurora"
-        );
+        assert_eq!(cfg2.text_to_video_avatar_model, "local/musetalk");
     }
 
     #[test]
