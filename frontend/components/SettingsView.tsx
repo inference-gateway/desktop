@@ -30,6 +30,7 @@ import { SystemPromptTab } from "./SystemPromptTab";
 import { SkillsTab } from "./SkillsTab";
 import { VoiceSamplesTab } from "./VoiceSamplesTab";
 import { AvatarsTab } from "./AvatarsTab";
+import { ModelsTab } from "./ModelsTab";
 
 type Tab =
   | "general"
@@ -46,7 +47,8 @@ type Tab =
   | "github"
   | "skills"
   | "voice"
-  | "avatars";
+  | "avatars"
+  | "models";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "general", label: "General" },
@@ -63,6 +65,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "skills", label: "Skills" },
   { id: "voice", label: "Voice samples" },
   { id: "avatars", label: "Avatars" },
+  { id: "models", label: "Models" },
   { id: "updates", label: "Updates" },
 ];
 
@@ -300,6 +303,7 @@ export function SettingsView() {
           {tab === "skills" && <SkillsTab />}
           {tab === "voice" && <VoiceSamplesTab />}
           {tab === "avatars" && <AvatarsTab />}
+          {tab === "models" && <ModelsTab />}
         </div>
       </div>
     </div>

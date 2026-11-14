@@ -223,6 +223,18 @@ fn seed_voice_sample(home: &Path, name: &str, model: Option<&str>, infer: &Path)
     Ok(())
 }
 
+/// A model in the library of downloaded Hugging Face models, one small file of it.
+fn seed_hub_model(home: &Path, id: &str) -> Result<()> {
+    let folder = home
+        .join(".infer")
+        .join("models")
+        .join("huggingface")
+        .join(id);
+    std::fs::create_dir_all(&folder)?;
+    std::fs::write(folder.join("config.json"), "{}\n")?;
+    Ok(())
+}
+
 /// What a test wants on disk in the fresh HOME before the app starts.
 #[derive(Clone, Copy, Default)]
 pub struct Seeds<'a> {
@@ -232,6 +244,7 @@ pub struct Seeds<'a> {
     pub project_agent: Option<&'a str>,
     pub voice_sample: Option<&'a str>,
     pub speech_model: Option<&'a str>,
+    pub hub_model: Option<&'a str>,
 }
 
 impl AppDriver {
@@ -286,6 +299,9 @@ impl AppDriver {
                     .content_project
                     .context("project_agent needs a content_project to default to")?;
                 seed_project_agent(&home, name, project)?;
+            }
+            if let Some(id) = seeds.hub_model {
+                seed_hub_model(&home, id)?;
             }
         }
         let resolved_infer = infer_bin.map(Path::to_path_buf).or_else(which_infer);

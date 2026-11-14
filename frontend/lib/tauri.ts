@@ -123,6 +123,9 @@ export type UpdateInfo = {
 export type SttStatus = { binary: boolean; model: boolean; downloadable: boolean; hint: string };
 export type VoiceSample = { name: string; path: string };
 export type Avatar = { name: string; images: string[] };
+export type HubModel = { id: string; downloads: number; likes: number; pipeline_tag: string };
+export type HubFile = { path: string; size: number };
+export type DownloadedModel = { id: string; path: string; files: number; bytes: number };
 export type Artifact = { name: string; size: number; modified_at: string };
 /** An open GitHub issue of the project, as the `#` menu offers it. */
 export type Issue = { number: number; title: string; state: string };
@@ -543,6 +546,12 @@ export const api = {
   snapshotAvatar: (name: string, jpeg: number[], onLine: Channel<string>) =>
     invoke<void>("snapshot_avatar", { name, jpeg, onLine }),
   deleteAvatar: (name: string) => invoke<void>("delete_avatar", { name }),
+  searchHubModels: (query: string) => invoke<HubModel[]>("search_hub_models", { query }),
+  listHubModelFiles: (id: string) => invoke<HubFile[]>("list_hub_model_files", { id }),
+  downloadHubModel: (id: string, files: string[], onLine: Channel<string>) =>
+    invoke<void>("download_hub_model", { id, files, onLine }),
+  listDownloadedModels: () => invoke<DownloadedModel[]>("list_downloaded_models"),
+  deleteDownloadedModel: (id: string) => invoke<void>("delete_downloaded_model", { id }),
   listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
   watchProject: (project: string) => invoke<void>("watch_project", { project }),
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),
