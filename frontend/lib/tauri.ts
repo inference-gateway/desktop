@@ -543,6 +543,8 @@ export const api = {
   snapshotAvatar: (name: string, jpeg: number[], onLine: Channel<string>) =>
     invoke<void>("snapshot_avatar", { name, jpeg, onLine }),
   deleteAvatar: (name: string) => invoke<void>("delete_avatar", { name }),
+  testAvatar: (name: string, text: string, voiceSample: string | null) =>
+    invoke<string>("test_avatar", { name, text, voiceSample }),
   listTimelines: (project: string) => invoke<Timelines>("list_timelines", { project }),
   watchProject: (project: string) => invoke<void>("watch_project", { project }),
   readTimeline: (project: string, name: string) => invoke<string>("read_timeline", { project, name }),

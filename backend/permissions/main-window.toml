@@ -85,6 +85,7 @@ commands.allow = [
     "import_avatar",
     "snapshot_avatar",
     "delete_avatar",
+    "test_avatar",
     "list_timelines",
     "watch_project",
     "read_timeline",

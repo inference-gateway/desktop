@@ -52,6 +52,11 @@ pub struct Test {
     /// picker is a native `<select>`, which the AX driver cannot drive.
     #[serde(default)]
     pub speech_model: Option<String>,
+    /// Seed this avatar into the fresh HOME with text to speech and text to
+    /// video on. Creating one needs a photo picker or a camera, which the AX
+    /// driver cannot drive.
+    #[serde(default)]
+    pub avatar: Option<String>,
     pub steps: Vec<Step>,
 }
 

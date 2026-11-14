@@ -238,6 +238,7 @@ pub fn run() {
             avatars::import_avatar,
             avatars::snapshot_avatar,
             avatars::delete_avatar,
+            avatars::test_avatar,
             timeline::list_timelines,
             timeline::watch_project,
             timeline::read_timeline,

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isBashCommand, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
+import { isBashCommand, parseToolResult, safeAudioSrc, safeImageSrc, safeVideoSrc } from "./tools";
 
 test("isBashCommand: single ! is bash, !! is a direct tool call", () => {
   expect(isBashCommand("ls -la")).toBe(false);
@@ -93,6 +93,23 @@ test("safeAudioSrc allows tts and samples wavs, rejects others, non-wav files, a
     expect(safeAudioSrc("/Users/x/.infer/tmp/media/tts/speech.mp3")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/tmp/../uploads/me.wav")).toBeNull();
     expect(safeAudioSrc("/Users/x/.infer/projects/../uploads/me.wav")).toBeNull();
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+  }
+});
+
+test("safeVideoSrc allows the video tool's mp4s, rejects other folders, other files and traversal", () => {
+  (globalThis as Record<string, unknown>).window = {
+    __TAURI_INTERNALS__: { convertFileSrc: (p: string) => `asset://localhost/${p}` },
+  };
+  try {
+    expect(safeVideoSrc("/Users/x/.infer/tmp/media/video/avatar-test-presenter.mp4")).not.toBeNull();
+    expect(safeVideoSrc("/Users/x/.infer/projects/-Users-x-proj/tmp/media/video/clip-1.mp4")).not.toBeNull();
+    expect(safeVideoSrc("/Users/x/.infer/tmp/media/tts/avatar-test-presenter.mp4")).toBeNull();
+    expect(safeVideoSrc("/Users/x/.infer/tmp/media/video/clip.mov")).toBeNull();
+    expect(safeVideoSrc("/Users/x/Movies/clip.mp4")).toBeNull();
+    expect(safeVideoSrc("/Users/x/.infer/tmp/media/video/../../auth.mp4")).toBeNull();
+    expect(safeVideoSrc(null)).toBeNull();
   } finally {
     delete (globalThis as Record<string, unknown>).window;
   }

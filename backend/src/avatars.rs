@@ -4,7 +4,8 @@
 // `infer avatars` (cli cmd/avatars), which also generates the extra angles
 // through the gateway's image edit API.
 use crate::agent::{infer_command, run_infer};
-use crate::env::{agent_cwd, infer_dir};
+use crate::env::{agent_cwd, home_dir, infer_dir};
+use crate::tts_samples::{sample_path, samples_dir, speak_blocking, tool_outcome, voice_test_dir};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -129,6 +130,59 @@ fn create(name: &str, photo: &Path, on_line: &Channel<String>) -> Result<(), Str
     Ok(())
 }
 
+/// Where an avatar's test clip lands: one file per avatar, so a new test
+/// replaces the last one.
+fn avatar_test_dir() -> PathBuf {
+    infer_dir().join("tmp").join("media").join("video")
+}
+
+/// The spoken line and the talking clip of an avatar's test, as bare file names.
+fn avatar_test_files(name: &str) -> (String, String) {
+    (
+        format!("avatar-test-{name}.wav"),
+        format!("avatar-test-{name}.mp4"),
+    )
+}
+
+/// Speaks `text`, then lip-syncs the avatar to that line with the CLI's
+/// TextToVideo tool, the two calls an agent makes. Returns the MP4 it wrote.
+fn talk_blocking(name: &str, text: &str, voice_sample: Option<&str>) -> Result<String, String> {
+    let (line, clip) = avatar_test_files(name);
+    speak_blocking(text, voice_sample, &line)?;
+
+    let dir = avatar_test_dir();
+    let arguments = serde_json::json!({ "avatar": name, "audio": line, "output_path": clip });
+    let output = infer_command(&home_dir())
+        .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", voice_test_dir())
+        .env("INFER_TEXT_TO_VIDEO_OUTPUT_DIR", &dir)
+        .args(["tools", "execute", "TextToVideo"])
+        .arg(arguments.to_string())
+        .args(["--format", "json", "--approved"])
+        .output()
+        .map_err(|e| format!("Failed to run infer: {e}"))?;
+    tool_outcome(&output.stdout, &output.stderr)?;
+    Ok(dir.join(clip).display().to_string())
+}
+
+/// Has an avatar say `text` in a voice sample, or in the voice of the speech
+/// settings, so the user sees the talking clip before an agent makes one.
+#[tauri::command]
+pub(crate) async fn test_avatar(
+    name: String,
+    text: String,
+    voice_sample: Option<String>,
+) -> Result<String, String> {
+    sample_path(&avatars_dir(), avatar_name(&name)?)?;
+    if let Some(sample) = &voice_sample {
+        sample_path(&samples_dir(), sample)?;
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        talk_blocking(&name, &text, voice_sample.as_deref())
+    })
+    .await
+    .map_err(|e| format!("avatar task failed: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +210,17 @@ mod tests {
         );
         assert_eq!(avatars_from("[]", dir).unwrap(), vec![]);
         assert!(avatars_from("not json", dir).is_err());
+    }
+
+    #[test]
+    fn an_avatar_test_is_one_line_and_one_clip_per_avatar() {
+        assert_eq!(
+            avatar_test_files("presenter"),
+            (
+                "avatar-test-presenter.wav".to_string(),
+                "avatar-test-presenter.mp4".to_string()
+            )
+        );
     }
 
     #[test]

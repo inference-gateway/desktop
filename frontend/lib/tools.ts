@@ -30,6 +30,11 @@ const SAFE_IMAGE_PATH =
 const SAFE_AUDIO_PATH =
   /\.infer\/(?:(?:projects\/(?!\.\.\/)[^/\0]+\/)?tmp\/(?:media\/)?tts|voice\/samples)\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.wav$/i;
 
+// infer's TextToVideo writes MP4s to tmp/media/video under ~/.infer or a
+// project's ~/.infer/projects/<slug>, which the asset protocol scope covers.
+const SAFE_VIDEO_PATH =
+  /\.infer\/(?:projects\/(?!\.\.\/)[^/\0]+\/)?tmp\/media\/video\/(?:(?!\.\.\/)[^/\0]+\/)*[^/\0]+\.mp4$/i;
+
 export function prettyJson(str: string): string {
   try {
     return JSON.stringify(JSON.parse(str), null, 2);
@@ -86,6 +91,11 @@ export function safeProjectMediaSrc(path: string | null | undefined): string | n
 
 export function safeAudioSrc(path: string | null | undefined): string | null {
   if (!path || !SAFE_AUDIO_PATH.test(path)) return null;
+  return convertFileSrc(path);
+}
+
+export function safeVideoSrc(path: string | null | undefined): string | null {
+  if (!path || !SAFE_VIDEO_PATH.test(path)) return null;
   return convertFileSrc(path);
 }
 

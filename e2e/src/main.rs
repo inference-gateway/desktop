@@ -193,6 +193,7 @@ fn run_test(
             project_agent: test.project_agent.as_deref(),
             voice_sample: test.voice_sample.as_deref(),
             speech_model: test.speech_model.as_deref(),
+            avatar: test.avatar.as_deref(),
         },
     )?;
     clean(&app, &test.cleanup);
