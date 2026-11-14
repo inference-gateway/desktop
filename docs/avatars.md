@@ -24,8 +24,9 @@ Renders go through the gateway's Videos API. **Lip-sync model** in Settings > Av
 
 - **ElevenLabs - Creatify Aurora** (the default) needs an ElevenLabs key on a Pro plan or above, with the image and video permission.
 - **fal - Creatify Aurora** is the same model billed per second of video, with a fal key and no subscription.
+- **MuseTalk** renders on this computer with no provider and no key. It needs the `mlx-community/MuseTalk-1.5-fp16` weights, downloaded under Settings > Models, and the local lip-sync engine installed in `~/.infer/bin/tools`. Until both are there, a render says which one is missing.
 
-Add the provider's key under Settings > API Keys. Saving the Text to video toggle restarts the gateway with `VIDEOS_ENABLED=true`.
+Add the provider's key under Settings > API Keys - the local model needs none. Saving the Text to video toggle restarts the gateway with `VIDEOS_ENABLED=true`.
 
 ## Testing an avatar
 

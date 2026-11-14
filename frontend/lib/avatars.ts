@@ -35,6 +35,7 @@ const DEFAULT_LIP_SYNC_MODEL = "elevenlabs/creatify-aurora";
 export const LIP_SYNC_MODELS: LipSyncModel[] = [
   { id: DEFAULT_LIP_SYNC_MODEL, label: "ElevenLabs - Creatify Aurora, needs a Pro plan" },
   { id: "fal/fal-ai/creatify/aurora", label: "fal - Creatify Aurora, billed per second of video" },
+  { id: "local/musetalk", label: "MuseTalk - local, free, runs on this computer" },
 ];
 
 /** The model an avatar is lip-synced with: an unset one is the CLI's default. */
