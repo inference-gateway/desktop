@@ -3,7 +3,14 @@ import { Clapperboard, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, Channel, type Avatar, type DesktopConfig, type VoiceSample } from "@/lib/tauri";
-import { AVATAR_TEST_LINE, SETTINGS_VOICE, avatarTestBlocker, defaultTestVoice } from "@/lib/avatars";
+import {
+  AVATAR_TEST_LINE,
+  SETTINGS_VOICE,
+  avatarTestBlocker,
+  defaultTestVoice,
+  effectiveLipSyncModel,
+  lipSyncModelOptions,
+} from "@/lib/avatars";
 import { safeImageSrc, safeVideoSrc } from "@/lib/tools";
 
 const TEST_HINT =
@@ -134,6 +141,18 @@ export function AvatarsTab() {
   }, []);
 
   const blocker = avatarTestBlocker(setup);
+  const lipSyncModel = setup?.text_to_video_avatar_model ?? "";
+
+  const pickLipSyncModel = async (model: string) => {
+    setError("");
+    try {
+      const next = { ...(await api.getConfig()), text_to_video_avatar_model: model };
+      await api.setConfig(next);
+      setSetup(next);
+    } catch (e) {
+      setError(`Couldn't save the lip-sync model: ${e}`);
+    }
+  };
   const voice = pickedVoice ?? defaultTestVoice(setup?.text_to_speech_voice ?? "", samples);
 
   const test = async (name: string) => {
@@ -285,6 +304,28 @@ export function AvatarsTab() {
           rows={2}
           className="w-full rounded border border-border bg-secondary px-2 py-1.5 text-[0.8rem] text-foreground"
         />
+        <div className="mt-2 flex items-center gap-2">
+          <label htmlFor="avatar-model" className="text-[0.8rem] font-medium">
+            Lip-sync model
+          </label>
+          <select
+            id="avatar-model"
+            value={effectiveLipSyncModel(lipSyncModel)}
+            disabled={!setup}
+            onChange={(e) => void pickLipSyncModel(e.target.value)}
+            className="max-w-sm rounded border border-border bg-secondary px-2 py-1.5 text-[0.8rem] text-foreground"
+          >
+            {lipSyncModelOptions(lipSyncModel).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="mt-1 text-[0.75rem] text-muted-foreground">
+          The model renders every talking clip, for a test and for an agent. Its provider needs a key in Settings &gt;
+          API Keys.
+        </p>
         <div className="mt-2 flex items-center gap-2">
           <label htmlFor="avatar-test-voice" className="text-[0.8rem] font-medium">
             Voice
