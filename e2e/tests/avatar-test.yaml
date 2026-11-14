@@ -1,0 +1,16 @@
+name: avatar test - an avatar says a line before any agent puts it on screen
+avatar: presenter
+narration:
+  - "Open Settings."
+  - "Switch to the Avatars tab."
+  - "The avatar is in the library, with a button to test it."
+  - "Test it: the line is spoken, then the avatar is lip-synced to it, the way an agent does."
+  - "The talking clip is an MP4 of its own, one per avatar."
+  - "It plays right under the avatar."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Avatars" }
+  - wait_for: { button: "Test avatar presenter", timeout: 10 }
+  - click: { button: "Test avatar presenter" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/tmp/media/video/avatar-test-presenter.mp4", timeout: 90 }
+  - wait_for: { text: "How an agent looks and sounds as this avatar", timeout: 10 }
