@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { SETTINGS_VOICE, avatarTestBlocker, defaultTestVoice } from "./avatars";
+import {
+  LIP_SYNC_MODELS,
+  SETTINGS_VOICE,
+  avatarTestBlocker,
+  defaultTestVoice,
+  effectiveLipSyncModel,
+  lipSyncModelOptions,
+} from "./avatars";
 
 test("an avatar test needs both the voice and the video tool", () => {
   expect(avatarTestBlocker(null)).toBe("Loading settings...");
@@ -20,4 +27,14 @@ test("a test starts on the settings voice, or on the first sample when the setti
   expect(defaultTestVoice("rachel", samples)).toBe(SETTINGS_VOICE);
   expect(defaultTestVoice("", samples)).toBe("confident.wav");
   expect(defaultTestVoice("  ", [])).toBe(SETTINGS_VOICE);
+});
+
+test("the lip-sync picker starts on the CLI default and keeps a hand-set model selectable", () => {
+  expect(effectiveLipSyncModel("")).toBe("elevenlabs/creatify-aurora");
+  expect(effectiveLipSyncModel(" local/musetalk ")).toBe("local/musetalk");
+  expect(lipSyncModelOptions("")).toBe(LIP_SYNC_MODELS);
+  expect(lipSyncModelOptions("acme/talking-head").map((m) => m.id)).toEqual([
+    ...LIP_SYNC_MODELS.map((m) => m.id),
+    "acme/talking-head",
+  ]);
 });

@@ -260,6 +260,11 @@ pub(crate) struct DesktopConfig {
     /// to a third-party video provider.
     #[serde(default)]
     pub(crate) text_to_video_enabled: bool,
+    /// The model (`provider/model`) that lip-syncs an avatar to a voice clip
+    /// (text_to_video.avatar_model in the CLI config). Empty leaves the CLI's
+    /// own default.
+    #[serde(default)]
+    pub(crate) text_to_video_avatar_model: String,
     /// Vision model (`provider/model`) for the CLI's ImageDecode annotator
     /// (vision.annotator in the CLI config); empty disables the annotator.
     #[serde(default)]
@@ -338,6 +343,7 @@ pub(crate) fn default_config() -> DesktopConfig {
         text_to_speech_output_dir: String::new(),
         text_to_speech_require_approval: false,
         text_to_video_enabled: false,
+        text_to_video_avatar_model: String::new(),
         status_bar_enabled: true,
         next_step_suggestions_enabled: false,
         vision_annotator_model: String::new(),
@@ -488,6 +494,7 @@ pub(crate) fn config_from_value(
         text_to_speech_require_approval: bool_at(&["text_to_speech", "require_approval"])
             .unwrap_or(false),
         text_to_video_enabled: bool_at(&["text_to_video", "enabled"]).unwrap_or(false),
+        text_to_video_avatar_model: str_at(&["text_to_video", "avatar_model"]).unwrap_or_default(),
         status_bar_enabled: bool_at(&["chat", "status_bar", "enabled"]).unwrap_or(true),
         next_step_suggestions_enabled: bool_at(&["chat", "suggestions", "enabled"])
             .unwrap_or(false),
@@ -544,6 +551,17 @@ pub(crate) fn set_section(
             m.insert(k.into(), v);
         }
     }
+}
+
+/// The desktop's text_to_video keys. The avatar model is written only once
+/// one is picked, so the CLI keeps its own default until then.
+fn video_settings(cfg: &DesktopConfig) -> Vec<(&'static str, serde_norway::Value)> {
+    let mut settings = vec![("enabled", cfg.text_to_video_enabled.into())];
+    let avatar_model = cfg.text_to_video_avatar_model.trim();
+    if !avatar_model.is_empty() {
+        settings.push(("avatar_model", avatar_model.into()));
+    }
+    settings
 }
 
 fn enabled_by_default() -> bool {
@@ -680,11 +698,7 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
     }
 
     set_speech_section(map, cfg);
-    set_section(
-        map,
-        "text_to_video",
-        vec![("enabled", cfg.text_to_video_enabled.into())],
-    );
+    set_section(map, "text_to_video", video_settings(cfg));
 
     let chat = map
         .entry("chat".into())
@@ -1190,6 +1204,16 @@ mod tests {
                 .text_to_speech_output_dir
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn merge_config_round_trips_the_avatar_model_once_one_is_picked() {
+        let existing = "text_to_video:\n  avatar_model: elevenlabs/creatify-aurora\n";
+        let mut cfg = default_config();
+        cfg.text_to_video_avatar_model = "local/musetalk".into();
+        let val = parse_yaml(&merge_config(Some(existing), &cfg).unwrap());
+        let cfg2 = config_from_value(&val, std::path::Path::new("/home/tester"));
+        assert_eq!(cfg2.text_to_video_avatar_model, "local/musetalk");
     }
 
     #[test]
