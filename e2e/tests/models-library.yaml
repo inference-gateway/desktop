@@ -1,0 +1,16 @@
+name: models library - a downloaded Hugging Face model is listed and can be deleted
+hub_model: acme/talker
+narration:
+  - "Open Settings."
+  - "Switch to the Models tab."
+  - "The model downloaded earlier is in the library, with where it lives on disk."
+  - "Delete it."
+  - "It is gone from the library."
+  - "And so is its folder."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Models" }
+  - wait_for: { button: "Delete model acme/talker", timeout: 15 }
+  - click: { button: "Delete model acme/talker" }
+  - wait_gone: { button: "Delete model acme/talker", timeout: 15 }
+  - assert_absent: { file: "e2e/artifacts/home/.infer/models/huggingface/acme/talker/config.json" }
