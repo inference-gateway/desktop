@@ -22,5 +22,5 @@ claude-code.pkg-group = "claude-code"
 codex.pkg-path = "codex"
 codex.version = "0.167.1"
 codex.pkg-group = "codex"
-infer.flake = "github:inference-gateway/cli/v0.250.0"
+infer.flake = "github:inference-gateway/cli/v0.261.0"
 
