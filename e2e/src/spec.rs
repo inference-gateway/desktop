@@ -57,6 +57,10 @@ pub struct Test {
     /// driver cannot drive.
     #[serde(default)]
     pub avatar: Option<String>,
+    /// Seed this Hugging Face model (`owner/name`) into the fresh HOME as a
+    /// downloaded one, so a test never fetches from the Hub.
+    #[serde(default)]
+    pub hub_model: Option<String>,
     pub steps: Vec<Step>,
 }
 
