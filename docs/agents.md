@@ -2,15 +2,15 @@
 
 ## Your own agents
 
-The sidebar's **Agents** filter lists your own agents: Markdown files (`<name>.md`, the Claude Code / infer format - frontmatter `name`, `description`, optional `model`, plus a desktop-only `emoji`, and the instructions as the body) under `~/.infer/agents`, or the directory set in Settings > Agents.
+The sidebar's **Agents** filter lists your own agents: Markdown files (`<name>.md`, the Claude Code / infer format - frontmatter `name`, `description`, optional `model`, and the instructions as the body). Agents are read from `.infer/agents` and `.agents/agents` of the directory the app was launched from, then from `~/.infer/agents` and `~/.agents/agents` - the first match wins on a name, and a new agent is saved to `~/.infer/agents`.
 
-**New agent** opens an editor for the name, description, face, model and instructions. Every agent starts with a robot drawn from its name, and you can pick one of Microsoft's animated 3D Fluent emoji (downloaded beside the agent file) or your own GIF or picture. Saving drops you into a chat with that agent: its instructions become the chat's system prompt.
+**New agent** opens an editor for the name, description, face, model and instructions, plus what this desktop adds: the agent's **Computer** (`workspace` in the frontmatter), its **Project** (`project`), the **MCP servers** it uses (`mcpServers`) and its **Email** inbox with the **Allowed recipients** that may write to it (`email` and `allowed_recipients`). In the frontmatter the editor manages `name`, `description`, `model` and `emoji`, plus `workspace`, the desktop-only `project`, `email` and `allowed_recipients`, and `mcpServers`; every other key already in the file is kept as found. Every agent starts with a robot drawn from its name, and you can pick one of Microsoft's animated 3D Fluent emoji (downloaded beside the agent file) or your own GIF or picture. Saving drops you into a chat with that agent: its instructions become the chat's system prompt.
 
 Agents in `~/.infer/agents` can also hand work to each other through the CLI's `Agent` tool, so one agent's instructions can tell it to consult another by name.
 
 ## A computer of their own
 
-An agent can also get a computer of its own: add the compute under **Settings > Workspaces** (a Kubernetes cluster for now, saved as a workspace of the `infer` daemon in `~/.infer/daemon.yaml`), pick it as the **Computer** in the agent's editor (`workspace` in the frontmatter) and every new chat with it is teleported there before its first run, so its computer use drives that machine, not yours.
+An agent can also get a computer of its own: add the compute under **Settings > Compute** - a Kubernetes cluster added with **New cluster** or found with **Detect clusters**, or the one on your machine with **Provision local cluster** - saved to `~/.infer/compute.yaml`. Then add a workspace under **Settings > Workspaces**, on one of those clusters or with its own connection, saved as a workspace of the `infer` daemon in `~/.infer/daemon.yaml`. Pick the workspace as the **Computer** in the agent's editor (`workspace` in the frontmatter) and every new chat with it is teleported there before its first run, so its computer use drives that machine, not yours.
 
 **Computers** in the top bar shows the latest screen of each such chat side by side. **Take over** on a computer, or in its agent's chat, holds the agent and lets you drive that screen with your own mouse and keyboard - a login, a captcha, a dialog in its way - until **Hand back** lets the agent continue from what it sees.
 
