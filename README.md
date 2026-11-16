@@ -22,7 +22,7 @@ Like Codex or Co-Work, but provider-agnostic: OpenAI, Anthropic, Google, local O
 - **Drive your browser** - the [opentask](https://github.com/inference-gateway/opentask) extension lets the agent navigate, click, type and read tabs in your everyday browser.
 - **Write your own agents** - Markdown files with a name, instructions, model and face. Agents can hand work to each other.
 - **Make content** - talking-avatar clips, text to speech and text to video on a timeline in Content projects.
-- **Stay portable** - the app updates itself, and Export / Import moves your whole setup to a new machine.
+- **Stay portable** - the app updates itself, and Export / Import moves your settings, sidebar projects, A2A agents, scheduled jobs, snippets and skills to a new machine; [docs/export-import.md](docs/export-import.md) lists what does not travel.
 
 ## Install
 
@@ -43,7 +43,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
-- [Export / Import](docs/export-import.md) - move your setup to a new machine.
+- [Export / Import](docs/export-import.md) - what moves to a new machine, and what stays.
 - [examples/computer-use](examples/computer-use) - three agents on Ubuntu desktops in a local Kubernetes cluster.
 - [examples/filmcraft](examples/filmcraft) - an editor agent with FilmCraft on every computer, from a folder shared with the local cluster.
 - [examples/drone-footage](examples/drone-footage) - an agent edits raw drone footage end to end: stabilisation, a color grade, ElevenLabs sound and one export per platform shape.
