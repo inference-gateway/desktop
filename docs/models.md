@@ -17,4 +17,4 @@ Each model is a folder that keeps the layout the Hub gives it:
       unet.safetensors
 ```
 
-Only public models can be downloaded. A download gives you the files and nothing more - check the licence on the model's Hub page before you use it, and note that nothing in the app runs a downloaded model by itself yet.
+Only public models can be downloaded. A download gives you the files and nothing more - check the licence on the model's Hub page before you use it. One model in use: Settings > Avatars offers the lip-sync model `local/musetalk` ("MuseTalk - local, free, runs on this computer"), which renders avatar clips with the `mlx-community/MuseTalk-1.5-fp16` weights downloaded here. See [Avatars](avatars.md).
