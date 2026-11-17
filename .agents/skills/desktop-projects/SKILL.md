@@ -18,10 +18,10 @@ source code for this.
 ## Tools you may use
 
 `Bash` for `infer conversations list --all-projects --format json`, `ls`, `mv`, `mkdir -p`, `git status --porcelain`,
-`git remote get-url origin` and `cat`; `Read` and `Write` (or `Edit`) for the two files above, by absolute path:
+`git remote get-url origin` and `cat`. `Read` and `Write` (or `Edit`) for the two files above, by absolute path:
 the file tools do not expand `~`, so `~/.infer/projects.yaml` is refused - use `/Users/<you>/.infer/projects.yaml`
-(`echo $HOME` if unsure); `Computer` only to open a project in the sidebar (below). `projects.yaml` is
-carved out of the file sandbox so you can edit it directly; `config.yaml` is not, so the desktop may ask the
+(`echo $HOME` if unsure). `Computer` only to open a project in the sidebar (below). `projects.yaml` is
+carved out of the file sandbox so you can edit it directly. `config.yaml` is not, so the desktop may ask the
 user to approve that write: that is expected, do not work around it. Do not use `find` over the whole home directory, package managers,
 `WebFetch` or `WebSearch`.
 
@@ -37,8 +37,8 @@ A project's directory is derived from its name and group:
 - group `core`: `<root>/core/<sanitized leaf>`, where the leaf is the name minus a leading `core/` prefix (so
   a project named `core/cli` in group `core` maps to `<root>/core/cli`).
 
-Sanitizing keeps letters, digits, space, `-`, `_` and `.`; every other character becomes `-`; leading and trailing
-`-`, `.` and spaces are trimmed; an empty result becomes `project`. Names are mapped in sorted order and a
+Sanitizing keeps letters, digits, space, `-`, `_` and `.`. Every other character becomes `-`. Leading and trailing
+`-`, `.` and spaces are trimmed. An empty result becomes `project`. Names are mapped in sorted order and a
 collision gets a numeric suffix (`a-b`, then `a-b-2`).
 
 `paths[name]` in `projects.yaml` overrides the derived directory with an absolute path (`~` is expanded here).
@@ -70,13 +70,13 @@ active: desktop
 - `assignments` - conversation id to project name. Ids come from `infer conversations list --all-projects --format json`
   (the `conversations` array, `id` and `title` fields).
 - `contexts` - extra instructions appended to every prompt in that project.
-- `groups` - sidebar group per project; it is also the relative parent directory under the root, so `..`,
+- `groups` - sidebar group per project. It is also the relative parent directory under the root, so `..`,
   absolute paths and empty strings are ignored.
-- `types` - only the literal `"content"`; a missing entry means a code project.
+- `types` - only the literal `"content"`. A missing entry means a code project.
 - `paths` - absolute per-project directory overrides.
-- `selected` - internal to the "Init all projects" UI; leave it as you found it.
+- `selected` - internal to the "Init all projects" UI. Leave it as you found it.
 - `active` - the project open in the sidebar, restored on restart. Setting it to a name from `names` opens
-  that project when your run finishes (the sidebar reloads the file then); remove it for no project.
+  that project when your run finishes (the sidebar reloads the file then). Remove it for no project.
 
 The desktop rewrites the file with exactly these eight keys, so anything else you add is dropped. Read the
 file first, change only the entries the task needs, keep everything else byte-for-byte, and write valid YAML.
@@ -106,7 +106,7 @@ the `Computer` tool (target `app:Inference Gateway Desktop`):
   `whisper-cli`, the whisper model and the `video-editing` skill, and the desktop renders any
   `<stem>.timeline.json` in the directory as an editable timeline.
 
-Setting `types[name]` to `"content"` in the file marks the project; the tool install runs the next time the
+Setting `types[name]` to `"content"` in the file marks the project. The tool install runs the next time the
 user opens Settings > Projects and toggles the type, so tell them that when you switch a project by hand.
 Remove the entry to turn a project back into code.
 
@@ -119,13 +119,13 @@ next session, not the current one. Say so when you finish.
 
 Moving projects outside the root:
 
-- a handful of projects: add `paths` overrides and leave `projects.root` alone;
+- a handful of projects: add `paths` overrides and leave `projects.root` alone.
 - everything: change `projects.root` and move the directories, then drop overrides that now match the
   derived location.
 
 ## Recipes
 
-**List projects and chats.** Read `projects.yaml`; run `infer conversations list --all-projects --format json`
+**List projects and chats.** Read `projects.yaml`. Run `infer conversations list --all-projects --format json`
 for the chats. Chats whose id is not in `assignments` are unfiled.
 
 **Rename a project.** Replace the name in `names`, `assignments`, `contexts`, `groups`, `types` and `paths`.
@@ -147,14 +147,14 @@ asks to fold them in.
 its directory name to `names`, its parent folder relative to the imported root (if any) to `groups`, and,
 when the folder is not `projects.root`, its absolute path to `paths`.
 
-**Assign chats to projects.** Match conversation titles to project names or ask the user; add
+**Assign chats to projects.** Match conversation titles to project names or ask the user. Add
 `assignments[id] = project`. Never delete an assignment without being told to.
 
 ## Guardrails
 
 - Never edit the desktop's source code, and never write anywhere except `projects.yaml`, `config.yaml`, the
   projects root and directories named in `paths`.
-- Never delete a project directory or its contents; moving is fine, removal is the user's job.
+- Never delete a project directory or its contents. Moving is fine, removal is the user's job.
 - Run `git status --porcelain` before moving a git checkout and ask before moving one with uncommitted
   changes or one that is not a git repository but is not empty.
 - Show the planned edits (old path to new path, the diff) before applying them when more than one

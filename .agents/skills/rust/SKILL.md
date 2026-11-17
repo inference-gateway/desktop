@@ -33,12 +33,12 @@ and adds a pointer hop.
 
 Rules of thumb:
 
-- **Borrow if you only read it; take it owned if you store it.** A function that stashes its argument in a
+- **Borrow if you only read it. Take it owned if you store it.** A function that stashes its argument in a
   struct should take `String`, not `&str` - taking `&str` and calling `.to_owned()` inside just hides the
   allocation from the caller (C-CALLER-CONTROL).
 - **Return owned values.** Returning `&T` from a method ties the caller's hands to your lifetime.
 - **`Cow<'_, str>`** when you usually borrow but occasionally must allocate.
-- **`impl AsRef<Path>`** for path-ish arguments; `impl Into<String>` when you'll own it either way.
+- **`impl AsRef<Path>`** for path-ish arguments. `impl Into<String>` when you'll own it either way.
 
 ## `.clone()` is a decision, not an escape hatch
 
@@ -104,7 +104,7 @@ in a public library signature - it erases the type the caller needs.
 
 - **`?` everywhere**, with `From` (or `#[from]`) doing the conversion. `map_err` when the conversion is
   local and one-off.
-- **Keep the chain.** Attach the cause as `#[source]`; never `format!("{e}")` into a `String` error - that
+- **Keep the chain.** Attach the cause as `#[source]`. Never `format!("{e}")` into a `String` error - that
   throws away everything below the top frame.
 - **`unwrap` / `expect` only** in tests, in `main`, and where a genuine invariant holds - and then use
   `expect` with a message that states _why_ it cannot fail, not what failed.
@@ -134,17 +134,17 @@ Static dispatch (`impl Trait`, `<T: Trait>`) is the default: monomorphized, inli
 implementor at a plugin boundary. `impl Trait` in argument position for simple bounds, in return position
 to hide an iterator or future type.
 
-**Do not add a trait with one implementor.** That's an interface habit from another language; the concrete
+**Do not add a trait with one implementor.** That's an interface habit from another language. The concrete
 type is the API. Introduce the trait when the second implementor appears (a test fake counts, a
 hypothetical does not).
 
 ## Project structure
 
-- `src/lib.rs` holds the logic; `src/main.rs` is a thin shell that parses arguments and calls into the
+- `src/lib.rs` holds the logic. `src/main.rs` is a thin shell that parses arguments and calls into the
   library. This is what makes the crate testable and reusable.
 - A module is `foo.rs` (plus `foo/` for its children) - the 2018+ layout, no `mod.rs` needed.
 - **Default to `pub(crate)`.** Every `pub` item is a semver commitment.
-- One crate until a piece has an independent consumer or an independently useful compile time; then a
+- One crate until a piece has an independent consumer or an independently useful compile time. Then a
   **workspace** with a shared `[workspace.dependencies]`.
 - **Cargo features are additive** - a feature may turn things on, never off, and the crate must compile
   with any subset. Test with `--no-default-features` and `--all-features`.
@@ -192,6 +192,6 @@ operations, and you now own the proof.
 Topic coverage and worked examples follow the [Let's Get Rusty learning guide](https://github.com/letsgetrusty/learn)
 (MIT - referenced, not reproduced) and its pattern repos (`borrowed_arguments`, `avoiding_allocations`,
 `builder_pattern`, `common-traits`, `iterating_over_option`). Checklist references (`C-*`) are from the
-[Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html); idioms and anti-patterns
+[Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html). Idioms and anti-patterns
 cross-checked against [rust-unofficial/patterns](https://github.com/rust-unofficial/patterns). Pairs with
 **rust-concurrency** and **rust-review**.

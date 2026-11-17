@@ -112,7 +112,7 @@ It took 142 model requests and 183 tool calls, with 18.6 million input tokens, 1
 
 Each export came out at 40.04 s and about 40 MB. The agent exports at 8 Mbps on purpose: the app downloads an artifact in one piece of at most 64 MiB.
 
-The workspace sets its computers' CPU and memory now: under **Settings > Workspaces**, the **CPU request**, **CPU limit**, **Memory request** and **Memory limit** fields of `ubuntu-desktop` are saved as the workspace's `resources` in `daemon.yaml`. Give this job its memory there - FilmCraft alone held about 10 GB while exporting, so about 24 GB is what the run above needs. With a 12 GB limit, a first attempt ran five encodes at once and the computer was killed for memory; the agent's instructions now allow one heavy job at a time.
+The workspace sets its computers' CPU and memory now: under **Settings > Workspaces**, the **CPU request**, **CPU limit**, **Memory request** and **Memory limit** fields of `ubuntu-desktop` are saved as the workspace's `resources` in `daemon.yaml`. Give this job its memory there - FilmCraft alone held about 10 GB while exporting, so about 24 GB is what the run above needs. With a 12 GB limit, a first attempt ran five encodes at once and the computer was killed for memory. The agent's instructions now allow one heavy job at a time.
 
 ## Clean up
 

@@ -38,12 +38,12 @@ Comment on the first category that fires. Do not bury an unsoundness bug under n
 ### 1. Panics and unsoundness
 
 - `unwrap()` / `expect()` on anything reachable from untrusted input, a network response, or a file. Ask
-  what makes it impossible; if there's an answer, it belongs in the `expect` message.
+  what makes it impossible. If there's an answer, it belongs in the `expect` message.
 - Indexing and slicing: `v[i]`, `&s[a..b]` (byte offsets - panics mid-UTF-8), `.first()`/`.last()` assumed
   non-empty. `get()` returns an `Option` for a reason.
 - Integer overflow: **panics in debug, wraps in release.** Money, sizes, indices, and counters from input
   need `checked_*` / `saturating_*` / `wrapping_*` chosen deliberately.
-- `as` casts that truncate or change sign (`u64 as u32`, `i64 as usize`); prefer `TryFrom`.
+- `as` casts that truncate or change sign (`u64 as u32`, `i64 as usize`). Prefer `TryFrom`.
 - `unsafe` without a `// SAFETY:` comment stating the invariant, `transmute`, raw pointer arithmetic,
   `unsafe impl Send`/`Sync` without an argument. Is the safe wrapper actually sound for _every_ input?
 - A panic (or `unwrap`) inside `Drop`, or across an `extern "C"` boundary.
@@ -64,8 +64,8 @@ Comment on the first category that fires. Do not bury an unsoundness bug under n
 
 - `.clone()` that exists to appease the borrow checker. Ask what the ownership _should_ be:
   `mem::take`/`mem::replace`, a tighter scope, `split_at_mut`, or one clear owner.
-- `Arc<Mutex<T>>` around something with exactly one owner; `Rc<RefCell<T>>` used to build an object graph
-  that a plain index or ID would model better; `Rc` cycles that never drop.
+- `Arc<Mutex<T>>` around something with exactly one owner. `Rc<RefCell<T>>` used to build an object graph
+  that a plain index or ID would model better. `Rc` cycles that never drop.
 - `&String` / `&Vec<T>` / `&PathBuf` parameters where `&str` / `&[T]` / `&Path` accept strictly more.
 - `Box<dyn Trait>` where a generic would monomorphize, and vice versa - `dyn` is for genuine heterogeneity.
 - `'static` bounds forced by a design that could have used `std::thread::scope` or a borrow.
@@ -77,19 +77,19 @@ Comment on the first category that fires. Do not bury an unsoundness bug under n
 
 Against the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html):
 
-- Naming: `snake_case`/`CamelCase`/`SCREAMING_SNAKE` (C-CASE); `as_` (cheap borrow), `to_` (expensive),
-  `into_` (consuming) used correctly (C-CONV); `iter`/`iter_mut`/`into_iter` (C-ITER).
-- Missing derives - every public type should have `Debug` (C-DEBUG); `Clone`/`Default`/`PartialEq` where
+- Naming: `snake_case`/`CamelCase`/`SCREAMING_SNAKE` (C-CASE). `as_` (cheap borrow), `to_` (expensive),
+  `into_` (consuming) used correctly (C-CONV). `iter`/`iter_mut`/`into_iter` (C-ITER).
+- Missing derives - every public type should have `Debug` (C-DEBUG). `Clone`/`Default`/`PartialEq` where
   they apply (C-COMMON-TRAITS). Types `Send`/`Sync` where possible (C-SEND-SYNC).
-- Public struct fields that lock in a representation (C-STRUCT-PRIVATE); a public enum that should be
+- Public struct fields that lock in a representation (C-STRUCT-PRIVATE). A public enum that should be
   `#[non_exhaustive]`.
-- `bool` or bare `Option` arguments where an enum would say what the call means (C-CUSTOM-TYPE); two
+- `bool` or bare `Option` arguments where an enum would say what the call means (C-CUSTOM-TYPE). Two
   adjacent same-typed parameters begging for a newtype (C-NEWTYPE).
-- Missing `#[must_use]` on a function whose return value must not be dropped; out-parameters instead of a
+- Missing `#[must_use]` on a function whose return value must not be dropped. Out-parameters instead of a
   return value (C-NO-OUT).
 - Semver: does this change a signature, add a public field, add a variant to a non-`#[non_exhaustive]`
   enum, or bump a public dependency's major version?
-- Trait with exactly one implementor and no test fake - dead flexibility; so is a generic parameter with
+- Trait with exactly one implementor and no test fake - dead flexibility. So is a generic parameter with
   one instantiation and a config knob nothing sets.
 
 ### 5. Concurrency
@@ -104,9 +104,9 @@ vanish, unbounded channels, and lock ordering.
   bug?
 - Boundaries: empty input, single element, max value, non-ASCII strings, `None`, the error path. Error
   paths are the most commonly untested code in a Rust diff.
-- `#[should_panic]` without `expected = "..."` passes on the wrong panic; a leftover `#[ignore]`; a test
+- `#[should_panic]` without `expected = "..."` passes on the wrong panic. A leftover `#[ignore]`. A test
   that depends on wall-clock time, network, or thread scheduling.
-- Public items without rustdoc; missing `# Errors` / `# Panics` / `# Safety` sections (C-FAILURE); doc
+- Public items without rustdoc. Missing `# Errors` / `# Panics` / `# Safety` sections (C-FAILURE). Doc
   examples using `unwrap` instead of `?` (C-QUESTION-MARK).
 
 ## Writing the review
@@ -124,7 +124,7 @@ vanish, unbounded channels, and lock ordering.
 Checklist references (`C-*`) are from the
 [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html). Anti-patterns
 cross-checked against [rust-unofficial/patterns](https://github.com/rust-unofficial/patterns) and the
-[clippy lint index](https://rust-lang.github.io/rust-clippy/master/); topic coverage follows the
+[clippy lint index](https://rust-lang.github.io/rust-clippy/master/). Topic coverage follows the
 [Let's Get Rusty learning guide](https://github.com/letsgetrusty/learn) (MIT - referenced, not reproduced).
-For the practices being reviewed against, see `rust`; for threading and async review, see
+For the practices being reviewed against, see `rust`. For threading and async review, see
 `rust-concurrency`.
