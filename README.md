@@ -48,6 +48,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [examples/computer-use](examples/computer-use) - three agents on Ubuntu desktops in a local Kubernetes cluster.
 - [examples/filmcraft](examples/filmcraft) - an editor agent with FilmCraft on every computer, from a folder shared with the local cluster.
 - [examples/drone-footage](examples/drone-footage) - an agent edits raw drone footage end to end: stabilisation, a color grade, ElevenLabs sound and one export per platform shape.
+- [examples/feature-video](examples/feature-video) - a `feature-editor` agent turns a screen recording into a tutorial: it cuts, speeds up and zooms, adds captions and cards and speaks the narration in your voice, with a draft to approve before the final export.
 
 ## Development
 
