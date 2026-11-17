@@ -220,7 +220,10 @@ pub(crate) struct ToolCallInfo {
 }
 
 /// Folds AG-UI event-stream lines into complete AgentEvents, accumulating
-/// message/tool-call triads internally.
+/// message/tool-call triads. `tool_calls` keeps every streamed tool call
+/// for the interrupt, `last_total_input` carries the last cumulative input
+/// tokens so the next usage reports that request's input, and `recording`
+/// marks a `screenRecording` the CLI finalizes after RUN_FINISHED.
 pub(crate) struct AgentParser {
     session_id: Option<String>,
     msg_from_user: bool,
@@ -362,6 +365,18 @@ impl AgentParser {
         self.session_id.take()
     }
 
+    /// One reasoning or thinking content event: an assistant-only streamed
+    /// delta. THINKING_* are the deprecated aliases of the REASONING_* events,
+    /// so both are accepted.
+    fn reasoning_content(&self, val: &serde_json::Value) -> Option<AgentEvent> {
+        delta_of(val).map(|d| AgentEvent::AssistantMessage {
+            content: String::new(),
+            reasoning_content: Some(d.to_string()),
+            tool_calls: Vec::new(),
+            message_id: message_id_of(val).or_else(|| self.message_id.clone()),
+        })
+    }
+
     pub(crate) fn parse_line(&mut self, line: &str) -> Option<AgentEvent> {
         let val: serde_json::Value = match serde_json::from_str(line) {
             Ok(v) => v,
@@ -414,16 +429,8 @@ impl AgentParser {
                 self.message_id = None;
                 None
             }
-            // Reasoning/thinking phases are assistant-only; each content event is
-            // one streamed delta. THINKING_* are the deprecated aliases of the
-            // REASONING_* events - accept both.
             "REASONING_MESSAGE_CONTENT" | "THINKING_TEXT_MESSAGE_CONTENT" => {
-                delta_of(&val).map(|d| AgentEvent::AssistantMessage {
-                    content: String::new(),
-                    reasoning_content: Some(d.to_string()),
-                    tool_calls: Vec::new(),
-                    message_id: message_id_of(&val).or_else(|| self.message_id.clone()),
-                })
+                self.reasoning_content(&val)
             }
             "REASONING_MESSAGE_START"
             | "REASONING_START"
@@ -917,7 +924,6 @@ mod tests {
         ];
         let (events, _) = parse_all(lines);
         assert_eq!(events.len(), 3);
-        // Streamed text arrives first (on TEXT_MESSAGE_START), then each tool call.
         assert!(
             matches!(&events[0], AgentEvent::AssistantMessage { content, tool_calls, .. }
             if content == "Let me check that file." && tool_calls.is_empty())
@@ -1320,7 +1326,6 @@ mod tests {
 
         assert_eq!(events.len(), 5);
         assert!(matches!(&events[0], AgentEvent::RunStarted));
-        // Streamed text emits on TEXT_MESSAGE_START, before the tool call.
         assert!(
             matches!(&events[1], AgentEvent::AssistantMessage { content, tool_calls, .. }
             if content == "I'll look that up for you." && tool_calls.is_empty())

@@ -290,7 +290,6 @@ mod tests {
         assert_eq!(added.name, "voice.wav");
         assert_eq!(std::fs::read(samples.join("voice.wav")).unwrap(), b"RIFF");
 
-        // Re-adding the same base name overwrites in place.
         std::fs::write(&src, b"RIFF2").unwrap();
         copy_sample(&src, &samples).unwrap();
         assert_eq!(std::fs::read(samples.join("voice.wav")).unwrap(), b"RIFF2");

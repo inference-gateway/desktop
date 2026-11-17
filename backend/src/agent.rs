@@ -297,6 +297,18 @@ fn message_content(prompt: &str) -> serde_json::Value {
 }
 
 #[tauri::command]
+/// Checkpoints content projects (local git repos) before an agent run so its
+/// edits are revertable; best-effort - never a blocker for the run.
+fn checkpoint_content_project(project: Option<&str>) {
+    let content_dir = project
+        .filter(|name| crate::projects::project_is_content(name))
+        .and_then(crate::projects::project_dir);
+    if let Some(dir) = &content_dir {
+        let _ = crate::projects::ensure_content_repo(dir);
+        let _ = crate::projects::checkpoint(dir, "chore(timeline): checkpoint before agent run");
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_message(
     prompt: String,
@@ -316,16 +328,7 @@ pub(crate) async fn send_message(
         crate::tools::await_services().await;
     }
     let cwd = thread_dir(project.as_deref());
-    // Content projects are local git repos so agent edits are revertable. Take a
-    // checkpoint of the pre-run state (best-effort - never block a run on git).
-    let content_dir = project
-        .as_deref()
-        .filter(|name| crate::projects::project_is_content(name))
-        .and_then(crate::projects::project_dir);
-    if let Some(dir) = &content_dir {
-        let _ = crate::projects::ensure_content_repo(dir);
-        let _ = crate::projects::checkpoint(dir, "chore(timeline): checkpoint before agent run");
-    }
+    checkpoint_content_project(project.as_deref());
     let options = thread_options(
         &model,
         &mode,

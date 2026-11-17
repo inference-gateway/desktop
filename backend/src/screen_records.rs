@@ -1,19 +1,13 @@
-//! Screen recording for workflow capture (macOS only).
-//!
-//! One directory per recording under `/tmp/infer/captures/<start-timestamp>/`
-//! (the CLI sandbox blocks every path under `.infer/`, `/tmp` is allowed):
-//! `frames/NNNNNN.jpg` (one per second via `screencapture`) plus `events.jsonl`
-//! (timestamped key presses and mouse clicks from `input_capture`).
-//! On stop the directory is returned so the UI can reference it in the composer
-//! and the agent can turn the workflow into a skill. Frame capture stops after
-//! `MAX_FRAMES` (3 minutes at 1 fps) so a forgotten recording cannot fill the disk;
-//! event logging continues until Stop.
-
 use crate::env::mock_mode;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// One workflow screen recording: `dir` holds `frames/NNNNNN.jpg` (one per
+/// second via `screencapture`, capped at MAX_FRAMES) plus `events.jsonl` with
+/// the timestamped keys and clicks from `input_capture`. Lives under
+/// `/tmp/infer/captures` because the CLI sandbox blocks every path under
+/// `.infer/`; a forgotten recording cannot fill the disk.
 pub(crate) struct RecordingHandle {
     dir: PathBuf,
     stop: Arc<AtomicBool>,
@@ -25,6 +19,12 @@ pub(crate) struct RecordingHandle {
 /// at the same mark) - add interval/duration settings only if asked.
 #[cfg(target_os = "macos")]
 const MAX_FRAMES: u32 = 180;
+
+/// The frame-capture thread sleeps in slices so Stop reacts within one slice.
+#[cfg(target_os = "macos")]
+const STOP_POLL_SLICES: u32 = 10;
+#[cfg(target_os = "macos")]
+const STOP_POLL_SLICE: std::time::Duration = std::time::Duration::from_millis(100);
 
 pub(crate) fn records_dir() -> PathBuf {
     PathBuf::from("/tmp").join("infer").join("captures")
@@ -285,12 +285,11 @@ mod imp {
             {
                 eprintln!("screen recording: screencapture failed: {e}");
             }
-            // Sleep up to 1s in slices so Stop reacts within ~100ms.
-            for _ in 0..10 {
+            for _ in 0..STOP_POLL_SLICES {
                 if stop.load(Ordering::SeqCst) {
                     return;
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(STOP_POLL_SLICE);
             }
         }
     }
@@ -316,7 +315,6 @@ mod tests {
 
         prune_records(&root, 3).unwrap();
 
-        // keep - 1 = 2 newest survive; the file is untouched.
         assert!(root.join("2026-01-03T00-00-00").is_dir());
         assert!(root.join("2026-01-04T00-00-00").is_dir());
         assert!(!root.join("2026-01-02T00-00-00").exists());

@@ -83,12 +83,11 @@ fn leaf_name<'a>(name: &'a str, group: &str) -> &'a str {
         .unwrap_or(name)
 }
 
-/// Deterministic per-project directory mapping: names are processed in sorted
-/// order, sanitized under their group folder (`root/<group>/<leaf>`, or
-/// `root/<name>` without a group), and a numeric suffix is appended on
-/// collision ("a/b" and "a:b" both sanitize to "a-b"; the second sorted name
-/// gets "a-b-2"). Pure function of (root, names, groups) so grants can be
-/// re-derived from projects.yaml alone and repeated calls are idempotent.
+/// Deterministic per-project directory mapping: names are sanitized under
+/// their group folder (`root/<group>/<leaf>`, or `root/<name>` without a
+/// group), sorted, and suffixed on collision (a/b and a:b both become
+/// a-b). Pure function of (root, names, groups) so grants re-derive from
+/// projects.yaml alone and calls stay idempotent.
 fn assign_dirs(
     root: &Path,
     names: &[String],
@@ -441,7 +440,6 @@ mod tests {
         assert!(text.contains("names:\n- desktop\n- core/cli\n"), "{text}");
         assert_eq!(read_projects_in(&home), state);
 
-        // A hand-edited file is read as written - this is why it is YAML.
         std::fs::write(projects_path(&home), "names:\n  - solo\ngroups: {}\n").unwrap();
         assert_eq!(
             read_projects_in(&home)["names"],
