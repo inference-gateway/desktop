@@ -1,0 +1,19 @@
+name: cluster runtime - the local cluster is provisioned on Apple containers, which need no Docker or Podman
+narration:
+  - "Open Settings."
+  - "Switch to the Compute tab."
+  - "The local cluster runs on Docker unless another runtime is chosen."
+  - "Choose Apple containers, which run the node in a lightweight VM of its own."
+  - "The choice is on file beside the cluster's folders."
+  - "Provision the cluster - mock mode skips the runtime and only registers the cluster and its workspace."
+  - "The cluster shows up in the list."
+  - "It says which runtime it runs on, without a GPU."
+steps:
+  - click: { button: "Settings" }
+  - click: { button: "Compute" }
+  - wait_for: { button: "Run local cluster on Docker", timeout: 10 }
+  - click: { button: "Run local cluster on Apple containers" }
+  - wait_for: { file: "e2e/artifacts/home/.infer/cluster_folders.yaml", contains: "runtime: apple", timeout: 10 }
+  - click: { button: "Provision local cluster" }
+  - wait_for: { button: "Edit cluster infer-k3s", timeout: 15 }
+  - wait_for: { text: "Kubernetes on Apple containers", timeout: 10 }

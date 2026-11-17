@@ -19,24 +19,54 @@ const GPU_DEVICES: &str = "/dev/dri";
 /// shortcut: a fixed address on Podman's default network, read the subnet
 /// once someone runs that network on another one.
 const PODMAN_NODE_IP: &str = "10.88.0.200";
+/// What a Docker or Podman node runs with: root in its container and a
+/// restart by the daemon, which Apple's container has neither flag for.
+const DAEMON_NODE_ARGS: [&str; 3] = ["--privileged", "--restart", "unless-stopped"];
+/// What the node gets on Apple containers in place of `--privileged`: every
+/// capability and a writable /proc/sys, which kubelet needs for its sysctls.
+/// shortcut: a fixed size for the node's VM, whose default is 1 GiB. Make it
+/// a setting once someone needs a bigger node.
+const APPLE_NODE_ARGS: [&str; 10] = [
+    "--cap-add",
+    "ALL",
+    "--read-only-path",
+    "NONE",
+    "--cpus",
+    "4",
+    "--memory",
+    "8g",
+    "--entrypoint",
+    "/bin/sh",
+];
+/// How k3s starts on Apple containers, where the node gets a new address on
+/// every start and kube-proxy exits when the node's changes: the node keeps a
+/// fixed one on its loopback and only advertises the API on the current one.
+/// shortcut: that address is fixed, pick another once a pod or service
+/// network uses 10.200.0.0.
+const APPLE_SERVER: &str = "ip addr add 10.200.0.1/32 dev lo; IP=$(ip -4 route get 1.1.1.1 | sed -n 's/.*src \\([0-9.]*\\).*/\\1/p'); IF=$(ip -4 route get 1.1.1.1 | sed -n 's/.*dev \\([^ ]*\\).*/\\1/p'); exec k3s server --node-ip 10.200.0.1 --advertise-address \"$IP\" --flannel-iface \"$IF\"";
+const INSTALL_CONTAINER: &str = "brew install container";
+const START_CONTAINER: &str = "container system start";
+const SET_KERNEL: &str = "container system kernel set --recommended";
 
 /// What runs the cluster's node. Podman on a libkrun machine is the one that
-/// hands the node this Mac's GPU.
+/// hands the node this Mac's GPU. Apple containers run it in a VM of its own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Runtime {
     #[default]
     Docker,
     Podman,
+    Apple,
 }
 
 impl Runtime {
-    pub(crate) const ALL: [Runtime; 2] = [Runtime::Docker, Runtime::Podman];
+    pub(crate) const ALL: [Runtime; 3] = [Runtime::Docker, Runtime::Podman, Runtime::Apple];
 
     pub(crate) fn tool(self) -> &'static str {
         match self {
             Runtime::Docker => "docker",
             Runtime::Podman => "podman",
+            Runtime::Apple => "container",
         }
     }
 
@@ -44,23 +74,31 @@ impl Runtime {
         match self {
             Runtime::Docker => "Docker",
             Runtime::Podman => "Podman",
-        }
-    }
-
-    fn other(self) -> Runtime {
-        match self {
-            Runtime::Docker => Runtime::Podman,
-            Runtime::Podman => Runtime::Docker,
+            Runtime::Apple => "Apple containers",
         }
     }
 
     /// What the node's container gets on this runtime alone. Podman gives a
     /// container a new address on every start and k3s exits when its address
     /// changes, so the node's is fixed there.
-    fn node_args(self) -> &'static [&'static str] {
+    fn node_args(self) -> Vec<&'static str> {
         match self {
-            Runtime::Docker => &[],
-            Runtime::Podman => &["--device", GPU_DEVICES, "--ip", PODMAN_NODE_IP],
+            Runtime::Docker => DAEMON_NODE_ARGS.to_vec(),
+            Runtime::Podman => [
+                &DAEMON_NODE_ARGS[..],
+                &["--device", GPU_DEVICES, "--ip", PODMAN_NODE_IP],
+            ]
+            .concat(),
+            Runtime::Apple => APPLE_NODE_ARGS.to_vec(),
+        }
+    }
+
+    /// What follows the k3s image: its `server` command, which Apple
+    /// containers reach through a shell that fixes the node's address first.
+    fn server_args(self) -> &'static [&'static str] {
+        match self {
+            Runtime::Apple => &["-c", APPLE_SERVER],
+            _ => &["server"],
         }
     }
 }
@@ -121,7 +159,58 @@ fn kubectl(runtime: Runtime, args: &[&str]) -> Result<String, String> {
 
 /// Whether the runtime's daemon answers, which is all the node needs of it.
 pub(crate) fn answers(runtime: Runtime) -> bool {
-    run(runtime, &["info", "--format", "{{.ServerVersion}}"]).is_ok()
+    match runtime {
+        Runtime::Apple => run(runtime, &["system", "status"]).is_ok(),
+        _ => run(runtime, &["info", "--format", "{{.ServerVersion}}"]).is_ok(),
+    }
+}
+
+/// What Apple's container looks like to someone about to run a cluster on
+/// it. A Homebrew install comes without a Linux kernel.
+#[derive(Debug, Default)]
+struct AppleSetup {
+    installed: bool,
+    service_running: bool,
+    kernel: bool,
+}
+
+/// The first thing missing for a cluster on Apple containers, with the
+/// command that fixes it. None when everything is there.
+fn apple_setup_problem(setup: &AppleSetup) -> Option<String> {
+    if !setup.installed {
+        return Some(format!(
+            "Apple's container is not installed. It needs macOS 26 or newer on Apple silicon. Install it: {INSTALL_CONTAINER} (or the pkg from https://github.com/apple/container/releases)"
+        ));
+    }
+    if !setup.service_running {
+        return Some(format!(
+            "The container service is not running. Start it: {START_CONTAINER}"
+        ));
+    }
+    (!setup.kernel).then(|| {
+        format!("The container service has no Linux kernel yet. Install the recommended one: {SET_KERNEL}")
+    })
+}
+
+/// Whether the service has a kernel, from the properties it lists: the
+/// `kernel` table names a binary once one is set.
+fn has_kernel(properties: &str) -> bool {
+    properties
+        .split("\n[")
+        .any(|table| table.starts_with("kernel]") && table.contains("binaryPath"))
+}
+
+/// Why this Mac cannot run a cluster on Apple containers yet, with the
+/// command that fixes it.
+pub(crate) fn apple_problem() -> Option<String> {
+    let installed = run(Runtime::Apple, &["--version"]).is_ok();
+    let service_running = installed && answers(Runtime::Apple);
+    let properties = run(Runtime::Apple, &["system", "property", "list"]).unwrap_or_default();
+    apple_setup_problem(&AppleSetup {
+        installed,
+        service_running,
+        kernel: service_running && has_kernel(&properties),
+    })
 }
 
 fn free_port() -> Result<u16, String> {
@@ -134,8 +223,8 @@ fn free_port() -> Result<u16, String> {
 /// What provisioning answers when the cluster's folders changed, since a
 /// folder is mounted only into a container as it is created.
 pub(crate) const FOLDERS_CHANGED: &str = "The local cluster's folders changed. Recreate the cluster to mount them - this deletes its machines and everything on them";
-/// What provisioning answers when the cluster runs on the other runtime.
-pub(crate) const RUNTIME_CHANGED: &str = "The local cluster runs on the other runtime. Recreate the cluster to move it - this deletes its machines and everything on them";
+/// What provisioning answers when the cluster runs on another runtime.
+pub(crate) const RUNTIME_CHANGED: &str = "The local cluster runs on another runtime. Recreate the cluster to move it - this deletes its machines and everything on them";
 
 /// A mount as it was asked for, from the form the runtime lists it in. Podman
 /// appends the options it chose itself, of which only `ro` was asked for.
@@ -165,26 +254,81 @@ fn binds_of(inspected: &str) -> Vec<String> {
     binds
 }
 
+/// The node's configuration from the JSON Apple's `inspect` prints: a list
+/// with the one container, its mounts and published ports under `configuration`.
+fn apple_configuration(inspected: &str) -> Option<serde_json::Value> {
+    let mut containers: Vec<serde_json::Value> = serde_json::from_str(inspected.trim()).ok()?;
+    containers
+        .pop()?
+        .get_mut("configuration")
+        .map(serde_json::Value::take)
+}
+
+/// The folder mounts of a node on Apple containers, sorted, in the form they
+/// were asked for. The image's own filesystems have no host path as source.
+fn binds_of_apple_inspect(inspected: &str) -> Vec<String> {
+    let configuration = apple_configuration(inspected).unwrap_or_default();
+    let mut binds: Vec<String> = configuration["mounts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|mount| {
+            let source = mount["source"]
+                .as_str()
+                .filter(|source| source.starts_with('/'))?;
+            let destination = mount["destination"].as_str()?;
+            let read_only = mount["options"]
+                .as_array()
+                .is_some_and(|options| options.iter().any(|option| option == "ro"));
+            Some(format!(
+                "{source}:{destination}{}",
+                if read_only { ":ro" } else { "" }
+            ))
+        })
+        .collect();
+    binds.sort();
+    binds
+}
+
+/// The local port a node on Apple containers publishes its API on, from the
+/// JSON `inspect` prints.
+fn port_of_apple_inspect(inspected: &str) -> Option<String> {
+    apple_configuration(inspected)?["publishedPorts"]
+        .as_array()?
+        .iter()
+        .find(|port| port["containerPort"] == 6443)
+        .and_then(|port| port["hostPort"].as_u64())
+        .map(|port| port.to_string())
+}
+
 fn container_binds(runtime: Runtime) -> Result<Vec<String>, String> {
-    run(
-        runtime,
-        &[
-            "inspect",
-            "--type",
-            "container",
-            "--format",
-            "{{json .HostConfig.Binds}}",
-            CONTAINER,
-        ],
-    )
-    .map(|inspected| binds_of(&inspected))
+    match runtime {
+        Runtime::Apple => run(runtime, &["inspect", CONTAINER])
+            .map(|inspected| binds_of_apple_inspect(&inspected)),
+        _ => run(
+            runtime,
+            &[
+                "inspect",
+                "--type",
+                "container",
+                "--format",
+                "{{json .HostConfig.Binds}}",
+                CONTAINER,
+            ],
+        )
+        .map(|inspected| binds_of(&inspected)),
+    }
 }
 
 /// The runtime the cluster's node is on right now, looking at `chosen` first.
 /// None when no node exists.
 pub(crate) fn running_on(chosen: Runtime) -> Option<Runtime> {
-    [chosen, chosen.other()]
-        .into_iter()
+    std::iter::once(chosen)
+        .chain(
+            Runtime::ALL
+                .into_iter()
+                .filter(|runtime| *runtime != chosen),
+        )
         .find(|runtime| container_binds(*runtime).is_ok())
 }
 
@@ -202,11 +346,14 @@ pub(crate) fn recreate_pending(runtime: Runtime, binds: &[String]) -> bool {
 }
 
 fn remove_container(runtime: Runtime) -> Result<(), String> {
-    run(runtime, &["rm", "--force", "--volumes", CONTAINER]).map(drop)
+    match runtime {
+        Runtime::Apple => run(runtime, &["delete", "--force", CONTAINER]).map(drop),
+        _ => run(runtime, &["rm", "--force", "--volumes", CONTAINER]).map(drop),
+    }
 }
 
 /// Starts the k3s container, creating it on first use with `binds` mounted.
-/// One that runs with other folders or on the other runtime is replaced only
+/// One that runs with other folders or on another runtime is replaced only
 /// when `recreate` says so, because that deletes the cluster. Its API listens
 /// on a fixed local port picked at creation, so the kubeconfig stays valid.
 fn start_container(runtime: Runtime, binds: &[String], recreate: bool) -> Result<(), String> {
@@ -234,9 +381,6 @@ fn start_container(runtime: Runtime, binds: &[String], recreate: bool) -> Result
         "--detach",
         "--name",
         CONTAINER,
-        "--privileged",
-        "--restart",
-        "unless-stopped",
         "--publish",
         &published,
     ];
@@ -244,7 +388,8 @@ fn start_container(runtime: Runtime, binds: &[String], recreate: bool) -> Result
     for bind in binds {
         args.extend(["--volume", bind]);
     }
-    args.extend([K3S_IMAGE, "server"]);
+    args.push(K3S_IMAGE);
+    args.extend(runtime.server_args());
     run(runtime, &args).map(drop)
 }
 
@@ -256,6 +401,15 @@ fn port_of(docker_port: &str) -> Option<&str> {
         .next()
         .and_then(|line| line.trim().rsplit(':').next())
         .filter(|port| !port.is_empty())
+}
+
+/// The local port the node's API is published on.
+fn published_port(runtime: Runtime) -> Result<String, String> {
+    let port = match runtime {
+        Runtime::Apple => port_of_apple_inspect(&run(runtime, &["inspect", CONTAINER])?),
+        _ => port_of(&run(runtime, &["port", CONTAINER, API_PORT])?).map(str::to_owned),
+    };
+    port.ok_or_else(|| "the cluster's API port is not published".to_owned())
 }
 
 pub(crate) fn wait_until(
@@ -366,11 +520,10 @@ pub(crate) fn provision(
     })?;
     stage("Installing the Inference Gateway operator...");
     install(runtime, OPERATOR, "inference-gateway-system")?;
-    let published = run(runtime, &["port", CONTAINER, API_PORT])?;
-    let port = port_of(&published).ok_or("the cluster's API port is not published")?;
+    let port = published_port(runtime)?;
     standalone_kubeconfig(
         &run(runtime, &["exec", CONTAINER, "cat", K3S_KUBECONFIG])?,
-        port,
+        &port,
     )
 }
 
@@ -417,9 +570,13 @@ mod tests {
         assert_eq!(binds_of(listed), ["/a:/node/a", "/b:/node/b:ro"]);
     }
 
+    const APPLE_INSPECT: &str = r#"[{"configuration":{"id":"infer-k3s","mounts":[{"destination":"/var/lib/rancher/k3s/folders/raw/ro/raw","options":["ro"],"source":"/Users/me/raw","type":{"virtiofs":{}}},{"destination":"/var/lib/rancher/k3s/folders/raw/rw/raw","options":[],"source":"/Users/me/raw","type":{"virtiofs":{}}},{"destination":"/","options":[],"source":"rootfs","type":{"block":{}}}],"publishedPorts":[{"containerPort":6443,"hostAddress":"127.0.0.1","hostPort":54321,"proto":"tcp"}]},"status":{"state":"running"}}]"#;
+
     #[test]
     fn only_podman_hands_the_node_the_gpu_and_a_fixed_address() {
-        assert!(Runtime::Docker.node_args().is_empty());
+        assert!(Runtime::Docker.node_args().contains(&"--privileged"));
+        assert!(!Runtime::Docker.node_args().contains(&GPU_DEVICES));
+        assert!(Runtime::Podman.node_args().contains(&"--privileged"));
         assert!(Runtime::Podman.node_args().contains(&GPU_DEVICES));
         assert!(Runtime::Podman.node_args().contains(&PODMAN_NODE_IP));
     }
@@ -428,5 +585,65 @@ mod tests {
     fn the_published_port_is_read_from_docker_port() {
         assert_eq!(port_of("127.0.0.1:54321\n"), Some("54321"));
         assert_eq!(port_of(""), None);
+    }
+
+    #[test]
+    fn apple_containers_run_the_node_with_every_capability_and_a_sized_vm() {
+        let args = Runtime::Apple.node_args();
+        assert_eq!(args[..2], ["--cap-add", "ALL"]);
+        assert!(args.contains(&"--read-only-path"));
+        assert_eq!(args[args.len() - 2..], ["--entrypoint", "/bin/sh"]);
+        assert_eq!(Runtime::Docker.server_args(), ["server"]);
+        assert_eq!(Runtime::Apple.server_args()[0], "-c");
+        assert!(APPLE_SERVER.contains("ip addr add 10.200.0.1/32 dev lo"));
+        assert!(APPLE_SERVER.contains("exec k3s server --node-ip"));
+        assert!(args.contains(&"--cpus") && args.contains(&"--memory"));
+        assert!(!args.contains(&"--privileged") && !args.contains(&"--restart"));
+        assert!(!args.contains(&GPU_DEVICES));
+    }
+
+    #[test]
+    fn the_published_port_and_folder_mounts_are_read_from_apple_inspect() {
+        assert_eq!(port_of_apple_inspect(APPLE_INSPECT), Some("54321".into()));
+        assert_eq!(
+            binds_of_apple_inspect(APPLE_INSPECT),
+            [
+                "/Users/me/raw:/var/lib/rancher/k3s/folders/raw/ro/raw:ro",
+                "/Users/me/raw:/var/lib/rancher/k3s/folders/raw/rw/raw",
+            ]
+        );
+        assert_eq!(port_of_apple_inspect("[]"), None);
+        assert_eq!(port_of_apple_inspect(""), None);
+        assert!(binds_of_apple_inspect("").is_empty());
+    }
+
+    #[test]
+    fn each_missing_piece_of_the_apple_setup_names_its_fix() {
+        let ready = AppleSetup {
+            installed: true,
+            service_running: true,
+            kernel: true,
+        };
+        assert_eq!(apple_setup_problem(&ready), None);
+        let problem = |setup: AppleSetup| apple_setup_problem(&setup).unwrap();
+        assert!(problem(AppleSetup::default()).contains(INSTALL_CONTAINER));
+        let stopped = AppleSetup {
+            service_running: false,
+            ..ready
+        };
+        assert!(problem(stopped).contains(START_CONTAINER));
+        let no_kernel = AppleSetup {
+            kernel: false,
+            ..ready
+        };
+        assert!(problem(no_kernel).contains(SET_KERNEL));
+    }
+
+    #[test]
+    fn the_kernel_is_set_once_its_table_names_a_binary() {
+        let set = "\n[dns]\n\n[kernel]\nbinaryPath = \"opt/kata/vmlinux\"\nurl = \"https://x\"\n\n[machine]\ncpus = 7\n";
+        assert!(has_kernel(set));
+        assert!(!has_kernel("\n[dns]\n\n[kernel]\n\n[machine]\ncpus = 7\n"));
+        assert!(!has_kernel(""));
     }
 }

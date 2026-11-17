@@ -43,6 +43,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
 - [MCP servers](docs/mcp.md) - Settings > MCPs end to end: hosted and container servers, headers whose values are secrets, where a server goes.
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
+- [Apple containers](docs/apple-containers.md) - run the local cluster on Apple's `container`, with no Docker Desktop or Podman machine.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
 - [Content projects](docs/content.md) - the app's own timeline: media pool, voice and captions, cards, undo and export.

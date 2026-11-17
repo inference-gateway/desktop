@@ -16,7 +16,7 @@ Then, under **Settings > Compute**:
 2. Press the container button, **Provision local cluster**. The cluster's row then reads `Kubernetes on Podman with GPU`.
 3. Press **Restart CLI**.
 
-The choice is saved in `~/.infer/cluster_folders.yaml`, beside the cluster's folders. A cluster that already runs on the other runtime moves only when it is recreated, which deletes its machines and everything on them. The tab asks before it does that, the same way as for changed folders. A Mac that stays on Docker keeps its cluster as it is.
+The choice is saved in `~/.infer/cluster_folders.yaml`, beside the cluster's folders. A cluster that already runs on another runtime moves only when it is recreated, which deletes its machines and everything on them. The tab asks before it does that, the same way as for changed folders. A Mac that stays on Docker keeps its cluster as it is.
 
 ## What a computer gets
 

@@ -196,8 +196,9 @@ export type WorkspaceResources = {
 };
 /** What a running computer was given when it started. An empty amount was left to the cluster. */
 export type ComputerResources = { cpu: string; memory: string; gpus: number };
-/** What runs the local cluster's node. Podman on a libkrun machine is the one that reaches this Mac's GPU. */
-export type ClusterRuntime = "docker" | "podman";
+/** What runs the local cluster's node. Podman on a libkrun machine is the one that reaches this Mac's GPU, and Apple
+ * containers run it in a lightweight VM of its own. */
+export type ClusterRuntime = "docker" | "podman" | "apple";
 /** The local cluster: the runtime chosen for it and the ones on offer, the one it runs on, why it cannot be
  * provisioned, and whether what is saved only applies once it is recreated. */
 export type LocalCluster = {

@@ -284,6 +284,9 @@ mod tests {
         let saved = merge_runtime(Some(&folders), Runtime::Podman).unwrap();
         assert!(saved.contains("runtime: podman"), "{saved}");
         assert_eq!(parse_runtime(Some(&saved)), Runtime::Podman);
+        let saved = merge_runtime(Some(&saved), Runtime::Apple).unwrap();
+        assert!(saved.contains("runtime: apple"), "{saved}");
+        assert_eq!(parse_runtime(Some(&saved)), Runtime::Apple);
         assert_eq!(parse_folders(Some(&saved)).len(), 1);
     }
 

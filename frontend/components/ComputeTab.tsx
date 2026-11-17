@@ -21,10 +21,11 @@ import {
 
 type Editing = { previous: string | null; draft: ClusterDraft };
 
-const RUNTIME_LABEL: Record<ClusterRuntime, string> = { docker: "Docker", podman: "Podman" };
+const RUNTIME_LABEL: Record<ClusterRuntime, string> = { docker: "Docker", podman: "Podman", apple: "Apple containers" };
 const RUNTIME_HINT: Record<ClusterRuntime, string> = {
   docker: "Its computers render on the CPU.",
   podman: "On a libkrun machine, so its computers get this Mac's GPU.",
+  apple: "In a lightweight VM of its own on macOS 26, with no GPU, and it does not restart on its own.",
 };
 
 function ClusterRow({
@@ -362,7 +363,7 @@ export function ComputeTab() {
               your saved API keys for its gateway.{" "}
               {ready
                 ? `The container button runs a k3s cluster in ${runtimeLabel} and adds an ubuntu-desktop workspace on it.`
-                : local?.runtime !== "podman" && local?.problem}
+                : local?.runtime === "docker" && local?.problem}
             </span>
           </div>
         )}
@@ -390,7 +391,7 @@ export function ComputeTab() {
               {local.running ? `The cluster runs on ${RUNTIME_LABEL[local.running]}.` : "No local cluster runs yet."}
             </span>
           </div>
-          {local.runtime === "podman" && <Problem text={local.problem ?? ""} />}
+          {local.runtime !== "docker" && <Problem text={local.problem ?? ""} />}
         </section>
       )}
       {local && (ready || local.pending) && supported && (

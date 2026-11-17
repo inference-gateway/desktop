@@ -1179,6 +1179,7 @@ fn runtime_problem(runtime: Runtime) -> Option<String> {
     match runtime {
         Runtime::Docker => (!crate::local_cluster::answers(runtime)).then(|| NO_DOCKER.to_owned()),
         Runtime::Podman => crate::cluster_gpu::podman_problem(),
+        Runtime::Apple => crate::local_cluster::apple_problem(),
     }
 }
 
