@@ -3,7 +3,7 @@ version: '3'
 vars:
   CLUSTER: computer-use
   NAMESPACE: computer-use
-  WORKSPACE: ubuntu-desktop
+  WORKSPACE: computer-use
   AGENT_SANDBOX_VERSION: v1.0.8
   OPERATOR_VERSION: v0.35.0
   INFER_DIR: '{{.HOME}}/.infer'
@@ -29,7 +29,7 @@ tasks:
       - kubectl --context k3d-{{.CLUSTER}} apply -f k8s/namespace.yaml
 
   workspace:register:
-    desc: Add the ubuntu-desktop workspace to ~/.infer/daemon.yaml, keeping every other entry (the previous file is saved as daemon.yaml.bak). Its user_data is the app's own computer setup plus the mock scenarios
+    desc: Add the computer-use workspace to ~/.infer/daemon.yaml, keeping every other entry (the previous file is saved as daemon.yaml.bak). Its user_data is the app's own computer setup plus the mock scenarios
     cmds:
       - mkdir -p {{.INFER_DIR}}
       - touch {{.INFER_DIR}}/daemon.yaml
