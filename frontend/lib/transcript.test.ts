@@ -95,8 +95,8 @@ test("assistant content chunks accumulate into one bubble, then reset on tool ca
   const assistant = s.items.filter((i) => i.kind === "assistant");
   expect(assistant).toHaveLength(1);
   expect(assistant[0]).toMatchObject({ chunks: ["Hel", "lo"] });
-  // Dots persist while the agent streams; only a terminal event stops them.
-  expect(s.typing).toBe(true);
+  const dotsPersistUntilTerminalEvent = s.typing;
+  expect(dotsPersistUntilTerminalEvent).toBe(true);
 });
 
 test("distinct streamed assistant messages start new bubbles", () => {

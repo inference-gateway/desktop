@@ -1,9 +1,3 @@
-// Compact always-on-top monitor window for computer-use sessions. Fed by the
-// backend's global "agent-event" broadcast; invokes session-keyed backend
-// commands directly. Docks itself to the top-center screen edge on launch.
-// Expanding grows the window and adds a composer that round-trips follow-up
-// prompts through the main window via the "monitor-send" event, so the main
-// transcript stays the single source of truth.
 import { useEffect, useReducer, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, currentMonitor, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
@@ -71,10 +65,15 @@ function reducer(state: MonitorState, action: Action): MonitorState {
   return action.type === "event" ? monitorReducer(state, action.msg) : resolveApproval(state, action.sessionId);
 }
 
+/** Compact always-on-top monitor window for computer-use sessions, docked to the
+ * top-center screen edge. Fed by the backend's "agent-event" broadcast, it calls
+ * session-keyed commands directly, and its expanded composer sends follow-ups
+ * through the main window ("monitor-send") so the main transcript stays the
+ * single source of truth. */
 export default function Monitor() {
   const [sessions, dispatch] = useReducer(reducer, {});
-  // Pausing computer use stops the run, resuming continues the thread with a
-  // new run. The daemon reports neither, so the row's status is kept here.
+  /** Pausing computer use stops the run, resuming continues the thread with a
+   * new run. The daemon reports neither, so the row's status is kept here. */
   const toggleRun = (sessionId: string, resume: boolean) => {
     (resume ? api.resumeAgent(sessionId) : api.cancelAgent(sessionId))
       .then(() =>

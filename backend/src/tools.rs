@@ -71,7 +71,7 @@ pub(crate) struct McpServerStatus {
     pub(crate) error: String,
 }
 
-/// Counts from `infer agents status --format json`; per-agent rows are ignored.
+/// Counts from `infer agents status --format json`. Per-agent rows are ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct A2aStatus {
     pub(crate) total_agents: u64,
@@ -93,7 +93,7 @@ pub(crate) async fn a2a_status() -> Result<A2aStatus, String> {
 /// Serialises shared container startup against session spawns. A headless
 /// session that starts while `infer agents start` is still pulling an image
 /// cannot see the shared container in `docker ps` yet, so it starts its own
-/// and the two race for the port; the shared one loses and the session's
+/// and the two race for the port. The shared one loses and the session's
 /// container dies with the session.
 static SERVICES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 

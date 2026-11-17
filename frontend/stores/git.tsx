@@ -4,6 +4,9 @@ import { api } from "@/lib/tauri";
 import { useActivity } from "@/stores/activity";
 import { BACKEND_EVENTS } from "@/lib/events";
 
+/** Debounce for bursts of git-changed events, so one sweep follows a burst. */
+const GIT_REFRESH_DEBOUNCE_MS = 300;
+
 function useGitStore() {
   const { logActivity } = useActivity();
   const [gitProjects, setGitProjects] = useState<Set<string>>(() => new Set());
@@ -26,7 +29,7 @@ function useGitStore() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unlisten = listen(BACKEND_EVENTS.gitChanged, () => {
       clearTimeout(timer);
-      timer = setTimeout(refreshGitProjects, 300);
+      timer = setTimeout(refreshGitProjects, GIT_REFRESH_DEBOUNCE_MS);
     });
     return () => {
       clearTimeout(timer);

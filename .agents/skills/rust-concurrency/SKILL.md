@@ -21,7 +21,7 @@ much weaker statement in concurrent code than sequential code - budget review at
 
 - **Transfer ownership instead of sharing it.** A value `move`d into a thread or task needs no
   synchronization at all. This is the option the borrow checker rewards.
-- **Prefer message passing.** One channel with a documented protocol is reviewable; a graph of
+- **Prefer message passing.** One channel with a documented protocol is reviewable. A graph of
   `Arc<Mutex<_>>` reachable from four tasks is not.
 - **Prefer immutability.** `Arc<T>` with no interior mutability is `Sync` for free and needs no lock.
 - **Ask whether you need concurrency at all.** Rayon's `par_iter()` turns a data-parallel loop into a
@@ -52,7 +52,7 @@ argument in a `// SAFETY:` comment or don't write the impl.
 - **`std::thread::scope`** (1.63+) lets threads borrow from the stack, so scoped work needs neither
   `'static`, nor `Arc`, nor a clone. Use it unless the thread must outlive the frame.
 - `JoinHandle::join` returns `Result` - `Err` means that thread **panicked**. Silently `unwrap`ping it
-  turns a worker panic into a confusing parent panic; ignoring it loses the failure entirely.
+  turns a worker panic into a confusing parent panic. Ignoring it loses the failure entirely.
 - A detached thread with no shutdown signal is a leak. Every spawn needs a documented way to stop.
 - **Rayon** for CPU-bound data parallelism (`par_iter`, `par_bridge`, `join`). Do not hand-roll a pool.
 
@@ -76,16 +76,16 @@ let total = Arc::new(Mutex::new(0));
   self-deadlock. Bind it to a `let` and scope it.
 - **Two locks means a documented global lock order**, taken the same way everywhere. Rust will not catch
   the inversion.
-- **`RwLock`** only when reads dominate _and_ are long; otherwise a `Mutex` is faster and has no writer
+- **`RwLock`** only when reads dominate _and_ are long. Otherwise a `Mutex` is faster and has no writer
   starvation question.
 - **Atomics** for a counter or a flag, not for an invariant spanning two variables. Default to
-  `Ordering::SeqCst`; anything weaker needs a written justification and a loom test.
+  `Ordering::SeqCst`. Anything weaker needs a written justification and a loom test.
 - **`Rc`/`RefCell` are single-threaded.** `RefCell` moves borrow checking to runtime - a violation is a
   panic, not a compile error.
 
 ## Channels
 
-`std::sync::mpsc` for multi-producer/single-consumer; `crossbeam-channel` for MPMC and `select!`;
+`std::sync::mpsc` for multi-producer/single-consumer, `crossbeam-channel` for MPMC and `select!`, and
 `tokio::sync` for async (`mpsc`, `oneshot` for a single reply, `broadcast` for fan-out, `watch` for
 latest-value-wins). Prefer **bounded** channels: an unbounded queue turns a throughput mismatch into
 unbounded memory growth instead of backpressure. Both ends signal shutdown by disconnecting - `recv`
@@ -99,15 +99,15 @@ tool for CPU-bound work.
 - **Futures are inert.** A future that is never `.await`ed or spawned does nothing at all - no warning
   beyond `#[must_use]`.
 - **`tokio::spawn` requires `Send + 'static`** and returns a `JoinHandle` you `.await` (not `join`).
-  Dropping the handle detaches the task; the task keeps running and its `Err`/panic vanishes. Use
+  Dropping the handle detaches the task. The task keeps running and its `Err`/panic vanishes. Use
   **`JoinSet`** for a group so completions and failures are collected structurally.
 - **Never block the executor.** A blocking file read, a `std::thread::sleep`, or a long CPU loop inside an
   async fn stalls every task on that worker thread. Use `tokio::task::spawn_blocking` for blocking IO and
   rayon (bridged with a `oneshot`) for CPU work.
 - **`std::sync::Mutex` unless the guard must live across an `.await`.** A `std` guard is not `Send`, so the
-  compiler will usually stop you; `tokio::sync::Mutex` is slower and exists only for that case. Better
+  compiler will usually stop you. `tokio::sync::Mutex` is slower and exists only for that case. Better
   still: restructure so no lock is held across a suspension point.
-- **`select!` requires cancellation safety.** The losing branches are dropped mid-execution; if a future
+- **`select!` requires cancellation safety.** The losing branches are dropped mid-execution. If a future
   consumed data it had not yet handed over, that data is gone. Only `.await` cancellation-safe futures
   directly in `select!` arms (`tokio` documents which are), otherwise poll a pinned future you own across
   iterations.
@@ -116,7 +116,7 @@ tool for CPU-bound work.
 - **Timeouts on every external call** (`tokio::time::timeout`), and a real shutdown path -
   `CancellationToken` or a `watch` channel - so tasks stop on purpose rather than when the process dies.
 - **Bound concurrency**: `stream.buffer_unordered(n)` or a `Semaphore`, not `n` spawned tasks per request.
-- `async fn` in traits works natively (1.75+); `#[async_trait]` is still needed for `dyn` dispatch.
+- `async fn` in traits works natively (1.75+). `#[async_trait]` is still needed for `dyn` dispatch.
 
 ## Verification is not optional
 
@@ -129,7 +129,7 @@ Passing tests prove very little about interleavings your machine happened not to
    FFI is in the mix.
 4. **Stress the schedule** - loop the test hundreds of times, on a loaded machine, with more threads than
    cores. Never leave a `sleep` as the synchronization mechanism in a test.
-5. **`tokio-console`** for a stalled or leaked task; enable `tokio_unstable` in a debug profile.
+5. **`tokio-console`** for a stalled or leaked task. Enable `tokio_unstable` in a debug profile.
 6. **Measure.** If the parallel version isn't measurably faster on realistic data, delete the concurrency -
    you bought risk for nothing.
 

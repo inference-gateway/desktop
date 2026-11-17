@@ -4,6 +4,7 @@ import { api, type StoredMetric, type StoredSpan } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 
+const METRICS_POLL_MS = 3000;
 const SERVICE_COLORS = ["#4f8ef7", "#2fbf71", "#f2a93b", "#e05d7e", "#9b6ef3", "#3ec3c9"];
 
 type Section = "traces" | "stats";
@@ -201,7 +202,7 @@ export function ObservabilityView() {
         .catch(() => {});
     };
     fetch();
-    const id = setInterval(fetch, 3000);
+    const id = setInterval(fetch, METRICS_POLL_MS);
     return () => clearInterval(id);
   }, []);
 

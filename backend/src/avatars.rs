@@ -1,8 +1,3 @@
-// Avatar library for the CLI's TextToVideo tool, stored by the CLI in
-// ~/.infer/avatars/<name>/ as one or more portraits of the same person. The
-// desktop owns none of it: create, list and delete shell out to
-// `infer avatars` (cli cmd/avatars), which also generates the extra angles
-// through the gateway's image edit API.
 use crate::agent::{infer_command, run_infer};
 use crate::env::{agent_cwd, home_dir, infer_dir};
 use crate::tts_samples::{sample_path, samples_dir, speak_blocking, tool_outcome, voice_test_dir};
@@ -12,6 +7,10 @@ use std::process::Stdio;
 use tauri::ipc::Channel;
 use tauri_plugin_dialog::DialogExt;
 
+/// An avatar of the CLI's TextToVideo tool: one or more portraits of the same
+/// person the CLI keeps in ~/.infer/avatars/<name>/. The desktop owns none of
+/// it - create, list and delete shell out to `infer avatars`, which also makes
+/// the extra angles through the gateway's image edit API.
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Avatar {
     pub(crate) name: String,
@@ -39,7 +38,7 @@ fn avatars_from(dump: &str, dir: &Path) -> Result<Vec<Avatar>, String> {
         .collect())
 }
 
-/// Reject names the CLI would parse as a flag; it enforces the rest itself.
+/// Reject names the CLI would parse as a flag. It enforces the rest itself.
 fn avatar_name(name: &str) -> Result<&str, String> {
     if name.is_empty() || name.starts_with('-') {
         return Err(format!("invalid avatar name {name:?}"));

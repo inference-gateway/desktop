@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 /// App-owned provider key store at ~/.infer/auth.yaml: a flat YAML map of
 /// provider key env vars to values (`OPENAI_API_KEY: sk-...`). infer reads this
 /// file too, as the lowest-precedence source after the system environment and
-/// the project .env; the desktop additionally injects the pairs as env vars
+/// the project .env. The desktop additionally injects the pairs as env vars
 /// when spawning `infer`.
 fn auth_path(home: &Path) -> PathBuf {
     infer_dir_in(home).join("auth.yaml")
@@ -164,20 +164,17 @@ pub(crate) async fn set_auth(
     .await
 }
 
-/// Desktop-facing config fields read from ~/.infer/config.yaml.
-/// Only the fields the Settings UI manages are exposed; the rest of the
-/// config (gateway.run, gateway.standalone_binary, etc.) passes through.
+/// Desktop-facing config fields read from ~/.infer/config.yaml - the Settings
+/// UI's slice of the CLI config, serialized to/from the CLI verbatim. Field names
+/// mirror the config keys (e.g. `postgres_host` for `postgres.host`). Empty
+/// string fields mean unset, so the CLI keeps its own defaults, and relative
+/// storage paths resolve only for spawned processes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopConfig {
     pub(crate) storage_backend: String,
-    /// Verbatim `storage.jsonl.path` from ~/.infer/config.yaml; empty means unset
-    /// (the CLI defaults to ~/.infer/projects/<project-slug>/conversations).
-    /// Relative paths resolve only for spawned processes
-    /// (env::absolute_storage_path) and are never rewritten into the config file.
     pub(crate) storage_directory: String,
     pub(crate) gateway_url: String,
     pub(crate) default_model: String,
-    /// Empty means unset: the CLI defaults to ~/.infer/conversations.db.
     pub(crate) sqlite_path: String,
     pub(crate) postgres_host: String,
     pub(crate) postgres_port: String,
@@ -193,26 +190,13 @@ pub(crate) struct DesktopConfig {
     pub(crate) d1_database_id: String,
     pub(crate) d1_api_token: String,
     pub(crate) d1_base_url: String,
-    /// Extra instructions appended to the default system prompt on every invocation.
     pub(crate) extra_instructions: String,
-    /// Override the entire default system prompt with user-supplied text.
-    /// When both are set, override replaces the default and extra_instructions are
-    /// appended after it.
     pub(crate) system_prompt: String,
-    /// Enable local scheduling via `infer daemon`.
     pub(crate) schedule_enabled: bool,
-    /// Fallback model for daemon-fired scheduled jobs (`agent.model` in the CLI
-    /// config). A per-job model set at schedule time takes precedence.
-    /// Scheduling backend: "local" (daemon cron) or "github" (.routines Actions).
     pub(crate) scheduler_backend: String,
     pub(crate) scheduler_github_repository: String,
-    /// Actions secret names the generated workflow reads the GitHub App
-    /// credentials from; configurable so org-level secrets with their own
-    /// naming convention can be referenced.
     pub(crate) scheduler_github_app_client_id_secret: String,
     pub(crate) scheduler_github_app_private_key_secret: String,
-    /// Git author/committer identity for the deploy commits the CLI pushes to
-    /// the routines repository.
     pub(crate) scheduler_github_bot_name: String,
     pub(crate) scheduler_github_bot_email: String,
     pub(crate) scheduler_github_pull_requests: bool,
@@ -221,60 +205,31 @@ pub(crate) struct DesktopConfig {
     pub(crate) scheduler_github_artifacts_initial_delay: String,
     pub(crate) scheduler_github_artifacts_max_attempts: String,
     pub(crate) scheduler_github_artifacts_rate_limit_backoff: String,
-    /// Root under which every project gets its own files directory.
     pub(crate) projects_root: String,
-    /// Projects files backend: "local" (filesystem) or "github" (repo).
     pub(crate) projects_backend: String,
-    /// GitHub repository holding project files when the backend is github.
     pub(crate) projects_github_repository: String,
-    /// Max upload size per file, in MB.
     pub(crate) projects_max_file_size_mb: String,
-    /// Comma-separated extension allowlist for uploaded files.
     pub(crate) projects_allowed_mimes: String,
-    /// Enable the CLI's TextToSpeech tool (text_to_speech.enabled in the CLI
-    /// config); the desktop never synthesizes audio itself.
     #[serde(default)]
     pub(crate) text_to_speech_enabled: bool,
-    /// The speech model the tool synthesizes with, as "provider/model"
-    /// (text_to_speech.model). Empty leaves the CLI on its local default.
     #[serde(default)]
     pub(crate) text_to_speech_model: String,
-    /// The provider's voice id a hosted speech model speaks in when the agent
-    /// names no voice sample (text_to_speech.voice).
     #[serde(default)]
     pub(crate) text_to_speech_voice: String,
-    /// Whether the gateway may download what the local speech model needs
-    /// (text_to_speech.auto_download), about 1.4 GB on first use.
     #[serde(default = "enabled_by_default")]
     pub(crate) text_to_speech_auto_download: bool,
-    /// Where generated speech is written (text_to_speech.output_dir). Empty
-    /// leaves the CLI on its media directory.
     #[serde(default)]
     pub(crate) text_to_speech_output_dir: String,
-    /// Whether the agent asks before it speaks
-    /// (text_to_speech.require_approval). Off leaves the tool's own policy.
     #[serde(default)]
     pub(crate) text_to_speech_require_approval: bool,
-    /// Enable the CLI's TextToVideo tool (text_to_video.enabled in the CLI
-    /// config). Off by default: every render sends a portrait and a voice clip
-    /// to a third-party video provider.
     #[serde(default)]
     pub(crate) text_to_video_enabled: bool,
-    /// The model (`provider/model`) that lip-syncs an avatar to a voice clip
-    /// (text_to_video.avatar_model in the CLI config). Empty leaves the CLI's
-    /// own default.
     #[serde(default)]
     pub(crate) text_to_video_avatar_model: String,
-    /// Vision model (`provider/model`) for the CLI's ImageDecode annotator
-    /// (vision.annotator in the CLI config); empty disables the annotator.
     #[serde(default)]
     pub(crate) vision_annotator_model: String,
-    /// Show the status row above the composer (chat.status_bar.enabled in the
-    /// CLI config, shared with the CLI's own status bar).
     #[serde(default = "default_true")]
     pub(crate) status_bar_enabled: bool,
-    /// Offer a one-line next step after each reply (chat.suggestions.enabled
-    /// in the CLI config). Off by default, like the CLI.
     #[serde(default)]
     pub(crate) next_step_suggestions_enabled: bool,
 }
@@ -283,14 +238,11 @@ fn default_true() -> bool {
     true
 }
 
-/// Extension allowlists shipped as a default by earlier releases and since
-/// written into config files by `merge_config`. A stored value identical to one
-/// of them was never edited by hand, so it reads as unset and the current
-/// default applies - otherwise every install that ever saved Settings stays
-/// pinned to the list that was current then, and an extended default never
-/// reaches it (an mp3 is rejected even though the code allows audio). New
-/// entries are only needed for defaults written before the writer stopped
-/// persisting them.
+/// Allowlist defaults written into config files by `merge_config` in earlier
+/// releases. A stored value equal to one of these was never hand-edited, so it
+/// reads as unset and the current default applies - otherwise every install
+/// that ever saved Settings stays pinned to the list that was current then,
+/// and an extended default never reaches it.
 const SUPERSEDED_ALLOWED_MIMES: &[&str] =
     &["pdf,png,jpg,jpeg,heic,heif,gif,webp,mp4,mov,txt,md,csv"];
 
@@ -596,7 +548,7 @@ fn set_speech_section(map: &mut serde_norway::Mapping, cfg: &DesktopConfig) {
 }
 
 /// Write `storage.<name>.path`, or drop it when `path` is empty so the CLI's
-/// own ~/.infer default applies; an emptied section is removed entirely.
+/// own ~/.infer default applies. An emptied section is removed entirely.
 fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
     if !path.is_empty() {
         set_section(smap, name, vec![("path", path.into())]);
@@ -614,13 +566,22 @@ fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
     }
 }
 
+/// Writes the Settings UI's fields at the YAML top level so `config_from_value`
+/// reads them back.
+fn insert_settings_read_back_fields(map: &mut serde_norway::Mapping, cfg: &DesktopConfig) {
+    map.insert(
+        "extra_instructions".into(),
+        cfg.extra_instructions.clone().into(),
+    );
+    map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
+    map.remove("agents_dir");
+}
+
 /// Merge the Settings-managed storage + gateway fields into the existing config
-/// text, returning serialized YAML. The default model (`agent.model`) is owned
-/// by `merge_default_model` (written from the composer), so it is deliberately
-/// not touched here - otherwise a stale Settings form would clobber a newer
-/// model chosen from the composer. The file allowlist is written only when it
-/// differs from the shipped default, so the default is never baked into the
-/// file and a later release can extend it (see `SUPERSEDED_ALLOWED_MIMES`).
+/// text, returning serialized YAML. The default model is deliberately not
+/// touched here (`merge_default_model` owns it, so a stale Settings form cannot
+/// clobber a newer model chosen from the composer). The file allowlist is
+/// written only when it differs from the shipped default (see SUPERSEDED_ALLOWED_MIMES).
 pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
     let mut yaml = config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
@@ -677,14 +638,7 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
         gmap.insert("url".into(), cfg.gateway_url.clone().into());
     }
 
-    // Desktop round-trip: write individual fields at top level so the Settings
-    // UI can read them back via config_from_value.
-    map.insert(
-        "extra_instructions".into(),
-        cfg.extra_instructions.clone().into(),
-    );
-    map.insert("system_prompt".into(), cfg.system_prompt.clone().into());
-    map.remove("agents_dir");
+    insert_settings_read_back_fields(map, cfg);
 
     let tools = map
         .entry("tools".into())
@@ -1006,7 +960,7 @@ mod tests {
     }
 
     /// The CLI anchors a relative storage.jsonl.path at its own cwd and only
-    /// expands a leading `~`; the desktop reads the value verbatim so the two
+    /// expands a leading `~`. The desktop reads the value verbatim so the two
     /// agree on what the file says and saving Settings never rewrites it.
     #[test]
     fn config_from_value_keeps_relative_storage_path_verbatim() {
@@ -1444,7 +1398,7 @@ mod tests {
 
     /// A stored allowlist that is only an earlier release's default is read as
     /// unset, so an install that saved Settings before the video/audio formats
-    /// existed still accepts them; a hand-edited list is kept as written.
+    /// existed still accepts them. A hand-edited list is kept as written.
     #[test]
     fn superseded_default_allowlist_reads_as_the_current_default() {
         let home = Path::new("/home/tester");

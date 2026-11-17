@@ -62,10 +62,10 @@ describe("video framing", () => {
     const r = videoRect(clip({ scale: fitScale(src, 1080, 1920) }), src, 1080, 1920);
     expect(r.w).toBeCloseTo(1080, 5);
     expect(r.h).toBeCloseTo(607.5, 5);
-    // A square frame over a 16:9 clip has to come down to 9/16 to fit.
-    expect(fitScale({ w: 16, h: 9 }, 100, 100)).toBeCloseTo(9 / 16, 10);
-    // Fill is scale 1, so fitting never scales up.
-    expect(fitScale(src, 1920, 1080)).toBe(1);
+    const wideClipInSquareFrame = fitScale({ w: 16, h: 9 }, 100, 100);
+    expect(wideClipInSquareFrame).toBeCloseTo(9 / 16, 10);
+    const fitNeverScalesUpPastFill = fitScale(src, 1920, 1080);
+    expect(fitNeverScalesUpPastFill).toBe(1);
   });
 
   test("x and y are the point in the frame the clip is centred on", () => {
@@ -134,8 +134,8 @@ describe("caption layout", () => {
 
   test("it sits on the bottom margin by default, centred on the frame", () => {
     const l = layoutCaption(track(), clip, 1920, 1080, measure)!;
-    // classic: size 0.048 of 1080 = 51.84px, one line, band padding 0.2em.
-    expect(l.fontPx).toBeCloseTo(51.84, 5);
+    const classicFontPx = 0.048 * 1080;
+    expect(l.fontPx).toBeCloseTo(classicFontPx, 5);
     expect(l.lines).toHaveLength(1);
     expect(l.box.x + l.box.w / 2).toBeCloseTo(960, 5);
     expect(l.box.y + l.box.h).toBeCloseTo(1080 - 0.06 * 1080, 5);

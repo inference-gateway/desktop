@@ -1,9 +1,3 @@
-//! One WebSocket connection per chat to the daemon's AG-UI binding: the thread
-//! the connection follows, the frames the app sends on it, and the AG-UI
-//! events the parser turns the daemon's frames into. Each socket is owned by
-//! one thread running `pump`, which polls with a short read timeout and
-//! drains an mpsc queue of outbound frames, so no lock spans socket I/O.
-
 use crate::agent::events::{AgentEvent, AgentParser, run_outcome};
 use crate::daemon::{Binding, ExtensionStatus, lock};
 use std::collections::HashMap;
@@ -22,7 +16,9 @@ const POLL: Duration = Duration::from_millis(50);
 const PING_EVERY: Duration = Duration::from_secs(20);
 
 /// What a thread's worker launches with. The daemon applies these once, when
-/// the worker starts, so a thread reopened later keeps its first options.
+/// the worker starts, so a thread reopened later keeps its first options. The
+/// `agent` field names the Markdown agent the CLI runs the thread as (its
+/// model, body and tools).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ThreadOptions {
     pub(crate) model: String,
@@ -31,15 +27,17 @@ pub(crate) struct ThreadOptions {
     pub(crate) custom_instructions: Option<String>,
     pub(crate) sandbox_directories: Vec<String>,
     pub(crate) max_turns: u32,
-    /// The Markdown agent the CLI runs the thread as: its model, body and tools.
     pub(crate) agent: Option<String>,
 }
 
 pub(crate) type Sink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 pub(crate) type StatusSink = Arc<dyn Fn(ExtensionStatus) + Send + Sync>;
 
-/// A connection following one thread. The pump holds it weakly, so dropping
-/// the last `Arc<Thread>` drops the sender, ends the pump and closes the socket.
+/// A connection following one thread. Each socket is owned by one thread
+/// running `pump`, which polls it with a short read timeout and drains an
+/// mpsc queue of outbound frames, so no lock spans socket I/O. The pump
+/// holds it weakly, so dropping the last `Arc<Thread>` drops the sender,
+/// ends the pump and closes the socket.
 pub(crate) struct Thread {
     session_id: String,
     tx: mpsc::Sender<String>,
@@ -606,6 +604,7 @@ mod tests {
 
     /// A daemon that acks the hello, takes the request and then only pings.
     fn pinging_daemon() -> u16 {
+        const TEST_PING_EVERY: Duration = Duration::from_millis(50);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         std::thread::spawn(move || {
@@ -616,7 +615,7 @@ mod tests {
                 .unwrap();
             ws.read().unwrap();
             while ws.send(Message::Ping(Vec::new().into())).is_ok() {
-                std::thread::sleep(Duration::from_millis(50));
+                std::thread::sleep(TEST_PING_EVERY);
             }
         });
         port
@@ -643,13 +642,15 @@ mod tests {
     }
 
     fn wait_for<T>(items: &Mutex<Vec<T>>, count: usize) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        const TEST_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+        const TEST_POLL: Duration = Duration::from_millis(10);
+        let deadline = Instant::now() + TEST_WAIT_TIMEOUT;
         while items.lock().unwrap().len() < count {
             assert!(
                 Instant::now() < deadline,
                 "timed out waiting for {count} items"
             );
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(TEST_POLL);
         }
     }
 

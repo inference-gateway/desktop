@@ -1,8 +1,3 @@
-//! The only platform-aware module: launches the app binary and drives it
-//! through the macOS accessibility tree by shelling out to osascript,
-//! screencapture, and swift. The AX recipe and its quirks are documented in
-//! AGENTS.md ("Verifying the UI").
-
 use anyhow::{Context, Result, anyhow, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -10,19 +5,21 @@ use std::time::{Duration, Instant};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(300);
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
+const AFTER_PKILL_SETTLE: Duration = Duration::from_millis(500);
+const INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(500);
+const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+const DAEMON_EXIT_POLL: Duration = Duration::from_millis(100);
+const RETRY_PAUSE: Duration = Duration::from_millis(300);
 
 pub(crate) const PROCESS_MATCH: &str = "inference-gateway-desktop";
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
-/// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
+/// Recursive AXButton finder. `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead. Matches AXCheckBox and
-/// AXRadioButton too: buttons with aria-pressed (toggles/checkboxes) surface as
-/// AXCheckBox, and question-form options are native radios. A button that
-/// opens a menu surfaces as a pop-up or menu button, and its entries as
-/// AXMenuItem. The ceiling
-/// matches the text finder's: a content project docks the chat one level
-/// deeper than a code project's transcript, and 8 no longer reaches it.
+/// AXRadioButton too (toggle buttons) and pop-up/menu buttons with their
+/// AXMenuItem entries. The ceiling matches the text finder's: a content
+/// project docks the chat one level deeper than a code project's transcript.
 const FIND_BUTTON_FN: &str = r#"
 on findButton(el, btnName, depth)
 	tell application "System Events"
@@ -91,20 +88,22 @@ fn which_infer() -> Option<std::path::PathBuf> {
     (!path.is_empty()).then(|| std::path::PathBuf::from(path))
 }
 
+/// The launched app and the paths its run reads, driven through the macOS
+/// accessibility tree (the recipe and its quirks are documented in AGENTS.md,
+/// "Verifying the UI"). `mock_home` is the wiped HOME of a mock run, whose
+/// infer daemon the driver stops.
 pub struct AppDriver {
     child: Child,
     repo_root: PathBuf,
-    /// The wiped HOME of a mock run, whose infer daemon the driver stops.
     mock_home: Option<PathBuf>,
     artifacts: PathBuf,
 }
 
 /// macOS keeps the webview's localStorage under `~/Library/WebKit/<app>`, keyed
-/// by the executable (dev binary) or bundle id (`.app`), NOT under the child's
-/// overridden HOME - so it survives the per-test HOME wipe and leaks state
-/// (e.g. a global auto-approval toggle) across runs and into the dev's real
-/// app. Wipe it too, using the runner's OWN home (`$HOME`, never the child
-/// override). Bundle runs (`DESKTOP_APP`) use the bundle-id store instead.
+/// by the executable or bundle id, NOT under the child's overridden HOME - so
+/// it survives the per-test HOME wipe and leaks state across runs and into the
+/// dev's real app. Wipe it too, using the runner's OWN home. Bundle runs
+/// (`DESKTOP_APP`) use the bundle-id store instead.
 fn wipe_webkit_store(bundle: bool) {
     let Some(home) = std::env::var_os("HOME") else {
         return;
@@ -119,11 +118,10 @@ fn wipe_webkit_store(bundle: bool) {
 }
 
 /// Write a content project into a fresh HOME before the app reads it. Only
-/// `types:` needs seeding - a code project is creatable through the UI - and
-/// `paths:` pins the directory so the project dir never depends on the
-/// platform Documents lookup. A real image goes into the project's media
-/// folder with it: the AX driver cannot drag a file out of Finder, so an
-/// image asset has to start on disk the way `import_project_file` lands one.
+/// `types:` needs seeding (a code project is creatable through the UI) and
+/// `paths:` pins the directory. A real image goes into the project's media
+/// folder with it: the AX driver cannot drag a file out of Finder, so an image
+/// asset has to start on disk the way `import_project_file` lands one.
 fn seed_content_project(home: &Path, name: &str, repo_root: &Path) -> Result<()> {
     let dir = home.join("projects").join(name);
     std::fs::create_dir_all(&dir)?;
@@ -279,7 +277,7 @@ impl AppDriver {
         seeds: Seeds,
     ) -> Result<Self> {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(AFTER_PKILL_SETTLE);
         let home = artifacts.join("home");
         if mock {
             stop_daemon(&home);
@@ -465,9 +463,9 @@ impl AppDriver {
     /// Sidebar prompt inputs (e.g. "New project") auto-focus when revealed but
     /// aren't reliably reachable by AX path across macOS versions (unlike the
     /// composer text area). Type into the focused element via keystroke, then
-    /// commit with Return; the caller verifies the result with a `wait_for`.
+    /// commit with Return. The caller verifies the result with a `wait_for`.
     pub fn type_text(&self, text: &str) -> Result<()> {
-        std::thread::sleep(Duration::from_millis(500)); // let the revealed input mount + focus
+        std::thread::sleep(INPUT_FOCUS_SETTLE);
         let script = format!(
             "tell application \"System Events\"\nkeystroke \"{msg}\"\nend tell",
             msg = escape(text),
@@ -696,7 +694,7 @@ fn stop_daemon(home: &Path) {
         return;
     };
     let _ = Command::new("kill").arg(pid.to_string()).status();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
     while Instant::now() < deadline {
         let alive = Command::new("kill")
             .args(["-0", &pid.to_string()])
@@ -705,7 +703,7 @@ fn stop_daemon(home: &Path) {
         if !alive {
             break;
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(DAEMON_EXIT_POLL);
     }
     let _ = std::fs::remove_file(pid_file);
 }
@@ -718,7 +716,7 @@ fn osascript(script: &str) -> Result<String> {
             if first.to_string().contains("-25211") {
                 return Err(first);
             }
-            std::thread::sleep(Duration::from_millis(300));
+            std::thread::sleep(RETRY_PAUSE);
             osascript_once(script).map_err(|_| first)
         }
     }

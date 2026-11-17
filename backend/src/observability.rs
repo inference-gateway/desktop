@@ -19,7 +19,7 @@ pub(crate) struct StoredSpan {
 }
 
 /// Stored metric data point extracted from an OTLP export. `value` is the
-/// point value for sums/gauges and the bucket sum for histograms; `count` is
+/// point value for sums/gauges and the bucket sum for histograms. `count` is
 /// 1 for sums/gauges and the observation count for histograms. The CLI
 /// exports delta temporality, so totals are sums over stored points.
 #[derive(Clone, serde::Serialize)]
@@ -42,6 +42,9 @@ pub(crate) const COLLECTOR_PORT: u16 = 4318;
 pub(crate) const MAX_SPANS: usize = 5000;
 pub(crate) const MAX_METRICS: usize = 5000;
 pub(crate) const MAX_BODY: usize = 32 * 1024 * 1024;
+
+/// Wait for one OTLP request's bytes before giving up on the collector socket.
+pub(crate) const OTLP_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Push into a bounded queue, evicting the oldest entries.
 pub(crate) fn push_bounded<T>(queue: &Mutex<VecDeque<T>>, items: Vec<T>, cap: usize) {
@@ -257,7 +260,7 @@ pub(crate) enum PbValue<'a> {
     Bytes(&'a [u8]),
 }
 
-/// Read one varint: 7 payload bits per byte, least-significant group first;
+/// Read one varint: 7 payload bits per byte, least-significant group first -
 /// a set high bit means another byte follows.
 pub(crate) fn pb_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
     let mut val = 0u64;
@@ -432,7 +435,7 @@ pub(crate) fn extract_spans_proto(body: &[u8]) -> Vec<StoredSpan> {
 }
 
 /// Which OTLP data-point message a metric carries. Number points come from
-/// gauges and sums; histogram points share field numbers for time but not
+/// gauges and sums. Histogram points share field numbers for time but not
 /// for value, count, or attributes.
 #[derive(Clone, Copy)]
 pub(crate) enum PointKind {
@@ -536,14 +539,16 @@ pub(crate) fn extract_metrics_proto(body: &[u8]) -> Vec<StoredMetric> {
 }
 
 /// Handle a single OTLP HTTP request on the collector's TCP socket. The
-/// response carries `Connection: close`; Go's http client replays the export
-/// on a fresh connection, so one-request-per-connection is safe.
+/// response carries `Connection: close`. Go's http client replays the export
+/// on a fresh connection, so one-request-per-connection is safe. Traces and
+/// metrics share the outer protobuf shape, so the URL path picks the
+/// parser. Any other path is acked but never parsed.
 pub(crate) fn handle_otlp_request(
     stream: &mut std::net::TcpStream,
     spans_store: &Mutex<VecDeque<StoredSpan>>,
     metrics_store: &Mutex<VecDeque<StoredMetric>>,
 ) {
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ = stream.set_read_timeout(Some(OTLP_READ_TIMEOUT));
     let mut data: Vec<u8> = Vec::with_capacity(8192);
     let mut buf = [0u8; 65536];
     let body_start = loop {
@@ -587,9 +592,6 @@ pub(crate) fn handle_otlp_request(
     let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}";
     let _ = stream.write_all(response);
     let _ = stream.flush();
-    // Traces and metrics exports share the outer protobuf shape - Metric.name
-    // sits at Span.trace_id's field number - so the URL path decides the
-    // parser; any other path is acked but never parsed.
     let path = header.split_whitespace().nth(1).unwrap_or("");
     let body = &data[body_start..];
     if path.starts_with("/v1/traces") {

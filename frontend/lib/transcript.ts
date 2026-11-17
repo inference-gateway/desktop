@@ -1,6 +1,3 @@
-// Pure transcript state machine. Maps agent stream events (and loaded history)
-// to a flat list of render items. A faithful port of the imperative DOM logic
-// in the old main.js. Self-check: `bun test src/lib/transcript.test.ts`.
 import type {
   AgentEvent,
   BackgroundJob,
@@ -236,15 +233,21 @@ export type TodoStatus = "pending" | "in_progress" | "completed";
  * for the stretches that ended - and keeps them by `id`. */
 export type TodoItem = { content: string; status: TodoStatus; id?: string; started_at?: string; elapsed_ms?: number };
 
+/** The todos a TodoWrite result carries, or null for a call with no result yet or a CLI that answers in plain text. */
+function stampedTodos(output: string | null): unknown[] | null {
+  try {
+    const stamped = JSON.parse(output ?? "")?.todos;
+    return Array.isArray(stamped) ? stamped : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The list a TodoWrite call ended up with: the one its result carries, which has the times the CLI stamped, or the
  * one the model wrote while the call has no result yet. A tool's output is the `data` of its result. */
 function writtenTodos(call: { args: string; output: string | null }): unknown {
-  try {
-    const stamped = JSON.parse(call.output ?? "")?.todos;
-    if (Array.isArray(stamped)) return stamped;
-  } catch {
-    // not a result yet, or one from a CLI that answers in plain text
-  }
+  const stamped = stampedTodos(call.output);
+  if (stamped) return stamped;
   const parsed: unknown = JSON.parse(call.args);
   return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>).todos : null;
 }
@@ -353,6 +356,8 @@ const IMAGE_TOOL = /^Image(Generation|Edit|Variation)$/;
 // require a CLI that always projects tool_execution.
 const FAILISH = /fail|error/i;
 
+/** Pure transcript state machine: maps agent stream events (and loaded history)
+ * to a flat list of render items. */
 export function chatReducer(state: ChatState, action: ChatAction, now: number = Date.now()): ChatState {
   switch (action.type) {
     case "newChat":
@@ -729,13 +734,15 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     }
   }
 
-  // TextToSpeech results name the generated WAV; render an inline player.
-  const audioSrc = parsed ? safeAudioSrc(parsed.imagePath) : null;
-  if (audioSrc && parsed?.imagePath) {
+  const generatedSpeechSrc = parsed ? safeAudioSrc(parsed.imagePath) : null;
+  if (generatedSpeechSrc && parsed?.imagePath) {
     const file = imageFilename(parsed.imagePath);
     if (!seenImages.includes(file)) {
       seenImages = [...seenImages, file];
-      items = [...items, { kind: "audio", id: String(seq++), src: audioSrc, filename: file, path: parsed.imagePath }];
+      items = [
+        ...items,
+        { kind: "audio", id: String(seq++), src: generatedSpeechSrc, filename: file, path: parsed.imagePath },
+      ];
     }
   }
 

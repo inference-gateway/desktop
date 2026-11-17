@@ -809,7 +809,7 @@ export function ChatList() {
     }
   };
 
-  // A run in flight anywhere in the project (an init included) blocks another.
+  /** A run in flight anywhere in the project (an init included) blocks another. */
   const projectBusy = (name: string) => conversations.some((c) => projects[c.id] === name && isRunning(c.id));
 
   const projectClusters = useMemo(() => {

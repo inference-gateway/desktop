@@ -1,6 +1,6 @@
 # Voiceover
 
-You record a short screen walkthrough, send a handful of prompts, and export a narrated MP4 - on the app's own timeline, not on a computer of the agent's own and not in FilmCraft. The bundled `video-editing` skill writes `demo.timeline.json` and makes the audio; you review, edit and export on the timeline that sits beside the chat.
+You record a short screen walkthrough, send a handful of prompts, and export a narrated MP4 - on the app's own timeline, not on a computer of the agent's own and not in FilmCraft. The bundled `video-editing` skill writes `demo.timeline.json` and makes the audio. You review, edit and export on the timeline that sits beside the chat.
 
 The example runs token-free in mock mode: `examples/voiceover/scenarios.yaml` scripts exactly the prompts below, modelled on the scenarios of [e2e/scenarios.yaml](../../e2e/scenarios.yaml).
 
@@ -22,7 +22,7 @@ The app takes its model list from that file's `models:` block, the `infer` child
 
 ## Set up
 
-1. Create a project named `demo` (New project in the sidebar) and pick **Content** in `Type of project demo` under Settings > Projects. In a real run this installs the bundled skill, ffmpeg and whisper into `~/.infer`; in mock mode it just clears the warning.
+1. Create a project named `demo` (New project in the sidebar) and pick **Content** in `Type of project demo` under Settings > Projects. In a real run this installs the bundled skill, ffmpeg and whisper into `~/.infer`. In mock mode it just clears the warning.
 2. In the demo project, press **Add recording** in the media pool at the bottom of the timeline and pick your renamed `demo.mov`. It copies into the project's `media/` folder.
 3. The timeline is empty until the first prompt lands. Approve each Write card as it appears, or move the status bar's mode to Auto to run without asking.
 
@@ -38,7 +38,7 @@ The app takes its model list from that file's `models:` block, the `infer` child
 
    Leaves: `demo.mov` on the video track over 0-42.3 and a voice lane with three draft clips, amber until they have audio, with the lane's Voice dropdown on `my-voice.wav`. In mock mode nothing is synthesized, so the clips stay drafts.
 
-2. **Edit a line and redo drafts.** Select the middle clip on the voice lane and rewrite its text in the inspector - the scripted wording is "Then we press Add captions for every spoken line." - then press **Redo drafts**. The skill re-speaks only the draft clips, in the voice named on each clip, and never regenerates a done clip you did not edit. In mock mode the run reads the timeline and answers without changing it; the drafts stay drafts.
+2. **Edit a line and redo drafts.** Select the middle clip on the voice lane and rewrite its text in the inspector - the scripted wording is "Then we press Add captions for every spoken line." - then press **Redo drafts**. The skill re-speaks only the draft clips, in the voice named on each clip, and never regenerates a done clip you did not edit. In mock mode the run reads the timeline and answers without changing it. The drafts stay drafts.
 
 3. **Add captions.** Press the **Add captions** button (the letter T). It asks for a captions track following the captions rules of the skill and nothing else.
 
@@ -59,5 +59,5 @@ The app takes its model list from that file's `models:` block, the `infer` child
 ## What the mock does not do
 
 - No audio: mock mode never runs `TextToSpeech`, so voice clips keep their amber drafts and the export stays silent.
-- No card render: the title card is the HTML composition and a timeline slot only; HyperFrames runs in a real session.
+- No card render: the title card is the HTML composition and a timeline slot only. HyperFrames runs in a real session.
 - Scripted rewrites: the captions and title-card turns rewrite `demo.timeline.json` with their own wording, so an edit that differs from the suggested line is put back. A real model reads the file first and keeps whatever you wrote.

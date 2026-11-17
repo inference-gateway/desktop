@@ -96,13 +96,13 @@ pub(crate) fn prerequisite(name: &str, met: bool, detail: &str) -> Prerequisite 
 
 /// A workspace entry of `daemon.yaml` as the Settings tab edits it. A key the
 /// tab does not know, such as `mode` or `address`, stays in the file as it is.
+/// `compute` names the `compute.yaml` cluster that gives the workspace its
+/// kind, context and namespace (empty when it carries its own connection),
+/// and the secrets and MCP servers are read-only views the tab never edits.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct WorkspaceConfig {
     pub(crate) name: String,
-    /// The cluster of `compute.yaml` the workspace runs on, which then gives it
-    /// its kind, context, namespace and provider keys. Empty when the workspace
-    /// carries its own connection.
     pub(crate) compute: String,
     pub(crate) kind: String,
     pub(crate) context: String,
@@ -113,22 +113,14 @@ pub(crate) struct WorkspaceConfig {
     retention: String,
     gateway_env: Vec<String>,
     forward_env: Vec<String>,
-    /// Whether a teleport carries this machine's voice samples to the
-    /// workspace's computers.
     forward_voice_samples: bool,
     env: BTreeMap<String, String>,
-    /// The cloud-init script the pod runs as root when it boots.
     user_data: String,
     volumes: Vec<WorkspaceVolume>,
     resources: WorkspaceResources,
-    /// Whether the workspace's computers go without the GPU their cluster
-    /// gives every computer by default.
     no_gpu: bool,
-    /// The Kubernetes Secrets the pod daemon reads, which Settings > Secrets
-    /// lists and the tab never edits.
     #[serde(skip)]
     pub(crate) secrets: Vec<String>,
-    /// The servers of `mcp.yaml` the pod gets, which Settings > MCPs lists.
     #[serde(skip)]
     pub(crate) mcp_servers: Vec<String>,
 }

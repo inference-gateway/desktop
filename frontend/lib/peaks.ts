@@ -1,7 +1,7 @@
-// Waveform peaks: the loudest sample in every 1/perSec of audio, computed
-// once per file, then sliced per clip into one value per pixel column.
 export const PEAKS_PER_SEC = 50;
 
+/** Waveform peaks: the loudest sample in every 1/perSec of audio, computed once
+ * per file, then sliced per clip into one value per pixel column. */
 export function computePeaks(samples: Float32Array, sampleRate: number, perSec = PEAKS_PER_SEC): Float32Array {
   const per = Math.max(1, Math.floor(sampleRate / perSec));
   const out = new Float32Array(Math.ceil(samples.length / per));

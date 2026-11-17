@@ -52,10 +52,9 @@ function useSidebarStore() {
 
   useEffect(() => {
     if (!projectsLoaded) return;
-    // ponytail: only rescan git when a git-relevant field changed - a checkbox toggle persists `selected` without a full `git status` sweep.
-    const sig = JSON.stringify([projectNames, projectPaths, projectGroups]);
-    const gitChanged = sig !== gitSigRef.current;
-    gitSigRef.current = sig;
+    const gitRelevantFields = JSON.stringify([projectNames, projectPaths, projectGroups]);
+    const gitChanged = gitRelevantFields !== gitSigRef.current;
+    gitSigRef.current = gitRelevantFields;
     api
       .writeProjects(
         serializeSidebarDocument({

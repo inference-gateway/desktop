@@ -18,7 +18,7 @@ fn cli_release_base(tag: Option<&str>) -> String {
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
 /// which is how an update is applied. `restart` also restarts the daemon, so
 /// its workers run the installed binary. `tag` pins the release to install,
-/// which implies `force`; when it is empty, the newest release wins.
+/// which implies `force`. When it is empty, the newest release wins.
 #[tauri::command]
 pub(crate) async fn check_and_install_cli(
     on_event: Channel<ProgressEvent>,
@@ -38,13 +38,14 @@ pub(crate) async fn check_and_install_cli(
     .await
 }
 
+/// Install (or reinstall) the CLI. A pinned tag installs over an existing
+/// binary on purpose, so a tag implies `force`.
 fn install_cli(
     on_event: &Channel<ProgressEvent>,
     force: bool,
     tag: Option<&str>,
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
-    // A pinned tag installs over an existing binary on purpose, so force is implied.
     let force = force || tag.is_some();
     if force && mock_mode() {
         crate::updates_mock::apply(|event| {

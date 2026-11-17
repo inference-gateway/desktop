@@ -102,6 +102,8 @@ export function GeneralTab() {
     return () => window.removeEventListener("focus", refreshComputerUsePermissions);
   }, [refreshComputerUsePermissions]);
 
+  /** Saves the config. The gateway reads VIDEOS_ENABLED at spawn, so a text to
+   * video toggle restarts it, the same path as saving an API key. */
   const apply = async () => {
     setSaving(true);
     try {
@@ -110,9 +112,8 @@ export function GeneralTab() {
       setDirty(false);
       setSaved(true);
       setError("");
-      // The gateway reads VIDEOS_ENABLED env at spawn, so a TTV toggle needs a
-      // restart (same path as saving an API key).
-      if (savedTtv !== config.text_to_video_enabled) {
+      const gatewayNeedsRestart = savedTtv !== config.text_to_video_enabled;
+      if (gatewayNeedsRestart) {
         setSavedTtv(config.text_to_video_enabled);
         await api.startGateway(false, true);
       }

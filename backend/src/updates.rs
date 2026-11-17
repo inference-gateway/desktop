@@ -8,19 +8,17 @@ use tauri_plugin_updater::UpdaterExt;
 /// the way `parse_version` does for display.
 const DESKTOP_REPO: &str = "inference-gateway/desktop";
 
-// --- Update checks ---
-// GitHub allows 60 API requests/hour unauthenticated, 5000 through an authenticated
-// `gh`. The frontend caches results for 6h, so neither ceiling is anywhere near.
+const GITHUB_API_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// One component's update state. `versions` keeps the repo's raw release
+/// tags, newest first and capped at 5. Unlike `latest` they keep their `v`
+/// prefix, so download URLs can use them as `releases/download/<tag>/<asset>`.
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct UpdateInfo {
     name: String,
     current: String,
     latest: String,
     outdated: bool,
-    /// Raw release tags of the repo, newest first and capped at 5. Unlike
-    /// `latest` they keep their `v` prefix, so download URLs can use them as
-    /// `releases/download/<tag>/<asset>`.
     versions: Vec<String>,
 }
 
@@ -86,13 +84,15 @@ pub(crate) fn recent_tags(repo: &str) -> Vec<String> {
     api_recent_tags(repo).unwrap_or_default()
 }
 
-/// Release tags of a repo through the public GitHub API. `releases` lists
-/// newest first, like `gh release list` does.
+/// Release tags of a repo through the public GitHub API, which allows 60
+/// unauthenticated requests/hour (the frontend caches update checks for
+/// 6h, so that ceiling is nowhere near). `releases` lists newest first,
+/// like `gh release list` does.
 fn api_recent_tags(repo: &str) -> Option<Vec<String>> {
     let url = format!("https://api.github.com/repos/{repo}/releases?per_page=5");
     let resp = ureq::get(&url)
         .config()
-        .timeout_global(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(GITHUB_API_TIMEOUT))
         .build()
         .call()
         .ok()?;
@@ -186,7 +186,7 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
 }
 
 /// Updater for the app itself. Checks use the same 10s ceiling as the
-/// CLI/gateway version lookups; the install path gets 300s because the
+/// CLI/gateway version lookups. The install path gets 300s because the
 /// timeout is a total-request deadline that also covers the bundle download.
 pub(crate) fn desktop_updater_builder(
     app: &tauri::AppHandle,
@@ -222,11 +222,7 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
         },
         Err(_) => String::new(),
     };
-    // `recent_tags` shells out to `gh` / blocks on HTTP, so it stays off the
-    // async executor like the CLI and gateway lookups above.
-    let versions = tokio::task::spawn_blocking(|| recent_tags(DESKTOP_REPO))
-        .await
-        .unwrap_or_default();
+    let versions = recent_tags_blocking().await;
     UpdateInfo {
         outdated: is_outdated(&current, &latest),
         name: "Desktop".to_string(),
@@ -234,6 +230,14 @@ pub(crate) async fn desktop_update_info(app: &tauri::AppHandle) -> UpdateInfo {
         latest,
         versions,
     }
+}
+
+/// `recent_tags` shells out to `gh` or blocks on HTTP, so it stays off the
+/// async executor.
+async fn recent_tags_blocking() -> Vec<String> {
+    tokio::task::spawn_blocking(|| recent_tags(DESKTOP_REPO))
+        .await
+        .unwrap_or_default()
 }
 
 /// Whole percent downloaded, or whole megabytes when the server sent no length.
@@ -261,7 +265,6 @@ pub(crate) async fn install_desktop_update(
                 "https://github.com/{DESKTOP_REPO}/releases/download/{tag}/latest.json"
             ))
             .map_err(|e| e.to_string())?;
-            // Same rule the plugin applies for `allowDowngrades`.
             builder
                 .endpoints(vec![manifest])
                 .map_err(|e| error_chain(&e))?
@@ -378,8 +381,6 @@ mod tests {
         assert_eq!(latest_from_tags(&["v0.249.0".into()]), "0.249.0");
         let tags = vec!["v0.249.0".to_string(), "v0.248.0".to_string()];
         let latest = latest_from_tags(&tags);
-        // An up-to-date pair must compare equal even though the raw tag
-        // keeps its `v` prefix.
         assert!(!is_outdated("0.249.0", &latest));
         assert!(is_outdated("0.248.0", &latest));
         assert!(latest_from_tags(&[]).is_empty());

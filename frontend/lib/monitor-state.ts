@@ -1,6 +1,3 @@
-// Pure state machine for the computer-use monitor window. Consumes the
-// "agent-event" re-broadcast from the main window and keeps a compact
-// per-session summary - just enough for a status strip, not a transcript.
 import type { AgentEvent } from "./tauri";
 import { parseToolResult } from "./tools";
 import { COMPUTER_USE_TOOLS } from "./transcript";
@@ -22,6 +19,9 @@ export type MonitorState = Record<string, MonitorSession>;
 
 export type MonitorEvent = { sessionId: string; name: string; remote?: boolean; event: AgentEvent };
 
+/** Pure state machine for the computer-use monitor window. Consumes the
+ * "agent-event" re-broadcast and keeps a compact per-session summary - enough for
+ * a status strip, not a transcript. */
 export function monitorReducer(state: MonitorState, msg: MonitorEvent): MonitorState {
   const { sessionId, name, event } = msg;
   const session: MonitorSession = state[sessionId] ?? {

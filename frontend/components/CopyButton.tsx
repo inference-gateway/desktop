@@ -3,6 +3,8 @@ import { Check, Copy, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const COPY_STATUS_MS = 5000;
+
 export function CopyButton({ text }: { text: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
 
@@ -16,7 +18,7 @@ export function CopyButton({ text }: { text: string }) {
 
   useEffect(() => {
     if (status === "idle") return;
-    const t = setTimeout(() => setStatus("idle"), 5000);
+    const t = setTimeout(() => setStatus("idle"), COPY_STATUS_MS);
     return () => clearTimeout(t);
   }, [status]);
 

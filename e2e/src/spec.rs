@@ -1,64 +1,34 @@
-//! YAML test specification.
-//!
-//! A test file has a `name`, an optional `cleanup` list (paths relative to
-//! the repo root, the infer child's cwd, deleted before and after the run), an
-//! optional `record` flag (screen-record the run into artifacts/<slug>.mov), an
-//! optional `narration` list (one line per step index, printed by the runner so
-//! the file reads top to bottom as a walkthrough of the feature it demos), an
-//! optional `content_project` name, an optional `workspace_agent` name, an
-//! optional `model_agent` name and an optional `project_agent` name (all
-//! seeded into the fresh HOME before launch),
-//! and a list of steps. Steps are either a bare verb (`- new_chat`) or a
-//! single-key map (`- send: "..."`).
-
 use serde::Deserialize;
 use std::path::PathBuf;
 
+/// A YAML test file (tests/*.yaml): a `name`, optional cleanup paths, record
+/// and narration flags, the agents, projects, voice samples and models seeded
+/// into the fresh HOME before launch (the AX driver cannot drive the native
+/// `<select>` pickers themselves), and the steps.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Test {
     pub name: String,
     #[serde(default)]
     pub cleanup: Vec<PathBuf>,
-    /// Wrap the run in `screencapture -v` and write artifacts/<slug>.mov.
     #[serde(default)]
     pub record: bool,
-    /// One walkthrough line per step; the runner prints it in place of the
-    /// mechanical step label. Missing entries fall back to the label.
     #[serde(default)]
     pub narration: Vec<String>,
-    /// Seed this project into the fresh HOME as a content project before the
-    /// app starts. The type picker is a native `<select>`, which the AX driver
-    /// cannot drive, so a content-project demo cannot create one through the UI.
     #[serde(default)]
     pub content_project: Option<String>,
-    /// Seed this agent into the fresh HOME, bound to the mock workspace. The
-    /// computer picker is a native `<select>` too, so the UI cannot bind it.
     #[serde(default)]
     pub workspace_agent: Option<String>,
-    /// Seed this agent into the fresh HOME with a front-matter model of its
-    /// own. The model picker is a native `<select>`, which the UI cannot set.
     #[serde(default)]
     pub model_agent: Option<String>,
-    /// Seed this agent into the fresh HOME defaulting to `content_project`.
-    /// The project picker in the agent editor is a native `<select>` too.
     #[serde(default)]
     pub project_agent: Option<String>,
-    /// Seed this voice sample into the fresh HOME with text to speech on. The
-    /// AX driver has no voice to record one with.
     #[serde(default)]
     pub voice_sample: Option<String>,
-    /// With `voice_sample`: the speech model text to speech starts on. Its
-    /// picker is a native `<select>`, which the AX driver cannot drive.
     #[serde(default)]
     pub speech_model: Option<String>,
-    /// Seed this avatar into the fresh HOME with text to speech and text to
-    /// video on. Creating one needs a photo picker or a camera, which the AX
-    /// driver cannot drive.
     #[serde(default)]
     pub avatar: Option<String>,
-    /// Seed this Hugging Face model (`owner/name`) into the fresh HOME as a
-    /// downloaded one, so a test never fetches from the Hub.
     #[serde(default)]
     pub hub_model: Option<String>,
     pub steps: Vec<Step>,
@@ -111,24 +81,25 @@ pub enum BareStep {
     AssertOverlayBounds,
 }
 
+/// What `wait_for` waits to appear: any of `button`, `text` or `file`, with
+/// `contains` also matching the file's contents, within `timeout`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaitTarget {
     pub button: Option<String>,
     pub text: Option<String>,
     pub file: Option<PathBuf>,
-    /// With `file`: also wait until the file's contents include this string.
     pub contains: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
 }
 
+/// What `wait_gone` waits to disappear. `never` is a button that must not
+/// show up while `button` is still there, nor once it has gone.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GoneTarget {
     pub button: String,
-    /// A button that must not show up while `button` is still there, nor
-    /// once it has gone.
     pub never: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout: u64,

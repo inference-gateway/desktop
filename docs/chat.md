@@ -27,13 +27,13 @@ In Plan mode the agent submits its plan instead of acting on it. The plan card s
 - **Approve each step** - the chat continues in Standard mode: the plan runs, and every protected step still shows its approval card first.
 - **Reject** - nothing changes: the chat stays in Plan mode and keeps planning, and nothing ran.
 
-Outside plan mode, in Standard mode, a protected tool call pauses with an **Approve** / **Deny** card. Press `a` to approve or `d` to deny. An approved call runs; a denied one does not - the denial is reported and the run ends, since a denied tool call never gets a follow-up turn.
+Outside plan mode, in Standard mode, a protected tool call pauses with an **Approve** / **Deny** card. Press `a` to approve or `d` to deny. An approved call runs. A denied one does not - the denial is reported and the run ends, since a denied tool call never gets a follow-up turn.
 
 **Try in mock mode:** click the mode button into Plan mode and send `plan a file named planned.txt` - the plan card appears with the plan on it. **Accept** writes the file in Auto mode, **Approve each step** asks once per protected step, and **Reject** sends the agent back to planning without writing anything.
 
 ## The composer
 
-Enter sends; Shift+Enter adds a newline. A prefix at the start of the prompt changes what sending does, and three of them open menus while you type:
+Enter sends. Shift+Enter adds a newline. A prefix at the start of the prompt changes what sending does, and three of them open menus while you type:
 
 - `@` opens the file menu: the project directory's files, narrowed as you type to the first 50 matching paths. Arrows move, Enter picks, Escape closes, and the picked file lands in the prompt as `@<path>`. The trigger only starts the text or follows whitespace, so an email address or a URL containing `@` or `#` opens nothing.
 - `#` opens the open-issue menu: the project's open GitHub issues as `#<number> <title>`, narrowed as you type. Picking one inserts `#<number>`.
@@ -49,7 +49,7 @@ Snippets are the chips under the composer: each inserts a prepared prompt, such 
 
 Queued prompts: while a turn runs, the send button has turned into **Stop** (Esc cancels the run), and a prompt you send is queued rather than delivered - it shows as a `Queued:` line above the composer with a **Discard queued prompt** button, and is sent when the running turn ends.
 
-Two buttons hang off the transcript: **Resend prompt** under a sent prompt runs that prompt again and drops everything that came after it, which rewinds a conversation that went somewhere you did not want; **Reply to message** quotes the message above your prompt, so the agent knows what the remark is about, and **Clear reply** cancels the quote.
+Two buttons hang off the transcript: **Resend prompt** under a sent prompt runs that prompt again and drops everything that came after it, which rewinds a conversation that went somewhere you did not want. **Reply to message** quotes the message above your prompt, so the agent knows what the remark is about, and **Clear reply** cancels the quote.
 
 **Try in mock mode:** send `say hi`, press **Reply to message** on the answer, and send `make it shorter` - the agent sees the quoted message and shortens it.
 

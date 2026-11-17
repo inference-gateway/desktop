@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 /// Subfolder of the platform Documents directory holding per-project dirs.
 const APP_PROJECTS_DIR: &str = "Inference Gateway Desktop";
 
-/// The CLI's own default for INFER_TOOLS_SANDBOX_DIRECTORIES; when we set the
+/// The CLI's own default for INFER_TOOLS_SANDBOX_DIRECTORIES. When we set the
 /// env var we must re-state it or the cwd/tmp grants would silently disappear.
 const CLI_DEFAULT_SANDBOX_DIRS: &str = ".,/tmp";
 
@@ -23,7 +23,7 @@ fn document_dir(home: &Path) -> PathBuf {
     dirs::document_dir().unwrap_or_else(|| home.join("Documents"))
 }
 
-/// `~`-expanded path; config values may start with `~`.
+/// `~`-expanded path. Config values may start with `~`.
 fn expand_home(raw: &str) -> String {
     raw.strip_prefix('~').map_or_else(
         || raw.to_string(),
@@ -40,7 +40,7 @@ pub(crate) fn default_projects_root(home: &Path) -> String {
 }
 
 /// Filesystem- and repo-safe project name: anything outside Unicode
-/// alphanumerics, space, dash, underscore and dot becomes `-`; edge
+/// alphanumerics, space, dash, underscore and dot becomes `-`. Edge
 /// separators/dots/spaces are trimmed (Windows forbids trailing dots) and an
 /// empty result falls back to "project".
 pub(crate) fn sanitize_name(name: &str) -> String {
@@ -83,12 +83,11 @@ fn leaf_name<'a>(name: &'a str, group: &str) -> &'a str {
         .unwrap_or(name)
 }
 
-/// Deterministic per-project directory mapping: names are processed in sorted
-/// order, sanitized under their group folder (`root/<group>/<leaf>`, or
-/// `root/<name>` without a group), and a numeric suffix is appended on
-/// collision ("a/b" and "a:b" both sanitize to "a-b"; the second sorted name
-/// gets "a-b-2"). Pure function of (root, names, groups) so grants can be
-/// re-derived from projects.yaml alone and repeated calls are idempotent.
+/// Deterministic per-project directory mapping: names are sanitized under
+/// their group folder (`root/<group>/<leaf>`, or `root/<name>` without a
+/// group), sorted, and suffixed on collision (a/b and a:b both become
+/// a-b). Pure function of (root, names, groups) so grants re-derive from
+/// projects.yaml alone and calls stay idempotent.
 fn assign_dirs(
     root: &Path,
     names: &[String],
@@ -119,7 +118,7 @@ fn projects_path(home: &Path) -> PathBuf {
 }
 
 /// Raw projects.yaml as a JSON value (the shape the sidebar and the export
-/// both work in); an empty mapping when the file is missing or unparseable, so
+/// both work in). An empty mapping when the file is missing or unparseable, so
 /// a fresh install rebuilds its state rather than failing.
 pub(crate) fn read_projects_in(home: &Path) -> serde_json::Value {
     std::fs::read_to_string(projects_path(home))
@@ -138,7 +137,7 @@ pub(crate) fn write_projects_in(home: &Path, val: &serde_json::Value) -> Result<
 }
 
 /// Read ~/.infer/projects.yaml as JSON text for the sidebar. The file is YAML
-/// on disk; the frontend keeps its JSON view of it, so the conversion lives
+/// on disk. The frontend keeps its JSON view of it, so the conversion lives
 /// here rather than shipping a YAML parser to the webview. An empty object
 /// when the file does not exist yet.
 #[tauri::command]
@@ -213,7 +212,7 @@ fn project_groups() -> BTreeMap<String, String> {
 }
 
 /// Default name->dir mapping with per-project overrides applied on top.
-/// ponytail: two projects may point at the same dir; harmless (duplicate
+/// ponytail: two projects may point at the same dir. Harmless (duplicate
 /// grant, shared files) - validate only if users hit it.
 fn resolved_dirs(
     root: &Path,
@@ -233,7 +232,7 @@ fn resolved_dirs(
 /// Comma-separated value for INFER_TOOLS_SANDBOX_DIRECTORIES covering every
 /// project directory, so agent runs can read and write project files without
 /// approval prompts. None when no projects exist, leaving the CLI default
-/// untouched; deleting a project drops its grant on the next spawn.
+/// untouched. Deleting a project drops its grant on the next spawn.
 pub(crate) fn sandbox_allowed_dirs() -> Option<String> {
     let names = project_names();
     if names.is_empty() {
@@ -272,7 +271,7 @@ pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
         .cloned()
 }
 
-/// Whether the project's resolved directory exists on disk; gates the Init
+/// Whether the project's resolved directory exists on disk. Gates the Init
 /// action so a stale import fails visibly instead of cryptically.
 #[tauri::command]
 pub(crate) fn project_dir_exists(name: String) -> bool {
@@ -281,7 +280,7 @@ pub(crate) fn project_dir_exists(name: String) -> bool {
 
 /// Whether a project is a "content" project (video/timeline), per the `types`
 /// map the sidebar persists in projects.yaml. Content projects get a local git
-/// repo so agent and manual edits are revertable; code projects do not.
+/// repo so agent and manual edits are revertable. Code projects do not.
 pub(crate) fn project_is_content(name: &str) -> bool {
     projects_state()["types"][name].as_str() == Some("content")
 }
@@ -357,7 +356,7 @@ fn grouped_dir(root: &Path, group: &str, name: &str) -> Result<PathBuf, String> 
 
 /// Create (if needed) and return the files directory for a project. With a
 /// group, the directory is created under that group's folder instead of the
-/// default mapping; the caller stores the returned path as the override.
+/// default mapping. The caller stores the returned path as the override.
 #[tauri::command]
 pub(crate) fn create_project_dir(name: String, group: Option<String>) -> Result<String, String> {
     let dir = match group.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
@@ -441,7 +440,6 @@ mod tests {
         assert!(text.contains("names:\n- desktop\n- core/cli\n"), "{text}");
         assert_eq!(read_projects_in(&home), state);
 
-        // A hand-edited file is read as written - this is why it is YAML.
         std::fs::write(projects_path(&home), "names:\n  - solo\ngroups: {}\n").unwrap();
         assert_eq!(
             read_projects_in(&home)["names"],

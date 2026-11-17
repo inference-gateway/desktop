@@ -1,6 +1,3 @@
-// Typed wrapper around the Rust backend. Command args are camelCase (Tauri
-// camelCases them); event/return payloads keep their Rust serde snake_case
-// names, so the discriminated unions below use snake_case fields.
 import { invoke, Channel, convertFileSrc } from "@tauri-apps/api/core";
 import type { ScreenInput } from "./screen-input";
 import type { AgentMode, PlanAction } from "./agent-mode";
@@ -86,7 +83,7 @@ export type RecordedArea = {
   frame_height: number;
 };
 
-/** A key press or mouse click during an agent recording; `t` is seconds since
+/** A key press or mouse click during an agent recording. `t` is seconds since
  * the recording started, click `x`/`y` are screen points. */
 export type InputEvent =
   | { kind: "key"; t: number; keys: string; text: string }
@@ -436,6 +433,9 @@ export function screenRecordKeep(): number {
 const hexEncode = (value: string) =>
   Array.from(new TextEncoder().encode(value), (b) => b.toString(16).padStart(2, "0")).join("");
 
+/** Typed wrapper around the Rust backend. Command args are camelCase, as Tauri
+ * camelCases them, while event and return payloads keep their Rust serde
+ * snake_case names - so the discriminated unions use snake_case fields. */
 export const api = {
   checkAndInstallCli: (onEvent: Channel<ProgressEvent>, force = false, restart = false, tag: string | null = null) =>
     invoke<void>("check_and_install_cli", { onEvent, force, restart, tag }),

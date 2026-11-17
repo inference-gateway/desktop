@@ -1,10 +1,10 @@
-// Maps Computer tool calls to the overlay's key-cast: what the agent is
-// typing or which key combo it presses. Pointer moves and clicks come from the
-// CLI's computer_use activity events instead, already in screen coordinates.
 import type { ToolCallInfo } from "./tauri";
 
 export type OverlayAction = { kind: "type"; text: string };
 
+/** Maps a Computer tool call to the overlay's key-cast: what the agent types or
+ * which key combo it presses. Pointer moves and clicks come from the CLI's
+ * computer_use activity events instead, already in screen coordinates. */
 export function overlayAction(tc: ToolCallInfo): OverlayAction | null {
   if (tc.name !== "Computer") return null;
   let args: Record<string, unknown>;

@@ -1,6 +1,3 @@
-// Timeline files (<stem>.timeline.json) inside a project directory: the
-// contract between the video-editing skill and the desktop timeline view.
-// The desktop only reads and writes the JSON; ffmpeg and TTS run in the agent.
 use crate::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
 use crate::projects::{ProjectFile, list_local_files, project_dir};
@@ -21,6 +18,9 @@ const MEDIA_EXTENSIONS: [&str; 15] = [
 
 const SUFFIX: &str = ".timeline.json";
 
+/// The timeline files (`<stem>.timeline.json`) of a project directory - the
+/// contract between the video-editing skill and the timeline view. The desktop
+/// only reads and writes the JSON, while ffmpeg and TTS run in the agent.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct Timelines {
     pub(crate) dir: String,
@@ -100,9 +100,9 @@ fn list_in(dir: &Path) -> Vec<String> {
     names
 }
 
-// Project directories can live anywhere (custom paths, a custom projects
-// root), so the asset scope is widened per project when its timeline opens
-// instead of being fixed in tauri.conf.json.
+/// Project directories can live anywhere (custom paths, a custom projects
+/// root), so the asset scope is widened per project when its timeline opens
+/// instead of being fixed in tauri.conf.json.
 #[tauri::command]
 pub(crate) fn list_timelines(app: tauri::AppHandle, project: String) -> Result<Timelines, String> {
     let dir = dir_for(&project)?;
@@ -119,7 +119,7 @@ pub(crate) struct ProjectWatcher(pub(crate) Mutex<Option<notify::RecommendedWatc
 
 /// Whether every path in a filesystem event lies inside a `.git` directory.
 /// Content projects are git repos, so the recursive watcher would otherwise fire
-/// on every checkpoint commit; ignoring pure-`.git` events stops a commit (and
+/// on every checkpoint commit. Ignoring pure-`.git` events stops a commit (and
 /// an undo/redo reset) from triggering a redundant timeline reload burst.
 fn all_under_git(event: &notify::Event) -> bool {
     !event.paths.is_empty()
@@ -312,7 +312,7 @@ struct TrackFile {
 }
 
 /// Only what the audio mix and the SRT need. Placement, sizes, styles and word
-/// timings are the canvas renderer's business now; speed and volume are the
+/// timings are the canvas renderer's business now. Speed and volume are the
 /// exceptions, because the mix stretches a retimed clip's own sound and applies
 /// the clip's own level on top of its track's `gain`. Serde ignores the fields
 /// it is not asked for, so the JSON contract is unchanged.
@@ -337,7 +337,7 @@ impl ClipFile {
 
     /// Source-seconds per timeline-second over the whole clip: what the kept
     /// audio is sped up or slowed by so it still fills the clip's slot. Constant
-    /// is the speed itself; the ease-in-out bell averages to `(speed+1)/2`,
+    /// is the speed itself. The ease-in-out bell averages to `(speed+1)/2`,
     /// mirroring the frontend's `avgSpeed`.
     fn avg_speed(&self, _len: f64) -> f64 {
         let s = self.speed.unwrap_or(1.0);
@@ -388,7 +388,7 @@ fn atrim_filter(offset: f64, len: Option<f64>) -> String {
 
 /// Stretch a kept clip's audio to match its speed: `factor` is source-seconds
 /// per timeline-second. ffmpeg's `atempo` only takes 0.5..2.0, so a bigger
-/// change is a chain of them; empty (no filter) when the speed is ~1. Ends with
+/// change is a chain of them. Empty (no filter) when the speed is ~1. Ends with
 /// a comma so it slots between the atrim and the adelay in the filter string.
 fn atempo_filter(factor: f64) -> String {
     if (factor - 1.0).abs() < 1e-3 || factor <= 0.0 {
@@ -516,13 +516,10 @@ pub(crate) struct ExportPlan {
 }
 
 /// Build the ffmpeg invocation that encodes a timeline. The picture arrives on
-/// stdin as raw RGBA frames the frontend's canvas composed, one every `1/fps`,
-/// so there is no video filter at all - no scale, no pad, no overlay, no
-/// subtitles - because the frame already is the frame. Every audio clip is
-/// delayed to its start time and mixed, plus the recording's own sound when
-/// `source_audio` is `keep`; that is the only reason a video file is opened.
-/// Returns the arguments, the plan the frontend renders to and the SRT sidecar
-/// for the caller to write first. Pure, so it is testable.
+/// stdin as raw RGBA frames the frontend's canvas composed, so there is no
+/// video filter at all - the frame already is the frame. Audio clips are
+/// delayed to their start and mixed, plus the recording's own sound for
+/// `keep`. Returns the arguments, the render plan and the SRT sidecar.
 fn export_plan(
     dir: &Path,
     stem: &str,
@@ -668,7 +665,7 @@ fn export_plan(
 
 /// The one export a window can run: an ffmpeg waiting on its stdin for the raw
 /// RGBA frames the frontend's canvas composes. A single slot, like
-/// ProjectWatcher; the timeline view disables Export while one is running.
+/// ProjectWatcher. The timeline view disables Export while one is running.
 #[derive(Default, Clone)]
 pub(crate) struct Export(std::sync::Arc<Mutex<Option<Encoder>>>);
 
@@ -775,7 +772,7 @@ impl Export {
         Ok(encoder.output.clone())
     }
 
-    /// Drop the running export, if any; Drop kills ffmpeg.
+    /// Drop the running export, if any. Drop kills ffmpeg.
     pub(crate) fn cancel(&self) {
         if let Ok(mut held) = self.0.lock() {
             *held = None;

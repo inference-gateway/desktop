@@ -38,9 +38,12 @@ test("encodeWav writes a valid 44-byte RIFF/WAVE header + PCM", () => {
   expect(String.fromCharCode(...wav.slice(0, 4))).toBe("RIFF");
   expect(String.fromCharCode(...wav.slice(8, 12))).toBe("WAVE");
   const view = new DataView(wav.buffer);
-  expect(view.getUint32(24, true)).toBe(16000); // sample rate
-  expect(view.getInt16(44 + 2, true)).toBe(0x7fff); // full-scale positive clamps
-  expect(view.getInt16(44 + 4, true)).toBe(-0x8000); // full-scale negative clamps
+  const sampleRate = view.getUint32(24, true);
+  const fullScalePositive = view.getInt16(44 + 2, true);
+  const fullScaleNegative = view.getInt16(44 + 4, true);
+  expect(sampleRate).toBe(16000);
+  expect(fullScalePositive).toBe(0x7fff);
+  expect(fullScaleNegative).toBe(-0x8000);
 });
 
 test("trimSilence keeps the speech and a short pad around it", () => {

@@ -60,6 +60,8 @@ const CONTENT_GUIDANCE =
 const MAX_SESSIONS_KEY = "maxConcurrentSessions";
 const DEFAULT_MAX_SESSIONS = 5;
 const LAST_RUN_TTL_MS = 10_000;
+/** How long after an `Agent` tool call the sidebar re-reads conversations to pick up the subagent. */
+const SUBAGENT_REFRESH_MS = 1000;
 
 async function setMonitorVisible(visible: boolean) {
   const win = await WebviewWindow.getByLabel("monitor");
@@ -109,7 +111,6 @@ const saveConfig = (cfg: DesktopConfig) => api.setConfig(cfg);
  * value is built fresh on each render, and this keeps its readers from
  * re-rendering unless a field they could read has changed. */
 function useUnchanged<T extends Record<string, unknown>>(value: T): T {
-  // The object always has the same keys, so the dependency list keeps its length.
   return useMemo(() => value, Object.values(value));
 }
 
@@ -214,8 +215,8 @@ function useDesktopStore() {
     agentModesRef.current = agentModes;
   }, [agentModes]);
 
-  // Todo panel drafts are keyed by session so switching sessions never
-  // leaks a user-edited list into another chat (#196); null clears it.
+  /** Todo panel drafts are keyed by session so switching sessions never
+   * leaks a user-edited list into another chat - null clears it. */
   const setTodoDraft = useCallback((key: string, items: TodoItem[] | null) => {
     setTodoDrafts((prev) => {
       if (items === null && !(key in prev)) return prev;
@@ -338,8 +339,8 @@ function useDesktopStore() {
     return () => window.removeEventListener("focus", refreshConversations);
   }, [refreshConversations]);
 
-  // Cancels every running session and forgets them, before a backend the
-  // chats are attached to is restarted or swapped.
+  /** Cancels every running session and forgets them, before a backend the
+   * chats are attached to is restarted or swapped. */
   const cancelRunningAgents = useCallback(async () => {
     for (const id of runningIds) {
       try {
@@ -388,7 +389,7 @@ function useDesktopStore() {
 
   const isRunning = useCallback((id: string) => runningIds.has(id), [runningIds]);
 
-  // The CLI lets one process record at a time, so at most one session owns it.
+  /** The CLI lets one process record at a time, so at most one session owns it. */
   const recordingOwner = useMemo(
     () => Object.keys(transcripts).find((id) => transcripts[id]?.recording) ?? null,
     [transcripts],
@@ -402,8 +403,8 @@ function useDesktopStore() {
   );
   const isAwaitingApproval = useCallback((id: string) => awaitingApproval.includes(id), [awaitingApproval]);
 
-  // The system prompt and custom instructions a chat's thread launches with:
-  // the configured ones plus the project's group, type and context.
+  /** The system prompt and custom instructions a chat's thread launches with:
+   * the configured ones plus the project's group, type and context. */
   const threadPrompts = useCallback(
     async (projectName?: string, extraInstruction?: string, agentName?: string) => {
       const cfg = await api.getConfig();
@@ -452,7 +453,8 @@ function useDesktopStore() {
             refreshHistory();
             break;
           case "AssistantMessage":
-            if (event.tool_calls.some((tc) => tc.name === "Agent")) setTimeout(refreshConversations, 1000);
+            if (event.tool_calls.some((tc) => tc.name === "Agent"))
+              setTimeout(refreshConversations, SUBAGENT_REFRESH_MS);
             break;
           case "BackgroundTasks":
             refreshConversations();
@@ -582,9 +584,9 @@ function useDesktopStore() {
     [projects, newChat],
   );
 
-  // Picking an agent works like picking a project: the next message opens a
-  // chat with it, unless the open chat is already one of its own. The chat
-  // opens in the agent's default project until another is picked for it.
+  /** Picking an agent works like picking a project: the next message opens a
+   * chat with it, unless the open chat is already one of its own. The chat
+   * opens in the agent's default project until another is picked for it. */
   const selectAgent = useCallback(
     (
       name: string | null,
@@ -718,7 +720,7 @@ function useDesktopStore() {
     [showAgentEditor],
   );
 
-  // Saving lands the user in a fresh chat with the agent, Grok Bot style.
+  /** Saving lands the user in a fresh chat with the agent, Grok Bot style. */
   const saveAgent = useCallback(
     async (agent: MarkdownAgent, previousName?: string, avatarUrl?: string) => {
       await storeAgent(agent, previousName, avatarUrl);
@@ -729,9 +731,9 @@ function useDesktopStore() {
     [storeAgent, selectAgent, projectNames],
   );
 
-  // A chat keeps its agent: a send into an existing chat (a queued prompt, the
-  // monitor) runs as the agent it was assigned. Only a chat whose assignment
-  // has not landed in state yet needs its agent passed in.
+  /** A chat keeps its agent: a send into an existing chat (a queued prompt, the
+   * monitor) runs as the agent it was assigned. Only a chat whose assignment
+   * has not landed in state yet needs its agent passed in. */
   const sendPrompt = useCallback(
     async (runId: string, text: string, projectName?: string, extraInstruction?: string, newChatAgent?: string) => {
       const agentName = newChatAgent ?? agentOf[runId];
@@ -856,13 +858,12 @@ function useDesktopStore() {
   const broadcastPrompt = useCallback(
     async (names: string[], text: string) => {
       const isInit = /^\/init(\s|$)/.test(text);
-      let first = true;
+      let surfaceNext = true;
       await runOnProjects(names, async (name) => {
         const runId = crypto.randomUUID();
         assignProject(runId, name);
-        if (first) {
-          // Surface the first spawned session so its progress/approvals are visible; the rest run in the sidebar.
-          first = false;
+        if (surfaceNext) {
+          surfaceNext = false;
           setActiveProject(name);
           setActiveId(runId);
           activeIdRef.current = runId;
@@ -883,11 +884,8 @@ function useDesktopStore() {
     };
   }, [sendPrompt, projects]);
 
-  // `!!ToolName(arg="value")` from the composer: parse, execute through the
-  // CLI's own tool registry (`infer tools execute`) and render the result
-  // exactly like an AI-initiated tool call. No model turn involved.
-  // Send text through the normal message path (composer, todo panel hand-off).
-  // Returns false when the send was rejected so callers keep their text.
+  /** Send text through the normal message path (composer, todo panel hand-off).
+   * Returns false when the send was rejected so callers keep their text. */
   const sendText = useCallback(
     async (text: string): Promise<boolean> => {
       if (activeId && movingRef.current[activeId]) {
@@ -1080,8 +1078,8 @@ function useDesktopStore() {
       .catch((e) => setError(`Failed to hand the screen back: ${e}`));
   }, [drivenId, followThread, dispatchTo, projects, setError]);
 
-  // A chat moves between turns: an open run stops first, and a chat on one
-  // workspace comes home before it goes to another.
+  /** A chat moves between turns: an open run stops first, and a chat on one
+   * workspace comes home before it goes to another. */
   const moveChat = useCallback(
     async (sessionId: string, target: string) => {
       const hops = moveHops(chatWorkspace(sessionId, workspaceOf, agentOf, agents), target);
@@ -1108,8 +1106,8 @@ function useDesktopStore() {
     [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
   );
 
-  // Removes the machine of every chat on a workspace. Their transcripts go with
-  // the machines, so the chats start over on their agent's workspace or here.
+  /** Removes the machine of every chat on a workspace. Their transcripts go with
+   * the machines, so the chats start over on their agent's workspace or here. */
   const cleanMachines = useCallback(async () => {
     const remote = Object.keys(workspaceOf).filter((id) => workspaceOf[id] !== THIS_COMPUTER);
     const removed = await api.cleanMachines(remote.map((id) => ({ id, project: projects[id] })));
@@ -1117,8 +1115,8 @@ function useDesktopStore() {
     return removed;
   }, [workspaceOf, projects]);
 
-  // Removes the machine of one chat, with the transcript that lives on it. The
-  // chat's next message starts it over on its agent's workspace or here.
+  /** Removes the machine of one chat, with the transcript that lives on it. The
+   * chat's next message starts it over on its agent's workspace or here. */
   const deleteMachine = useCallback(
     async (sessionId: string) => {
       try {
@@ -1146,8 +1144,8 @@ function useDesktopStore() {
     [drivenId, handBack, projects, setError],
   );
 
-  // Start a fresh chat in a project with a given prompt (the timeline's
-  // "Generate" button) and switch to it so progress and approvals are visible.
+  /** Start a fresh chat in a project with a given prompt (the timeline's
+   * "Generate" button) and switch to it so progress and approvals are visible. */
   const promptProject = useCallback(
     async (name: string, text: string) => {
       const runId = crypto.randomUUID();
@@ -1186,8 +1184,8 @@ function useDesktopStore() {
     [moveConversationStore],
   );
 
-  // Content projects need ffmpeg, whisper-cli and the whisper model in
-  // ~/.infer/bin/tools so the agent never has to fetch tools itself.
+  /** Content projects need ffmpeg, whisper-cli and the whisper model in
+   * ~/.infer/bin/tools so the agent never has to fetch tools itself. */
   const prepareContentTools = useCallback(async () => {
     const ch = new Channel<ProgressEvent>();
     ch.onmessage = (e) => {

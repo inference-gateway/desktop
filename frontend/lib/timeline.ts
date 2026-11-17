@@ -228,9 +228,9 @@ export function serializeTimeline(t: Timeline): string {
   return JSON.stringify(t, null, 2) + "\n";
 }
 
-/// A one-sentence conventional-commit subject for a manual timeline edit, from
-/// the diff between the previously saved JSON and the new JSON, so a checkpoint
-/// commit says what the edit did rather than a bare "edit".
+/** A one-sentence conventional-commit subject for a manual timeline edit, from
+ * the diff between the previously saved JSON and the new JSON, so a checkpoint
+ * commit says what the edit did rather than a bare "edit". */
 export function describeTimelineChange(prev: string, next: string, name: string): string {
   const file = name || "timeline";
   const tracksOf = (s: string): Track[] | null => {
@@ -337,12 +337,11 @@ export function resolveSrc(dir: string, src: string): string {
   return src.startsWith("/") ? src : `${dir.replace(/\/$/, "")}/${src}`;
 }
 
-/// A dead reference: `src` names a file the media pool no longer lists, so the
-/// clip is shown as missing, plays nothing and relinks the moment the file is
-/// back. Pool keys are `media/<name>` for the media folder and bare names for
-/// root files - the forms clips carry - so only an absolute path folds back.
-/// ponytail: an absolute src outside the media folder is flagged missing; the
-/// skill and the pool drop both write `media/<name>`, so nothing does today.
+/** A dead reference: `src` names a file the media pool no longer lists, so the
+ * clip shows as missing and relinks once the file is back. Pool keys are the
+ * forms clips carry (`media/<name>` or a bare root name), so only an absolute
+ * path folds back. ponytail: an absolute src outside the media folder is flagged
+ * missing, but the skill and the pool drop both write `media/<name>`. */
 export function missingSrc(src: string | undefined, pool: ReadonlySet<string>): boolean {
   if (!src) return false;
   return !pool.has(src.replace(/^(?:.*\/)?media\//, "media/"));
@@ -904,8 +903,8 @@ export function fmtTime(s: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-/// File sizes for the media pool and the project's file chips. A 4K screen
-/// recording runs to gigabytes, so the scale tops out at GB, not MB.
+/** File sizes for the media pool and the project's file chips. A 4K screen
+ * recording runs to gigabytes, so the scale tops out at GB, not MB. */
 export function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;

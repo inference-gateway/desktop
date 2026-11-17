@@ -50,9 +50,9 @@ const ROUND = "inline-flex h-[2.2rem] w-[2.2rem] items-center justify-center rou
 
 type PendingFile = { id: string; path: string; preview?: string };
 
-/// Labels a file by extension for the chip preview and the prompt marker wording
-/// (`[Attached image|video|audio|file: <path>]`). Acceptance itself is owned by
-/// the backend (`projects_allowed_mimes`) - this only labels.
+/** Labels a file by extension for the chip preview and the prompt marker wording
+ * (`[Attached image|video|audio|file: <path>]`). Acceptance itself is owned by
+ * the backend (`projects_allowed_mimes`) - this only labels. */
 const kindOf = (name: string) => {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["mp4", "mov", "webm"].includes(ext)) return "video" as const;
@@ -61,8 +61,8 @@ const kindOf = (name: string) => {
   return "file" as const;
 };
 
-/// Chip face for a non-image attachment: an icon plus the file's base name, so the
-/// user sees which file they attached instead of a bare "audio"/"video" label.
+/** Chip face for a non-image attachment: an icon plus the file's base name, so the
+ * user sees which file they attached instead of a bare "audio"/"video" label. */
 const KIND_ICON = { video: Film, audio: Music, file: FileText } as const;
 
 const baseName = (path: string) => path.split("/").pop() || path;
@@ -319,9 +319,9 @@ export function Composer() {
       .catch(() => {});
   }, [showSkills]);
 
-  /// Drop, paste and picker all land here: the backend saves the file at attach
-  /// time (media pool or uploads, and validates the allowlist), so a rejection
-  /// surfaces immediately instead of at send time.
+  /** Drop, paste and picker all land here: the backend saves the file at attach
+   * time (media pool or uploads, and validates the allowlist), so a rejection
+   * surfaces immediately instead of at send time. */
   const addFile = async (file: File) => {
     try {
       const path = await api.attachBytes(currentProject, file.name, await file.arrayBuffer());

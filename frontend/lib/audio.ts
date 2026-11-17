@@ -1,7 +1,3 @@
-// Pure DSP helpers for voice input: concat recorded chunks, resample to 16kHz,
-// and encode a 16-bit PCM mono WAV for the Rust transcribe_audio command.
-// Self-check: `bun test src/lib/audio.test.ts`.
-
 export function mergeChunks(chunks: Float32Array[]): Float32Array {
   let len = 0;
   for (const c of chunks) len += c.length;

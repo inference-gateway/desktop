@@ -1,6 +1,6 @@
 # MCP servers
 
-An MCP server hands the agent extra tools - send mail, look up docs, query a service - beside its file and shell tools. The servers live in `~/.infer/mcp.yaml`, and **Settings > MCPs** manages them: it saves a server as written, keeping every key it does not know about (a `connection_timeout`, `include_tools`, a container's `volumes`) and leaving a `${VARIABLE}` reference exactly as written. New chats pick up a change; a running chat keeps the servers it started with.
+An MCP server hands the agent extra tools - send mail, look up docs, query a service - beside its file and shell tools. The servers live in `~/.infer/mcp.yaml`, and **Settings > MCPs** manages them: it saves a server as written, keeping every key it does not know about (a `connection_timeout`, `include_tools`, a container's `volumes`) and leaving a `${VARIABLE}` reference exactly as written. New chats pick up a change. A running chat keeps the servers it started with.
 
 ## The switch
 
@@ -10,7 +10,7 @@ An MCP server hands the agent extra tools - send mail, look up docs, query a ser
 
 **New hosted server** adds one that answers over HTTP at a URL, typically someone else's: a **Name** (`mcp-name`) and a **URL** (`mcp-url`, which must start with `http://` or `https://`). The name is lowercase letters, digits, `-` and `_` - the CLI names the server's tools after it, so the name must fit in a tool name.
 
-**New container server** adds one this computer runs itself in Docker: a **Name** (`mcp-name`), an **Image** (`mcp-image`, such as `mcp/filesystem:latest`) and the **Port** (`mcp-port`) the image serves on. It is saved as `run: true` with `oci` and `port`, and the app starts or stops its container to match the **This computer** tick below - when you save, and once more when the app starts. Deleting a server stops its container first. A container server runs here only; it cannot move to a workspace, and an existing server cannot switch between hosted and container.
+**New container server** adds one this computer runs itself in Docker: a **Name** (`mcp-name`), an **Image** (`mcp-image`, such as `mcp/filesystem:latest`) and the **Port** (`mcp-port`) the image serves on. It is saved as `run: true` with `oci` and `port`, and the app starts or stops its container to match the **This computer** tick below - when you save, and once more when the app starts. Deleting a server stops its container first. A container server runs here only. It cannot move to a workspace, and an existing server cannot switch between hosted and container.
 
 In `~/.infer/mcp.yaml` both look like this:
 
@@ -37,7 +37,7 @@ headers:
   Authorization: Bearer ${GITHUB_TOKEN}
 ```
 
-The reference is written as it is, never expanded here - each computer expands it from the secret it was given, so the key itself stays out of the file. A header whose value was written by hand and is not a `${VARIABLE}` reference is kept as written, but the tab never shows its value; pick a secret to replace it. Every header must expand a variable some secret or API key provides, and two headers cannot share a name.
+The reference is written as it is, never expanded here - each computer expands it from the secret it was given, so the key itself stays out of the file. A header whose value was written by hand and is not a `${VARIABLE}` reference is kept as written, but the tab never shows its value. Pick a secret to replace it. Every header must expand a variable some secret or API key provides, and two headers cannot share a name.
 
 ## Where a server goes
 

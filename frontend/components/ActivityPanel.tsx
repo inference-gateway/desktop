@@ -1,7 +1,3 @@
-// Session log for background project actions (#256): one entry per action per
-// project - branch cleanup, checkout + pull, /init, refresh - with the
-// backend's summary or the error. In-memory, capped, collapsed by default so
-// it stays out of the way until something runs or fails.
 import { useEffect, useState } from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,6 +10,9 @@ const DOT: Record<ActivityStatus, string> = {
   skipped: "bg-muted-foreground",
 };
 
+/** Session log for background project actions: one entry per action per project
+ * (branch cleanup, checkout + pull, /init, refresh) with the backend's summary or
+ * the error. In-memory, capped and collapsed until something runs or fails. */
 export function ActivityPanel() {
   const { activities, clearActivities, seenActivityId, markActivitiesSeen } = useActivity();
   const [open, setOpen] = useState(false);

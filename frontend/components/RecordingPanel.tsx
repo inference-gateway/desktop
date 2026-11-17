@@ -1,10 +1,10 @@
-// Live view of the active session's agent recording (RecordStart): the area it
-// captures and every key press and click since it started, newest last. The
-// backend saves the same log next to the MP4 as <name>.events.jsonl.
 import { useEffect, useRef } from "react";
 import { formatInput } from "@/lib/recording";
 import { useChatStream } from "@/store";
 
+/** Live view of the active session's agent recording: the area it captures and
+ * every key press and click since it started, newest last. The backend saves the
+ * same log next to the MP4 as <name>.events.jsonl. */
 export function RecordingPanel() {
   const { recording } = useChatStream();
   const listRef = useRef<HTMLUListElement>(null);

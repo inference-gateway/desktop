@@ -440,7 +440,7 @@ pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<Workfl
     .await
 }
 
-/// Create a task issue; the body is prefixed with the @opentask trigger so
+/// Create a task issue. The body is prefixed with the @opentask trigger so
 /// the installed workflow always picks it up. Returns the issue URL.
 #[tauri::command]
 pub(crate) async fn github_create_task_issue(

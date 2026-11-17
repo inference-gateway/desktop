@@ -1,8 +1,3 @@
-// App-wide keyboard shortcuts, mirroring the `infer chat` CLI conventions:
-// Cmd/Ctrl+N = new chat, Esc = cancel the active run, Shift+Tab = next agent mode,
-// a/d = approve/deny the pending tool approval. Pure matchers so the decision
-// logic is unit-testable without a DOM.
-
 export type Shortcut = "newChat" | "cancel" | "cycleMode";
 export type ApprovalShortcut = "approve" | "deny";
 
@@ -18,6 +13,9 @@ export interface KeyInput {
   editable?: boolean;
 }
 
+/** App-wide shortcuts, mirroring `infer chat`: Cmd/Ctrl+N is a new chat, Esc
+ * cancels the active run and Shift+Tab moves to the next agent mode. A pure
+ * matcher, so the decision is unit-testable without a DOM. */
 export function matchShortcut(e: KeyInput): Shortcut | null {
   if (e.repeat) return null;
   if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {

@@ -281,8 +281,8 @@ export function VoiceSamplesTab() {
     }
   };
 
-  // Same capture wiring as useVoiceInput, but kept at the native sample rate
-  // (no 16kHz downsample) - cloning wants the full-quality reference.
+  /** Same capture wiring as useVoiceInput, but kept at the native sample rate
+   * (no 16kHz downsample) - cloning wants the full-quality reference. */
   const stopRecording = useCallback(async () => {
     setRecording(false);
     if (recTimer.current) clearTimeout(recTimer.current);

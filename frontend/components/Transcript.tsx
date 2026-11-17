@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Check, ChevronDown, Download, Loader2, Reply, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
@@ -27,6 +27,8 @@ import {
   type TranscriptItem,
 } from "@/lib/transcript";
 
+const SAVE_STATUS_MS = 2000;
+const SCHEDULES_POLL_MS = 10_000;
 const BUBBLE = "rounded-xl px-4 py-[0.7rem] leading-[1.5] break-words shadow-sm";
 
 /** Fetches the WAV through the chat's daemon, since a remote machine's file is not on this disk. */
@@ -139,20 +141,18 @@ function AssistantBubble({ chunks }: { chunks: string[] }) {
     });
   }, [chunks]);
   if (chunks.length === 0) return null;
-  // Chunks are streamed content deltas; join before rendering so markdown
-  // parses as one document instead of fragmenting per token.
-  const merged = chunks.join("");
+  const wholeDocument = chunks.join("");
   return (
     <div className="flex max-w-[min(72ch,82%)] flex-col gap-1 self-start">
       <div
         ref={ref}
         className={cn(BUBBLE, "md rounded-bl-[4px] bg-assistant text-assistant-foreground")}
         onClick={(e) => handleLinkClick(e, (url) => api.openUrl(url).catch(() => {}))}
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(merged) }}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(wholeDocument) }}
       />
       <div className="flex gap-1">
-        <CopyButton text={merged} />
-        <ReplyButton kind="message" text={merged} />
+        <CopyButton text={wholeDocument} />
+        <ReplyButton kind="message" text={wholeDocument} />
       </div>
     </div>
   );
@@ -550,7 +550,7 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   };
   useEffect(() => {
     if (status !== "saved" && status !== "error") return;
-    const t = setTimeout(() => setStatus("idle"), 2000);
+    const t = setTimeout(() => setStatus("idle"), SAVE_STATUS_MS);
     return () => clearTimeout(t);
   }, [status]);
   const Icon = status === "saving" ? Loader2 : status === "saved" ? Check : status === "error" ? X : Download;
@@ -661,7 +661,7 @@ function ScheduledJobs() {
         })
         .catch(() => {});
     refresh();
-    const t = setInterval(refresh, 10000);
+    const t = setInterval(refresh, SCHEDULES_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -720,6 +720,20 @@ function ScheduledJobs() {
 
 const SCROLL_THRESHOLD = 2;
 
+/** Keeps a following transcript pinned to its bottom on every commit. A layout
+ * effect, not a passive one, so scrollTop tracks scrollHeight before a scroll
+ * event can read a grown transcript against a stale scrollTop - that stale read
+ * turned auto-follow off and left a late approval card below the fold. */
+function usePinToBottom(ref: RefObject<HTMLDivElement | null>, isAtBottomRef: RefObject<boolean>, deps: unknown[]) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && isAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
 export function Transcript() {
   const { items, runLabel } = useChatStream();
   const { typing, approve, answerQuestions, decidePlan, sessionId, composerRef, turnStartedAt } = useDesktop();
@@ -773,17 +787,7 @@ export function Transcript() {
     setShowScrollButton(!following);
   }, []);
 
-  // Layout effect, not passive: pin synchronously per commit so scrollTop
-  // tracks scrollHeight before any scroll event can observe a grown transcript
-  // against a stale scrollTop. As a passive effect, rapid streaming let that
-  // stale read flip isAtBottom to false, which stuck auto-follow off and left
-  // a late approval card below the fold (transcript-overflow.yaml).
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el && isAtBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [items, typing]);
+  usePinToBottom(ref, isAtBottomRef, [items, typing]);
 
   useEffect(() => {
     const el = ref.current;

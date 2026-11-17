@@ -3,12 +3,10 @@ use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
 /// A Markdown agent definition (`<name>.md`, Claude Code / infer format): the
-/// frontmatter is its profile, the body its system prompt. `emoji`,
-/// `workspace` (the computer its chats run on), `project` (the project its
-/// new chats open in), `email` (its AgentMail inbox address) and
-/// `allowed_recipients` (the addresses or domains it may mail) are desktop-only
-/// keys the CLI ignores, the picture is a sibling `<name>.<ext>`. `mcpServers`
-/// names the MCP servers it uses, every one of its computer's when empty.
+/// frontmatter is its profile, the body its system prompt, the picture a
+/// sibling `<name>.<ext>`, and `mcpServers` the MCP servers it uses (all of
+/// the computer's when empty). Desktop-only keys the CLI ignores: `workspace`
+/// is the computer its chats run on, `email` its AgentMail address.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MarkdownAgent {
     pub(crate) name: String,

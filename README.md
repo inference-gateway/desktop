@@ -22,7 +22,7 @@ Like Codex or Co-Work, but provider-agnostic: OpenAI, Anthropic, Google, local O
 - **Drive your browser** - the [opentask](https://github.com/inference-gateway/opentask) extension lets the agent navigate, click, type and read tabs in your everyday browser.
 - **Write your own agents** - Markdown files with a name, instructions, model and face. Agents can hand work to each other.
 - **Make content** - talking-avatar clips, text to speech and text to video on a timeline in Content projects.
-- **Stay portable** - the app updates itself, and Export / Import moves your settings, sidebar projects, A2A agents, scheduled jobs, snippets and skills to a new machine; [docs/export-import.md](docs/export-import.md) lists what does not travel.
+- **Stay portable** - the app updates itself, and Export / Import moves your settings, sidebar projects, A2A agents, scheduled jobs, snippets and skills to a new machine. [docs/export-import.md](docs/export-import.md) lists what does not travel.
 
 ## Install
 

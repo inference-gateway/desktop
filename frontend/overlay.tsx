@@ -1,14 +1,3 @@
-// Fullscreen, transparent, click-through overlay that visualizes computer-use
-// actions: a rounded border glows at the screen edges while any computer-use
-// session is active, a cursor dot glides to each pointer action the CLI reports
-// (computer_use activity, in screen coordinates), a ring ripples on a click, and a key-cast pill at the bottom shows what
-// the agent is typing or which non-pointer tool (screenshot, WebSearch, ...) it
-// is waiting on, so an unfocused user still sees activity. Fed by the backend's global "agent-event" broadcast;
-// all animation is CSS inside this webview, so no per-frame IPC. One Frame
-// draws three variants: blue at the screen edges for computer use, red at the
-// screen edges during workflow capture ("screen-recording" event from the top
-// bar), and red just outside the recorded area of an agent recording
-// (RecordingStarted until RecordingStopped or the process ends).
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -119,6 +108,11 @@ function busyLabel(tc: ToolCallInfo): string {
   }
 }
 
+/** Fullscreen, transparent, click-through overlay for computer use: a border
+ * glows at the screen edges, a cursor dot glides to each pointer action, a ring
+ * ripples on a click and a key-cast pill shows what the agent types or waits on.
+ * Fed by the "agent-event" broadcast, animated in CSS. The frame is blue for
+ * computer use and red for workflow capture or around an agent recording. */
 export default function Overlay() {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [ripple, setRipple] = useState<Ripple | null>(null);
