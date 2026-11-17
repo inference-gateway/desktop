@@ -1,5 +1,3 @@
-// Agent recording helpers: where the overlay draws the frame around the
-// recorded area, and how the recording session lists its captured input.
 import type { InputEvent, RecordedArea } from "./tauri";
 
 export type OverlayRect = { left: number; top: number; width: number; height: number };
@@ -10,13 +8,11 @@ export type OverlayScreen = { width: number; height: number; dy: number };
 
 const EDGE_INSET = 4;
 
-/** Maps a recorded area from the CLI's frame space to overlay CSS pixels and
- * grows it by `border` on every side, so the frame sits just outside what is
- * recorded and never lands in the video. An edge that reaches the screen edge
- * (a full-screen recording) is clamped inside, like the computer-use frame.
- * ponytail: that clamped edge is only kept out of the video by the overlay's
- * contentProtected, which Tauri does not support on Linux - hide the frame for
- * full-screen recordings there if it shows up in X11 captures. */
+/** Maps a recorded area from the CLI's frame space to overlay CSS pixels, grown
+ * by `border` so the frame sits just outside the video. A full-screen edge is
+ * clamped inside, like the computer-use frame.
+ * ponytail: only contentProtected keeps that edge out of the video, and Tauri
+ * lacks it on Linux - hide the frame there if it shows up in X11 captures. */
 export function recordingFrame(area: RecordedArea, screen: OverlayScreen, border: number): OverlayRect {
   const s = screen.width / area.frame_width;
   const x = area.x * s;

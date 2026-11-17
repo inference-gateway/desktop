@@ -4,11 +4,22 @@ import { api, Channel, type ProgressEvent, type SttStatus } from "@/lib/tauri";
 import { downsample, encodeWav, mergeChunks } from "@/lib/audio";
 import { autoGrow } from "@/lib/textarea";
 
-// Voice-to-text: capture in the WebView, resample to 16kHz mono WAV, hand to the
-// Rust transcribe_audio command (whisper.cpp). Mic is greyed when whisper is
-// unavailable, permission is denied, or the agent is running.
 const MAX_REC_MS = 30000;
 const INTERIM_MS = 2000;
+const WHISPER_SAMPLE_RATE = 16000;
+
+/** The microphone permission, or null where WebKit does not expose it and the
+ * browser asks on first use instead. */
+async function queryMicPermission(): Promise<PermissionStatus | null> {
+  try {
+    return (await navigator.permissions?.query({ name: "microphone" as PermissionName })) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** An interim transcription that fails is skipped - the final pass reports errors. */
+function skipInterimFailure() {}
 
 type Options = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -24,6 +35,9 @@ export type VoiceInput = {
   onClick: () => void;
 };
 
+/** Voice-to-text: capture in the WebView, resample to 16kHz mono WAV and hand it
+ * to the Rust transcribe_audio command (whisper.cpp). The mic is greyed when
+ * whisper is unavailable, permission is denied, or the agent is running. */
 export function useVoiceInput({ textareaRef, running, setStatus, setError }: Options): VoiceInput {
   const [sttBinary, setSttBinary] = useState(false);
   const [sttModel, setSttModel] = useState(false);
@@ -62,17 +76,11 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
 
   useEffect(() => {
     refreshSttStatus();
-    (async () => {
-      const perms = navigator.permissions;
-      if (!perms?.query) return;
-      try {
-        const st = await perms.query({ name: "microphone" as PermissionName });
-        setMicPermission(st.state);
-        st.onchange = () => setMicPermission(st.state);
-      } catch {
-        // WebKit may not expose the microphone permission - fall back to prompt-on-use.
-      }
-    })();
+    queryMicPermission().then((st) => {
+      if (!st) return;
+      setMicPermission(st.state);
+      st.onchange = () => setMicPermission(st.state);
+    });
     return () => {
       if (recTimer.current) clearTimeout(recTimer.current);
       if (interimTimer.current) clearInterval(interimTimer.current);
@@ -103,8 +111,8 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     await api.prepareStt(ch);
   }, [setStatus]);
 
-  // Composes dictated text into the composer over what was there before
-  // dictation started; null reverts to that base text (drops provisional text).
+  /** Composes dictated text into the composer over what was there before
+   * dictation started; null reverts to that base text (drops provisional text). */
   const setComposer = useCallback(
     (text: string | null) => {
       const el = textareaRef.current;
@@ -151,7 +159,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
       setStatus("No audio captured");
       return;
     }
-    const wav = encodeWav(downsample(samples, ctxRate, 16000), 16000);
+    const wav = encodeWav(downsample(samples, ctxRate, WHISPER_SAMPLE_RATE), WHISPER_SAMPLE_RATE);
 
     setStatus("Transcribing...");
     try {
@@ -169,23 +177,21 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
     }
   }, [setStatus, setError, textareaRef, setComposer]);
 
-  // Periodically re-transcribe the whole buffer so words appear while talking.
-  // ponytail: O(n²) in recording length; fine under the 30 s cap. If the cap is
-  // ever raised, keep a committed prefix and only re-run the last ~10 s window.
+  /** Periodically re-transcribe the whole buffer so words appear while talking.
+   * ponytail: O(n²) in recording length; fine under the 30 s cap. If the cap is
+   * ever raised, keep a committed prefix and only re-run the last ~10 s window. */
   const tickInterim = useCallback(() => {
     if (!recordingRef.current || interimBusy.current) return;
     const samples = mergeChunks(recChunks.current);
     if (samples.length === 0) return;
     interimBusy.current = true;
-    const wav = encodeWav(downsample(samples, recSampleRate.current, 16000), 16000);
+    const wav = encodeWav(downsample(samples, recSampleRate.current, WHISPER_SAMPLE_RATE), WHISPER_SAMPLE_RATE);
     interimFlight.current = api
       .transcribeAudio(Array.from(wav))
       .then((text) => {
         if (recordingRef.current && text.trim()) setComposer(text);
       })
-      .catch(() => {
-        // Interim failure: keep listening; the final pass reports errors.
-      })
+      .catch(skipInterimFailure)
       .finally(() => {
         interimBusy.current = false;
         interimFlight.current = null;

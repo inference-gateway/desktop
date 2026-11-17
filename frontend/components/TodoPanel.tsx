@@ -1,6 +1,3 @@
-// Pinned, editable todo list for the active session (#196). The list itself is
-// derived from the agent's last TodoWrite call (see todosFrom); user edits live
-// in a per-session draft until handed back to the agent with "Send to agent".
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -25,6 +22,12 @@ const STATUS_ICON = { pending: Circle, in_progress: CircleDot, completed: Check 
 const STATUS_CLASS = { pending: "text-muted-foreground", in_progress: "text-warn", completed: "text-tool" } as const;
 
 const PEEK_MS = 5000;
+
+/** The edge a dragged row lands on: move(from, to) puts it after the hovered row
+ * when dragging down and before it when dragging up. */
+function dropEdgeClass(from: number, to: number): string {
+  return to > from ? "shadow-[inset_0_-2px_0_0_var(--tool-fg)]" : "shadow-[inset_0_2px_0_0_var(--tool-fg)]";
+}
 const ROW_BUTTON =
   "shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:cursor-default disabled:opacity-30";
 const ROW_EDIT = "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100";
@@ -45,6 +48,9 @@ function Elapsed({ todo, now }: { todo: TodoItem; now: number }) {
   );
 }
 
+/** Pinned, editable todo list for the active session. The list comes from the
+ * agent's last TodoWrite call (see todosFrom), and user edits live in a
+ * per-session draft until "Send to agent" hands them back. */
 export function TodoPanel() {
   const { items } = useChatStream();
   const { sessionId, running, sendText, todoDrafts, setTodoDraft } = useDesktop();
@@ -57,9 +63,9 @@ export function TodoPanel() {
   const peek = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const written = agentTodos.length > 0;
 
-  // A list the agent just wrote shows itself for a moment, then folds away. One loaded with an old chat stays folded.
+  const writtenThisRun = written && running;
   useEffect(() => {
-    if (!written || !running) return;
+    if (!writtenThisRun) return;
     setOpen(true);
     peek.current = setTimeout(() => setOpen(false), PEEK_MS);
     return () => clearTimeout(peek.current);
@@ -76,14 +82,13 @@ export function TodoPanel() {
   const done = shown.filter((t) => t.status === "completed").length;
   const now = useNow(shown.some((t) => t.status === "in_progress" && Boolean(t.started_at)));
 
-  // The agent's TodoWrite is the source of truth: once it catches up with a
-  // hand-off, drop the draft so the panel is not stuck dirty forever.
   useEffect(() => {
-    if (draft?.length && !todosDiffer(draft, agentTodos)) setTodoDraft(draftKey, null);
+    const agentCaughtUpWithDraft = draft?.length && !todosDiffer(draft, agentTodos);
+    if (agentCaughtUpWithDraft) setTodoDraft(draftKey, null);
   }, [draft, agentTodos, draftKey, setTodoDraft]);
 
-  // Hidden until the agent writes a list or the user starts one.
-  if (draft === null && agentTodos.length === 0) {
+  const noListYet = draft === null && agentTodos.length === 0;
+  if (noListYet) {
     return (
       <div className="flex shrink-0 justify-center pb-1">
         <button
@@ -185,21 +190,18 @@ export function TodoPanel() {
           <ul className="max-h-[40vh] overflow-y-auto">
             {shown.map((t, i) => {
               const StatusIcon = STATUS_ICON[t.status];
+              const dropEdge =
+                dropAt === i &&
+                dragFrom.current !== null &&
+                dragFrom.current !== i &&
+                dropEdgeClass(dragFrom.current, i);
               return (
                 <li
                   key={i}
                   className={cn(
                     "group flex items-center gap-1 border-b border-border/60 px-2 py-1 last:border-b-0",
                     t.status === "in_progress" && "bg-warn/5",
-                    // Insertion indicator: move(from, i) lands the row after
-                    // the hovered row when dragging down, before it when
-                    // dragging up - mark exactly that edge.
-                    dropAt === i &&
-                      dragFrom.current !== null &&
-                      dragFrom.current !== i &&
-                      (i > dragFrom.current
-                        ? "shadow-[inset_0_-2px_0_0_var(--tool-fg)]"
-                        : "shadow-[inset_0_2px_0_0_var(--tool-fg)]"),
+                    dropEdge,
                   )}
                   onDragOver={(e) => {
                     e.preventDefault();

@@ -4,14 +4,13 @@ import { cn } from "@/lib/utils";
 import { computePeaks } from "@/lib/audio";
 import { api } from "@/lib/tauri";
 
-// WhatsApp-style voice message bubble: play/pause, a real waveform decoded
-// from the WAV (flat bars until decoding finishes or if it fails), a playhead
-// line over played-vs-unplayed bar coloring, click to seek, elapsed/total
-// time, and a download button (copies to ~/Downloads via save_audio).
-// Bar heights are set in px: percentage heights collapse to 0 in WKWebView.
 const BARS = 40;
 const BAR_MAX_PX = 26;
 const FLAT = Array<number>(BARS).fill(0.3);
+const SAVE_STATUS_MS = 2000;
+
+/** A waveform that fails to decode stays flat - playback still works through the <audio> element. */
+function keepFlatWaveform() {}
 
 function fmt(t: number): string {
   if (!isFinite(t)) return "0:00";
@@ -19,6 +18,10 @@ function fmt(t: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** WhatsApp-style voice message bubble: play/pause, a waveform decoded from the
+ * WAV (flat until it decodes), played-vs-unplayed bars under a playhead, click to
+ * seek, elapsed/total time and a download button that copies to ~/Downloads.
+ * Bar heights are in px because percentage heights collapse to 0 in WKWebView. */
 export function AudioPlayer({
   src,
   ariaLabel,
@@ -42,21 +45,17 @@ export function AudioPlayer({
   useEffect(() => {
     let alive = true;
     (async () => {
-      try {
-        const buf = await (await fetch(src)).arrayBuffer();
-        const Ctx: typeof AudioContext =
-          window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        const ctx = new Ctx();
-        const decoded = await ctx.decodeAudioData(buf);
-        if (alive) {
-          setPeaks(computePeaks(decoded.getChannelData(0), BARS));
-          setDuration(decoded.duration);
-        }
-        await ctx.close();
-      } catch {
-        // Keep the flat waveform - playback still works via the <audio> element.
+      const buf = await (await fetch(src)).arrayBuffer();
+      const Ctx: typeof AudioContext =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new Ctx();
+      const decoded = await ctx.decodeAudioData(buf);
+      if (alive) {
+        setPeaks(computePeaks(decoded.getChannelData(0), BARS));
+        setDuration(decoded.duration);
       }
-    })();
+      await ctx.close();
+    })().catch(keepFlatWaveform);
     return () => {
       alive = false;
     };
@@ -68,7 +67,7 @@ export function AudioPlayer({
 
   useEffect(() => {
     if (saveStatus !== "saved" && saveStatus !== "error") return;
-    const t = setTimeout(() => setSaveStatus("idle"), 2000);
+    const t = setTimeout(() => setSaveStatus("idle"), SAVE_STATUS_MS);
     return () => clearTimeout(t);
   }, [saveStatus]);
 

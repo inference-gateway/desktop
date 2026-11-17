@@ -78,8 +78,8 @@ export function AgentEditor() {
     set("avatar", fresh?.avatar ?? null);
   };
 
-  // A Fluent emoji previews its animated PNG straight from GitHub and is
-  // downloaded beside the agent file on save, so it keeps moving offline.
+  /** A Fluent emoji previews its animated PNG straight from GitHub and is
+   * downloaded beside the agent file on save, so it keeps moving offline. */
   const pickAnimated = (pick: FluentEmoji) => {
     if (animatedPick?.folder === pick.folder) {
       setAnimatedPick(null);

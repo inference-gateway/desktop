@@ -7,6 +7,8 @@ import { api, type DesktopConfig } from "@/lib/tauri";
 import { TasksPanel } from "./TasksView";
 import { DEFAULT_CONFIG, type StorageField } from "@/lib/desktop-config";
 
+const SCHEDULER_POLL_MS = 3000;
+
 export type GithubSubTab = "repository" | "scheduling" | "tasks";
 
 export const GITHUB_SUBTABS: { id: GithubSubTab; label: string }[] = [
@@ -664,7 +666,7 @@ function SchedulerLogView() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 3000);
+    const t = setInterval(refresh, SCHEDULER_POLL_MS);
     return () => clearInterval(t);
   }, [refresh]);
 

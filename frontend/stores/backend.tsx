@@ -25,6 +25,7 @@ export const MODEL_STORAGE_KEY = "selectedModel";
 const UPDATE_CACHE_KEY = "updateCheck";
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MAX_RETRIES = 10;
+const RETRY_DELAY_MS = 1500;
 
 /** Status text for an install progress event, shared by the full init flow and
  * per-component installs; "Ready" and "Error" carry extra side-effects there. */
@@ -106,7 +107,7 @@ function useBackendStore() {
       try {
         populateModels(await api.listModels());
       } catch {
-        if (attempt < MAX_RETRIES) setTimeout(() => fetchModelsWithRetry(attempt + 1), 1500);
+        if (attempt < MAX_RETRIES) setTimeout(() => fetchModelsWithRetry(attempt + 1), RETRY_DELAY_MS);
       }
     },
     [populateModels],
@@ -224,8 +225,8 @@ function useBackendStore() {
     [setStatus],
   );
 
-  // One apply at a time, and busy until the follow-up check has answered, so
-  // neither update button turns clickable again on rows that are about to change.
+  /** One apply at a time, and busy until the follow-up check has answered, so
+   * neither update button turns clickable again on rows that are about to change. */
   const applyUpdates = useCallback(async () => {
     if (updatingRef.current) return;
     updatingRef.current = true;
@@ -244,8 +245,8 @@ function useBackendStore() {
     }
   }, [restartBackend, installDesktop, updates, setError]);
 
-  // Per-component version pinning: the tag picked in the Updates tab, per
-  // component row, kept until it has been installed.
+  /** Per-component version pinning: the tag picked in the Updates tab, per
+   * component row, kept until it has been installed. */
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
   const selectVersion = useCallback((name: string, tag: string | null) => {
     setSelectedVersions((prev) => {
@@ -256,15 +257,16 @@ function useBackendStore() {
     });
   }, []);
 
-  // Installs exactly one component at the version picked for it, and leaves
-  // the other components alone. Without a pick the one-click flow applies.
+  /** Installs exactly one component at the version picked for it, and leaves
+   * the other components alone. Without a pick the one-click flow applies.
+   * The Desktop install never resolves, since the updater relaunches the app,
+   * and a CLI install restarts only its daemon while the gateway keeps serving. */
   const installUpdate = useCallback(
     async (name: string) => {
       const tag = selectedVersions[name] ?? null;
       if (!tag) return;
       try {
         if (name === "Desktop") {
-          // The updater relaunches the app, so this never resolves.
           await installDesktop(tag);
         } else if (name === "Gateway") {
           await sessionStopper.current();
@@ -272,8 +274,6 @@ function useBackendStore() {
           await startGatewayThenModels(true, true, tag);
           setReady(true);
         } else {
-          // Only the CLI binary is replaced and its daemon restarted; the
-          // running gateway keeps serving, so nothing else is rebuilt.
           await sessionStopper.current();
           setReady(false);
           const ch = new Channel<ProgressEvent>();
