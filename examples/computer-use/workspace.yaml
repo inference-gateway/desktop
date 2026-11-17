@@ -1,4 +1,4 @@
-name: ubuntu-desktop
+name: computer-use
 kind: kubernetes
 context: k3d-computer-use
 namespace: computer-use
