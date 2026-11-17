@@ -104,11 +104,10 @@ pub(crate) fn collector_env() -> Vec<(String, String)> {
 }
 
 /// Absolute form of a configured `storage.jsonl.path`: a leading `~` expands
-/// against `home` (the CLI's own expandHome does the same) and a relative path
-/// anchors there, because the app's cwd is not the user's project directory
-/// (Finder-launched apps inherit `/`). Applied in memory only -
-/// ~/.infer/config.yaml keeps the verbatim value so the CLI's cwd-anchored
-/// reading is never rewritten by a Settings save.
+/// against `home` and a relative path anchors there, because the app's cwd is
+/// not the user's project directory (Finder-launched apps inherit `/`). Applied
+/// in memory only - ~/.infer/config.yaml keeps the verbatim value so the CLI's
+/// cwd-anchored reading is never rewritten by a Settings save.
 pub(crate) fn absolute_storage_path(configured: &str, home: &Path) -> String {
     if let Some(rest) = configured.strip_prefix('~') {
         return format!("{}{}", home.display(), rest);
@@ -121,15 +120,14 @@ pub(crate) fn absolute_storage_path(configured: &str, home: &Path) -> String {
     }
 }
 
-/// Extra env vars for spawned infer processes: provider keys, the secrets
-/// assigned to this computer, the jsonl
-/// storage path resolved from storage.jsonl.path when one is set (an unset
-/// path lets the CLI use its home-anchored default,
-/// ~/.infer/projects/<slug>/conversations), plus the CLI mock switch when
-/// the desktop runs in mock mode.
 /// The CLI's `gateway.run` as an environment variable.
 const CLI_RUNS_GATEWAY: &str = "INFER_GATEWAY_RUN";
 
+/// Extra env vars for spawned infer processes: provider keys, the secrets
+/// assigned to this computer, the jsonl storage path resolved from
+/// storage.jsonl.path when one is set (an unset path lets the CLI use its
+/// home-anchored default, ~/.infer/projects/<slug>/conversations), plus the
+/// CLI mock switch when the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = auth_env();
     env.extend(crate::secrets::computer_env());
@@ -157,12 +155,11 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
     env
 }
 
-/// PATH for spawned infer children and for PATH lookups in this process
-/// (stt.rs find_on_path). On unix, Finder-launched apps inherit launchd's
-/// minimal PATH (no /opt/homebrew/bin), so tools like `gh` are unresolvable
-/// inside agent bash sessions; prepend the dirs launchd omits, mirroring
-/// download.rs gh_bin(). Duplicates in a dev shell PATH are harmless. Windows
-/// GUI launches already inherit the user's normal PATH, so pass it through.
+/// PATH for spawned infer children and PATH lookups in this process. On unix,
+/// Finder-launched apps inherit launchd's minimal PATH (no /opt/homebrew/bin),
+/// so tools like `gh` are unresolvable inside agent bash sessions - prepend
+/// the dirs launchd omits. Windows GUI launches already inherit the user's
+/// normal PATH, so pass it through.
 pub(crate) fn composed_path() -> String {
     let base = std::env::var("PATH").unwrap_or_default();
     if cfg!(windows) {
@@ -208,12 +205,10 @@ pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> Path
 }
 
 /// Working directory for spawned infer processes. `cargo tauri dev` runs the
-/// app from backend/ regardless of where it was invoked, but agent sessions
-/// should work in the project root - one level up. Finder-launched `.app`
-/// bundles inherit cwd `/` (read-only), so infer's cwd-relative `.infer`
-/// storage would land at `/.infer` and panic; fall back to ~/.infer/workspace
-/// there ($HOME itself makes the agent scan TCC-protected dirs like
-/// ~/Documents, prompting once per spawned process).
+/// app from backend/ regardless of invocation, but agent sessions should work
+/// in the project root - one level up. Finder-launched `.app` bundles inherit
+/// cwd `/` (read-only), so infer's cwd-relative `.infer` storage would land at
+/// `/.infer` and panic; fall back to ~/.infer/workspace there.
 pub(crate) fn agent_cwd() -> PathBuf {
     let dir = resolve_agent_cwd(std::env::current_dir().ok(), home_dir());
     let _ = std::fs::create_dir_all(&dir);

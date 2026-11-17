@@ -32,31 +32,26 @@ pub(crate) struct DesktopData {
 }
 
 /// The complete portable desktop state. One shape, three serializations
-/// (JSON/YAML/TOML, see `serialize_export` / `parse_export`).
+/// (JSON/YAML/TOML, see `serialize_export` / `parse_export`). Machine paths
+/// are `~/`-relative; git-repo projects export as their GitHub `owner/name`
+/// and re-clone on import, and agents, schedules and skills round-trip
+/// through their files or the `infer` CLI.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DesktopExport {
     version: u32,
-    /// All Settings-managed fields; machine paths are `~/`-relative.
     config: DesktopConfig,
-    /// Raw ~/.infer/projects.yaml value (`paths` overrides tilde-relative).
     #[serde(default)]
     projects: serde_json::Value,
-    /// Git-repo projects as their GitHub `owner/name`: re-cloned on import so the
-    /// checkout (and its AGENTS.md) need not travel in the file. See
-    /// `strip_git_project_remotes`.
     #[serde(default)]
     project_remotes: BTreeMap<String, String>,
-    /// A2A agents, re-created through the `infer` CLI on import.
     #[serde(default)]
     agents: Vec<A2aAgent>,
-    /// Scheduled job files: filename -> raw YAML value, round-tripped verbatim.
     #[serde(default)]
     schedules: BTreeMap<String, serde_norway::Value>,
     #[serde(default)]
     snippets: Vec<SnippetEntry>,
     #[serde(default)]
     skills_registry_url: String,
-    /// Installed skill names; reinstalled through the `infer` CLI on import.
     #[serde(default)]
     skills: Vec<String>,
 }
@@ -176,12 +171,11 @@ fn scrub_credentials(cfg: &mut DesktopConfig) {
     cfg.scheduler_github_app_private_key_secret.clear();
 }
 
-/// Replace each git-repo project's embedded copy with its GitHub `owner/name`:
-/// for every `paths` entry whose checkout has a GitHub remote, record the remote
-/// and drop the machine-specific `paths` entry plus the `contexts` entry - the
-/// context is derived from the repo's AGENTS.md and re-read from the fresh
-/// clone on import, so embedding it is pure bloat (and goes stale). Only
-/// non-GitHub/local repos keep their context embedded.
+/// Replace each git-repo project's embedded copy with its GitHub owner/name:
+/// for every `paths` entry whose checkout has a GitHub remote, record the
+/// remote and drop the machine-specific `paths` entry plus the `contexts`
+/// entry - the context re-reads from the fresh clone on import, so embedding
+/// it is pure bloat (and goes stale). Only non-GitHub/local repos keep it.
 fn strip_git_project_remotes(
     projects: &mut serde_json::Value,
     home: &Path,

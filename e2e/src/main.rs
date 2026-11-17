@@ -1,8 +1,3 @@
-//! YAML-driven e2e runner for the desktop app. See tests/*.yaml for the
-//! spec format and AGENTS.md ("Verifying the UI") for the AX foundations.
-//!
-//! Usage: e2e [--no-build] [--no-mock] [--record] [files...]
-
 mod driver;
 mod spec;
 
@@ -13,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+/// How long the overlay bounds assertion waits for the overlay to appear.
+const OVERLAY_BOUNDS_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// YAML-driven e2e runner: `e2e [--no-build] [--no-mock] [--record] [files...]`.
 fn main() {
     install_sigint_cleanup();
     match run() {
@@ -268,7 +267,7 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
     match step {
         Step::Bare(BareStep::NewChat) => app.new_chat(),
         Step::Bare(BareStep::AssertOverlayBounds) => {
-            let found = app.poll(Duration::from_secs(5), || {
+            let found = app.poll(OVERLAY_BOUNDS_TIMEOUT, || {
                 app.overlay_matches_primary_screen()
             })?;
             if !found {

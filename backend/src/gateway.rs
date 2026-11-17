@@ -85,10 +85,13 @@ fn existing_local_build(build: PathBuf) -> Result<PathBuf, String> {
     ))
 }
 
+/// Probe timeout when testing whether the gateway port answers.
+const GATEWAY_PROBE_TIMEOUT: Duration = Duration::from_millis(750);
+
 pub(crate) fn gateway_reachable() -> bool {
     let url = format!("{}/v1/models", gateway_url().trim_end_matches('/'));
     let config = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_millis(750)))
+        .timeout_global(Some(GATEWAY_PROBE_TIMEOUT))
         .build();
     ureq::Agent::new_with_config(config)
         .get(&url)

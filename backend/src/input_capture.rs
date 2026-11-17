@@ -1,18 +1,8 @@
-//! Keyboard and mouse input capture, shared by workflow capture
-//! (`screen_records`) and agent recordings (`agent`): every key press and
-//! mouse click reaches a caller-supplied sink as an [`InputEvent`] whose `t` is
-//! seconds since [`InputCapture::start`].
-//!
-//! macOS listens on a `CGEventTap` on its own run-loop thread, Windows on
-//! `WH_KEYBOARD_LL` / `WH_MOUSE_LL` hooks on their own message-loop thread and
-//! Linux X11 on an `XRecord` context streamed over its own connection.
-//! Wayland has no hook (like the CLI's `x11grab` capture), so a refused or
-//! unavailable hook only means no events.
-
 use crate::env::mock_mode;
 use serde::Serialize;
 use std::io::Write;
 
+/// One captured input event; `t` is seconds since [`InputCapture::start`].
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum InputEvent {
@@ -69,6 +59,11 @@ pub(crate) fn write_event<W: Write>(writer: &mut W, event: &InputEvent) -> std::
     writer.write_all(b"\n")
 }
 
+/// Keyboard and mouse capture shared by workflow capture (`screen_records`)
+/// and agent recordings (`agent`): every key press and click reaches the
+/// caller's sink. macOS hooks a `CGEventTap` on its own run-loop thread,
+/// Windows low-level hooks on a message-loop thread, Linux X11 an `XRecord`
+/// context; Wayland has no hook, so a refused hook only means no events.
 pub(crate) struct InputCapture {
     #[cfg(target_os = "macos")]
     tap: Option<imp::Tap>,
@@ -144,9 +139,11 @@ mod imp {
     use std::thread::JoinHandle;
     use std::time::Instant;
 
-    // Listen-only tap: key down, flags (modifiers), left/right mouse down.
-    // kCGEventLeftMouseDown = 1, RightMouseDown = 3, KeyDown = 10, FlagsChanged = 12.
-    const EVENT_TAP_MASK: u64 = (1 << 1) | (1 << 3) | (1 << 10) | (1 << 12);
+    /// Listen-only tap: key down, modifiers, and both mouse buttons.
+    const EVENT_TAP_MASK: u64 = (1u64 << K_CG_EVENT_LEFT_MOUSE_DOWN)
+        | (1u64 << K_CG_EVENT_RIGHT_MOUSE_DOWN)
+        | (1u64 << K_CG_EVENT_KEY_DOWN)
+        | (1u64 << K_CG_EVENT_FLAGS_CHANGED);
     const K_CG_SESSION_EVENT_TAP: i32 = 1;
     const K_CG_TAIL_APPEND_EVENT_TAP: i32 = 0;
     const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: i32 = 1;
@@ -155,11 +152,10 @@ mod imp {
     const K_CG_EVENT_KEY_DOWN: u32 = 10;
     const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
 
-    // CGEventFlagsType bit masks.
-    const FLAG_SHIFT: u64 = 1 << 17;
-    const FLAG_CONTROL: u64 = 1 << 18;
-    const FLAG_ALTERNATE: u64 = 1 << 19;
-    const FLAG_COMMAND: u64 = 1 << 20;
+    const K_CG_EVENT_FLAG_MASK_SHIFT: u64 = 1 << 17;
+    const K_CG_EVENT_FLAG_MASK_CONTROL: u64 = 1 << 18;
+    const K_CG_EVENT_FLAG_MASK_ALTERNATE: u64 = 1 << 19;
+    const K_CG_EVENT_FLAG_MASK_COMMAND: u64 = 1 << 20;
 
     type CGEventTapCallBack =
         unsafe extern "C" fn(*mut c_void, u32, *mut c_void, *mut c_void) -> *mut c_void;
@@ -213,16 +209,16 @@ mod imp {
     /// CG event flags to the shared [`keys_string`] mask bits.
     fn capture_mask(flags: u64) -> u64 {
         let mut mask = 0;
-        if flags & FLAG_CONTROL != 0 {
+        if flags & K_CG_EVENT_FLAG_MASK_CONTROL != 0 {
             mask |= MASK_CTRL;
         }
-        if flags & FLAG_ALTERNATE != 0 {
+        if flags & K_CG_EVENT_FLAG_MASK_ALTERNATE != 0 {
             mask |= MASK_ALT;
         }
-        if flags & FLAG_COMMAND != 0 {
+        if flags & K_CG_EVENT_FLAG_MASK_COMMAND != 0 {
             mask |= MASK_CMD;
         }
-        if flags & FLAG_SHIFT != 0 {
+        if flags & K_CG_EVENT_FLAG_MASK_SHIFT != 0 {
             mask |= MASK_SHIFT;
         }
         mask
@@ -281,6 +277,13 @@ mod imp {
         }
     }
 
+    /// True when the thread may still enter `CFRunLoopRun`: `Tap::stop` may
+    /// have read the run-loop slot before this thread stored it, leaving its
+    /// `CFRunLoopStop` a no-op, so the loop would run forever.
+    fn should_run_run_loop(stop: &AtomicBool) -> bool {
+        !stop.load(Ordering::SeqCst)
+    }
+
     /// SAFETY: `context` must stay valid until this thread exits; `Tap::stop`
     /// joins the thread before freeing it.
     unsafe fn tap_loop(context: *mut TapContext, stop: Arc<AtomicBool>, run_loop: Arc<AtomicU64>) {
@@ -307,10 +310,7 @@ mod imp {
         let run_loop_ref = unsafe { CFRunLoopGetCurrent() };
         unsafe { CFRunLoopAddSource(run_loop_ref, source, kCFRunLoopCommonModes) };
         run_loop.store(run_loop_ref as u64, Ordering::SeqCst);
-        // Re-check the stop flag: `Tap::stop` may have read the run loop slot
-        // before this thread stored it; its CFRunLoopStop call is a no-op
-        // then, so exiting here prevents a runaway loop.
-        if !stop.load(Ordering::SeqCst) {
+        if should_run_run_loop(&stop) {
             unsafe { CFRunLoopRun() };
         }
         unsafe {
@@ -469,13 +469,16 @@ mod imp {
         }
     }
 
-    fn loop_input(context: Box<HookContext>, thread_id: mpsc::Sender<u32>) {
-        // The message queue for this thread must exist before the thread id is
-        // announced through the channel, or a WM_QUIT posted right after
-        // `start` would fail with no queue to receive it.
+    /// Creates this thread's message queue before returning its id, so a
+    /// WM_QUIT posted right after `start` has a queue to receive it.
+    fn thread_id_after_message_queue() -> u32 {
         let mut probe: MSG = unsafe { std::mem::zeroed() };
         let _ = unsafe { PeekMessageW(&mut probe, ptr::null_mut(), 0, 0, PM_NOREMOVE) };
-        let _ = thread_id.send(unsafe { GetCurrentThreadId() });
+        unsafe { GetCurrentThreadId() }
+    }
+
+    fn loop_input(context: Box<HookContext>, thread_id: mpsc::Sender<u32>) {
+        let _ = thread_id.send(thread_id_after_message_queue());
         let address = &*context as *const HookContext as usize;
         if CURRENT
             .compare_exchange(0, address, Ordering::SeqCst, Ordering::SeqCst)
@@ -655,6 +658,10 @@ mod imp {
             })
         }
 
+        /// Disables the XRecord context and closes the data connection, which
+        /// also frees the context: a disconnecting client's X resources go
+        /// away, so the stream ends even if the disable did not reach the
+        /// server.
         pub(super) fn stop(self) {
             let Capture {
                 thread,
@@ -664,9 +671,6 @@ mod imp {
             if let Ok(cookie) = control.record_disable_context(context) {
                 let _ = cookie.check();
             }
-            // Closing also frees the context: X resources of a disconnecting
-            // client go away, so the stream ends even if the disable above
-            // did not reach the server.
             drop(control);
             let _ = thread.join();
         }
