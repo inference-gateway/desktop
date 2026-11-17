@@ -45,12 +45,15 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
+- [Content projects](docs/content.md) - the app's own timeline: media pool, voice and captions, cards, undo and export.
+- [Voice samples](docs/voice.md) - record your voice and pick the speech model that clones it.
 - [Models](docs/models.md) - the Hugging Face download library on this computer.
 - [Export / Import](docs/export-import.md) - what moves to a new machine, and what stays.
 - [examples/computer-use](examples/computer-use) - three agents on Ubuntu desktops in a local Kubernetes cluster.
 - [examples/filmcraft](examples/filmcraft) - an editor agent with FilmCraft on every computer, from a folder shared with the local cluster.
 - [examples/drone-footage](examples/drone-footage) - an agent edits raw drone footage end to end: stabilisation, a color grade, ElevenLabs sound and one export per platform shape.
 - [examples/feature-video](examples/feature-video) - a `feature-editor` agent turns a screen recording into a tutorial: it cuts, speeds up and zooms, adds captions and cards and speaks the narration in your voice, with a draft to approve before the final export.
+- [examples/voiceover](examples/voiceover) - a screen recording becomes a voiced, captioned MP4 on the app's own timeline, token-free in mock mode.
 
 ## Development
 

@@ -1,0 +1,144 @@
+# Mock turns for examples/voiceover: the prompts the walkthrough's buttons and
+# text boxes send, answered token-free. Modelled on the title-card, captions and
+# avatar-clip scenarios of e2e/scenarios.yaml - a scripted agent whose turns
+# write real files into the working directory, so the app's project watch
+# reloads the timeline as each turn lands. Voice clips stay drafts (mock mode
+# never synthesizes) and the title card stays a slot (mock mode never renders a
+# card). A prompt matching no scenario gets the fallback.
+#
+# Try it from the checkout root:
+#   DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=examples/voiceover/scenarios.yaml task dev
+
+models:
+  - id: openai/gpt-4o
+    object: model
+    owned_by: openai
+    served_by: openai
+    modalities: { input: [text, image], output: [text] }
+
+fallback:
+  content: "No scripted turn for that prompt - this example only answers its walkthrough steps. Run the app without DESKTOP_MOCK for a real session."
+
+scenarios:
+  # "Add voice" - the typed prompt, or the toolbar sparkles / the clip's Add
+  # voice button once the timeline exists. The skill's demo.timeline.json for a
+  # recording of about 42 seconds: the recording on the video track, three
+  # draft voice clips, the lane pinned to my-voice.wav, the recording's own
+  # audio dropped.
+  - name: add-voice
+    match: '(?i)add my cloned voice'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "demo.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 42.3,
+                  "source_audio": "mute",
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 42.3 }] },
+                    { "id": "voice", "kind": "audio", "voice_sample": "my-voice.wav", "clips": [
+                      { "id": "s1", "start": 0, "end": 12.3, "text": "First we record a short walkthrough of the feature.", "status": "draft" },
+                      { "id": "s2", "start": 12.3, "end": 24.6, "text": "Then we pick the voice sample and the speech model.", "status": "draft" },
+                      { "id": "s3", "start": 24.6, "end": 42.3, "text": "Last we layer captions and a title card over it.", "status": "draft" }
+                    ] }
+                  ]
+                }
+      - content: "Placed demo.mov on the video track and three draft voice clips in demo.timeline.json, dropped the recording's own audio and pinned the voice lane to my-voice.wav. Mock mode does not synthesize, so the clips stay amber drafts; edit a line in the inspector and press Redo drafts."
+
+  # "Redo drafts" - the toolbar sparkles after clips exist. Reads the timeline
+  # for real (so it sees whatever you edited) and changes nothing: mock mode
+  # never synthesizes, and a rewrite here would clobber your edit.
+  - name: redo-drafts
+    match: '(?i)redo the draft clips'
+    turns:
+      - tool_calls:
+          - { name: Read, args: { file_path: "demo.timeline.json" } }
+      - content: "Read demo.timeline.json, with your edited line kept verbatim. Mock mode does not synthesize, so the drafts stay drafts; a real speech model would re-speak only the drafts, one TextToSpeech call each in the voice their clip names, and mark them done."
+
+  # "Add captions" - the toolbar's T button. Rewrites the timeline with a
+  # captions track over the same voice clips, in the walkthrough's edited
+  # wording for s2.
+  - name: captions
+    match: '(?i)add captions'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "demo.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 42.3,
+                  "source_audio": "mute",
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 42.3 }] },
+                    { "id": "voice", "kind": "audio", "voice_sample": "my-voice.wav", "clips": [
+                      { "id": "s1", "start": 0, "end": 12.3, "text": "First we record a short walkthrough of the feature.", "status": "draft" },
+                      { "id": "s2", "start": 12.3, "end": 24.6, "text": "Then we press Add captions for every spoken line.", "status": "draft" },
+                      { "id": "s3", "start": 24.6, "end": 42.3, "text": "Last we layer captions and a title card over it.", "status": "draft" }
+                    ] },
+                    { "id": "captions", "kind": "captions", "style": "classic", "clips": [
+                      { "id": "c1", "start": 0, "end": 12.3, "text": "First we record a short walkthrough of the feature." },
+                      { "id": "c2", "start": 12.3, "end": 24.6, "text": "Then we press Add captions for every spoken line." },
+                      { "id": "c3", "start": 24.6, "end": 42.3, "text": "Last we layer captions and a title card over it." }
+                    ] }
+                  ]
+                }
+      - content: "Added the captions track to demo.timeline.json, one clip under each spoken line, in the classic style drawn bottom-centre."
+
+  # "Add a title card" - typed. Writes the HyperFrames composition and places
+  # the overlay slot over the tracks the walkthrough has by then; only a real
+  # run renders media/o1-title.mov.
+  - name: title-card
+    match: '(?i)add a title card'
+    turns:
+      - tool_calls:
+          - name: Write
+            args:
+              file_path: "cards/o1-title.html"
+              content: |
+                <!doctype html>
+                <html>
+                  <body>
+                    <div
+                      id="stage"
+                      data-composition-id="o1-title"
+                      data-start="0"
+                      data-duration="4"
+                      data-fps="30"
+                      data-width="1920"
+                      data-height="1080"
+                      data-no-timeline
+                      style="position: relative; width: 1920px; height: 1080px"
+                    >
+                      <h1 style="position: absolute; left: 120px; bottom: 160px; margin: 0; font: 700 110px/1 sans-serif; color: #fff">Demo walkthrough</h1>
+                    </div>
+                  </body>
+                </html>
+          - name: Write
+            args:
+              file_path: "demo.timeline.json"
+              content: |
+                {
+                  "version": 1,
+                  "duration": 42.3,
+                  "source_audio": "mute",
+                  "tracks": [
+                    { "id": "video", "kind": "video", "clips": [{ "id": "v1", "src": "media/demo.mov", "start": 0, "end": 42.3 }] },
+                    { "id": "voice", "kind": "audio", "voice_sample": "my-voice.wav", "clips": [
+                      { "id": "s1", "start": 0, "end": 12.3, "text": "First we record a short walkthrough of the feature.", "status": "draft" },
+                      { "id": "s2", "start": 12.3, "end": 24.6, "text": "Then we press Add captions for every spoken line.", "status": "draft" },
+                      { "id": "s3", "start": 24.6, "end": 42.3, "text": "Last we layer captions and a title card over it.", "status": "draft" }
+                    ] },
+                    { "id": "captions", "kind": "captions", "style": "classic", "clips": [
+                      { "id": "c1", "start": 0, "end": 12.3, "text": "First we record a short walkthrough of the feature." },
+                      { "id": "c2", "start": 12.3, "end": 24.6, "text": "Then we press Add captions for every spoken line." },
+                      { "id": "c3", "start": 24.6, "end": 42.3, "text": "Last we layer captions and a title card over it." }
+                    ] },
+                    { "id": "cards", "kind": "overlay", "clips": [{ "id": "o1", "src": "media/o1-title.mov", "html": "cards/o1-title.html", "start": 0, "end": 4 }] }
+                  ]
+                }
+      - content: "Written the card composition to cards/o1-title.html and placed the overlay clip o1 over 0-4 in demo.timeline.json. Mock mode cannot render media/o1-title.mov, so the card shows as missing until a real run renders it."
