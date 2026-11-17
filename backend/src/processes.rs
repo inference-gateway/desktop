@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 const GATEWAY_READY_TIMEOUT: Duration = Duration::from_secs(15);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
+#[cfg(unix)]
 const SIGKILL_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
