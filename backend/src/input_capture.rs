@@ -2,7 +2,7 @@ use crate::env::mock_mode;
 use serde::Serialize;
 use std::io::Write;
 
-/// One captured input event; `t` is seconds since [`InputCapture::start`].
+/// One captured input event. `t` is seconds since [`InputCapture::start`].
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum InputEvent {
@@ -63,7 +63,7 @@ pub(crate) fn write_event<W: Write>(writer: &mut W, event: &InputEvent) -> std::
 /// and agent recordings (`agent`): every key press and click reaches the
 /// caller's sink. macOS hooks a `CGEventTap` on its own run-loop thread,
 /// Windows low-level hooks on a message-loop thread, Linux X11 an `XRecord`
-/// context; Wayland has no hook, so a refused hook only means no events.
+/// context. Wayland has no hook, so a refused hook only means no events.
 pub(crate) struct InputCapture {
     #[cfg(target_os = "macos")]
     tap: Option<imp::Tap>,
@@ -224,7 +224,7 @@ mod imp {
         mask
     }
 
-    /// SAFETY: `context` is a `Box::into_raw` TapContext owned by the tap; the
+    /// SAFETY: `context` is a `Box::into_raw` TapContext owned by the tap. The
     /// tap callback dereferences it only on the tap thread, and `Tap::stop`
     /// joins that thread before reclaiming the box.
     pub(super) struct Tap {
@@ -284,7 +284,7 @@ mod imp {
         !stop.load(Ordering::SeqCst)
     }
 
-    /// SAFETY: `context` must stay valid until this thread exits; `Tap::stop`
+    /// SAFETY: `context` must stay valid until this thread exits. `Tap::stop`
     /// joins the thread before freeing it.
     unsafe fn tap_loop(context: *mut TapContext, stop: Arc<AtomicBool>, run_loop: Arc<AtomicU64>) {
         let tap = unsafe {
@@ -832,7 +832,7 @@ mod imp {
 
     /// Characters a keysym prints: Latin-1 keysyms map 1:1 (letters, digits,
     /// space) and the few control keys with a printed character to their
-    /// control character; everything else (arrows, function keys) prints none.
+    /// control character. Everything else (arrows, function keys) prints none.
     fn keysym_text(keysym: u32) -> String {
         match keysym {
             0x20..=0xff => String::from(keysym as u8 as char),

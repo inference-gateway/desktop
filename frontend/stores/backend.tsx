@@ -28,7 +28,7 @@ const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 1500;
 
 /** Status text for an install progress event, shared by the full init flow and
- * per-component installs; "Ready" and "Error" carry extra side-effects there. */
+ * per-component installs. "Ready" and "Error" carry extra side-effects there. */
 function progressStatus(event: ProgressEvent, what = "infer"): string {
   switch (event.kind) {
     case "Checking":

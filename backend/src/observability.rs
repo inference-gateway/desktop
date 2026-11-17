@@ -19,7 +19,7 @@ pub(crate) struct StoredSpan {
 }
 
 /// Stored metric data point extracted from an OTLP export. `value` is the
-/// point value for sums/gauges and the bucket sum for histograms; `count` is
+/// point value for sums/gauges and the bucket sum for histograms. `count` is
 /// 1 for sums/gauges and the observation count for histograms. The CLI
 /// exports delta temporality, so totals are sums over stored points.
 #[derive(Clone, serde::Serialize)]
@@ -260,7 +260,7 @@ pub(crate) enum PbValue<'a> {
     Bytes(&'a [u8]),
 }
 
-/// Read one varint: 7 payload bits per byte, least-significant group first;
+/// Read one varint: 7 payload bits per byte, least-significant group first -
 /// a set high bit means another byte follows.
 pub(crate) fn pb_varint(buf: &[u8], pos: &mut usize) -> Option<u64> {
     let mut val = 0u64;
@@ -435,7 +435,7 @@ pub(crate) fn extract_spans_proto(body: &[u8]) -> Vec<StoredSpan> {
 }
 
 /// Which OTLP data-point message a metric carries. Number points come from
-/// gauges and sums; histogram points share field numbers for time but not
+/// gauges and sums. Histogram points share field numbers for time but not
 /// for value, count, or attributes.
 #[derive(Clone, Copy)]
 pub(crate) enum PointKind {
@@ -539,10 +539,10 @@ pub(crate) fn extract_metrics_proto(body: &[u8]) -> Vec<StoredMetric> {
 }
 
 /// Handle a single OTLP HTTP request on the collector's TCP socket. The
-/// response carries `Connection: close`; Go's http client replays the export
+/// response carries `Connection: close`. Go's http client replays the export
 /// on a fresh connection, so one-request-per-connection is safe. Traces and
 /// metrics share the outer protobuf shape, so the URL path picks the
-/// parser; any other path is acked but never parsed.
+/// parser. Any other path is acked but never parsed.
 pub(crate) fn handle_otlp_request(
     stream: &mut std::net::TcpStream,
     spans_store: &Mutex<VecDeque<StoredSpan>>,

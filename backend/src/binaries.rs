@@ -25,7 +25,7 @@ fn tools_dir() -> PathBuf {
     bin_dir().join("tools")
 }
 
-/// Installed file name for a binary; Windows needs the `.exe` to run.
+/// Installed file name for a binary. Windows needs the `.exe` to run.
 fn bin_file_name(name: &str) -> String {
     if cfg!(windows) {
         format!("{name}.exe")
@@ -92,7 +92,7 @@ fn status(names: &[&str]) -> Result<Vec<(String, BinaryState)>, String> {
 
 /// Parse the CLI's `<name> <state> <path> [(detail)]` lines. A missing binary
 /// whose detail says the release has no prebuilt is `Unavailable`.
-/// ponytail: parses the text table; switch if the CLI grows `--format json`.
+/// ponytail: parses the text table. Switch if the CLI grows `--format json`.
 fn parse_status(stdout: &str) -> Vec<(String, BinaryState)> {
     stdout
         .lines()

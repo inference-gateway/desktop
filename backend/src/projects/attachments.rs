@@ -92,8 +92,8 @@ fn mime_for_ext(ext: &str) -> Option<&'static str> {
 
 /// Which project subdirectory an uploaded file belongs in: a content project
 /// keeps media-typed files (video, audio, image) in its media pool so a
-/// timeline can reference them as `media/<file>` without a manual move;
-/// documents and every code project stay at the project root, as do files with
+/// timeline can reference them as `media/<file>` without a manual move.
+/// Documents and every code project stay at the project root, as do files with
 /// an unknown extension. Pure so the routing is testable without HOME.
 fn media_rel_dir(content: bool, fname: &str) -> Option<&'static str> {
     let ext = Path::new(fname).extension()?.to_str()?.to_ascii_lowercase();
@@ -104,7 +104,7 @@ fn media_rel_dir(content: bool, fname: &str) -> Option<&'static str> {
 }
 
 /// Check a decoded upload against the configured max size and extension/MIME
-/// allowlist; errors name the violated limit. Split from `save_project_file`
+/// allowlist. Errors name the violated limit. Split from `save_project_file`
 /// so the guards are testable.
 fn validate_upload(
     bytes_len: usize,
@@ -172,7 +172,7 @@ fn dispatch_attachment(
 }
 
 /// Validate and store one attachment. With a project it goes through the
-/// projects backend (media pool or root per `media_rel_dir`); without one it
+/// projects backend (media pool or root per `media_rel_dir`). Without one it
 /// is written to ~/.infer/tmp/uploads under its own name.
 fn finish_attachment(
     project: Option<&str>,
@@ -193,7 +193,7 @@ fn finish_attachment(
     }
 }
 
-/// Copy an attached file into ~/.infer/tmp/uploads under its own name; a name
+/// Copy an attached file into ~/.infer/tmp/uploads under its own name. A name
 /// already present gets a -2 style suffix, so re-attaching never overwrites
 /// the file an earlier message points at.
 fn write_to_uploads(fname: String, bytes: &[u8]) -> Result<String, String> {
@@ -263,10 +263,9 @@ pub(crate) async fn attach_pick(
 
 /// A file dropped or pasted onto the composer: raw bytes in the request body,
 /// with the project and file name in hex-encoded headers (header values are
-/// ASCII only). ponytail: the whole file streams through the webview because
-/// with Tauri's native drag-drop off a drop yields a File object, not a path;
-/// this is the non-base64 route, and the + button's native picker
-/// (attach_pick) avoids the round trip entirely.
+/// ASCII only). ponytail: the whole file streams through the webview, since a
+/// drop yields a File object rather than a path - the + button's native picker
+/// (attach_pick) avoids the round trip.
 #[tauri::command]
 pub(crate) fn attach_bytes(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let header = |key: &str| -> Result<String, String> {

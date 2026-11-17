@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
-/// Bumped whenever the export shape changes; import rejects other versions.
+/// Bumped whenever the export shape changes. Import rejects other versions.
 const EXPORT_VERSION: u32 = 1;
 
 /// Default file name of an export (the extension follows the chosen format).
@@ -33,7 +33,7 @@ pub(crate) struct DesktopData {
 
 /// The complete portable desktop state. One shape, three serializations
 /// (JSON/YAML/TOML, see `serialize_export` / `parse_export`). Machine paths
-/// are `~/`-relative; git-repo projects export as their GitHub `owner/name`
+/// are `~/`-relative. Git-repo projects export as their GitHub `owner/name`
 /// and re-clone on import, and agents, schedules and skills round-trip
 /// through their files or the `infer` CLI.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -99,7 +99,7 @@ impl ExportFormat {
 
 // --- Tilde-relative machine paths -------------------------------------------
 
-/// Absolute path under `home` becomes `~/...`; anything else is untouched.
+/// Absolute path under `home` becomes `~/...`. Anything else is untouched.
 fn tilde_path(raw: &str, home: &Path) -> String {
     Path::new(raw)
         .strip_prefix(home)
@@ -208,7 +208,7 @@ fn strip_git_project_remotes(
 }
 
 /// The portable state rooted at `home`. `agents` comes from the `infer` CLI
-/// by the caller (it needs an async CLI round-trip); tests pass a fixed list.
+/// by the caller (it needs an async CLI round-trip). Tests pass a fixed list.
 fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
     let mut config = crate::config::read_config_in(home);
     for path in [
@@ -238,8 +238,8 @@ fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
 
 // --- Serialization ------------------------------------------------------------
 
-/// `YAML first` (JSON is valid YAML so it parses there too), `TOML` second;
-/// anything that does not deserialize as `DesktopExport` is rejected with a
+/// `YAML first` (JSON is valid YAML so it parses there too), `TOML` second.
+/// Anything that does not deserialize as `DesktopExport` is rejected with a
 /// clear error, and a wrong `version` is rejected afterwards.
 pub(crate) fn parse_export(text: &str) -> Result<DesktopExport, String> {
     let export = serde_norway::from_str::<DesktopExport>(text).or_else(|yaml_err| {
@@ -395,7 +395,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
 }
 
 /// Re-create A2A agents missing on this machine via the `infer` CLI
-/// (desktop and CLI stay in sync; the CLI's agents.yaml is never parsed).
+/// (desktop and CLI stay in sync. The CLI's agents.yaml is never parsed).
 async fn apply_export_agents(agents: &[A2aAgent], warnings: &mut Vec<String>) -> usize {
     let existing = match list_a2a_agents().await {
         Ok(v) => v,
@@ -426,7 +426,7 @@ async fn apply_export_agents(agents: &[A2aAgent], warnings: &mut Vec<String>) ->
     added
 }
 
-/// Reinstall skills missing on this machine; failures are warnings, not fatal.
+/// Reinstall skills missing on this machine. Failures are warnings, not fatal.
 async fn apply_export_skills(skills: &[String], warnings: &mut Vec<String>) -> usize {
     let installed = crate::skills::installed_skills_in(&home_dir());
     let mut n = 0;
@@ -539,13 +539,13 @@ async fn apply_export(export: &DesktopExport) -> Result<ImportReport, String> {
 
 // --- GitHub private-repo target (via `gh`) ------------------------------------
 
-/// `gh` with an override token; without one the CLI's stored auth is used.
+/// `gh` with an override token. Without one the CLI's stored auth is used.
 fn gh_call(args: &[&str], token: Option<&str>) -> Result<String, String> {
     let token = token.map(str::trim).filter(|t| !t.is_empty());
     crate::scheduler::gh_output_as(args, token)
 }
 
-/// Ensure the repo is private (a missing repo is created private; a public
+/// Ensure the repo is private (a missing repo is created private. A public
 /// repo is refused - the export must never land anywhere readable), then PUT
 /// the file at the repo root (Contents API, overwrite via the existing sha).
 fn github_push(repo: &str, filename: &str, text: &str, token: Option<&str>) -> Result<(), String> {
@@ -621,7 +621,7 @@ async fn collect_export(home: &Path) -> (DesktopExport, Vec<String>) {
 }
 
 /// Native dialogs via tauri-plugin-dialog's Rust-side blocking API, run off
-/// the main thread; no capability entries needed (the JS side never calls it).
+/// the main thread. No capability entries needed (the JS side never calls it).
 async fn native_save_path(
     app: tauri::AppHandle,
     format: ExportFormat,
@@ -713,7 +713,7 @@ pub(crate) async fn export_desktop_github(
     })
 }
 
-/// Import from a local file; without `path`, the native open dialog picks it.
+/// Import from a local file. Without `path`, the native open dialog picks it.
 #[tauri::command]
 pub(crate) async fn import_desktop_file(
     app: tauri::AppHandle,

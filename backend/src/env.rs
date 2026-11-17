@@ -95,7 +95,7 @@ pub(crate) fn mock_mode() -> bool {
 
 /// The Go OTLP/HTTP exporters in the CLI and gateway only speak
 /// http/protobuf (the Go SDK never implemented http/json), so the collector
-/// must accept protobuf; no protocol pin is set here.
+/// must accept protobuf. No protocol pin is set here.
 pub(crate) fn collector_env() -> Vec<(String, String)> {
     vec![(
         "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
@@ -208,7 +208,7 @@ pub(crate) fn resolve_agent_cwd(current: Option<PathBuf>, home: PathBuf) -> Path
 /// app from backend/ regardless of invocation, but agent sessions should work
 /// in the project root - one level up. Finder-launched `.app` bundles inherit
 /// cwd `/` (read-only), so infer's cwd-relative `.infer` storage would land at
-/// `/.infer` and panic; fall back to ~/.infer/workspace there.
+/// `/.infer` and panic. Fall back to ~/.infer/workspace there.
 pub(crate) fn agent_cwd() -> PathBuf {
     let dir = resolve_agent_cwd(std::env::current_dir().ok(), home_dir());
     let _ = std::fs::create_dir_all(&dir);

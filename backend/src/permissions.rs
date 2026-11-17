@@ -139,7 +139,7 @@ mod macos {
 
 /// Screen recording needs Screen Recording (frames) and Accessibility (key
 /// presses). Request whichever is missing via the existing helpers and name
-/// it in the error; grant buttons live in Settings > General (Computer Use).
+/// it in the error. Grant buttons live in Settings > General (Computer Use).
 #[cfg(target_os = "macos")]
 pub(crate) fn ensure_recording_permissions() -> Result<(), String> {
     let (accessibility, screen_recording) = macos::permission_status();

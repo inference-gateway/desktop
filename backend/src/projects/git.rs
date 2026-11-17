@@ -94,7 +94,7 @@ fn cloned_repo(dest: &Path) -> GitRepo {
 
 /// Whether the checkout at `dest` is `owner/name`, by looking for its remote in
 /// `.git/config`. The `/` or `:` boundary keeps "acme/api" from matching
-/// "acme/api-client" or "notacme/api"; the comparison is case-insensitive
+/// "acme/api-client" or "notacme/api". The comparison is case-insensitive
 /// because GitHub owner and repo names are. A `.git` file (worktree, submodule)
 /// has no config to read and reads as "not this repo", which fails safe.
 fn checkout_is(dest: &Path, repo: &str) -> bool {
@@ -110,7 +110,7 @@ fn checkout_is(dest: &Path, repo: &str) -> bool {
 }
 
 /// The `owner/name` of a URL that points at github.com (https or ssh forms),
-/// validated so callers can trust it as a clone target; None for any other host.
+/// validated so callers can trust it as a clone target. None for any other host.
 fn parse_github_owner_name(url: &str) -> Option<String> {
     let url = url.trim();
     let url = url.strip_suffix(".git").unwrap_or(url);
@@ -165,7 +165,7 @@ pub(super) fn ensure_clone(
 }
 
 /// Clone `owner/name` under `root` (idempotent via `ensure_clone`) and return the
-/// import entry. Blocking `gh repo clone` (handles auth and protocol); on failure
+/// import entry. Blocking `gh repo clone` (handles auth and protocol). On failure
 /// its stderr is the error. Shared by the clone command and the desktop import.
 pub(crate) fn clone_repo_under(root: &Path, repo: &str) -> Result<GitRepo, String> {
     let dest = clone_dest(root, repo);
@@ -210,7 +210,7 @@ pub(crate) async fn scan_git_repos(root: String) -> Result<Vec<GitRepo>, String>
 /// Which projects are git checkouts, which of those have uncommitted
 /// changes (staged, modified or untracked non-ignored files - anything
 /// `git status --porcelain` reports), their branch heads and their GitHub
-/// remotes (`owner/name`, for the "open on GitHub" affordances); powers the
+/// remotes (`owner/name`, for the "open on GitHub" affordances). Powers the
 /// git indicator in the UI. Derived live from the filesystem, nothing stored.
 #[derive(Default, serde::Serialize)]
 pub(crate) struct GitProjectStatus {
@@ -291,14 +291,14 @@ fn has_uncommitted_changes(dir: &Path) -> bool {
     dirty
 }
 
-/// One byte of stdout means `git status --porcelain` found a change; zero
+/// One byte of stdout means `git status --porcelain` found a change. Zero
 /// bytes means the worktree is clean.
 fn stdout_has_change(stdout: Option<std::process::ChildStdout>) -> bool {
     use std::io::Read;
     stdout.is_some_and(|mut out| out.read(&mut [0u8; 1]).is_ok_and(|n| n > 0))
 }
 
-/// Whether the checkout has any remote to pull from; content repos made by
+/// Whether the checkout has any remote to pull from. Content repos made by
 /// `ensure_content_repo` are local-only.
 fn has_remote(dir: &Path) -> bool {
     git_output(dir, &["remote"]).is_ok_and(|r| !r.is_empty())
@@ -367,7 +367,7 @@ fn sweep_git_projects(dirs: &BTreeMap<String, PathBuf>) -> (GitProjectStatus, Ve
     (status, git_dirs)
 }
 
-/// ponytail: every HEAD change re-sweeps all projects; emit the project name
+/// ponytail: every HEAD change re-sweeps all projects. Emit the project name
 /// and add a single-project command if this is ever slow with many repos.
 #[tauri::command]
 pub(crate) async fn git_project_status(
@@ -422,7 +422,7 @@ fn origin_default_branch(dir: &Path) -> String {
 }
 
 /// Check out the repository's default branch and fast-forward pull. Refuses
-/// over uncommitted changes; `--ff-only` guarantees the tree is never left
+/// over uncommitted changes. `--ff-only` guarantees the tree is never left
 /// worse than before. Returns the branch now checked out.
 #[tauri::command]
 pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> {
@@ -898,7 +898,7 @@ mod tests {
     }
 
     /// The status sweep reports GitHub remotes only for checkouts whose remote
-    /// points at github.com (https or ssh form); non-git projects and other
+    /// points at github.com (https or ssh form). Non-git projects and other
     /// hosts are absent from the map.
     #[test]
     fn sweep_collects_github_remotes_only_for_github_checkouts() {

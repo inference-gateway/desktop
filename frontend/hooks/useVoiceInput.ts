@@ -112,7 +112,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
   }, [setStatus]);
 
   /** Composes dictated text into the composer over what was there before
-   * dictation started; null reverts to that base text (drops provisional text). */
+   * dictation started. Null reverts to that base text (drops provisional text). */
   const setComposer = useCallback(
     (text: string | null) => {
       const el = textareaRef.current;
@@ -178,7 +178,7 @@ export function useVoiceInput({ textareaRef, running, setStatus, setError }: Opt
   }, [setStatus, setError, textareaRef, setComposer]);
 
   /** Periodically re-transcribe the whole buffer so words appear while talking.
-   * ponytail: O(n²) in recording length; fine under the 30 s cap. If the cap is
+   * ponytail: O(n²) in recording length. Fine under the 30 s cap. If the cap is
    * ever raised, keep a committed prefix and only re-run the last ~10 s window. */
   const tickInterim = useCallback(() => {
     if (!recordingRef.current || interimBusy.current) return;

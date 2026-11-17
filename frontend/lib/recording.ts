@@ -24,7 +24,7 @@ export function recordingFrame(area: RecordedArea, screen: OverlayScreen, border
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
-/** `00:12.4 click left (640, 380)` / `00:15.1 key cmd+s`; null for a bare
+/** `00:12.4 click left (640, 380)` / `00:15.1 key cmd+s`. Null for a bare
  * modifier release, which carries no keys. */
 export function formatInput(e: InputEvent): string | null {
   const tenths = Math.round(e.t * 10);

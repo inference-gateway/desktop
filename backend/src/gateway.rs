@@ -178,7 +178,7 @@ pub(crate) fn ensure_gateway_binary(
 }
 
 /// Env vars that switch on /v1/audio/speech in the gateway so the CLI's
-/// TextToSpeech tool (engine "gateway") can reach it; the gateway defaults
+/// TextToSpeech tool (engine "gateway") can reach it. The gateway defaults
 /// audio off. Read at spawn, so toggling TTS needs a gateway restart.
 pub(crate) fn audio_env(
     tts_enabled: bool,
@@ -198,7 +198,7 @@ pub(crate) fn audio_env(
 }
 
 /// Env var that serves the gateway's Videos API for the CLI's TextToVideo
-/// tool; the gateway defaults it off. Read at spawn, like `audio_env`.
+/// tool. The gateway defaults it off. Read at spawn, like `audio_env`.
 fn video_env(ttv_enabled: bool) -> Option<(&'static str, &'static str)> {
     ttv_enabled.then_some(("VIDEOS_ENABLED", "true"))
 }

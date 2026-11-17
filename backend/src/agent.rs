@@ -448,7 +448,7 @@ pub(crate) async fn send_approval(
     }))
 }
 
-/// Pushes a follow-up prompt into a running thread; the worker queues it and
+/// Pushes a follow-up prompt into a running thread. The worker queues it and
 /// drains it as the next turn (used while the run waits on tasks).
 #[tauri::command]
 pub(crate) async fn send_user_message(

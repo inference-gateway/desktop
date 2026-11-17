@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// second via `screencapture`, capped at MAX_FRAMES) plus `events.jsonl` with
 /// the timestamped keys and clicks from `input_capture`. Lives under
 /// `/tmp/infer/captures` because the CLI sandbox blocks every path under
-/// `.infer/`; a forgotten recording cannot fill the disk.
+/// `.infer/`. A forgotten recording cannot fill the disk.
 pub(crate) struct RecordingHandle {
     dir: PathBuf,
     stop: Arc<AtomicBool>,
@@ -134,7 +134,7 @@ fn mock_recording(keep: u32) -> Result<RecordingHandle, String> {
     })
 }
 
-/// A tiny valid 1x1 grayscale JPEG; mock mode captures no real frames.
+/// A tiny valid 1x1 grayscale JPEG. Mock mode captures no real frames.
 pub(crate) const PLACEHOLDER_JPEG: &[u8] = &[
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
     0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,

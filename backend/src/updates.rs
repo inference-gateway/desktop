@@ -11,7 +11,7 @@ const DESKTOP_REPO: &str = "inference-gateway/desktop";
 const GITHUB_API_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// One component's update state. `versions` keeps the repo's raw release
-/// tags, newest first and capped at 5; unlike `latest` they keep their `v`
+/// tags, newest first and capped at 5. Unlike `latest` they keep their `v`
 /// prefix, so download URLs can use them as `releases/download/<tag>/<asset>`.
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct UpdateInfo {
@@ -186,7 +186,7 @@ pub(crate) fn error_chain(e: &dyn std::error::Error) -> String {
 }
 
 /// Updater for the app itself. Checks use the same 10s ceiling as the
-/// CLI/gateway version lookups; the install path gets 300s because the
+/// CLI/gateway version lookups. The install path gets 300s because the
 /// timeout is a total-request deadline that also covers the bundle download.
 pub(crate) fn desktop_updater_builder(
     app: &tauri::AppHandle,

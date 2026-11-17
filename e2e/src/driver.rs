@@ -15,7 +15,7 @@ pub(crate) const PROCESS_MATCH: &str = "inference-gateway-desktop";
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
-/// Recursive AXButton finder; `entire contents` is flaky (-1700) so every
+/// Recursive AXButton finder. `entire contents` is flaky (-1700) so every
 /// button lookup walks `UI elements` instead. Matches AXCheckBox and
 /// AXRadioButton too (toggle buttons) and pop-up/menu buttons with their
 /// AXMenuItem entries. The ceiling matches the text finder's: a content
@@ -102,7 +102,7 @@ pub struct AppDriver {
 /// macOS keeps the webview's localStorage under `~/Library/WebKit/<app>`, keyed
 /// by the executable or bundle id, NOT under the child's overridden HOME - so
 /// it survives the per-test HOME wipe and leaks state across runs and into the
-/// dev's real app. Wipe it too, using the runner's OWN home; bundle runs
+/// dev's real app. Wipe it too, using the runner's OWN home. Bundle runs
 /// (`DESKTOP_APP`) use the bundle-id store instead.
 fn wipe_webkit_store(bundle: bool) {
     let Some(home) = std::env::var_os("HOME") else {
@@ -463,7 +463,7 @@ impl AppDriver {
     /// Sidebar prompt inputs (e.g. "New project") auto-focus when revealed but
     /// aren't reliably reachable by AX path across macOS versions (unlike the
     /// composer text area). Type into the focused element via keystroke, then
-    /// commit with Return; the caller verifies the result with a `wait_for`.
+    /// commit with Return. The caller verifies the result with a `wait_for`.
     pub fn type_text(&self, text: &str) -> Result<()> {
         std::thread::sleep(INPUT_FOCUS_SETTLE);
         let script = format!(

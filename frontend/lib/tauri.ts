@@ -83,7 +83,7 @@ export type RecordedArea = {
   frame_height: number;
 };
 
-/** A key press or mouse click during an agent recording; `t` is seconds since
+/** A key press or mouse click during an agent recording. `t` is seconds since
  * the recording started, click `x`/`y` are screen points. */
 export type InputEvent =
   | { kind: "key"; t: number; keys: string; text: string }

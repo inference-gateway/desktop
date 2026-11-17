@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 /// App-owned provider key store at ~/.infer/auth.yaml: a flat YAML map of
 /// provider key env vars to values (`OPENAI_API_KEY: sk-...`). infer reads this
 /// file too, as the lowest-precedence source after the system environment and
-/// the project .env; the desktop additionally injects the pairs as env vars
+/// the project .env. The desktop additionally injects the pairs as env vars
 /// when spawning `infer`.
 fn auth_path(home: &Path) -> PathBuf {
     infer_dir_in(home).join("auth.yaml")
@@ -548,7 +548,7 @@ fn set_speech_section(map: &mut serde_norway::Mapping, cfg: &DesktopConfig) {
 }
 
 /// Write `storage.<name>.path`, or drop it when `path` is empty so the CLI's
-/// own ~/.infer default applies; an emptied section is removed entirely.
+/// own ~/.infer default applies. An emptied section is removed entirely.
 fn set_path_section(smap: &mut serde_norway::Mapping, name: &str, path: &str) {
     if !path.is_empty() {
         set_section(smap, name, vec![("path", path.into())]);
@@ -580,7 +580,7 @@ fn insert_settings_read_back_fields(map: &mut serde_norway::Mapping, cfg: &Deskt
 /// Merge the Settings-managed storage + gateway fields into the existing config
 /// text, returning serialized YAML. The default model is deliberately not
 /// touched here (`merge_default_model` owns it, so a stale Settings form cannot
-/// clobber a newer model chosen from the composer); the file allowlist is
+/// clobber a newer model chosen from the composer). The file allowlist is
 /// written only when it differs from the shipped default (see SUPERSEDED_ALLOWED_MIMES).
 pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Result<String, String> {
     let mut yaml = config_mapping(existing);
@@ -960,7 +960,7 @@ mod tests {
     }
 
     /// The CLI anchors a relative storage.jsonl.path at its own cwd and only
-    /// expands a leading `~`; the desktop reads the value verbatim so the two
+    /// expands a leading `~`. The desktop reads the value verbatim so the two
     /// agree on what the file says and saving Settings never rewrites it.
     #[test]
     fn config_from_value_keeps_relative_storage_path_verbatim() {
@@ -1398,7 +1398,7 @@ mod tests {
 
     /// A stored allowlist that is only an earlier release's default is read as
     /// unset, so an install that saved Settings before the video/audio formats
-    /// existed still accepts them; a hand-edited list is kept as written.
+    /// existed still accepts them. A hand-edited list is kept as written.
     #[test]
     fn superseded_default_allowlist_reads_as_the_current_default() {
         let home = Path::new("/home/tester");

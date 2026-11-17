@@ -18,7 +18,7 @@ fn cli_release_base(tag: Option<&str>) -> String {
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
 /// which is how an update is applied. `restart` also restarts the daemon, so
 /// its workers run the installed binary. `tag` pins the release to install,
-/// which implies `force`; when it is empty, the newest release wins.
+/// which implies `force`. When it is empty, the newest release wins.
 #[tauri::command]
 pub(crate) async fn check_and_install_cli(
     on_event: Channel<ProgressEvent>,
