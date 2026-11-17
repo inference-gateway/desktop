@@ -297,8 +297,9 @@ fn message_content(prompt: &str) -> serde_json::Value {
 }
 
 /// Checkpoints a content project (a local git repo) before an agent run so its
-/// edits are revertable. Best-effort - git never blocks a run.
-fn checkpoint_content_project(project: Option<&str>) {
+/// edits are revertable, and returns its directory. Best-effort - git never
+/// blocks a run.
+fn checkpoint_content_project(project: Option<&str>) -> Option<PathBuf> {
     let content_dir = project
         .filter(|name| crate::projects::project_is_content(name))
         .and_then(crate::projects::project_dir);
@@ -306,6 +307,7 @@ fn checkpoint_content_project(project: Option<&str>) {
         let _ = crate::projects::ensure_content_repo(dir);
         let _ = crate::projects::checkpoint(dir, "chore(timeline): checkpoint before agent run");
     }
+    content_dir
 }
 
 #[tauri::command]
@@ -328,7 +330,7 @@ pub(crate) async fn send_message(
         crate::tools::await_services().await;
     }
     let cwd = thread_dir(project.as_deref());
-    checkpoint_content_project(project.as_deref());
+    let content_dir = checkpoint_content_project(project.as_deref());
     let options = thread_options(
         &model,
         &mode,
