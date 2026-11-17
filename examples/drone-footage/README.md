@@ -15,6 +15,7 @@ It builds on [examples/filmcraft](../filmcraft): the same idea of tools in a fol
 
 ## What you need
 
+- `docker`, which `task up` builds Gyroflow with - a `docker build --output type=local` into `tools/` - so Docker is needed even though the cluster itself runs on Podman, which the next item asks for.
 - `podman` with a `libkrun` machine, `task` and the app's local cluster on it - choose **Podman** under **Settings > Compute**, then press the container button. See [the GPU on the local cluster](../../docs/gpu.md).
 - `infer` CLI v0.256.0 and operator v0.36.0 or newer, which mount the folders and bring the GPU driver.
 - A GPU on the agent's computer. Gyroflow is unusable without one - see [The GPU](#the-gpu). The local cluster on Podman gives every computer the Mac's.
@@ -35,9 +36,9 @@ FilmCraft and DJI's LUT need no setup. The agent downloads FilmCraft's latest pa
 Put your footage in a folder of its own, for example `~/footage`. Then in the app:
 
 1. Open **Settings > Compute**. Press **Add folder**, name it `tools`, point it at this example's `tools` folder as a full path - `examples/drone-footage/tools` in your checkout - and switch it to read-only. Add a second folder named `footage` for your footage folder, read-only too. Press **Save folders**.
-2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - Docker mounts a folder only into a cluster it creates, so this deletes the machines of the local cluster.
+2. Press **Provision local cluster**. If the cluster already runs, press **Recreate local cluster**, then **Delete its machines and recreate** - a folder is mounted only into a cluster created after it was added, so this deletes the machines of the local cluster.
 3. Open **Settings > Workspaces** and edit `ubuntu-desktop`. Press **Add volume**, name it `tools`, pick the `tools` folder as its source and mount it at `/mnt/tools`. Add a second volume named `footage`, pick your footage folder and mount it at `/mnt/footage`. Press **Save workspace**.
-4. Open **Settings > Secrets** and press **New secret**. Label it `elevenlabs`, name its variable `ELEVENLABS_KEY`, paste your key and tick **Workspace ubuntu-desktop**. Press **Save secret**. The app refuses the name `ELEVENLABS_API_KEY` here, because that one is a provider key of the gateway and belongs under **API Keys**.
+4. Open **Settings > Secrets** and press **New secret**. Label it `elevenlabs`, name its variable `ELEVENLABS_KEY`, paste your key and tick **Workspace ubuntu-desktop**. Press **Save secret**. The app refuses the variable name `ELEVENLABS_API_KEY` only once an ElevenLabs key is saved under **API Keys** - a secret may not take the variable of an API key that is saved there - and accepts the name while there is none.
 5. Press **Restart CLI** so the daemon reads the volumes and the secret.
 
 The key is kept in `~/.infer/auth.yaml` and reaches the computer as a variable. It appears in no file of this example and the agent is told never to print it.
@@ -72,7 +73,7 @@ The agent stops and says why when it cannot do the job as described - footage wi
 
 ### The footage stays as it is
 
-The footage folder is read-only twice: under **Settings > Compute**, so Docker mounts it read-only into the cluster, and on the workspace's volume. A write from the computer is refused:
+The footage folder is read-only twice: under **Settings > Compute**, which shares it with the cluster read-only, and on the workspace's volume. A write from the computer is refused:
 
 ```console
 $ touch /mnt/footage/footage/test
@@ -111,7 +112,7 @@ It took 142 model requests and 183 tool calls, with 18.6 million input tokens, 1
 
 Each export came out at 40.04 s and about 40 MB. The agent exports at 8 Mbps on purpose: the app downloads an artifact in one piece of at most 64 MiB.
 
-The computers of a workspace have no CPU or memory limit of their own yet. With a 12 GB VM, a first attempt ran five encodes at once and the computer was killed for memory. The run above had 24 GB, FilmCraft alone held about 10 GB while exporting, and the agent's instructions now allow one heavy job at a time.
+The workspace sets its computers' CPU and memory now: under **Settings > Workspaces**, the **CPU request**, **CPU limit**, **Memory request** and **Memory limit** fields of `ubuntu-desktop` are saved as the workspace's `resources` in `daemon.yaml`. Give this job its memory there - FilmCraft alone held about 10 GB while exporting, so about 24 GB is what the run above needs. With a 12 GB limit, a first attempt ran five encodes at once and the computer was killed for memory; the agent's instructions now allow one heavy job at a time.
 
 ## Clean up
 
