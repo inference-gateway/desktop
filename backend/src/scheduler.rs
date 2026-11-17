@@ -170,13 +170,11 @@ type Cache<T> = LazyLock<Entries<T>>;
 static OWNERS_CACHE: Cache<Vec<String>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 static REPOS_CACHE: Cache<Vec<RepoEntry>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Memoized `gh` lookup: `fetch` runs only on a miss or an expired entry.
-/// Errors are never cached, so a failed `gh` call retries on the next invoke.
-/// The lock is released before `fetch` runs - never hold it across a
-/// subprocess. A poisoned mutex degrades to always-miss rather than panicking.
-/// ponytail: concurrent misses both fetch (single-flight would mean holding a
-/// lock across `gh`) and entries are never evicted - one per owner the user
-/// opens. Revisit only if either shows up in practice.
+/// Memoized `gh` lookup: `fetch` runs only on a miss or an expired entry, and
+/// errors are never cached, so a failed `gh` call retries next invoke. The
+/// lock releases before `fetch` runs - never hold it across a subprocess - and
+/// a poisoned mutex degrades to always-miss rather than panicking.
+/// ponytail: concurrent misses both fetch and entries are never evicted, revisit only if either shows up in practice.
 fn cached<T: Clone>(
     store: &Entries<T>,
     key: &str,

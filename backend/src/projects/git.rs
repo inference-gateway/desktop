@@ -27,12 +27,11 @@ pub(crate) fn repo_context(dir: &Path) -> Option<String> {
         .find(|text| !text.trim().is_empty() && text.len() <= 64 * 1024)
 }
 
-/// Recursively find git repositories under `root` (a dir with `.git` — file or
-/// dir, so worktrees count). Found repos are not descended into. `group` is
+/// Recursively find git repositories under `root` (a dir with `.git`, file or
+/// dir, so worktrees count), without descending into found repos. `group` is
 /// the repo's parent directory relative to `root` ("" for direct children),
 /// used to title clusters of sibling repos in the UI and agent context.
-/// ponytail: depth cap 4 and a two-entry junk skip-list; make configurable if
-/// users have deeper trees.
+/// ponytail: depth cap 4 and a two-entry junk skip-list, make configurable if users have deeper trees.
 pub(super) fn scan_git_repos_in(root: &Path) -> Vec<GitRepo> {
     const MAX_DEPTH: usize = 4;
     let mut repos = Vec::new();
@@ -136,13 +135,10 @@ pub(crate) fn git_remote_repo(dir: &Path) -> Option<String> {
 }
 
 /// Clone via `clone()` unless `dest` already holds a checkout of the same repo
-/// (idempotent re-import), then return the entry for the existing import flow.
-/// A checkout of a *different* repo is an error rather than a silent adoption -
-/// the destination drops the owner, so two owners' "desktop" collide, as does
-/// any repo the user cloned there by hand. A directory this call created is
-/// removed when the clone fails, so a half-finished clone cannot wedge the
-/// destination; one that already existed is left alone. `clone` is injected so
-/// both paths are testable without network.
+/// (idempotent re-import). A checkout of a different repo is an error rather
+/// than a silent adoption (the destination drops the owner, so two owners'
+/// "desktop" collide), and a directory this call created is removed when the
+/// clone fails - one that already existed is left alone.
 pub(super) fn ensure_clone(
     clone: impl FnOnce() -> Result<(), String>,
     dest: &Path,
@@ -276,11 +272,9 @@ fn read_default_branch(dir: &Path) -> String {
 /// Whether the checkout at `dir` has uncommitted changes: `git status
 /// --porcelain` prints one line per change and we stop reading at the first,
 /// so a large listing is never transferred. A missing `git` binary or an
-/// unreadable repo reads as clean - the indicator gracefully stays gray.
-/// ponytail: git still enumerates internally before printing; switch to a
-/// libgit2 backend only if status on giant worktrees is ever slow in practice.
+/// unreadable repo reads as clean, so the indicator gracefully stays gray.
+/// ponytail: switch to libgit2 only if status on giant worktrees gets slow.
 fn has_uncommitted_changes(dir: &Path) -> bool {
-    use std::io::Read;
     let Ok(mut child) = crate::env::command("git")
         .arg("-C")
         .arg(dir)
@@ -291,15 +285,17 @@ fn has_uncommitted_changes(dir: &Path) -> bool {
     else {
         return false;
     };
-    // One byte of output means `git status --porcelain` found at least one
-    // change; zero bytes means the worktree is clean.
-    let dirty = child
-        .stdout
-        .take()
-        .is_some_and(|mut out| out.read(&mut [0u8; 1]).is_ok_and(|n| n > 0));
+    let dirty = stdout_has_change(child.stdout.take());
     let _ = child.kill();
     let _ = child.wait();
     dirty
+}
+
+/// One byte of stdout means `git status --porcelain` found a change; zero
+/// bytes means the worktree is clean.
+fn stdout_has_change(stdout: Option<std::process::ChildStdout>) -> bool {
+    use std::io::Read;
+    stdout.is_some_and(|mut out| out.read(&mut [0u8; 1]).is_ok_and(|n| n > 0))
 }
 
 /// Whether the checkout has any remote to pull from; content repos made by
@@ -469,13 +465,11 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     .map_err(|e| format!("cleanup task failed: {e}"))?
 }
 
-/// Leaves a repo without a remote untouched: there is nothing to pull or
-/// prune, and its other branches exist nowhere else, so `branch -D` would
-/// destroy them for good. Linked worktrees go first - they pin their branches
-/// (and maybe the default one) - and a dirty one aborts before anything is
-/// removed. Locked worktrees are unlocked and removed too; `unlock` fails on
-/// an unlocked one, which is fine, and plain `remove` keeps git's own
-/// clean-tree check as a second guard.
+/// Leaves a repo without a remote untouched: its other branches exist nowhere
+/// else, so `branch -D` would destroy them for good. Linked worktrees go
+/// first (they pin their branches, maybe the default one) and a dirty one
+/// aborts before anything is removed - locked ones are unlocked and removed
+/// too, and plain `remove` keeps git's own clean-tree check as a second guard.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
     if !has_remote(dir) {
         return Ok("no remote - skipped".to_string());
@@ -888,13 +882,11 @@ mod tests {
         fake_checkout(&dest, "owner/repo");
         assert_eq!(git_remote_repo(&dest).as_deref(), Some("owner/repo"));
 
-        // A `.git` file (worktree) has no readable config here and reads as None.
         let wt = root.join("wt");
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(wt.join(".git"), "gitdir: /elsewhere").unwrap();
         assert_eq!(git_remote_repo(&wt), None);
 
-        // A non-GitHub remote keeps the project's context embedded.
         let gl = root.join("gl");
         std::fs::create_dir_all(gl.join(".git")).unwrap();
         std::fs::write(

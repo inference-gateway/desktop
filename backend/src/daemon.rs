@@ -1,8 +1,3 @@
-//! The infer daemon the app drives every chat through: the binding it listens
-//! on, starting it when nothing listens, the browser-use settings that put the
-//! extension behind it, and the extension's state the daemon reports.
-//! Wire contract: cli/docs/browser-extension-protocol.md.
-
 use crate::env::{
     agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env, mock_mode,
 };
@@ -21,6 +16,7 @@ const DAEMON_FILE: &str = "daemon.yaml";
 const BROWSER_USE_FILE: &str = "browser_use.yaml";
 const BOOT_WAIT: Duration = Duration::from_secs(15);
 const PROBE: Duration = Duration::from_millis(300);
+const BOOT_POLL: Duration = Duration::from_millis(100);
 
 /// The daemon's recent output lines, shared with the readers of its pipes.
 pub(crate) type SchedulerLog = Arc<Mutex<VecDeque<String>>>;
@@ -138,7 +134,8 @@ pub(crate) fn reachable(port: u16) -> bool {
 
 /// Makes sure a daemon listens on the binding: one that already does is
 /// reused, else `infer daemon` starts with the app's env and the binding
-/// switched on, and the port is awaited.
+/// switched on, and the port is awaited. Wire contract:
+/// cli/docs/browser-extension-protocol.md.
 pub(crate) fn ensure_running(
     processes: &ProcessSupervisor,
     scheduler_log: &SchedulerLog,
@@ -180,7 +177,7 @@ pub(crate) fn ensure_running(
                 binding.port
             ));
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(BOOT_POLL);
     }
     Ok(binding)
 }

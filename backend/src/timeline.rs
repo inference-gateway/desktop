@@ -516,13 +516,10 @@ pub(crate) struct ExportPlan {
 }
 
 /// Build the ffmpeg invocation that encodes a timeline. The picture arrives on
-/// stdin as raw RGBA frames the frontend's canvas composed, one every `1/fps`,
-/// so there is no video filter at all - no scale, no pad, no overlay, no
-/// subtitles - because the frame already is the frame. Every audio clip is
-/// delayed to its start time and mixed, plus the recording's own sound when
-/// `source_audio` is `keep`; that is the only reason a video file is opened.
-/// Returns the arguments, the plan the frontend renders to and the SRT sidecar
-/// for the caller to write first. Pure, so it is testable.
+/// stdin as raw RGBA frames the frontend's canvas composed, so there is no
+/// video filter at all - the frame already is the frame. Audio clips are
+/// delayed to their start and mixed, plus the recording's own sound for
+/// `keep`; returns the arguments, the render plan and the SRT sidecar.
 fn export_plan(
     dir: &Path,
     stem: &str,

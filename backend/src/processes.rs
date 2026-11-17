@@ -1,9 +1,3 @@
-//! Central ownership and shutdown for every long-lived child process.
-//!
-//! Gateway startup is serialized independently from scheduler operations. Shutdown
-//! takes the lifecycle locks in gateway-then-scheduler order, marks the supervisor as
-//! stopping before it waits, and drains every owned handle exactly once.
-
 use crate::gateway::GatewayStart;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -15,6 +9,7 @@ use std::time::{Duration, Instant};
 const GATEWAY_READY_TIMEOUT: Duration = Duration::from_secs(15);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const SIGKILL_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct GatewayOwnership {
@@ -33,6 +28,11 @@ struct ProcessState {
     scheduler: Option<Child>,
 }
 
+/// Central ownership and shutdown for every long-lived child process. Gateway
+/// startup is serialized independently from scheduler operations, and shutdown
+/// takes the lifecycle locks in gateway-then-scheduler order, marks the
+/// supervisor as stopping before it waits, and drains every owned handle
+/// exactly once.
 pub(crate) struct ProcessSupervisor {
     state: Mutex<ProcessState>,
     gateway_lifecycle: Mutex<()>,
@@ -600,7 +600,7 @@ fn terminate_owned_pid(ownership: &GatewayOwnership, timeout: Duration) -> Resul
     }
     send_unix_signal(ownership.pid, nix::sys::signal::Signal::SIGKILL)
         .map_err(|error| format!("failed to force-kill recovered gateway: {error}"))?;
-    if wait_for_owned_pid_exit(ownership.pid, Duration::from_secs(1))? {
+    if wait_for_owned_pid_exit(ownership.pid, SIGKILL_TIMEOUT)? {
         Ok(())
     } else {
         Err(format!(
