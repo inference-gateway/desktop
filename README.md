@@ -41,6 +41,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Chat](docs/chat.md) - the four agent modes, plans and approvals, and the composer's prefixes, menus and per-message actions.
 - [How it works](docs/how-it-works.md) - the gateway and CLI, working directory and sandbox, updates, supported platforms.
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
+- [MCP servers](docs/mcp.md) - Settings > MCPs end to end: hosted and container servers, headers whose values are secrets, where a server goes.
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
 - [Avatars](docs/avatars.md) - lip-synced talking clips of yourself in Content projects.
