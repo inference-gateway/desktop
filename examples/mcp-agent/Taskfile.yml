@@ -1,0 +1,22 @@
+version: "3"
+
+vars:
+  INFER_DIR: "{{.HOME}}/.infer"
+
+tasks:
+  up:
+    desc: Copy the repo-guide agent into ~/.infer/agents - the MCP servers it uses you add under Settings > MCPs
+    preconditions:
+      - sh: '[ ! -e {{.INFER_DIR}}/agents/repo-guide.md ] || { grep -q "^mcpServers:" {{.INFER_DIR}}/agents/repo-guide.md && grep -q -- "- deepwiki" {{.INFER_DIR}}/agents/repo-guide.md; }'
+        msg: ~/.infer/agents already holds a repo-guide agent of your own - move it aside first
+    cmds:
+      - mkdir -p {{.INFER_DIR}}/agents
+      - cp agents/repo-guide.md {{.INFER_DIR}}/agents/repo-guide.md
+
+  down:
+    desc: Take the repo-guide agent back out of ~/.infer - the servers and secrets you added in the app are yours and stay
+    preconditions:
+      - sh: '[ ! -e {{.INFER_DIR}}/agents/repo-guide.md ] || { grep -q "^mcpServers:" {{.INFER_DIR}}/agents/repo-guide.md && grep -q -- "- deepwiki" {{.INFER_DIR}}/agents/repo-guide.md; }'
+        msg: the installed repo-guide agent is your own - move it aside first
+    cmds:
+      - rm -f {{.INFER_DIR}}/agents/repo-guide.md
