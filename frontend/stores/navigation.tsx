@@ -10,7 +10,6 @@ import {
 import type { ProjectType } from "@/lib/sidebar-document";
 
 export type View = "chat" | "settings" | "observability" | "computers";
-/** What the sidebar lists: every project, one project type, or the agents. */
 export type SidebarFilter = ProjectType | "agents";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
