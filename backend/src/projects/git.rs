@@ -448,8 +448,8 @@ pub(crate) async fn sync_default_branch(name: String) -> Result<String, String> 
 }
 
 /// Remove every linked worktree, check out the default branch, fast-forward
-/// pull, delete every other local branch and prune stale remote-tracking refs.
-/// Refuses over uncommitted changes. Returns a short summary.
+/// pull and delete the local branches whose remote branch is gone. Refuses
+/// over uncommitted changes. Returns a short summary.
 #[tauri::command]
 pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
@@ -465,11 +465,26 @@ pub(crate) async fn cleanup_project(name: String) -> Result<String, String> {
     .map_err(|e| format!("cleanup task failed: {e}"))?
 }
 
-/// Leaves a repo without a remote untouched: its other branches exist nowhere
-/// else, so `branch -D` would destroy them for good. Linked worktrees go
-/// first (they pin their branches, maybe the default one) and a dirty one
-/// aborts before anything is removed - locked ones are unlocked and removed
-/// too, and plain `remove` keeps git's own clean-tree check as a second guard.
+/// What git reports for a branch whose remote branch was deleted.
+const UPSTREAM_GONE: &str = "[gone]";
+
+/// The branches of `listing`, one `<name> <upstream state>` per line, whose
+/// remote branch is gone. A branch that was never pushed has no such state
+/// and stays, since its commits exist nowhere else.
+fn gone_branches<'a>(listing: &'a str, default: &str) -> Vec<&'a str> {
+    listing
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .filter(|(name, upstream)| *name != default && *upstream == UPSTREAM_GONE)
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// Leaves a repo without a remote untouched. Linked worktrees go first (they
+/// pin their branches, maybe the default one) and a dirty one aborts before
+/// anything is removed - locked ones are unlocked and removed too, and plain
+/// `remove` keeps git's own clean-tree check as a second guard. Only branches
+/// whose remote branch is gone are deleted, the rest may hold unpushed work.
 fn cleanup_repo(dir: &Path) -> Result<String, String> {
     if !has_remote(dir) {
         return Ok("no remote - skipped".to_string());
@@ -501,21 +516,26 @@ fn cleanup_repo(dir: &Path) -> Result<String, String> {
     if read_head_branch(dir).as_deref() != Some(default.as_str()) {
         git_output(dir, &["checkout", &default]).map_err(|e| format!("checkout: {e}"))?;
     }
-    git_output(dir, &["pull", "--ff-only"]).map_err(|e| format!("pull: {e}"))?;
+    git_output(dir, &["pull", "--ff-only", "--prune"]).map_err(|e| format!("pull: {e}"))?;
     let branches = git_output(
         dir,
-        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        &[
+            "for-each-ref",
+            "--format=%(refname:short) %(upstream:track)",
+            "refs/heads",
+        ],
     )
     .map_err(|e| format!("list branches: {e}"))?;
-    let stale: Vec<&str> = branches.lines().filter(|b| *b != default).collect();
-    if !stale.is_empty() {
-        git_output(dir, &[&["branch", "-D"][..], &stale].concat())
+    let gone = gone_branches(&branches, &default);
+    if !gone.is_empty() {
+        git_output(dir, &[&["branch", "-D"][..], &gone].concat())
             .map_err(|e| format!("delete branches: {e}"))?;
     }
-    git_output(dir, &["fetch", "--prune"]).map_err(|e| format!("fetch: {e}"))?;
+    let default_and_gone = gone.len() + 1;
+    let kept = branches.lines().count().saturating_sub(default_and_gone);
     Ok(format!(
-        "{default} - deleted {} branches, {} worktrees",
-        stale.len(),
+        "{default} - deleted {} branches, {} worktrees, kept {kept} branches",
+        gone.len(),
         worktrees.len()
     ))
 }
@@ -779,7 +799,15 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_keeps_only_the_default_branch() {
+    fn only_a_branch_whose_remote_branch_is_gone_counts_as_gone() {
+        let listing =
+            "feat-merged [gone]\nfeat-open [ahead 1]\nfeat-synced \nmain [gone]\nfeat-local";
+        assert_eq!(gone_branches(listing, "main"), ["feat-merged"]);
+        assert!(gone_branches("", "main").is_empty());
+    }
+
+    #[test]
+    fn cleanup_deletes_only_branches_whose_remote_branch_is_gone() {
         let root = TempDir::new("cleanup");
         let git = |dir: &Path, args: &[&str]| {
             assert!(
@@ -801,9 +829,14 @@ mod tests {
         git(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
         git(&repo, &["push", "-q", "origin", "main"]);
         git(&repo, &["remote", "set-head", "origin", "main"]);
-        git(&repo, &["branch", "feat-a"]);
-        git(&repo, &["switch", "-q", "-c", "feat-b"]);
-        git(&repo, &["commit", "-q", "--allow-empty", "-m", "unmerged"]);
+        for pushed in ["feat-merged", "feat-open"] {
+            git(&repo, &["switch", "-q", "-c", pushed, "main"]);
+            git(&repo, &["commit", "-q", "--allow-empty", "-m", pushed]);
+            git(&repo, &["push", "-q", "-u", "origin", pushed]);
+        }
+        git(&origin, &["branch", "-q", "-D", "feat-merged"]);
+        git(&repo, &["switch", "-q", "-c", "feat-unpushed", "main"]);
+        git(&repo, &["commit", "-q", "--allow-empty", "-m", "unpushed"]);
         git(&repo, &["worktree", "add", "-q", "../wt-main", "main"]);
         git(&repo, &["worktree", "add", "-q", "-b", "feat-c", "../wt-c"]);
         git(&repo, &["worktree", "lock", "--reason", "keep", "../wt-c"]);
@@ -822,7 +855,7 @@ mod tests {
 
         assert_eq!(
             cleanup_repo(&repo).unwrap(),
-            "main - deleted 3 branches, 2 worktrees"
+            "main - deleted 1 branches, 2 worktrees, kept 3 branches"
         );
         assert!(!root.join("wt-main").exists() && !root.join("wt-c").exists());
         assert_eq!(read_head_branch(&repo).as_deref(), Some("main"));
@@ -832,7 +865,8 @@ mod tests {
                 &["for-each-ref", "--format=%(refname:short)", "refs/heads"]
             )
             .unwrap(),
-            "main"
+            "feat-c\nfeat-open\nfeat-unpushed\nmain",
+            "a branch that was never pushed, or still has its remote branch, stays"
         );
     }
 
