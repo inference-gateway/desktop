@@ -63,8 +63,8 @@ The content security policy in `backend/tauri.conf.json` blocks inline and remot
   where its meaning is obvious at a glance (0, 1, an empty string).
 - Tool directives are not comments and stay where the tool needs them (lint suppressions, build
   tags, compiler pragmas, code generation markers).
-- No semicolons in documentation prose (Markdown files, doc comments): split the sentence or use
-  a dash instead.
+- No semicolons in documentation prose (Markdown files, doc comments, e2e test names and
+  narration): split the sentence or use a dash instead.
 - Examples (`examples/` directories, README snippets) are short and focused: one feature per
   example, the fewest lines that show it, and the exact command to run it.
 - Every example must run as written. Verify it against the `tokenless` mock gateway, or against a

@@ -5,7 +5,7 @@ cleanup:
 narration:
   - "Switch the sidebar to the Agents filter."
   - "Select the seeded agent, whose front matter fixes anthropic/claude-sonnet-4-5."
-  - "Send a first prompt; it pauses at the Write approval."
+  - "Send a first prompt. It pauses at the Write approval."
   - "The agent's run is waiting."
   - "Ask which model answers while the run is still going."
   - "The prompt is queued, not sent."

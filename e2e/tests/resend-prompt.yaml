@@ -3,7 +3,7 @@ cleanup:
   - approved.txt
 narration:
   - "Open a fresh chat."
-  - "Ask for a file; the Write tool call pauses for approval."
+  - "Ask for a file. The Write tool call pauses for approval."
   - "The approval card shows Deny."
   - "Deny it, so the run ends and no file is written."
   - "The denial is reported."

@@ -9,7 +9,7 @@ narration:
   - "Toggle it out of the selection - the toggle is two-way."
   - "Toggle it back in."
   - "Arm the init - a second click confirms, so a stray click cannot fan out."
-  - "Confirm; init runs infer in the project directory."
+  - "Confirm - init runs infer in the project directory."
   - "The init run completes (the gateway fallback answers)."
 steps:
   - new_chat

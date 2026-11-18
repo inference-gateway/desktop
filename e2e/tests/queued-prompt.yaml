@@ -4,7 +4,7 @@ cleanup:
   - queue-second.txt
 narration:
   - "Open a fresh chat."
-  - "Send a first prompt; it pauses at the Write approval."
+  - "Send a first prompt. It pauses at the Write approval."
   - "The first session is waiting."
   - "Type a follow-up while the run is still going."
   - "The prompt is queued, not sent."

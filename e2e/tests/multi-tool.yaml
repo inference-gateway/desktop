@@ -4,7 +4,7 @@ cleanup:
 narration:
   - "Open a fresh chat."
   - "Ask for an inspection plus a summary file: a Read-heavy turn followed by a Write."
-  - "The Reads auto-run; the Write pauses for approval - reads are safe, writes ask."
+  - "The Reads auto-run. The Write pauses for approval - reads are safe, writes ask."
   - "Approve the Write."
   - "summary.txt lands."
   - "The agent confirms the summary."

@@ -3,7 +3,7 @@ cleanup:
   - queue-second.txt
 narration:
   - "Open a fresh chat."
-  - "Start a slow background job; the session waits on it."
+  - "Start a slow background job. The session waits on it."
   - "The waiting banner shows one pending task."
   - "Type a follow-up while waiting on tasks."
   - "Unlike a mid-run follow-up, this one runs immediately - it pauses at its own approval."

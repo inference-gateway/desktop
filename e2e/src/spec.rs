@@ -154,6 +154,13 @@ mod tests {
                     test.narration.len(),
                     test.steps.len()
                 );
+                for line in std::iter::once(&test.name).chain(&test.narration) {
+                    assert!(
+                        !line.contains(';'),
+                        "{}: split the sentence or use a dash instead of a semicolon: {line}",
+                        test.name
+                    );
+                }
                 names.push(test.name);
             }
         }

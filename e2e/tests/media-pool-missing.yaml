@@ -4,14 +4,14 @@ narration:
   - "Open a fresh chat."
   - "Pick the content project - its media folder holds only logo.png."
   - "The pool header shows up once the workspace has loaded."
-  - "Ask for music; the agent writes a timeline whose clip points at media/music.mp3, a file that is not there."
+  - "Ask for music. The agent writes a timeline whose clip points at media/music.mp3, a file that is not there."
   - "The Write pauses for approval - approving is the precondition for the file landing."
   - "Approve it."
   - "The clip lands on the audio lane labelled music.mp3 (missing): red, no waveform, nothing to play."
-  - "Ask to restore the file; the agent writes media/music.mp3 back into the pool."
+  - "Ask to restore the file. The agent writes media/music.mp3 back into the pool."
   - "The Write pauses for approval again."
   - "Approve it."
-  - "The agent confirms; the pool lists music.mp3 with its size."
+  - "The agent confirms. The pool lists music.mp3 with its size."
   - "The clip relinks with the source: the (missing) mark is gone, no re-import dance needed."
 steps:
   - new_chat

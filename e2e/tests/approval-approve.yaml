@@ -3,7 +3,7 @@ cleanup:
   - approved.txt
 narration:
   - "Open a fresh chat."
-  - "Ask for a file; the Write tool call pauses for approval."
+  - "Ask for a file. The Write tool call pauses for approval."
   - "The approval card shows Approve and Deny."
   - "Press 'a' to approve the action."
   - "Approved, the Write runs and approved.txt lands in the project directory."
