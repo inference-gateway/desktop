@@ -84,11 +84,14 @@ function useBackendStore() {
       .finally(refreshStatus);
   }, [refreshStatus]);
 
-  const setModel = useCallback((m: string) => {
-    setModelState(m);
-    localStorage.setItem(MODEL_STORAGE_KEY, m);
-    api.setDefaultModel(m).catch(() => {});
-  }, []);
+  const setModel = useCallback(
+    (m: string) => {
+      setModelState(m);
+      localStorage.setItem(MODEL_STORAGE_KEY, m);
+      api.setDefaultModel(m).catch((e) => setError(String(e)));
+    },
+    [setError],
+  );
 
   const populateModels = useCallback((list: string[]) => {
     setModels(list);
