@@ -37,6 +37,12 @@ pub(crate) fn ensure_content_repo(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The email every checkpoint is committed under, which is also how a
+/// checkpoint is told from a commit made by hand or by an agent.
+/// shortcut: GIT_COMMITTER_EMAIL or a `committer.email` setting wins over it
+/// and switches undo off, commit through the environment if someone hits that.
+const CHECKPOINT_EMAIL: &str = "desktop@localhost";
+
 fn head_sha(dir: &Path) -> Result<String, String> {
     git_output(dir, &["rev-parse", "HEAD"])
 }
@@ -44,6 +50,17 @@ fn head_sha(dir: &Path) -> Result<String, String> {
 /// Whether HEAD has a parent commit - i.e. there is a prior state to undo to.
 fn head_has_parent(dir: &Path) -> bool {
     git_output(dir, &["rev-parse", "--verify", "--quiet", "HEAD~1"]).is_ok()
+}
+
+fn head_is_checkpoint(dir: &Path) -> bool {
+    git_output(dir, &["log", "-1", "--format=%ce"]).is_ok_and(|email| email == CHECKPOINT_EMAIL)
+}
+
+/// Whether undo has a checkpoint to take back. A commit the app did not make
+/// is never one, so a repository that became a content project keeps the
+/// history it came with.
+fn can_undo(dir: &Path) -> bool {
+    head_has_parent(dir) && head_is_checkpoint(dir)
 }
 
 /// Commit every change under `dir` with a fixed identity (a fresh machine may
@@ -58,7 +75,7 @@ pub(crate) fn checkpoint(dir: &Path, message: &str) -> Result<Option<String>, St
         dir,
         &[
             "-c",
-            "user.email=desktop@localhost",
+            &format!("user.email={CHECKPOINT_EMAIL}"),
             "-c",
             "user.name=Inference Gateway Desktop",
             "commit",
@@ -81,7 +98,7 @@ pub(crate) struct UndoResult {
 
 /// Commit the current state of a content project. Called after every timeline
 /// save so each saved change is one undo step, and lazily inits the repo on the
-/// first edit. Returns whether an undo is now possible (HEAD has a parent).
+/// first edit. Returns whether an undo is now possible.
 #[tauri::command]
 pub(crate) async fn checkpoint_content_project(
     name: String,
@@ -91,32 +108,35 @@ pub(crate) async fn checkpoint_content_project(
         let dir = project_dir(&name).ok_or_else(|| format!("no directory for project {name}"))?;
         ensure_content_repo(&dir)?;
         checkpoint(&dir, &message)?;
-        Ok(head_has_parent(&dir))
+        Ok(can_undo(&dir))
     })
     .await
     .map_err(|e| format!("checkpoint task failed: {e}"))?
 }
 
-/// Undo one commit: hard-reset to HEAD~1. Returns the popped commit (the redo
-/// target), the commit now at HEAD (the base a later redo must match), and
+/// Undo one checkpoint: hard-reset to HEAD~1. Returns the popped commit (the
+/// redo target), the commit now at HEAD (the base a later redo must match), and
 /// whether a further undo is possible.
+fn undo(dir: &Path) -> Result<UndoResult, String> {
+    if !can_undo(dir) {
+        return Err("nothing to undo".to_string());
+    }
+    let popped = head_sha(dir)?;
+    git_output(dir, &["reset", "--hard", "HEAD~1"])?;
+    Ok(UndoResult {
+        popped,
+        base: head_sha(dir)?,
+        can_undo: can_undo(dir),
+    })
+}
+
 #[tauri::command]
 pub(crate) async fn undo_content_project(name: String) -> Result<UndoResult, String> {
     tokio::task::spawn_blocking(move || {
         let dir = project_dir(&name)
             .filter(|d| d.join(".git").exists())
             .ok_or_else(|| format!("{name} is not a git project"))?;
-        if !head_has_parent(&dir) {
-            return Err("nothing to undo".to_string());
-        }
-        let popped = head_sha(&dir)?;
-        git_output(&dir, &["reset", "--hard", "HEAD~1"])?;
-        let base = head_sha(&dir)?;
-        Ok(UndoResult {
-            popped,
-            base,
-            can_undo: head_has_parent(&dir),
-        })
+        undo(&dir)
     })
     .await
     .map_err(|e| format!("undo task failed: {e}"))?
@@ -142,19 +162,19 @@ pub(crate) async fn redo_content_project(
         git_output(&dir, &["rev-parse", "--verify", "--quiet", &commit])
             .map_err(|_| "redo target missing".to_string())?;
         git_output(&dir, &["reset", "--hard", &sha])?;
-        Ok(head_has_parent(&dir))
+        Ok(can_undo(&dir))
     })
     .await
     .map_err(|e| format!("redo task failed: {e}"))?
 }
 
-/// Whether a content project has an undoable commit, for the toolbar button
+/// Whether a content project has an undoable checkpoint, for the toolbar button
 /// state on load. A project with no repo (never edited) has nothing to undo.
 #[tauri::command]
 pub(crate) fn content_can_undo(name: String) -> bool {
     project_dir(&name)
         .filter(|d| d.join(".git").exists())
-        .is_some_and(|d| head_has_parent(&d))
+        .is_some_and(|d| can_undo(&d))
 }
 
 #[cfg(test)]
@@ -203,13 +223,37 @@ mod tests {
         let b = checkpoint(&repo, "B").unwrap().unwrap();
         assert!(head_has_parent(&repo));
 
-        let popped = head_sha(&repo).unwrap();
-        assert_eq!(popped, b);
-        git_output(&repo, &["reset", "--hard", "HEAD~1"]).unwrap();
-        assert_eq!(head_sha(&repo).unwrap(), a);
+        let undone = undo(&repo).unwrap();
+        assert_eq!(undone.popped, b);
+        assert_eq!(undone.base, a);
+        assert!(!undone.can_undo);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "v1");
 
-        git_output(&repo, &["reset", "--hard", &popped]).unwrap();
+        git_output(&repo, &["reset", "--hard", &undone.popped]).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "v2");
+    }
+
+    fn commit_by_hand(repo: &Path, file: &Path, text: &str) {
+        std::fs::write(file, text).unwrap();
+        git_output(repo, &["add", "-A"]).unwrap();
+        let identity = ["-c", "user.name=t", "-c", "user.email=t@localhost"];
+        git_output(repo, &[&identity[..], &["commit", "-m", text]].concat()).unwrap();
+    }
+
+    #[test]
+    fn undo_stops_at_a_commit_the_app_did_not_make() {
+        let repo = TempDir::new("content-by-hand");
+        let file = repo.join("main.timeline.json");
+        ensure_content_repo(&repo).unwrap();
+        commit_by_hand(&repo, &file, "v1");
+        commit_by_hand(&repo, &file, "v2");
+        assert!(undo(&repo).is_err());
+
+        std::fs::write(&file, "v3").unwrap();
+        checkpoint(&repo, "edit").unwrap();
+        assert!(!undo(&repo).unwrap().can_undo);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "v2");
+        assert!(undo(&repo).is_err());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "v2");
     }
 }
