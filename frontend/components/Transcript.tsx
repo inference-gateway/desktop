@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Check, ChevronDown, Download, Loader2, Reply, RotateCcw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/AudioPlayer";
@@ -593,7 +593,10 @@ function ImageDownload({ filename, src, path }: { filename: string; src: string;
   );
 }
 
-function Item({
+/** One entry of the transcript. Memoised because a streamed token replaces only
+ * the item it grows, so every other entry keeps its object and skips the render
+ * and the Markdown parse that comes with it. */
+const Item = memo(function Item({
   item,
   approve,
   answer,
@@ -640,7 +643,7 @@ function Item({
     case "info":
       return <div className="self-center text-[0.8rem] text-muted-foreground">{item.text}</div>;
   }
-}
+});
 
 function ScheduledJobs() {
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);

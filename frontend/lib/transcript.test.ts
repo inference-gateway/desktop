@@ -86,6 +86,23 @@ test("a next-step suggestion lasts until the user sends or dismisses it", () => 
   expect(chatReducer(suggested, ev({ kind: "NextStepSuggestion", text: "" })).suggestion).toBe("");
 });
 
+test("a streamed token replaces only the item it grows, so the rest skip their render", () => {
+  const token = (content: string) => ev({ kind: "AssistantMessage", content, reasoning_content: null, tool_calls: [] });
+  const before = run([
+    { type: "userSend", text: "hi" },
+    token("first answer"),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+    { type: "userSend", text: "more" },
+    token("sec"),
+  ]);
+  const after = chatReducer(before, token("ond"));
+  const growing = after.items.length - 1;
+  expect(after.items[growing]).toMatchObject({ kind: "assistant", chunks: ["sec", "ond"] });
+  expect(after.items[growing]).not.toBe(before.items[growing]);
+  after.items.slice(0, growing).forEach((item, i) => expect(item).toBe(before.items[i]));
+  expect(visibleItems(after.items)).toBe(after.items);
+});
+
 test("assistant content chunks accumulate into one bubble, then reset on tool call", () => {
   const s = run([
     { type: "userSend", text: "hi" },
