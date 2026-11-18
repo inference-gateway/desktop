@@ -272,7 +272,7 @@ impl Thread {
             lock(&self.answers).clear();
             self.run_open.store(true, Ordering::SeqCst);
         }
-        if let Some(event) = lock(&self.parser).parse_line(text) {
+        if let Some(event) = lock(&self.parser).parse_frame(text, &frame) {
             (self.sink)(event);
         }
         match kind {

@@ -195,70 +195,66 @@ export default function Overlay() {
       else hideIfIdle();
     });
 
-    const unlisten = listen<{ sessionId: string; remote?: boolean; event: AgentEvent }>(
-      BACKEND_EVENTS.agentEvent,
-      (e) => {
-        if (e.payload.remote) return;
-        const ev = e.payload.event;
-        if (ev.kind === "Done" || ev.kind === "Cancelled" || ev.kind === "AgentError") {
-          endSession(e.payload.sessionId);
-          return;
-        }
-        if (ev.kind === "RecordingStopped") {
-          endAgentRecording(e.payload.sessionId);
-          return;
-        }
-        if (ev.kind === "RecordingStarted") {
-          const sessionId = e.payload.sessionId;
-          agentRecordingOwner = sessionId;
-          fitToScreen()
-            .then(() => {
-              if (agentRecordingOwner !== sessionId || !screenRef.current) return;
-              setAgentFrame(recordingFrame(ev.area, screenRef.current, FRAME_BORDER));
-              wake();
-            })
-            .catch(() => {});
-          return;
-        }
-        if (ev.kind === "ToolResult" && activeSessions.current.has(e.payload.sessionId)) {
-          setBusy(null);
-          return;
-        }
-        if (ev.kind === "ComputerUseAction") {
-          if (!activeSessions.current.has(e.payload.sessionId)) {
-            activeSessions.current.add(e.payload.sessionId);
-            setActive(true);
-          }
-          setBusy(null);
-          wake();
-          const screen = screenRef.current;
-          if (ev.x === null || ev.y === null || !screen || ev.screen_width <= 0) return;
-          const s = screen.width / ev.screen_width;
-          const target = { x: ev.x * s, y: ev.y * s - screen.dy };
-          cursorRef.current = target;
-          setCursor(target);
-          if (isClickAction(ev.action)) setRipple({ ...target, seq: seqRef.current++ });
-          return;
-        }
-        if (ev.kind !== "AssistantMessage") return;
-        for (const tc of ev.tool_calls) {
-          if (COMPUTER_USE_TOOLS.has(tc.name) && !activeSessions.current.has(e.payload.sessionId)) {
-            activeSessions.current.add(e.payload.sessionId);
-            setActive(true);
-          }
-          if (!activeSessions.current.has(e.payload.sessionId)) continue;
-          const action = overlayAction(tc);
-          if (!action) {
+    const unlisten = listen<{ sessionId: string; event: AgentEvent }>(BACKEND_EVENTS.agentEvent, (e) => {
+      const ev = e.payload.event;
+      if (ev.kind === "Done" || ev.kind === "Cancelled" || ev.kind === "AgentError") {
+        endSession(e.payload.sessionId);
+        return;
+      }
+      if (ev.kind === "RecordingStopped") {
+        endAgentRecording(e.payload.sessionId);
+        return;
+      }
+      if (ev.kind === "RecordingStarted") {
+        const sessionId = e.payload.sessionId;
+        agentRecordingOwner = sessionId;
+        fitToScreen()
+          .then(() => {
+            if (agentRecordingOwner !== sessionId || !screenRef.current) return;
+            setAgentFrame(recordingFrame(ev.area, screenRef.current, FRAME_BORDER));
             wake();
-            setBusy(busyLabel(tc));
-            continue;
-          }
-          setBusy(null);
-          wake();
-          setKeycast({ text: action.text, seq: seqRef.current++ });
+          })
+          .catch(() => {});
+        return;
+      }
+      if (ev.kind === "ToolResult" && activeSessions.current.has(e.payload.sessionId)) {
+        setBusy(null);
+        return;
+      }
+      if (ev.kind === "ComputerUseAction") {
+        if (!activeSessions.current.has(e.payload.sessionId)) {
+          activeSessions.current.add(e.payload.sessionId);
+          setActive(true);
         }
-      },
-    );
+        setBusy(null);
+        wake();
+        const screen = screenRef.current;
+        if (ev.x === null || ev.y === null || !screen || ev.screen_width <= 0) return;
+        const s = screen.width / ev.screen_width;
+        const target = { x: ev.x * s, y: ev.y * s - screen.dy };
+        cursorRef.current = target;
+        setCursor(target);
+        if (isClickAction(ev.action)) setRipple({ ...target, seq: seqRef.current++ });
+        return;
+      }
+      if (ev.kind !== "AssistantMessage") return;
+      for (const tc of ev.tool_calls) {
+        if (COMPUTER_USE_TOOLS.has(tc.name) && !activeSessions.current.has(e.payload.sessionId)) {
+          activeSessions.current.add(e.payload.sessionId);
+          setActive(true);
+        }
+        if (!activeSessions.current.has(e.payload.sessionId)) continue;
+        const action = overlayAction(tc);
+        if (!action) {
+          wake();
+          setBusy(busyLabel(tc));
+          continue;
+        }
+        setBusy(null);
+        wake();
+        setKeycast({ text: action.text, seq: seqRef.current++ });
+      }
+    });
     return () => {
       unlisten.then((f) => f());
       unlistenRecording.then((f) => f());

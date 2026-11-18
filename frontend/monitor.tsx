@@ -97,7 +97,6 @@ export default function Monitor() {
     dockTopCenter().catch(() => {});
     const unlisten = listen<MonitorEvent>(BACKEND_EVENTS.agentEvent, (e) => {
       const msg = e.payload;
-      if (msg.remote) return;
       const event = msg.event;
       dispatch({ type: "event", msg });
       if (event.kind === "AssistantMessage") {

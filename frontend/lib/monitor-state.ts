@@ -17,7 +17,7 @@ const ACTION_PREFIX = "▸ ";
 
 export type MonitorState = Record<string, MonitorSession>;
 
-export type MonitorEvent = { sessionId: string; name: string; remote?: boolean; event: AgentEvent };
+export type MonitorEvent = { sessionId: string; name: string; event: AgentEvent };
 
 /** Pure state machine for the computer-use monitor window. Consumes the
  * "agent-event" re-broadcast and keeps a compact per-session summary - enough for

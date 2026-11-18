@@ -377,25 +377,29 @@ impl AgentParser {
         })
     }
 
+    /// `parse_frame` for a line of text, as the tests write frames. A line
+    /// that is not a JSON object with a `type` comes back raw.
+    #[cfg(test)]
     pub(crate) fn parse_line(&mut self, line: &str) -> Option<AgentEvent> {
-        let val: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => {
-                return Some(AgentEvent::RawLine {
-                    line: line.to_string(),
-                });
+        match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(val) if val.get("type").and_then(|v| v.as_str()).is_some() => {
+                self.parse_frame(line, &val)
             }
-        };
+            _ => Some(AgentEvent::RawLine {
+                line: line.to_string(),
+            }),
+        }
+    }
 
-        let event_type = match val.get("type").and_then(|v| v.as_str()) {
-            Some(t) => t,
-            None => {
-                return Some(AgentEvent::RawLine {
-                    line: line.to_string(),
-                });
-            }
-        };
-
+    /// Turns one frame of the thread into an agent event. `val` is the frame
+    /// the thread already parsed, and `line` its text, which an unknown frame
+    /// is passed on as.
+    pub(crate) fn parse_frame(
+        &mut self,
+        line: &str,
+        val: &serde_json::Value,
+    ) -> Option<AgentEvent> {
+        let event_type = val.get("type").and_then(|v| v.as_str())?;
         match event_type {
             "RUN_STARTED" => {
                 let sid = val.get("threadId").and_then(|v| v.as_str()).unwrap_or("");
@@ -417,26 +421,26 @@ impl AgentParser {
                 }
                 self.state(&serde_json::Value::Object(state))
             }
-            "ACTIVITY_SNAPSHOT" => self.activity(&val),
+            "ACTIVITY_SNAPSHOT" => self.activity(val),
             "TEXT_MESSAGE_START" => {
-                self.message_id = message_id_of(&val);
+                self.message_id = message_id_of(val);
                 self.msg_from_user = val.get("role").and_then(|v| v.as_str()) == Some("user");
-                self.assistant_text(&val)
+                self.assistant_text(val)
             }
-            "TEXT_MESSAGE_CONTENT" => self.assistant_text(&val),
+            "TEXT_MESSAGE_CONTENT" => self.assistant_text(val),
             "TEXT_MESSAGE_END" => {
                 self.msg_from_user = false;
                 self.message_id = None;
                 None
             }
             "REASONING_MESSAGE_CONTENT" | "THINKING_TEXT_MESSAGE_CONTENT" => {
-                self.reasoning_content(&val)
+                self.reasoning_content(val)
             }
             "REASONING_MESSAGE_START"
             | "REASONING_START"
             | "THINKING_TEXT_MESSAGE_START"
             | "THINKING_START" => {
-                self.message_id = message_id_of(&val);
+                self.message_id = message_id_of(val);
                 None
             }
             "REASONING_MESSAGE_END"
@@ -549,7 +553,7 @@ impl AgentParser {
             }
             "RUN_FINISHED" => {
                 self.flush_message();
-                if run_outcome(&val) == Some("interrupt")
+                if run_outcome(val) == Some("interrupt")
                     && let Some(interrupt) = val
                         .get("outcome")
                         .and_then(|o| o.get("interrupts")?.as_array()?.first())
@@ -559,7 +563,7 @@ impl AgentParser {
                 if std::mem::take(&mut self.recording) {
                     return Some(AgentEvent::RecordingStopped);
                 }
-                if run_outcome(&val) == Some("cancelled") {
+                if run_outcome(val) == Some("cancelled") {
                     return None;
                 }
                 Some(usage_event(
