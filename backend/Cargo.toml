@@ -14,7 +14,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-updater = "2"
-# Pinned exact so a dev build cannot share a single-instance key with an installed app release.
 tauri-plugin-single-instance = "=2.5.5"
 notify = "8.2.0"
 tauri-plugin-notification = "2"
