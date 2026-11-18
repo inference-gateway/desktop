@@ -20,7 +20,9 @@ task install   # bun install (first run only)
 task dev
 ```
 
-`task dev` rebuilds the React frontend into `dist/` before launching Tauri. The frontend is not hot-reloaded - after editing `frontend/`, re-run `task web` (or relaunch).
+`task dev` rebuilds the React frontend into `dist/` before launching Tauri. After editing `frontend/`, run `task web` and the window reloads.
+
+`task dev:hmr` runs the frontend from the Vite dev server instead, so an edit applies on save without a rebuild. That page gets no content security policy, so check a change that loads a new kind of resource (an image host, a font, a script) with `task dev` as well.
 
 ## Building
 

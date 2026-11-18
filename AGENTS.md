@@ -16,7 +16,8 @@ Activate the pre-commit hook before making changes - it is inert until you do. T
 
 | Command | What it does |
 | --- | --- |
-| `task dev` | Run the app (`cargo tauri dev`). No frontend hot-reload - re-run `task web` after frontend edits |
+| `task dev` | Run the app (`cargo tauri dev`) on the built `dist/`. After a frontend edit, `task web` rebuilds it and the window reloads |
+| `task dev:hmr` | Run the app on the Vite dev server, so a frontend edit applies on save. It has no content security policy - check a change that loads a new kind of resource with `task dev` |
 | `task web` | Build the frontend into `dist/` (`tsc && vite build`) |
 | `task build` / `test` / `clippy` / `check` | The cargo step in `backend/`, building `dist/` first - `task test` runs `bun test` too |
 | `task e2e -- tests/<name>.yaml` | Run the macOS e2e suite, optionally filtered to one test |
