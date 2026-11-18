@@ -1,8 +1,8 @@
 use crate::cli::config::{self, filled, named_entries, remove_named, set_or_remove, text};
 use crate::cli::secrets::valid_variable;
 use crate::cli::workspace_config::{self, KUBERNETES, WorkspaceConfig};
+use crate::compute::workspace_settings;
 use crate::env::infer_dir;
-use crate::workspace_settings;
 use serde::{Deserialize, Serialize};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeSet;

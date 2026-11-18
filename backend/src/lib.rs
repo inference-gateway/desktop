@@ -8,11 +8,9 @@ mod auth_settings;
 mod avatars;
 mod cli;
 mod cli_install;
-mod cluster_folders;
-mod cluster_gpu;
 mod cluster_provisioning;
 mod composer;
-mod computer_resources;
+mod compute;
 mod download;
 mod env;
 mod error;
@@ -21,8 +19,6 @@ mod export;
 mod gateway;
 mod hub_models;
 mod input_capture;
-mod kubectl_mock;
-mod local_cluster;
 mod markdown_agents;
 mod observability;
 mod permissions;
@@ -38,9 +34,6 @@ mod tools;
 mod tts_samples;
 mod updates;
 mod updates_mock;
-mod workspace_capabilities;
-mod workspace_settings;
-mod workspaces;
 
 use observability::{StoredMetric, StoredSpan, start_collector};
 
@@ -312,38 +305,38 @@ pub fn run() {
             screen_records::start_screen_recording,
             screen_records::stop_screen_recording,
             screen_records::screen_recording_status,
-            workspaces::list_workspaces,
-            workspaces::screen_frame,
-            workspaces::list_artifacts,
-            workspaces::rewind_conversation,
-            workspaces::list_background_jobs,
-            workspaces::save_artifact,
-            workspaces::read_artifact,
-            workspaces::clean_machines,
-            workspaces::delete_machine,
-            workspaces::screen_control,
-            workspaces::screen_input,
-            workspace_settings::workspace_configs,
-            workspace_settings::save_workspace,
-            workspace_settings::delete_workspace,
-            workspace_settings::kube_contexts,
+            compute::workspaces::list_workspaces,
+            compute::workspaces::screen_frame,
+            compute::workspaces::list_artifacts,
+            compute::workspaces::rewind_conversation,
+            compute::workspaces::list_background_jobs,
+            compute::workspaces::save_artifact,
+            compute::workspaces::read_artifact,
+            compute::workspaces::clean_machines,
+            compute::workspaces::delete_machine,
+            compute::workspaces::screen_control,
+            compute::workspaces::screen_input,
+            compute::workspace_settings::workspace_configs,
+            compute::workspace_settings::save_workspace,
+            compute::workspace_settings::delete_workspace,
+            compute::workspace_settings::kube_contexts,
             cli::compute::cluster_configs,
             cli::compute::save_cluster,
             cli::compute::delete_cluster,
-            workspace_settings::check_cluster,
+            compute::workspace_settings::check_cluster,
             cli::compute::compute_supported,
-            workspace_settings::detect_clusters,
-            workspace_settings::check_workspace,
-            workspace_settings::workspace_machines,
-            workspace_settings::delete_workspace_machine,
-            workspace_settings::default_workspace_image,
-            workspace_capabilities::workspace_capabilities,
-            workspace_settings::local_cluster_status,
-            workspace_settings::save_local_cluster_runtime,
-            computer_resources::computer_resources,
+            compute::workspace_settings::detect_clusters,
+            compute::workspace_settings::check_workspace,
+            compute::workspace_settings::workspace_machines,
+            compute::workspace_settings::delete_workspace_machine,
+            compute::workspace_settings::default_workspace_image,
+            compute::workspace_capabilities::workspace_capabilities,
+            compute::workspace_settings::local_cluster_status,
+            compute::workspace_settings::save_local_cluster_runtime,
+            compute::computer_resources::computer_resources,
             cluster_provisioning::provision_local_cluster,
-            cluster_folders::cluster_folders,
-            cluster_folders::save_cluster_folders,
+            compute::cluster_folders::cluster_folders,
+            compute::cluster_folders::save_cluster_folders,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

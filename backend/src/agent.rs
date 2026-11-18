@@ -397,7 +397,7 @@ async fn teleport_thread(
     );
     let outcome = tokio::task::spawn_blocking(move || {
         let binding = crate::cli::daemon::binding()?;
-        crate::workspaces::teleport(&binding, &session_id, &project_dir, &name, |stage| {
+        crate::compute::workspaces::teleport(&binding, &session_id, &project_dir, &name, |stage| {
             let _ = progress.send(AgentEvent::AgentStatus {
                 name: name.clone(),
                 state: "Teleporting".into(),
@@ -433,7 +433,7 @@ pub(crate) async fn move_session(
     let (id, name) = (session_id.clone(), target);
     tokio::task::spawn_blocking(move || {
         let binding = crate::cli::daemon::binding()?;
-        crate::workspaces::teleport(&binding, &id, &project_dir, &name, |stage| {
+        crate::compute::workspaces::teleport(&binding, &id, &project_dir, &name, |stage| {
             let _ = on_stage.send(stage.to_owned());
         })
     })

@@ -1,4 +1,4 @@
-use crate::workspace_settings::{MACHINES, MANAGED_LABEL, ORCHESTRATORS, REQUIREMENTS};
+use crate::compute::workspace_settings::{MACHINES, MANAGED_LABEL, ORCHESTRATORS, REQUIREMENTS};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const MACHINE: &str = "infer-mock-broken";

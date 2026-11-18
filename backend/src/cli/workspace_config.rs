@@ -118,7 +118,7 @@ fn child<'a>(parent: &'a mut Mapping, key: &str) -> Option<&'a mut Mapping> {
 /// Whether the workspace runs on the local cluster, the only one that gives
 /// its computers a GPU to opt out of.
 fn on_gpu_cluster(config: &WorkspaceConfig) -> bool {
-    config.compute == crate::local_cluster::CONTEXT
+    config.compute == crate::compute::local_cluster::CONTEXT
 }
 
 /// Writes or clears one amount of the entry's `resources`. The amounts the

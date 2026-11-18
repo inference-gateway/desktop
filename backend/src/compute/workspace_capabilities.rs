@@ -1,6 +1,6 @@
 /// What a workspace's computer installs when it boots to browse: Firefox with
 /// the opentask extension, wired to the pod's browser bridge.
-const BROWSER_USER_DATA: &str = include_str!("computer_user_data.sh");
+const BROWSER_USER_DATA: &str = include_str!("../computer_user_data.sh");
 
 /// Something a workspace's agents may do on its computers. A workspace has it
 /// when its environment holds every entry of `env` and its user data holds
