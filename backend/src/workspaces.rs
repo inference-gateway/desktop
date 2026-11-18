@@ -94,28 +94,45 @@ fn screen_input_frame(session_id: &str, project_dir: &str, input: &Value) -> Val
     json!({ "type": "screen_input", "project_dir": project_dir, "id": session_id, "input": input })
 }
 
+/// A worker's refusal of a screen request: the stable code a current CLI
+/// names it by, which older releases leave out, beside the message the
+/// person reads.
+#[derive(Debug, PartialEq)]
+struct ScreenRefusal {
+    code: String,
+    message: String,
+}
+
 /// Whether the person holds the screen after a `screen_result`, or why the
 /// worker refused. `None` is a frame of another kind.
-fn parse_screen_result(frame: &Value) -> Option<Result<bool, String>> {
+fn parse_screen_result(frame: &Value) -> Option<Result<bool, ScreenRefusal>> {
     if frame["type"] != "screen_result" {
         return None;
     }
     Some(match frame["error"].as_str().filter(|e| !e.is_empty()) {
-        Some(error) => Err(error.to_owned()),
+        Some(error) => Err(ScreenRefusal {
+            code: frame["code"].as_str().unwrap_or("").to_owned(),
+            message: error.to_owned(),
+        }),
         None => Ok(frame["held"].as_bool().unwrap_or(false)),
     })
 }
 
-/// How the CLI words its refusal of an input kind it does not know.
+/// The stable code a CLI names a refused input kind by.
+const UNSUPPORTED_INPUT_CODE: &str = "unsupported_input";
+
+/// How an older CLI words its refusal of an input kind it does not know.
 const UNSUPPORTED_INPUT: &str = "unsupported screen input";
 
-/// A computer's refusal of a screen request. An input kind an older CLI does
-/// not know gets a kind of its own, since the UI falls back to an older input.
-fn screen_refusal(error: String) -> Error {
-    if error.contains(UNSUPPORTED_INPUT) {
-        Error::UnsupportedInput(error)
+/// A computer's refusal of a screen request. A refused input kind gets a kind
+/// of its own, since the UI falls back to an older input: a CLI that carries
+/// the code names it with that, and the match falls back to the wording for
+/// one that does not.
+fn screen_refusal(refusal: ScreenRefusal) -> Error {
+    if refusal.code == UNSUPPORTED_INPUT_CODE || refusal.message.contains(UNSUPPORTED_INPUT) {
+        Error::UnsupportedInput(refusal.message)
     } else {
-        Error::Message(error)
+        Error::Message(refusal.message)
     }
 }
 
@@ -600,13 +617,25 @@ mod tests {
 
     #[test]
     fn only_an_unknown_input_kind_is_refused_as_unsupported_input() {
-        let refusal = |error: &str| screen_refusal(error.into());
+        let refusal = |code: &str, message: &str| {
+            screen_refusal(ScreenRefusal {
+                code: code.into(),
+                message: message.into(),
+            })
+        };
         assert!(matches!(
-            refusal(r#"unsupported screen input "mouse_down""#),
+            refusal(
+                UNSUPPORTED_INPUT_CODE,
+                r#"unsupported screen input "press""#
+            ),
             Error::UnsupportedInput(_)
         ));
         assert!(matches!(
-            refusal("the screen is not held by the person"),
+            refusal("", r#"unsupported screen input "mouse_down""#),
+            Error::UnsupportedInput(_)
+        ));
+        assert!(matches!(
+            refusal("held_by_worker", "the screen is not held by the person"),
             Error::Message(_)
         ));
     }
@@ -670,6 +699,17 @@ mod tests {
         assert_eq!(
             held(screen_input_frame("s", "/p", &json!({}))),
             Some(Ok(true))
+        );
+        assert_eq!(
+            held(screen_input_frame(
+                "s",
+                "/p",
+                &json!({ "kind": "mouse_down" })
+            )),
+            Some(Err(ScreenRefusal {
+                code: UNSUPPORTED_INPUT_CODE.into(),
+                message: r#"unsupported screen input "mouse_down""#.into(),
+            }))
         );
     }
 
@@ -860,7 +900,22 @@ mod tests {
             parse_screen_result(
                 &json!({"type": "screen_result", "held": true, "error": "already held"})
             ),
-            Some(Err("already held".into()))
+            Some(Err(ScreenRefusal {
+                code: "".into(),
+                message: "already held".into(),
+            }))
+        );
+        assert_eq!(
+            parse_screen_result(&json!({
+                "type": "screen_result",
+                "held": true,
+                "error": r#"unsupported screen input "press""#,
+                "code": "unsupported_input",
+            })),
+            Some(Err(ScreenRefusal {
+                code: UNSUPPORTED_INPUT_CODE.into(),
+                message: r#"unsupported screen input "press""#.into(),
+            }))
         );
         assert_eq!(parse_screen_result(&json!({"type": "frame"})), None);
     }

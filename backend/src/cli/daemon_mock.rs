@@ -74,7 +74,18 @@ pub(crate) fn answer(request: &Value) -> Option<Value> {
         "screen_control" => {
             json!({ "type": "screen_result", "held": request["action"] == "take_over" })
         }
-        "screen_input" => json!({ "type": "screen_result", "held": true }),
+        "screen_input" => {
+            if request["input"]["kind"] == "mouse_down" {
+                json!({
+                    "type": "screen_result",
+                    "held": true,
+                    "error": "unsupported screen input \"mouse_down\"",
+                    "code": "unsupported_input",
+                })
+            } else {
+                json!({ "type": "screen_result", "held": true })
+            }
+        }
         "list_files" => json!({ "type": "files", "files": FILES }),
         "list_issues" => json!({ "type": "issues", "issues": ISSUES
             .iter()
