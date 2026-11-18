@@ -132,10 +132,6 @@ jobs:
         if: needs.changes.outputs.markdown_only != 'true'
         run: cargo test --workspace
 
-      # The desktop installs the CLI from releases/latest, so the init contract
-      # it relies on is checked against the real latest release on windows.
-      # Releases ship the executable inside a tarball, so the check downloads
-      # and extracts it the same way the installer does.
       - name: Verify CLI init contract
         if: needs.changes.outputs.markdown_only != 'true' && runner.os == 'Windows'
         shell: pwsh
