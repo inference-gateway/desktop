@@ -522,27 +522,60 @@ fn pump(mut ws: WebSocket<TcpStream>, rx: mpsc::Receiver<String>, mut on_frame: 
     }
 }
 
-/// The app's open threads by chat id.
+/// The app's open threads by chat id, and a lock per chat so only one caller
+/// dials its thread at a time.
+/// shortcut: a chat's lock stays until the app quits, a few bytes per chat
+/// opened, drop it on close if chats ever number in the many thousands.
 #[derive(Default)]
-pub(crate) struct Threads(Mutex<HashMap<String, Arc<Thread>>>);
+pub(crate) struct Threads {
+    open: Mutex<HashMap<String, Arc<Thread>>>,
+    opening: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
 
 impl Threads {
     pub(crate) fn get(&self, session_id: &str) -> Option<Arc<Thread>> {
-        lock(&self.0).get(session_id).cloned()
+        lock(&self.open).get(session_id).cloned()
     }
 
     pub(crate) fn insert(&self, session_id: &str, thread: Arc<Thread>) {
-        lock(&self.0).insert(session_id.to_string(), thread);
+        lock(&self.open).insert(session_id.to_string(), thread);
+    }
+
+    /// The thread the app follows for a chat, else the one `open` dials.
+    /// Callers for the same chat wait for one another, so a prompt sent while
+    /// the chat is still opening joins that thread instead of dialing another.
+    pub(crate) async fn get_or_open(
+        &self,
+        session_id: &str,
+        open: impl FnOnce() -> Result<Arc<Thread>, String> + Send + 'static,
+    ) -> Result<Arc<Thread>, String> {
+        if let Some(thread) = self.get(session_id) {
+            return Ok(thread);
+        }
+        let opening = Arc::clone(
+            lock(&self.opening)
+                .entry(session_id.to_owned())
+                .or_default(),
+        );
+        let _only_this_caller_dials = opening.lock().await;
+        if let Some(thread) = self.get(session_id) {
+            return Ok(thread);
+        }
+        let thread = tokio::task::spawn_blocking(open)
+            .await
+            .map_err(|e| format!("thread open task failed: {e}"))??;
+        self.insert(session_id, Arc::clone(&thread));
+        Ok(thread)
     }
 
     pub(crate) fn remove(&self, session_id: &str) -> Option<Arc<Thread>> {
-        lock(&self.0).remove(session_id)
+        lock(&self.open).remove(session_id)
     }
 
     /// Stops following a chat with nothing in flight, so the daemon may idle
     /// its worker out. A chat with open interrupts stays: a resume needs them.
     pub(crate) fn close_idle(&self, session_id: &str) {
-        let mut threads = lock(&self.0);
+        let mut threads = lock(&self.open);
         let idle = threads
             .get(session_id)
             .is_some_and(|t| lock(&t.open_interrupts).is_empty());
@@ -552,7 +585,7 @@ impl Threads {
     }
 
     pub(crate) fn close_all(&self) {
-        lock(&self.0).clear();
+        lock(&self.open).clear();
     }
 }
 
@@ -752,6 +785,56 @@ mod tests {
         assert!(threads.get("s1").is_none());
         wait_for(&received, 3);
         assert_eq!(received.lock().unwrap().last().unwrap(), "<closed>");
+    }
+
+    #[test]
+    fn a_chat_opened_twice_at_once_is_dialed_once() {
+        let threads = Arc::new(Threads::default());
+        let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (dialing, dial_started) = mpsc::channel();
+        let (answer, daemon_answers) = mpsc::channel::<()>();
+        let slow_dial = {
+            let dials = Arc::clone(&dials);
+            move || {
+                dials.fetch_add(1, Ordering::SeqCst);
+                dialing.send(()).unwrap();
+                daemon_answers.recv().unwrap();
+                Ok(Thread::detached("chat", Vec::new()).0)
+            }
+        };
+        let quick_dial = {
+            let dials = Arc::clone(&dials);
+            move || {
+                dials.fetch_add(1, Ordering::SeqCst);
+                Ok(Thread::detached("chat", Vec::new()).0)
+            }
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+
+        let (opened, sent_to) = runtime.block_on(async {
+            let open_chat = {
+                let threads = Arc::clone(&threads);
+                tokio::spawn(async move { threads.get_or_open("chat", slow_dial).await })
+            };
+            tokio::task::yield_now().await;
+            dial_started.recv().unwrap();
+            let send_prompt = {
+                let threads = Arc::clone(&threads);
+                tokio::spawn(async move { threads.get_or_open("chat", quick_dial).await })
+            };
+            tokio::task::yield_now().await;
+            answer.send(()).unwrap();
+            (
+                open_chat.await.unwrap().unwrap(),
+                send_prompt.await.unwrap().unwrap(),
+            )
+        });
+
+        assert_eq!(dials.load(Ordering::SeqCst), 1);
+        assert!(Arc::ptr_eq(&opened, &sent_to));
+        assert!(Arc::ptr_eq(&threads.get("chat").unwrap(), &opened));
     }
 
     #[test]
