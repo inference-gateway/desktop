@@ -21,8 +21,42 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos') }}
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      markdown_only: ${{ steps.markdown-only.outputs.markdown_only }}
+      markdown_files: ${{ steps.filter.outputs.markdown_files }}
+    steps:
+      - uses: dorny/paths-filter@v4.0.3
+        id: filter
+        with:
+          list-files: shell
+          predicate-quantifier: some-with-excludes
+          filters: |
+            markdown:
+              - '*.md'
+              - '**/*.md'
+            code:
+              - '**'
+              - '!*.md'
+              - '!**/*.md'
+
+      - name: Compute markdown_only
+        id: markdown-only
+        env:
+          MARKDOWN: ${{ steps.filter.outputs.markdown }}
+          CODE: ${{ steps.filter.outputs.code }}
+        run: |
+          if [ "$MARKDOWN" = 'true' ] && [ "$CODE" != 'true' ]; then
+            echo "markdown_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
-    if: github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
+    needs: changes
+    if: always() && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos')
     strategy:
       fail-fast: false
       matrix:
@@ -37,17 +71,25 @@ jobs:
       run:
         working-directory: backend
     steps:
+      - name: Markdown-only pull request - skipping the build-and-test matrix
+        working-directory: ${{ github.workspace }}
+        if: needs.changes.outputs.markdown_only == 'true'
+        run: echo "Only .md files changed - no bun, cargo or CLI-contract steps run; the markdown-lint job checks the changed files"
+
       - uses: actions/checkout@v7.0.1
+        if: needs.changes.outputs.markdown_only != 'true'
 
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        if: needs.changes.outputs.markdown_only != 'true'
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2.9.3
+        if: needs.changes.outputs.markdown_only != 'true'
 
       - name: Install system dependencies
-        if: runner.os == 'Linux'
+        if: needs.changes.outputs.markdown_only != 'true' && runner.os == 'Linux'
         run: |
           for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
                 if [ -f "$f" ]; then
@@ -64,26 +106,32 @@ jobs:
           done
 
       - uses: oven-sh/setup-bun@v2.2.0
+        if: needs.changes.outputs.markdown_only != 'true'
         with:
           bun-version-file: .bun-version
 
       # The Rust build embeds frontendDist (../dist) via generate_context!, so
       # the frontend must be built before any cargo compile step.
       - name: Build frontend
+        if: needs.changes.outputs.markdown_only != 'true'
         working-directory: ${{ github.workspace }}
         run: bun install --frozen-lockfile && bun run build
 
       - name: Test frontend
+        if: needs.changes.outputs.markdown_only != 'true'
         working-directory: ${{ github.workspace }}
         run: bun test
 
       - name: Check formatting
+        if: needs.changes.outputs.markdown_only != 'true'
         run: cargo fmt --check
 
       - name: Lint with clippy
+        if: needs.changes.outputs.markdown_only != 'true'
         run: cargo clippy -- -D warnings
 
       - name: Build and test
+        if: needs.changes.outputs.markdown_only != 'true'
         run: cargo test --workspace
 
       # The desktop installs the CLI from releases/latest, so the init contract
@@ -91,7 +139,7 @@ jobs:
       # Releases ship the executable inside a tarball, so the check downloads
       # and extracts it the same way the installer does.
       - name: Verify CLI init contract
-        if: runner.os == 'Windows'
+        if: needs.changes.outputs.markdown_only != 'true' && runner.os == 'Windows'
         shell: pwsh
         working-directory: ${{ github.workspace }}
         run: |
@@ -114,3 +162,35 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'infer init without flags failed' }
           if (-not (Test-Path (Join-Path $sandbox '.infer\config.yaml'))) { throw 'infer init did not create the userspace config.yaml' }
           Write-Host 'CLI init contract verified: bare infer init seeds the userspace config, --userspace is gone'
+
+  markdown-lint:
+    needs: changes
+    if: needs.changes.outputs.markdown_only == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: List the changed markdown files
+        id: files
+        env:
+          MARKDOWN_FILES: ${{ needs.changes.outputs.markdown_files }}
+        run: |
+          set -f
+          printf 'files<<EOF\n' >> "$GITHUB_OUTPUT"
+          for markdown_file in $MARKDOWN_FILES; do
+            if [ -f "$markdown_file" ]; then
+              printf '%s\n' "$markdown_file" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          printf 'EOF\n' >> "$GITHUB_OUTPUT"
+
+      - name: Markdown-only pull request with no files left to lint
+        if: steps.files.outputs.files == ''
+        run: echo "Only deleted .md files remained - nothing to lint"
+
+      - name: Lint the changed markdown files
+        if: steps.files.outputs.files != ''
+        uses: DavidAnson/markdownlint-cli2-action@v25.0.0
+        with:
+          globs: |
+            ${{ steps.files.outputs.files }}
