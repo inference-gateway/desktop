@@ -279,12 +279,8 @@ fn read_desktop_data_in(home: &Path) -> DesktopData {
 }
 
 fn write_desktop_data(data: &DesktopData, home: &Path) -> Result<(), String> {
-    let path = infer_dir_in(home).join("desktop.yaml");
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
     let text = serde_norway::to_string(data).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("failed to write {}: {e}", path.display()))
+    crate::config::update_file(&infer_dir_in(home).join("desktop.yaml"), |_| Ok(text))
 }
 
 // --- Applying an import -------------------------------------------------------

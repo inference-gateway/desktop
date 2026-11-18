@@ -88,16 +88,44 @@ fn set_auth_key_in(home: &Path, key: &str, value: &str) -> Result<(), String> {
 }
 
 /// Saves `keys` over the stored ones and keeps every other entry, so saving
-/// the API Keys never drops an agent's key or a secret. A blank value clears its key.
+/// the API Keys never drops an agent's key or a secret. A blank value clears
+/// its key. The file ends up readable by its owner only, which the CLI warns
+/// about when it is broader - an existing file is re-tightened too.
 fn merge_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
-    let mut stored = read_auth_in(home);
+    let path = auth_path(home);
+    update_file(&path, |existing| merged_auth(existing, keys))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(OWNER_ONLY))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// auth.yaml with `keys` saved over the entries of `existing`, blank values
+/// dropped. An entry that is not text is an error, so a save never drops a
+/// key it could not read.
+fn merged_auth(existing: Option<&str>, keys: BTreeMap<String, String>) -> Result<String, String> {
+    let mut stored: BTreeMap<String, String> = match existing.filter(|text| !text.trim().is_empty())
+    {
+        Some(text) => serde_norway::from_str::<Option<_>>(text)
+            .map_err(|e| {
+                format!(
+                    "auth.yaml is not a list of names and values, so it was left untouched: {e}"
+                )
+            })?
+            .unwrap_or_default(),
+        None => BTreeMap::new(),
+    };
     for (key, value) in keys {
         match value.trim() {
             "" => stored.remove(&key),
             value => stored.insert(key, value.to_owned()),
         };
     }
-    write_auth_in(home, stored)
+    stored.retain(|_, value| !value.trim().is_empty());
+    serde_norway::to_string(&stored).map_err(|e| e.to_string())
 }
 
 /// The cap `agent_mail.allowed_recipients` in config.yaml puts on every agent's
@@ -118,33 +146,6 @@ pub(crate) fn agent_mail_cap_in(home: &Path) -> Vec<String> {
         .iter()
         .filter_map(|entry| entry.as_str().map(str::to_owned))
         .collect()
-}
-
-/// Writes `keys` as the whole auth.yaml. Blank values are dropped rather than
-/// written. The file is chmod 0600 on unix, which the CLI warns about when it
-/// is broader. Permissions are set after the write rather than at creation so
-/// an existing file is re-tightened too.
-fn write_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
-    let path = auth_path(home);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let map: BTreeMap<String, String> = keys
-        .into_iter()
-        .filter(|(_, v)| !v.trim().is_empty())
-        .collect();
-    let yaml = serde_norway::to_string(&map).map_err(|e| e.to_string())?;
-    std::fs::write(&path, yaml).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)
-            .map_err(|e| e.to_string())?
-            .permissions();
-        perms.set_mode(0o600);
-        std::fs::set_permissions(&path, perms).map_err(|e| e.to_string())?;
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -474,8 +475,9 @@ pub(crate) fn read_config_in(home: &std::path::Path) -> DesktopConfig {
     }
 }
 
-/// Parse `text` as a YAML mapping, or start from a fresh one. A malformed or
-/// non-mapping existing config is replaced rather than aborting the write.
+/// Parse `text` as a YAML mapping, or start from a fresh one, so a reader gets
+/// defaults for a file it cannot use. A write never reaches this with such a
+/// file: `update_file` refuses it first, and the file stays as it is.
 pub(crate) fn config_mapping(text: Option<&str>) -> serde_norway::Value {
     text.and_then(|t| serde_norway::from_str::<serde_norway::Value>(t).ok())
         .filter(serde_norway::Value::is_mapping)
@@ -786,8 +788,9 @@ pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result
 /// each other's change. `f` must not call `update_file` itself.
 static FILE_EDITS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Read `path`, apply `f` to its text (`None` when missing), and write the
-/// result back, creating the parent dir as needed.
+/// Read the YAML file at `path`, apply `f` to its text (`None` when missing),
+/// and replace it with the result, creating the parent dir as needed. A file
+/// `editable_text` refuses is left as it is.
 pub(crate) fn update_file(
     path: &Path,
     f: impl FnOnce(Option<&str>) -> Result<String, String>,
@@ -798,9 +801,78 @@ pub(crate) fn update_file(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let existing = std::fs::read_to_string(path).ok();
+    let existing = editable_text(path)?;
     let text = f(existing.as_deref())?;
-    std::fs::write(path, text).map_err(|e| e.to_string())
+    replace_file(path, &text)
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))
+}
+
+/// The text of the YAML file at `path`, `None` when there is none yet. A file
+/// that cannot be read, or that holds anything but a mapping, is an error: a
+/// save that took it for a missing one would replace what the person wrote.
+pub(crate) fn editable_text(path: &Path) -> Result<Option<String>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("{} cannot be read: {error}", path.display())),
+    };
+    match serde_norway::from_str::<serde_norway::Value>(&text) {
+        Ok(serde_norway::Value::Mapping(_) | serde_norway::Value::Null) => Ok(Some(text)),
+        Ok(_) => Err(format!(
+            "{} is not a YAML mapping, so it was left untouched - fix or remove it",
+            path.display()
+        )),
+        Err(error) => Err(format!(
+            "{} is not valid YAML, so it was left untouched - fix or remove it: {error}",
+            path.display()
+        )),
+    }
+}
+
+#[cfg(unix)]
+const OWNER_ONLY: u32 = 0o600;
+const TEMPORARY_SUFFIX: &str = ".tmp";
+
+/// Replaces the file at `path` with `text` in one step, so a crash leaves the
+/// old file or the new one and never half of either. A symlink keeps pointing
+/// at its target and an existing file keeps its permissions.
+fn replace_file(path: &Path, text: &str) -> std::io::Result<()> {
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut temporary = target.clone().into_os_string();
+    temporary.push(TEMPORARY_SUFFIX);
+    let temporary = PathBuf::from(temporary);
+    let replaced = write_beside(&temporary, &target, text);
+    if replaced.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    replaced
+}
+
+fn write_beside(temporary: &Path, target: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let _ = std::fs::remove_file(temporary);
+    let mut file = private_file(temporary)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    #[cfg(unix)]
+    if let Ok(existing) = std::fs::metadata(target) {
+        file.set_permissions(existing.permissions())?;
+    }
+    drop(file);
+    std::fs::rename(temporary, target)
+}
+
+/// A new file only its owner can read, so a secret on its way into place is
+/// never in a file others can open.
+fn private_file(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(OWNER_ONLY);
+    }
+    options.open(path)
 }
 
 /// Read ~/.infer/config.yaml, apply `f` to its text, and write the result back,
@@ -860,7 +932,7 @@ mod tests {
         .unwrap();
         assert!(read_auth_in(&home).is_empty());
 
-        write_auth_in(
+        merge_auth_in(
             &home,
             BTreeMap::from([
                 ("OPENAI_API_KEY".to_string(), "sk-test".to_string()),
@@ -884,7 +956,7 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-            write_auth_in(
+            merge_auth_in(
                 &home,
                 BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-test".to_string())]),
             )
@@ -1427,5 +1499,103 @@ mod tests {
         let cfg = default_config();
         let val = parse_yaml(&merge_config(Some("just a scalar"), &cfg).unwrap());
         assert_eq!(str_field(&val, &["storage", "type"]), Some("jsonl"));
+    }
+
+    const UNPARSABLE: &str = "gateway:\n\turl: http://localhost:8080\n";
+
+    fn replace_with_a_model(path: &Path) -> Result<(), String> {
+        update_file(path, |existing| {
+            merge_default_model(existing, "openai/gpt-5")
+        })
+    }
+
+    #[test]
+    fn a_file_that_does_not_parse_is_left_untouched() {
+        let home = TempDir::new("unparsable");
+        let path = home.join("config.yaml");
+        for kept in [UNPARSABLE, "just a scalar\n", "- a\n- list\n"] {
+            std::fs::write(&path, kept).unwrap();
+            let refused = replace_with_a_model(&path).unwrap_err();
+            assert!(refused.contains("left untouched"), "{refused}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        }
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_not_taken_for_a_missing_one() {
+        let home = TempDir::new("unreadable");
+        let path = home.join("config.yaml");
+        std::fs::create_dir(&path).unwrap();
+        let refused = replace_with_a_model(&path).unwrap_err();
+        assert!(refused.contains("cannot be read"), "{refused}");
+        assert!(path.is_dir());
+    }
+
+    #[test]
+    fn a_missing_or_empty_file_starts_fresh_and_leaves_no_temporary_file() {
+        let home = TempDir::new("fresh");
+        let path = home.join("nested").join("config.yaml");
+        replace_with_a_model(&path).unwrap();
+        for empty in ["", "# only a note\n"] {
+            std::fs::write(&path, empty).unwrap();
+            replace_with_a_model(&path).unwrap();
+            let saved = parse_yaml(&std::fs::read_to_string(&path).unwrap());
+            assert_eq!(str_field(&saved, &["agent", "model"]), Some("openai/gpt-5"));
+        }
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["config.yaml"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_save_keeps_the_mode_of_a_file_and_the_link_to_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let home = TempDir::new("mode");
+        let real = home.join("dotfiles-config.yaml");
+        let link = home.join("config.yaml");
+        std::fs::write(&real, "gateway:\n  url: http://localhost:8080\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        replace_with_a_model(&link).unwrap();
+
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(mode(&real), 0o644);
+        let saved = parse_yaml(&std::fs::read_to_string(&real).unwrap());
+        assert_eq!(str_field(&saved, &["agent", "model"]), Some("openai/gpt-5"));
+        assert_eq!(
+            str_field(&saved, &["gateway", "url"]),
+            Some("http://localhost:8080")
+        );
+
+        let created = home.join("created.yaml");
+        replace_with_a_model(&created).unwrap();
+        assert_eq!(mode(&created), OWNER_ONLY);
+    }
+
+    #[test]
+    fn saving_a_key_never_drops_the_keys_of_an_auth_file_it_cannot_read() {
+        let home = TempDir::new("auth-kept");
+        std::fs::create_dir_all(infer_dir_in(&home)).unwrap();
+        let key = BTreeMap::from([("GROQ_API_KEY".to_string(), "gsk-test".to_string())]);
+        for kept in [
+            "OPENAI_API_KEY: [sk-unclosed\n",
+            "OPENAI_API_KEY: sk-test\nNESTED:\n  key: value\n",
+        ] {
+            std::fs::write(auth_path(&home), kept).unwrap();
+            let refused = merge_auth_in(&home, key.clone()).unwrap_err();
+            assert!(refused.contains("left untouched"), "{refused}");
+            assert_eq!(std::fs::read_to_string(auth_path(&home)).unwrap(), kept);
+        }
+        std::fs::write(auth_path(&home), "").unwrap();
+        merge_auth_in(&home, key).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(auth_path(&home)).unwrap(),
+            "GROQ_API_KEY: gsk-test\n"
+        );
     }
 }

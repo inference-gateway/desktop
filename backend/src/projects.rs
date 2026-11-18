@@ -127,13 +127,11 @@ pub(crate) fn read_projects_in(home: &Path) -> serde_json::Value {
         .unwrap_or_else(|| serde_json::json!({}))
 }
 
+/// Replaces projects.yaml with `val`. A file that does not parse is kept and
+/// the save fails, since the sidebar read it as empty and would erase it.
 pub(crate) fn write_projects_in(home: &Path, val: &serde_json::Value) -> Result<(), String> {
-    let path = projects_path(home);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
     let text = serde_norway::to_string(val).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("failed to write {}: {e}", path.display()))
+    crate::config::update_file(&projects_path(home), |_| Ok(text))
 }
 
 /// Read ~/.infer/projects.yaml as JSON text for the sidebar. The file is YAML
@@ -415,6 +413,18 @@ mod tests {
         assert_eq!(sanitize_name(""), "project");
         assert_eq!(sanitize_name("///"), "project");
         assert_eq!(sanitize_name("École"), "École");
+    }
+
+    #[test]
+    fn a_projects_file_that_does_not_parse_is_read_as_empty_and_never_erased() {
+        let home = TempDir::new("projects-kept");
+        let kept = "names:\n\t- desktop\n";
+        std::fs::create_dir_all(projects_path(&home).parent().unwrap()).unwrap();
+        std::fs::write(projects_path(&home), kept).unwrap();
+
+        assert_eq!(read_projects_in(&home), serde_json::json!({}));
+        assert!(write_projects_in(&home, &serde_json::json!({})).is_err());
+        assert_eq!(std::fs::read_to_string(projects_path(&home)).unwrap(), kept);
     }
 
     #[test]
