@@ -18,10 +18,6 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push or the ci:macos label supersedes the check in progress on a
-  # pull request, but any other label also starts a run in the same group and
-  # its check job only skips, so those runs must not cancel anything - and on
-  # main a newer push waits behind the in-progress run instead of killing it.
   cancel-in-progress: ${{ github.event_name != 'push' && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos') }}
 
 jobs:
