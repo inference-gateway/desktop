@@ -265,7 +265,6 @@ pub fn run() {
             agent::a2a::set_a2a_agent_model,
             agent::files::save_image,
             agent::files::save_audio,
-            agent::files::save_upload,
             projects::create_project_dir,
             projects::move_project,
             projects::git::scan_git_repos,

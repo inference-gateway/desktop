@@ -2,14 +2,11 @@
 
 version: '3'
 
-vars:
-  GREETING: Hello, world!
-
 tasks:
   default:
-    desc: Print a greeting message
+    desc: List the tasks
     cmds:
-      - echo "{{.GREETING}}"
+      - task --list
     silent: true
 
   install:

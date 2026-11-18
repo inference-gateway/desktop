@@ -6,18 +6,11 @@ use tauri::ipc::Channel;
 #[serde(tag = "kind")]
 pub(crate) enum ProgressEvent {
     Checking,
-    Downloading {
-        received: u64,
-        total: u64,
-    },
+    Downloading { received: u64, total: u64 },
     Verifying,
     Installing,
     Initializing,
     Ready,
-    #[allow(dead_code)]
-    Error {
-        message: String,
-    },
 }
 /// Download a file from `url` to `dest`, sending progress through the channel.
 pub(crate) fn download(

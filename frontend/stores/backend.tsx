@@ -28,7 +28,7 @@ const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 1500;
 
 /** Status text for an install progress event, shared by the full init flow and
- * per-component installs. "Ready" and "Error" carry extra side-effects there. */
+ * per-component installs. "Ready" carries extra side-effects there. */
 function progressStatus(event: ProgressEvent, what = "infer"): string {
   switch (event.kind) {
     case "Checking":
@@ -45,8 +45,6 @@ function progressStatus(event: ProgressEvent, what = "infer"): string {
       return "Running initial setup...";
     case "Ready":
       return "Ready";
-    case "Error":
-      return `Error: ${event.message}`;
   }
 }
 
@@ -170,9 +168,6 @@ function useBackendStore() {
                 .catch(() => {});
               refreshStatus();
               startServices();
-              break;
-            case "Error":
-              setError(progressStatus(event));
               break;
             default:
               setStatus(progressStatus(event));
