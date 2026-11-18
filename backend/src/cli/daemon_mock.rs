@@ -76,8 +76,6 @@ pub(crate) fn answer(request: &Value) -> Option<Value> {
         }
         "screen_input" => {
             if request["input"]["kind"] == "mouse_down" {
-                // The mock's CLI cannot drive a pointer press, so it answers
-                // the refusal worded and coded like the CLI does today.
                 json!({
                     "type": "screen_result",
                     "held": true,
