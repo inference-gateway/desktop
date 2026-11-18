@@ -23,17 +23,16 @@ test("a burst of changes while a save is in flight writes only the latest docume
   save("second");
   save("third");
   const last = save("fourth");
-  expect(written).toEqual(["first"]); // one write at a time
+  expect(written).toEqual(["first"]);
 
   writes[0].resolve();
   await first;
-  // the changes made meanwhile coalesce: the next write carries only the newest document
   expect(written).toEqual(["first", "fourth"]);
   expect(writes.length).toBe(2);
 
   writes[1].resolve();
   await last;
-  expect(written).toEqual(["first", "fourth"]); // idle, the burst cost one extra write
+  expect(written).toEqual(["first", "fourth"]);
 });
 
 test("a failed write rejects its callers and does not block the next one", async () => {

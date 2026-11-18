@@ -51,9 +51,6 @@ function useSidebarStore() {
     loadProjects();
   }, [loadProjects]);
 
-  // Saves go through a queue so a burst of changes collapses into one follow-up
-  // write (only the latest document) and still lands in call order: write_projects
-  // is async, so the queue is what keeps the writes ordered.
   const saveProjects = useMemo(() => createWriteQueue((data) => api.writeProjects(data)), []);
 
   useEffect(() => {
