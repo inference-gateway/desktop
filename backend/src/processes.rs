@@ -12,10 +12,15 @@ const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(25);
 #[cfg(unix)]
 const SIGKILL_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// What the app records about the gateway it started, so a later start can
+/// stop one left behind by a crash: the gateway's pid and binary, and the pid
+/// of the app copy that started it. A record without the app's pid was written
+/// before it was kept and counts as left behind.
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct GatewayOwnership {
     pid: u32,
     executable: PathBuf,
+    app_pid: Option<u32>,
 }
 
 struct ManagedChild {
@@ -390,6 +395,9 @@ impl ProcessSupervisor {
         if !process_matches(&ownership)? {
             return self.remove_ownership();
         }
+        if started_by_another_running_app(&ownership)? {
+            return Ok(());
+        }
 
         terminate_owned_pid(&ownership, self.shutdown_timeout)?;
         self.remove_ownership()
@@ -477,7 +485,23 @@ fn ownership_for_child(child: &Child) -> Result<GatewayOwnership, String> {
     let pid = child.id();
     let executable = process_executable(pid)?
         .ok_or_else(|| format!("gateway process {pid} exited before ownership was recorded"))?;
-    Ok(GatewayOwnership { pid, executable })
+    Ok(GatewayOwnership {
+        pid,
+        executable,
+        app_pid: Some(std::process::id()),
+    })
+}
+
+/// Whether another copy of the app started the recorded gateway and still
+/// runs, so the gateway is that copy's to stop. A process under the recorded
+/// pid that is not the app means the pid was reused after that copy ended.
+fn started_by_another_running_app(ownership: &GatewayOwnership) -> Result<bool, String> {
+    let Some(app_pid) = ownership.app_pid.filter(|&pid| pid != std::process::id()) else {
+        return Ok(false);
+    };
+    let this_app = std::env::current_exe()
+        .map_err(|error| format!("failed to find the app's executable: {error}"))?;
+    Ok(process_executable(app_pid)?.is_some_and(|app| app.file_name() == this_app.file_name()))
 }
 
 fn wait_for_gateway_ready<F>(
@@ -770,6 +794,7 @@ mod tests {
         let ownership = GatewayOwnership {
             pid: 42,
             executable: PathBuf::from("/tmp/gateway"),
+            app_pid: Some(7),
         };
 
         supervisor
@@ -785,6 +810,14 @@ mod tests {
         supervisor
             .remove_ownership()
             .expect("ownership should be removed");
+    }
+
+    #[test]
+    fn a_record_from_before_the_app_pid_was_kept_has_none() {
+        let old: GatewayOwnership =
+            serde_json::from_str(r#"{"pid":42,"executable":"/tmp/gateway"}"#)
+                .expect("an old record should still parse");
+        assert_eq!(old.app_pid, None);
     }
 
     #[test]
@@ -874,6 +907,66 @@ mod tests {
             .expect("recovery thread should finish")
             .expect("recovery should succeed");
         assert!(!supervisor.ownership_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_gateway_another_running_app_started_is_left_to_that_app() {
+        let (dir, supervisor) = test_supervisor("other-app");
+        let this_app = std::env::current_exe().expect("the test binary should have a path");
+        let other_app_path = dir.join(this_app.file_name().expect("a binary has a file name"));
+        std::fs::copy("/bin/sleep", &other_app_path).expect("a stand-in app should be copied");
+        let other_app = crate::env::command(&other_app_path)
+            .arg("30")
+            .spawn()
+            .expect("the stand-in app should start");
+        let unrelated = crate::env::command("sleep")
+            .arg("30")
+            .spawn()
+            .expect("an unrelated process should start");
+        let mut gateway = spawn_signal_child("exit 0");
+        let GatewayOwnership {
+            pid, executable, ..
+        } = ownership_for_child(&gateway).expect("child identity should be available");
+        let started_by = |app_pid: u32| GatewayOwnership {
+            pid,
+            executable: executable.clone(),
+            app_pid: Some(app_pid),
+        };
+
+        supervisor
+            .write_ownership(&started_by(other_app.id()))
+            .expect("ownership should be written");
+        supervisor
+            .recover_owned_gateway(&executable)
+            .expect("recovery should succeed");
+        assert!(
+            gateway
+                .try_wait()
+                .expect("gateway should be inspected")
+                .is_none()
+        );
+        assert!(supervisor.ownership_path.exists());
+
+        supervisor
+            .write_ownership(&started_by(unrelated.id()))
+            .expect("ownership should be written");
+        let supervisor = Arc::new(supervisor);
+        let recovery_supervisor = Arc::clone(&supervisor);
+        let recovery =
+            std::thread::spawn(move || recovery_supervisor.recover_owned_gateway(&executable));
+        let status = gateway.wait().expect("recovered gateway should be reaped");
+        recovery
+            .join()
+            .expect("recovery thread should finish")
+            .expect("recovery should succeed");
+        assert!(status.success());
+        assert!(!supervisor.ownership_path.exists());
+
+        for mut process in [other_app, unrelated] {
+            process.kill().expect("a stand-in should be stopped");
+            process.wait().expect("a stand-in should be reaped");
+        }
     }
 
     #[cfg(unix)]
