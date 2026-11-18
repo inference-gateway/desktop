@@ -3,7 +3,7 @@ narration:
   - "Open chat 1 of 5 - five will run at the same time."
   - "Ask for a file that pauses at approval, so the session stays live."
   - "Session 1 is waiting at its approval card."
-  - "Open chat 2; a running session does not block a new one."
+  - "Open chat 2. A running session does not block a new one."
   - "Session 2 asks for its own file."
   - "Session 2 is live as well - two infer children stream at once."
   - "Open chat 3."

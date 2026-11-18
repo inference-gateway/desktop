@@ -3,11 +3,11 @@ content_project: e2e-revert
 narration:
   - "Open a fresh chat."
   - "Pick the content project - the timeline editor, with the chat docked beside it."
-  - "Ask the agent to set up a base timeline; it returns a Write of revert.timeline.json."
+  - "Ask the agent to set up a base timeline. It returns a Write of revert.timeline.json."
   - "The Write pauses for approval."
   - "Approve it."
   - "The base timeline lands on disk - the first git checkpoint."
-  - "Ask it to write a captions track; it rewrites the same timeline."
+  - "Ask it to write a captions track. It rewrites the same timeline."
   - "That Write waits for approval too."
   - "Approve it."
   - "The captioned timeline lands - a second checkpoint."

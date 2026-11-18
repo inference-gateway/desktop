@@ -3,7 +3,7 @@ content_project: e2e-avatar
 narration:
   - "Open a fresh chat."
   - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
-  - "Ask for a talking avatar; the model returns a Write of intro.timeline.json."
+  - "Ask for a talking avatar. The model returns a Write of intro.timeline.json."
   - "The Write pauses for approval - approving is the precondition for the file landing."
   - "Approve it."
   - "The avatar clip lands on the video track as ordinary footage, labelled with the avatar's name."
