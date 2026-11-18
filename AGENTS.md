@@ -34,7 +34,7 @@ INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 
 ## Verifying the UI
 
-`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu) runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` - no e2e.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. CI (ubuntu, macOS and windows) runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test --workspace`, which validates the e2e test files without running them.
 
 Running the tests (macOS only):
 

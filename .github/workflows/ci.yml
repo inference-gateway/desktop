@@ -53,7 +53,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       # The Rust build embeds frontendDist (../dist) via generate_context!, so
       # the frontend must be built before any cargo compile step.
@@ -72,7 +72,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Build and test
-        run: cargo test
+        run: cargo test --workspace
 
       # The desktop installs the CLI from releases/latest, so the init contract
       # it relies on is checked against the real latest release on windows.
