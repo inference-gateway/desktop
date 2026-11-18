@@ -469,6 +469,7 @@ pub(crate) fn save_blocking(
     if value.is_empty() {
         return Err("Type the secret's value.".into());
     }
+    config::editable_text(&secrets_path(&home))?;
     config::set_secret_value_in(&home, &secret.label, &value)?;
     let entry = StoredSecret {
         label: secret.label.clone(),
