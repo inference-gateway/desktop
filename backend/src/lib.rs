@@ -120,6 +120,15 @@ pub fn run() {
     let processes = Arc::new(processes::ProcessSupervisor::new());
 
     let app = tauri::Builder::default()
+        // Must come first (plugin docs): a second copy is detected and exits inside
+        // the plugin's setup, before any other setup runs. It keys on the app
+        // identifier, which task dev overrides via backend/tauri.dev.conf.json.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.unminimize();
+                let _ = main.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())

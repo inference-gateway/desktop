@@ -24,6 +24,10 @@ task dev
 
 `task dev:hmr` runs the frontend from the Vite dev server instead, so an edit applies on save without a rebuild. That page gets no content security policy, so check a change that loads a new kind of resource (an image host, a font, a script) with `task dev` as well.
 
+## Running beside the installed app
+
+The app is single-instance: a second launch with the same app identifier (for example, a second copy of the installed app on Linux or Windows) focuses the running window and exits, instead of two copies sharing the same gateway process and racing on the `~/.infer` files. The plugin keys on the identifier from `tauri.conf.json`, which is also what `task dev` uses - so a development build would otherwise just focus the installed app. `task dev` and `task dev:hmr` therefore pass `backend/tauri.dev.conf.json`, which overrides the identifier with `dev.com.inference-gateway.desktop` and is what lets a development copy run beside the installed app. Builds that keep the installed app's identifier (`cargo tauri build`, a plain `cargo build`, and the e2e suite) only run beside the installed app after it quits.
+
 ## Building
 
 ```bash
