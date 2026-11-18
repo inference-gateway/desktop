@@ -110,8 +110,6 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # The Rust build embeds frontendDist (../dist) via generate_context!, so
-      # the frontend must be built before any cargo compile step.
       - name: Build frontend
         if: needs.changes.outputs.markdown_only != 'true'
         working-directory: ${{ github.workspace }}
