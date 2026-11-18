@@ -1,6 +1,5 @@
 use crate::download::ProgressEvent;
-use crate::env::infer_bin_path;
-use crate::gateway::gateway_bin_path;
+use crate::env::{gateway_bin_path, infer_bin_path};
 use std::io::Read;
 use tauri_plugin_updater::UpdaterExt;
 

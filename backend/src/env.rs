@@ -54,6 +54,29 @@ pub(crate) fn infer_dir() -> PathBuf {
     infer_dir_in(&home_dir())
 }
 
+/// A gateway build to run in place of the installed one, named by
+/// INFERENCE_GATEWAY_BIN, so a local build can be clicked through without
+/// touching ~/.infer/bin. The desktop never installs over it.
+fn local_gateway_build(named: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    named.filter(|bin| !bin.is_empty()).map(PathBuf::from)
+}
+
+pub(crate) fn local_gateway_build_from_env() -> Option<PathBuf> {
+    local_gateway_build(std::env::var_os("INFERENCE_GATEWAY_BIN"))
+}
+
+pub(crate) fn gateway_bin_path() -> PathBuf {
+    if let Some(build) = local_gateway_build_from_env() {
+        return build;
+    }
+    let name = if cfg!(target_os = "windows") {
+        "inference-gateway.exe"
+    } else {
+        "inference-gateway"
+    };
+    bin_dir().join(name)
+}
+
 /// Path of the infer binary to spawn. INFER_BIN overrides the installed one
 /// so test harnesses can point at a specific build without touching
 /// ~/.infer/bin.
@@ -112,6 +135,13 @@ pub(crate) fn config_path() -> PathBuf {
     infer_dir().join("config.yaml")
 }
 
+pub(crate) const DAEMON_FILE: &str = "daemon.yaml";
+
+/// Where the daemon's own configuration lives, `~/.infer/daemon.yaml`.
+pub(crate) fn daemon_config_path() -> PathBuf {
+    infer_dir().join(DAEMON_FILE)
+}
+
 /// Install directory for the CLI, the gateway binary and desktop tools (`~/.infer/bin`).
 pub(crate) fn bin_dir() -> PathBuf {
     infer_dir().join("bin")
@@ -147,6 +177,16 @@ pub(crate) fn uploads_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_local_gateway_build_is_named_by_a_non_empty_path() {
+        assert_eq!(local_gateway_build(None), None);
+        assert_eq!(local_gateway_build(Some("".into())), None);
+        assert_eq!(
+            local_gateway_build(Some("/src/gateway/bin/inference-gateway".into())),
+            Some(PathBuf::from("/src/gateway/bin/inference-gateway"))
+        );
+    }
 
     #[test]
     fn test_asset_name_mapping() {

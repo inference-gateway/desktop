@@ -156,7 +156,7 @@ fn rename_workspaces(daemon_yaml: Option<&str>, from: &str, to: &str) -> Result<
 /// the compute commands. Mock mode always does.
 pub(crate) fn compute_supported_blocking() -> bool {
     crate::env::mock_mode()
-        || crate::agent::infer_command(&crate::env::home_dir())
+        || crate::launch::infer_command(&crate::env::home_dir())
             .args(["compute", "clusters", "list"])
             .output()
             .is_ok_and(|output| output.status.success())
@@ -185,7 +185,7 @@ pub(crate) async fn save_cluster(
         })?;
         match previous_name {
             Some(previous) if previous != config.name.trim() => {
-                crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+                crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
                     rename_workspaces(existing, &previous, config.name.trim())
                 })
             }
@@ -205,7 +205,7 @@ pub(crate) fn cluster_configs() -> Vec<ClusterConfig> {
 /// Removes a cluster no workspace runs on.
 #[tauri::command]
 pub(crate) fn delete_cluster(name: String) -> Result<(), String> {
-    let daemon_yaml = std::fs::read_to_string(crate::cli::daemon::config_path()).ok();
+    let daemon_yaml = std::fs::read_to_string(crate::env::daemon_config_path()).ok();
     let users = workspaces_on(daemon_yaml.as_deref(), &name);
     if !users.is_empty() {
         return Err(format!(

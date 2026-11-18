@@ -19,7 +19,7 @@ fn read_auth_in(home: &Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-fn read_auth() -> BTreeMap<String, String> {
+pub(crate) fn read_auth() -> BTreeMap<String, String> {
     read_auth_in(&home_dir())
 }
 
@@ -91,7 +91,7 @@ fn set_auth_key_in(home: &Path, key: &str, value: &str) -> Result<(), String> {
 /// the API Keys never drops an agent's key or a secret. A blank value clears
 /// its key. The file ends up readable by its owner only, which the CLI warns
 /// about when it is broader - an existing file is re-tightened too.
-fn merge_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
+pub(crate) fn merge_auth_in(home: &Path, keys: BTreeMap<String, String>) -> Result<(), String> {
     let path = auth_path(home);
     update_file(&path, |existing| merged_auth(existing, keys))?;
     #[cfg(unix)]
@@ -146,23 +146,6 @@ pub(crate) fn agent_mail_cap_in(home: &Path) -> Vec<String> {
         .iter()
         .filter_map(|entry| entry.as_str().map(str::to_owned))
         .collect()
-}
-
-#[tauri::command]
-pub(crate) async fn get_auth() -> Result<BTreeMap<String, String>, String> {
-    Ok(read_auth())
-}
-
-#[tauri::command]
-pub(crate) async fn set_auth(
-    keys: BTreeMap<String, String>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
-    crate::blocking_with_state(app, move |state| {
-        merge_auth_in(&home_dir(), keys)?;
-        crate::cli::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)
-    })
-    .await
 }
 
 /// Desktop-facing config fields read from ~/.infer/config.yaml - the Settings

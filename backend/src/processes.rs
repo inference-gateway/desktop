@@ -115,7 +115,7 @@ impl ProcessSupervisor {
             self.clear_stopped_gateway_ownership()?;
         }
 
-        self.recover_owned_gateway(&crate::gateway::gateway_bin_path())?;
+        self.recover_owned_gateway(&crate::env::gateway_bin_path())?;
         self.ensure_running()?;
 
         if crate::gateway::reuse_running_gateway(
@@ -276,7 +276,7 @@ impl ProcessSupervisor {
         let ownership_error = if gateway_owned {
             self.clear_stopped_gateway_ownership().err()
         } else if self.gateway_enabled {
-            self.recover_owned_gateway(&crate::gateway::gateway_bin_path())
+            self.recover_owned_gateway(&crate::env::gateway_bin_path())
                 .err()
         } else {
             None

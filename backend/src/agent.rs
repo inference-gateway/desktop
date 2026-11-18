@@ -9,7 +9,7 @@ use crate::cli::events::{AgentEvent, AgentRecording};
 use crate::cli::thread::{Sink, Thread, ThreadOptions, Threads};
 use crate::env::agent_cwd;
 use files::attached_image_paths;
-pub(crate) use infer::{gateway_url, infer_command, run_infer, run_infer_in};
+pub(crate) use infer::{gateway_url, run_infer, run_infer_in};
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};

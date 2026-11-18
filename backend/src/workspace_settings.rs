@@ -4,7 +4,6 @@ use crate::workspace_volumes::{WorkspaceVolume, listed_volumes, volumes_of};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use tauri::ipc::Channel;
 
 const WORKSPACES_KEY: &str = "workspaces";
 pub(crate) const KUBERNETES: &str = "kubernetes";
@@ -939,8 +938,13 @@ pub(crate) struct Provisioned {
 
 /// Provisions the local cluster, adds it to the user's kubeconfig and
 /// registers its workspace. A workspace of the same name elsewhere stops it
-/// before anything is created. Mock mode registers the workspace only.
-fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, String> {
+/// before anything is created. `restore_secrets` puts the stored secrets back
+/// into the cluster's context. Mock mode registers the workspace only.
+pub(crate) fn provision_local(
+    stage: impl Fn(&str),
+    recreate: bool,
+    restore_secrets: impl Fn(&str) -> Vec<String>,
+) -> Result<Provisioned, String> {
     crate::compute_settings::require_compute()?;
     let existing = workspace_configs();
     let slot = local_workspace_slot(&existing)?;
@@ -981,7 +985,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
             )?;
         }
         stage("Restoring the workspaces' secrets...");
-        unrestored = crate::cli::secrets::restore_in(crate::local_cluster::CONTEXT);
+        unrestored = restore_secrets(crate::local_cluster::CONTEXT);
         stage("Adding the cluster to your kubeconfig...");
         crate::cli::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -999,7 +1003,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
             registered.then_some(cluster.name.as_str()),
         )
     })?;
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         merge_workspace(existing, &workspace, slot)
     })?;
     Ok(Provisioned {
@@ -1035,7 +1039,7 @@ fn parse_contexts(kubeconfig: &str) -> Vec<String> {
 #[tauri::command]
 pub(crate) fn workspace_configs() -> Vec<WorkspaceConfig> {
     parse_configs(
-        std::fs::read_to_string(crate::cli::daemon::config_path())
+        std::fs::read_to_string(crate::env::daemon_config_path())
             .ok()
             .as_deref(),
         &crate::compute_settings::read_clusters(),
@@ -1049,14 +1053,14 @@ pub(crate) fn save_workspace(
     config: WorkspaceConfig,
     previous_name: Option<String>,
 ) -> Result<(), String> {
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         merge_workspace(existing, &config, previous_name.as_deref())
     })
 }
 
 #[tauri::command]
 pub(crate) fn delete_workspace(name: String) -> Result<(), String> {
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         remove_workspace(existing, &name)
     })
 }
@@ -1238,26 +1242,6 @@ pub(crate) async fn local_cluster_status() -> Result<LocalCluster, String> {
 #[tauri::command]
 pub(crate) fn save_local_cluster_runtime(runtime: Runtime) -> Result<(), String> {
     crate::cluster_folders::save_runtime(runtime)
-}
-
-/// Provisions a k3s cluster on the chosen runtime and registers it and its
-/// Ubuntu desktop workspace, reporting each step. Answers the workspace's
-/// name and the secrets that could not be restored.
-#[tauri::command]
-pub(crate) async fn provision_local_cluster(
-    on_stage: Channel<String>,
-    recreate: bool,
-) -> Result<Provisioned, String> {
-    tokio::task::spawn_blocking(move || {
-        provision_local(
-            |stage| {
-                let _ = on_stage.send(stage.to_owned());
-            },
-            recreate,
-        )
-    })
-    .await
-    .map_err(|e| format!("provisioning stopped: {e}"))?
 }
 
 #[cfg(test)]

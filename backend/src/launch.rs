@@ -1,4 +1,4 @@
-use crate::env::{gateway_download_supported, home_dir, mock_mode};
+use crate::env::{gateway_download_supported, home_dir, infer_bin_path, mock_mode};
 use std::path::Path;
 
 /// The Go OTLP/HTTP exporters in the CLI and gateway only speak
@@ -47,7 +47,7 @@ fn desktop_runs_gateway() -> bool {
 /// CLI mock switch when the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
     let mut env = crate::cli::config::auth_env();
-    env.extend(crate::cli::secrets::computer_env());
+    env.extend(crate::cli::secret_store::computer_env());
     env.extend(collector_env());
     #[cfg(unix)]
     env.push(("PATH".into(), crate::env::composed_path()));
@@ -70,6 +70,17 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
         env.push((CLI_RUNS_GATEWAY.into(), "false".into()));
     }
     env
+}
+
+/// An `infer` command with the desktop's environment, run from `dir`.
+pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
+    let mut command = crate::env::command(infer_bin_path());
+    command
+        .env("HOME", home_dir().to_str().unwrap_or(""))
+        .envs(infer_env())
+        .env("PWD", dir)
+        .current_dir(dir);
+    command
 }
 
 #[cfg(test)]

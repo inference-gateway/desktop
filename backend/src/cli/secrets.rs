@@ -1,14 +1,13 @@
 use crate::cli::config;
+use crate::cli::secret_store::{StoredSecret, read_stored_in, secrets_path, write_stored_in};
 use crate::env::{home_dir, infer_dir_in};
 use crate::workspace_settings::{self, KUBERNETES, WorkspaceConfig};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_norway::Value;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-const SECRETS_FILE: &str = "secrets.yaml";
 const MCP_FILE: &str = "mcp.yaml";
 
 /// The name prefix of the Kubernetes Secret that carries one secret into the
@@ -22,22 +21,6 @@ const LABEL_MAX_LEN: usize = 63;
 /// Serializes every save and delete, each a read-modify-write of auth.yaml,
 /// secrets.yaml and daemon.yaml, so two at once never drop each other's change.
 static EDITS: Mutex<()> = Mutex::new(());
-
-/// A secret as secrets.yaml keeps it. Its value lives in auth.yaml, and the
-/// workspaces it is assigned to list its Kubernetes Secret in daemon.yaml.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-struct StoredSecret {
-    label: String,
-    variable: String,
-    computer: bool,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
-struct SecretsFile {
-    secrets: Vec<StoredSecret>,
-}
 
 /// A secret as Settings > Secrets shows and saves it: a label naming it, the
 /// environment variable it becomes, and where it goes - this computer and the
@@ -58,25 +41,6 @@ pub(crate) struct Secret {
 struct Place {
     context: String,
     namespace: String,
-}
-
-fn secrets_path(home: &Path) -> PathBuf {
-    infer_dir_in(home).join(SECRETS_FILE)
-}
-
-fn parse_stored(text: Option<&str>) -> Vec<StoredSecret> {
-    text.and_then(|text| serde_norway::from_str::<SecretsFile>(text).ok())
-        .map(|file| file.secrets)
-        .unwrap_or_default()
-}
-
-fn read_stored_in(home: &Path) -> Vec<StoredSecret> {
-    parse_stored(std::fs::read_to_string(secrets_path(home)).ok().as_deref())
-}
-
-fn write_stored_in(home: &Path, secrets: Vec<StoredSecret>) -> Result<(), String> {
-    let text = serde_norway::to_string(&SecretsFile { secrets }).map_err(|e| e.to_string())?;
-    config::update_file(&secrets_path(home), |_| Ok(text))
 }
 
 /// The Kubernetes Secret of the secret `label`.
@@ -214,24 +178,6 @@ fn view(stored: StoredSecret, workspaces: &[WorkspaceConfig], mcp_yaml: Option<&
         variable: stored.variable,
         computer: stored.computer,
     }
-}
-
-/// The secrets assigned to this computer, as (variable, value) pairs for every
-/// infer process the desktop starts. One without a value is left out.
-pub(crate) fn computer_env() -> Vec<(String, String)> {
-    computer_env_in(&home_dir())
-}
-
-fn computer_env_in(home: &Path) -> Vec<(String, String)> {
-    read_stored_in(home)
-        .into_iter()
-        .filter(|secret| secret.computer)
-        .map(|secret| {
-            let value = config::secret_value_in(home, &secret.label);
-            (secret.variable, value)
-        })
-        .filter(|(_, value)| !value.is_empty())
-        .collect()
 }
 
 fn place_of(workspace: &WorkspaceConfig) -> Place {
@@ -372,7 +318,7 @@ fn sync(
     });
     let listed_set: BTreeSet<String> = listed.iter().cloned().collect();
     if listed_set != before {
-        config::update_file(&crate::cli::daemon::config_path(), |existing| {
+        config::update_file(&crate::env::daemon_config_path(), |existing| {
             workspace_settings::list_on(existing, "secrets", &name, &listed)
         })?;
     }
@@ -540,7 +486,6 @@ pub(crate) async fn delete_secret(label: String) -> Result<Vec<String>, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TempDir;
 
     fn workspace(name: &str, kind: &str, namespace: &str, secrets: &[&str]) -> WorkspaceConfig {
         let mut workspace = WorkspaceConfig::default();
@@ -747,25 +692,5 @@ mod tests {
         assert_eq!(parsed["metadata"]["labels"][MANAGED_BY], DESKTOP);
         assert_eq!(parsed["data"]["AGENTMAIL_API_KEY"], "YW1fc2VjcmV0");
         assert!(!manifest.contains("am_secret"));
-    }
-
-    #[test]
-    fn only_secrets_assigned_to_this_computer_reach_its_processes() {
-        let home = TempDir::new("secrets-env");
-        let secrets = vec![
-            stored("github", "GITHUB_TOKEN", true),
-            stored("reviewer-inbox", "AGENTMAIL_API_KEY", false),
-            stored("blank", "BLANK", true),
-        ];
-        write_stored_in(&home, secrets.clone()).unwrap();
-        assert_eq!(read_stored_in(&home), secrets);
-        config::set_secret_value_in(&home, "github", "ghp_token").unwrap();
-        config::set_secret_value_in(&home, "reviewer-inbox", "am_inbox").unwrap();
-        assert_eq!(
-            computer_env_in(&home),
-            vec![("GITHUB_TOKEN".to_string(), "ghp_token".to_string())]
-        );
-        let file = std::fs::read_to_string(secrets_path(&home)).unwrap();
-        assert!(!file.contains("ghp_token") && !file.contains("am_inbox"));
     }
 }
