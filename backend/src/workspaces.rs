@@ -1,6 +1,7 @@
 use crate::agent::BackgroundJob;
 use crate::daemon::{Binding, ask};
 use crate::env::mock_mode;
+use crate::error::Error;
 use crate::thread::{exchange, uuid};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -103,6 +104,19 @@ fn parse_screen_result(frame: &Value) -> Option<Result<bool, String>> {
         Some(error) => Err(error.to_owned()),
         None => Ok(frame["held"].as_bool().unwrap_or(false)),
     })
+}
+
+/// How the CLI words its refusal of an input kind it does not know.
+const UNSUPPORTED_INPUT: &str = "unsupported screen input";
+
+/// A computer's refusal of a screen request. An input kind an older CLI does
+/// not know gets a kind of its own, since the UI falls back to an older input.
+fn screen_refusal(error: String) -> Error {
+    if error.contains(UNSUPPORTED_INPUT) {
+        Error::UnsupportedInput(error)
+    } else {
+        Error::Message(error)
+    }
 }
 
 fn stop_thread_frame(session_id: &str, project_dir: &str) -> Value {
@@ -523,8 +537,8 @@ pub(crate) async fn screen_frame(
 async fn screen_request(
     project: Option<String>,
     request: impl FnOnce(&str) -> Value + Send + 'static,
-) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || {
+) -> crate::error::Result<bool> {
+    crate::error::blocking(move || {
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = request(&project_dir.to_string_lossy());
         ask(
@@ -533,9 +547,9 @@ async fn screen_request(
             SCREEN_TIMEOUT,
             parse_screen_result,
         )?
+        .map_err(screen_refusal)
     })
     .await
-    .map_err(|e| format!("screen task failed: {e}"))?
 }
 
 /// Takes the screen of a session's computer over for the person, or hands it
@@ -545,7 +559,7 @@ pub(crate) async fn screen_control(
     session_id: String,
     project: Option<String>,
     take_over: bool,
-) -> Result<bool, String> {
+) -> crate::error::Result<bool> {
     screen_request(project, move |dir| {
         screen_control_frame(&session_id, dir, take_over)
     })
@@ -559,7 +573,7 @@ pub(crate) async fn screen_input(
     session_id: String,
     project: Option<String>,
     input: Value,
-) -> Result<bool, String> {
+) -> crate::error::Result<bool> {
     screen_request(project, move |dir| {
         screen_input_frame(&session_id, dir, &input)
     })
@@ -573,6 +587,19 @@ mod tests {
 
     fn mock_answer(request: Value) -> Value {
         crate::daemon_mock::answer(&request).expect("the mock daemon answers this request")
+    }
+
+    #[test]
+    fn only_an_unknown_input_kind_is_refused_as_unsupported_input() {
+        let refusal = |error: &str| screen_refusal(error.into());
+        assert!(matches!(
+            refusal(r#"unsupported screen input "mouse_down""#),
+            Error::UnsupportedInput(_)
+        ));
+        assert!(matches!(
+            refusal("the screen is not held by the person"),
+            Error::Message(_)
+        ));
     }
 
     #[test]

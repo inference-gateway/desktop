@@ -1,13 +1,16 @@
 use std::fmt;
 
-/// Why a command failed. It reaches the frontend as its message, the same
-/// string commands returned before they had a type, so nothing there changes.
+/// Why a command failed. It reaches the frontend as `{ kind, message }`: the
+/// message worded for the person, and the kind for a caller that handles one
+/// failure differently from the rest.
 #[derive(Debug)]
 pub(crate) enum Error {
     Io(std::io::Error),
     Json(serde_json::Error),
     /// A background task that panicked or was cancelled.
     Task(tokio::task::JoinError),
+    /// A computer refused an input kind its CLI is too old to know.
+    UnsupportedInput(String),
     /// A failure already worded for the person, as the modules that still
     /// return `String` word theirs.
     Message(String),
@@ -21,7 +24,20 @@ impl fmt::Display for Error {
             Self::Io(error) => error.fmt(f),
             Self::Json(error) => error.fmt(f),
             Self::Task(error) => error.fmt(f),
-            Self::Message(message) => f.write_str(message),
+            Self::UnsupportedInput(message) | Self::Message(message) => f.write_str(message),
+        }
+    }
+}
+
+impl Error {
+    /// The name the frontend tells this failure apart by.
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "io",
+            Self::Json(_) => "json",
+            Self::Task(_) => "task",
+            Self::UnsupportedInput(_) => "unsupported_input",
+            Self::Message(_) => "message",
         }
     }
 }
@@ -32,7 +48,7 @@ impl std::error::Error for Error {
             Self::Io(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Task(error) => Some(error),
-            Self::Message(_) => None,
+            Self::UnsupportedInput(_) | Self::Message(_) => None,
         }
     }
 }
@@ -72,7 +88,11 @@ impl serde::Serialize for Error {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+        use serde::ser::SerializeStruct;
+        let mut error = serializer.serialize_struct("Error", 2)?;
+        error.serialize_field("kind", self.kind())?;
+        error.serialize_field("message", &self.to_string())?;
+        error.end()
     }
 }
 
@@ -89,18 +109,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_error_reaches_the_frontend_as_its_message() {
+    fn an_error_reaches_the_frontend_as_its_kind_and_message() {
         let worded = Error::from("invalid repository: x");
         assert_eq!(
-            serde_json::to_string(&worded).unwrap(),
-            r#""invalid repository: x""#
+            serde_json::to_value(&worded).unwrap(),
+            serde_json::json!({ "kind": "message", "message": "invalid repository: x" })
         );
 
         let parse = serde_json::from_str::<u8>("nope").unwrap_err();
         let message = parse.to_string();
         assert_eq!(
             serde_json::to_value(Error::from(parse)).unwrap(),
-            serde_json::Value::String(message)
+            serde_json::json!({ "kind": "json", "message": message })
         );
     }
 
