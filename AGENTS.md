@@ -84,7 +84,7 @@ The e2e harness drives the real UI through the accessibility tree. When editing 
 
 Each window has its own capability file in `backend/capabilities/` and may only call the commands its permission in `backend/permissions/` allows. A new `#[tauri::command]` must be added to `permissions/main-window.toml` as well as to `generate_handler!` - `cargo test` fails until both lists match. Add it to `monitor-window.toml` only if the monitor bar calls it. The overlay calls no commands.
 
-A command that is a plain `fn` runs on the main thread, and the window freezes while it works. Mark it `#[tauri::command(async)]` when it reads or writes a file whose size the user controls, scans a project directory or starts a process. A small settings writer stays plain on purpose - the main thread keeps its writes in order.
+A command that is a plain `fn` runs on the main thread, and the window freezes while it works. Mark it `#[tauri::command(async)]` when it reads or writes a file whose size the user controls, scans a project directory or starts a process. A small settings writer stays plain on purpose - the main thread keeps its writes in order. `write_projects` is the exception: the sidebar's save queue keeps its writes in order instead.
 
 A command whose failure the UI handles differently returns `crate::error::Result` with a variant of its own in `backend/src/error.rs`. It reaches the frontend as a `CommandError` with that `kind`, which still prints as its message - never match on the wording of an error.
 

@@ -143,8 +143,9 @@ pub(crate) fn read_projects() -> Result<String, String> {
     serde_json::to_string(&read_projects_in(&crate::env::home_dir())).map_err(|e| e.to_string())
 }
 
-/// Write ~/.infer/projects.yaml (entire mapping, atomically replaced).
-#[tauri::command]
+/// Write ~/.infer/projects.yaml, the whole mapping, atomically. It runs off the
+/// main thread, so the sidebar's save queue keeps the writes in order.
+#[tauri::command(async)]
 pub(crate) fn write_projects(data: String) -> Result<(), String> {
     let val: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
     write_projects_in(&crate::env::home_dir(), &val)
