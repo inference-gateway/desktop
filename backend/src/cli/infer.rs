@@ -1,6 +1,6 @@
 use crate::cli::config::read_config;
+use crate::cli::launch::infer_command;
 use crate::env::agent_cwd;
-use crate::launch::infer_command;
 
 /// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
 pub(crate) fn gateway_url() -> String {

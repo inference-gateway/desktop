@@ -1,7 +1,14 @@
+pub(crate) mod binaries;
+pub(crate) mod compute;
 pub(crate) mod config;
 pub(crate) mod daemon;
 pub(crate) mod daemon_mock;
 pub(crate) mod events;
+pub(crate) mod infer;
+pub(crate) mod launch;
+pub(crate) mod mcp;
 pub(crate) mod secret_store;
 pub(crate) mod secrets;
 pub(crate) mod thread;
+pub(crate) mod workspace_config;
+pub(crate) mod workspace_volumes;

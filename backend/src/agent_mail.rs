@@ -403,7 +403,7 @@ fn inbox_secret_label(name: &str) -> String {
 fn kubernetes_workspace(name: &str) -> Vec<String> {
     crate::workspace_settings::workspace_configs()
         .into_iter()
-        .filter(|w| w.name == name && w.kind == crate::workspace_settings::KUBERNETES)
+        .filter(|w| w.name == name && w.kind == crate::cli::workspace_config::KUBERNETES)
         .map(|w| w.name)
         .collect()
 }

@@ -1,4 +1,4 @@
-use super::infer::gateway_url;
+use crate::cli::infer::gateway_url;
 use crate::env::mock_mode;
 use std::io::Read;
 

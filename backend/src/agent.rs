@@ -1,15 +1,15 @@
 pub(crate) mod a2a;
 pub(crate) mod conversations;
 pub(crate) mod files;
-pub(crate) mod infer;
 pub(crate) mod models;
+mod recording;
 
 use crate::AppState;
-use crate::cli::events::{AgentEvent, AgentRecording};
+use crate::cli::events::AgentEvent;
 use crate::cli::thread::{Sink, Thread, ThreadOptions, Threads};
 use crate::env::agent_cwd;
 use files::attached_image_paths;
-pub(crate) use infer::{gateway_url, run_infer, run_infer_in};
+use recording::AgentRecording;
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};

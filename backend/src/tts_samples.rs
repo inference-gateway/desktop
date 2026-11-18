@@ -177,7 +177,7 @@ pub(crate) fn speak_blocking(
 ) -> Result<String, String> {
     let dir = voice_test_dir();
     let arguments = speech_arguments(text, voice_sample, file_name);
-    let output = crate::launch::infer_command(&crate::env::home_dir())
+    let output = crate::cli::launch::infer_command(&crate::env::home_dir())
         .env("INFER_TEXT_TO_SPEECH_OUTPUT_DIR", &dir)
         .args(["tools", "execute", "TextToSpeech"])
         .arg(arguments.to_string())

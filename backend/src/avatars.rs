@@ -1,6 +1,6 @@
-use crate::agent::run_infer;
+use crate::cli::infer::run_infer;
+use crate::cli::launch::infer_command;
 use crate::env::{agent_cwd, home_dir, infer_dir};
-use crate::launch::infer_command;
 use crate::tts_samples::{sample_path, samples_dir, speak_blocking, tool_outcome, voice_test_dir};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};

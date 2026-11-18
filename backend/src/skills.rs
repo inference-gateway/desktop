@@ -1,4 +1,4 @@
-use crate::agent::run_infer;
+use crate::cli::infer::run_infer;
 use crate::env::{home_dir, infer_dir_in};
 
 /// True when `name` is safe to pass to `infer skills install/uninstall`.

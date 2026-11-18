@@ -1,6 +1,6 @@
-use super::infer::{run_infer, run_infer_in};
 use crate::AppState;
 use crate::cli::config::read_config;
+use crate::cli::infer::{run_infer, run_infer_in};
 use crate::cli::thread::Thread;
 use crate::env::{agent_cwd, infer_dir};
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-use crate::binaries::{self, owned_bin};
+use crate::cli::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
 use crate::env::{infer_dir, mock_mode};
 use std::io::{Read, Write};

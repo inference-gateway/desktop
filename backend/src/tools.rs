@@ -1,4 +1,4 @@
-use crate::agent::infer::{run_infer_blocking, run_infer_in};
+use crate::cli::infer::{run_infer_blocking, run_infer_in};
 use serde_json::Value;
 
 /// The tools the agent can call, from an `infer tools list --format json`
