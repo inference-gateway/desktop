@@ -192,7 +192,7 @@ function InitBar({
         <Button
           variant="outline"
           disabled={count === 0}
-          title="Remove all worktrees, checkout the default branch, pull, delete all other local branches and prune remote-tracking refs"
+          title="Remove all worktrees, checkout the default branch, pull and delete the local branches whose remote branch is gone"
           onClick={() => {
             if (!cleanupArmed) {
               setCleanupArmed(true);
@@ -650,7 +650,7 @@ function ProjectGroup({
             {isGit && (
               <button
                 aria-label={`Clean up branches in project ${name}`}
-                title="Remove all worktrees, checkout the default branch, pull, delete all other local branches and prune remote-tracking refs"
+                title="Remove all worktrees, checkout the default branch, pull and delete the local branches whose remote branch is gone"
                 disabled={busy || !dirOk}
                 onClick={() => {
                   setMenu(null);
