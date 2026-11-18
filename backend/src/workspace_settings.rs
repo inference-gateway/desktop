@@ -776,7 +776,7 @@ fn of_installed_version(repository: &str) -> String {
 
 /// The Ubuntu desktop image of the installed `infer` version. The workspace
 /// form starts from it, since a new workspace starts with every capability.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn default_workspace_image() -> String {
     of_installed_version(COMPUTER_IMAGE)
 }

@@ -266,7 +266,7 @@ pub(crate) async fn attach_pick(
 /// ASCII only). ponytail: the whole file streams through the webview, since a
 /// drop yields a File object rather than a path - the + button's native picker
 /// (attach_pick) avoids the round trip.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn attach_bytes(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let header = |key: &str| -> Result<String, String> {
         request

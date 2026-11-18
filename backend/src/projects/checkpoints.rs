@@ -170,7 +170,7 @@ pub(crate) async fn redo_content_project(
 
 /// Whether a content project has an undoable checkpoint, for the toolbar button
 /// state on load. A project with no repo (never edited) has nothing to undo.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn content_can_undo(name: String) -> bool {
     project_dir(&name)
         .filter(|d| d.join(".git").exists())

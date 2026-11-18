@@ -52,7 +52,7 @@ fn media_listing(dir: &Path) -> Vec<ProjectFile> {
     files
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn list_project_media(project: String) -> Result<Vec<ProjectFile>, String> {
     Ok(media_listing(&dir_for(&project)?))
 }
@@ -103,7 +103,7 @@ fn list_in(dir: &Path) -> Vec<String> {
 /// Project directories can live anywhere (custom paths, a custom projects
 /// root), so the asset scope is widened per project when its timeline opens
 /// instead of being fixed in tauri.conf.json.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn list_timelines(app: tauri::AppHandle, project: String) -> Result<Timelines, String> {
     let dir = dir_for(&project)?;
     let _ = app.asset_protocol_scope().allow_directory(&dir, true);
@@ -258,7 +258,7 @@ pub(crate) async fn add_project_video(
 /// Files dropped from Finder arrive as raw bytes (the webview keeps Tauri's
 /// own drag-drop off so in-page drag-and-drop works). The name travels in a
 /// hex-encoded header because header values are ASCII only.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let header = |key: &str| -> Result<String, String> {
         request
@@ -851,7 +851,7 @@ fn project_file_path(dir: &Path, name: &str) -> Result<PathBuf, String> {
 }
 
 /// Reveal a project file in the platform file manager (Finder on macOS).
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn reveal_project_file(project: String, name: String) -> Result<(), String> {
     let dir = dir_for(&project)?;
     let path = project_file_path(&dir, &name)?;
