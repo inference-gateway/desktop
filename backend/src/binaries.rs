@@ -1,5 +1,6 @@
 use crate::download::ProgressEvent;
-use crate::env::{bin_dir, home_dir, infer_bin_path, infer_env};
+use crate::env::{bin_dir, home_dir, infer_bin_path};
+use crate::launch::infer_env;
 use crate::stt::{find_on_path, is_executable_file};
 use std::path::PathBuf;
 use std::process::Output;

@@ -1,6 +1,5 @@
-use crate::env::{
-    agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, infer_env, mock_mode,
-};
+use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, mock_mode};
+use crate::launch::infer_env;
 use crate::processes::ProcessSupervisor;
 use crate::thread::Threads;
 use serde::Serialize;
