@@ -72,7 +72,7 @@ function useSidebarStore() {
         }),
       )
       .then(() => (gitChanged ? fetchGitProjects() : undefined))
-      .catch(() => {});
+      .catch((e) => setError(String(e)));
   }, [
     projectsLoaded,
     projects,
@@ -87,6 +87,7 @@ function useSidebarStore() {
     initSelection,
     activeProject,
     fetchGitProjects,
+    setError,
   ]);
 
   const placeInGroup = useCallback((name: string, group: string, path: string) => {
