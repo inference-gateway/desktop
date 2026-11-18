@@ -1,7 +1,11 @@
-use crate::cli::compute::ClusterConfig;
+use crate::cli::compute::{
+    COMPUTE_FILE, COMPUTE_LABEL, ClusterConfig, compute_path, label_value, merge_cluster,
+    read_clusters, require_compute,
+};
+use crate::cli::config::text;
 use crate::cli::workspace_config::{
     KUBERNETES, WorkspaceConfig, WorkspaceResources, merge_workspace, parse_configs,
-    remove_workspace, text,
+    remove_workspace,
 };
 use crate::cli::workspace_volumes::WorkspaceVolume;
 use crate::local_cluster::Runtime;
@@ -323,7 +327,7 @@ pub(crate) fn unreachable(error: &str) -> ClusterCheck {
 /// Check their deployments once a cluster with stale CRDs shows up.
 /// What the cluster in `context` has of what sessions need, and how many of
 /// the sessions `selector` picks in `namespace` run and are suspended.
-fn check_cluster(context: &str, namespace: &str, selector: &str) -> ClusterCheck {
+fn check_cluster_blocking(context: &str, namespace: &str, selector: &str) -> ClusterCheck {
     let crds = match kubectl(context, &["get", "crd", "-o", "name"]) {
         Ok(listing) => listing,
         Err(error) => return unreachable(&error),
@@ -690,6 +694,76 @@ pub(crate) fn kube_contexts() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// What a cluster has of what sessions need, and how many sessions every
+/// workspace on it runs.
+#[tauri::command]
+pub(crate) async fn check_cluster(name: String) -> ClusterCheck {
+    let Some(cluster) = read_clusters().into_iter().find(|c| c.name == name) else {
+        return unreachable(&format!("{name} is not in {COMPUTE_FILE}"));
+    };
+    let selector = format!("{COMPUTE_LABEL}={name}");
+    check(cluster.context, cluster.namespace, selector).await
+}
+
+/// A cluster for every kube context no cluster and no workspace uses yet,
+/// named after it, in the namespace detection always uses, with the names of
+/// the saved provider keys for its gateway. Nothing configured is replaced.
+fn detected_clusters(
+    clusters: &[ClusterConfig],
+    workspace_contexts: &[String],
+    contexts: &[String],
+    provider_keys: &[String],
+) -> Vec<ClusterConfig> {
+    let known = |context: &str| {
+        clusters
+            .iter()
+            .any(|cluster| cluster.context == context || cluster.name == context)
+            || workspace_contexts.iter().any(|used| used == context)
+    };
+    contexts
+        .iter()
+        .filter(|context| !known(context) && label_value(context))
+        .map(|context| ClusterConfig {
+            name: context.clone(),
+            context: context.clone(),
+            namespace: DETECTED_NAMESPACE.into(),
+            gateway_env: provider_keys.to_vec(),
+        })
+        .collect()
+}
+
+/// Adds a cluster for every kubeconfig context that has none yet and answers
+/// their names.
+#[tauri::command]
+pub(crate) async fn detect_clusters() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        require_compute()?;
+        let workspace_contexts: Vec<String> = workspace_configs()
+            .into_iter()
+            .filter(|workspace| workspace.compute.is_empty())
+            .map(|workspace| workspace.context)
+            .collect();
+        let detected = detected_clusters(
+            &read_clusters(),
+            &workspace_contexts,
+            &kube_contexts(),
+            &provider_keys(),
+        );
+        if detected.is_empty() {
+            return Ok(Vec::new());
+        }
+        crate::cli::config::update_file(&compute_path(), |existing| {
+            detected.iter().try_fold(
+                existing.unwrap_or_default().to_owned(),
+                |merged, cluster| merge_cluster(Some(&merged), cluster, None),
+            )
+        })?;
+        Ok(detected.into_iter().map(|cluster| cluster.name).collect())
+    })
+    .await
+    .map_err(|e| format!("detecting clusters stopped: {e}"))?
+}
+
 /// What the cluster of a Kubernetes workspace has of what sessions need -
 /// agent-sandbox, the Gateway API, the operator and a managed namespace - and
 /// how many of the workspace's own sessions run there.
@@ -778,7 +852,7 @@ pub(crate) async fn delete_workspace_machine(
 
 /// Checks the cluster in `context`, counting the sessions `selector` picks.
 pub(crate) async fn check(context: String, namespace: String, selector: String) -> ClusterCheck {
-    tokio::task::spawn_blocking(move || check_cluster(&context, &namespace, &selector))
+    tokio::task::spawn_blocking(move || check_cluster_blocking(&context, &namespace, &selector))
         .await
         .unwrap_or_else(|e| unreachable(&e.to_string()))
 }
@@ -864,6 +938,7 @@ pub(crate) fn save_local_cluster_runtime(runtime: Runtime) -> Result<(), String>
 mod tests {
     use super::*;
     use crate::cli::workspace_config::on_cluster;
+    use crate::cli::workspace_config::tests::kubernetes;
 
     #[test]
     fn the_mock_cluster_meets_every_prerequisite_and_runs_nothing() {
@@ -903,16 +978,6 @@ mod tests {
 
         crate::kubectl_mock::output(&["delete", ORCHESTRATORS, &listed[0].name, "-n", "ns"]);
         assert!(list().is_empty());
-    }
-
-    fn kubernetes(name: &str) -> WorkspaceConfig {
-        WorkspaceConfig {
-            name: name.into(),
-            kind: "kubernetes".into(),
-            context: "k3d-dev".into(),
-            namespace: "agents".into(),
-            ..WorkspaceConfig::default()
-        }
     }
 
     #[test]
@@ -1159,5 +1224,26 @@ mod tests {
         assert_eq!(fresh["kind"], "Config");
         assert_eq!(fresh["clusters"][0]["name"], "infer-k3s");
         assert!(merge_kubeconfig(Some("clusters: [unclosed"), addition).is_err());
+    }
+
+    #[test]
+    fn detection_adds_a_cluster_per_context_nothing_uses_yet() {
+        let contexts = ["k3d-agents", "legacy-context", "fresh", "has space"].map(String::from);
+        let keys = ["OPENAI_API_KEY".to_string()];
+        let known_cluster = ClusterConfig {
+            name: "k3d".into(),
+            context: "k3d-agents".into(),
+            ..ClusterConfig::default()
+        };
+        let detected = detected_clusters(
+            &[known_cluster],
+            &["legacy-context".to_string()],
+            &contexts,
+            &keys,
+        );
+        assert_eq!(detected.len(), 1);
+        assert_eq!(detected[0].name, "fresh");
+        assert_eq!(detected[0].namespace, DETECTED_NAMESPACE);
+        assert_eq!(detected[0].gateway_env, keys);
     }
 }

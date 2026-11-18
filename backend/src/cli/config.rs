@@ -1,4 +1,5 @@
 use crate::env::{config_path, home_dir, infer_dir_in};
+use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -465,6 +466,78 @@ pub(crate) fn config_mapping(text: Option<&str>) -> serde_norway::Value {
     text.and_then(|t| serde_norway::from_str::<serde_norway::Value>(t).ok())
         .filter(serde_norway::Value::is_mapping)
         .unwrap_or_else(|| serde_norway::Value::Mapping(Default::default()))
+}
+
+pub(crate) fn scalar(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Bool(flag) => Some(flag.to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+pub(crate) fn text(entry: &Value, key: &str) -> String {
+    entry.get(key).and_then(scalar).unwrap_or_default()
+}
+
+pub(crate) fn names(entry: &Value, key: &str) -> Vec<String> {
+    entry
+        .get(key)
+        .and_then(Value::as_sequence)
+        .map(|items| items.iter().filter_map(scalar).collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn set_or_remove(entry: &mut Mapping, key: &str, value: Option<Value>) {
+    match value {
+        Some(value) => {
+            entry.insert(key.into(), value);
+        }
+        None => {
+            entry.remove(key);
+        }
+    }
+}
+
+pub(crate) fn filled(text: &str) -> Option<Value> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.into())
+}
+
+pub(crate) fn listed(names: &[String]) -> Option<Value> {
+    let names: Vec<Value> = names.iter().filter_map(|name| filled(name)).collect();
+    (!names.is_empty()).then_some(Value::Sequence(names))
+}
+
+pub(crate) fn named(entry: &Value, name: &str) -> bool {
+    text(entry, "name") == name
+}
+
+/// The list of named entries under `key`, created empty when the file has none.
+pub(crate) fn named_entries<'a>(
+    root: &'a mut Mapping,
+    key: &str,
+    file: &str,
+) -> Result<&'a mut Vec<Value>, String> {
+    root.entry(key.into())
+        .or_insert_with(|| Value::Sequence(Vec::new()))
+        .as_sequence_mut()
+        .ok_or_else(|| format!("{key} in {file} is not a list"))
+}
+
+/// `yaml` without the entry called `name` in the list under `key`. Every
+/// other entry and key stays as written.
+pub(crate) fn remove_named(
+    yaml: Option<&str>,
+    key: &str,
+    file: &str,
+    name: &str,
+) -> Result<String, String> {
+    let mut yaml = config_mapping(yaml);
+    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    named_entries(root, key, file)?.retain(|entry| !named(entry, name));
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
 /// Parse `s` as an integer, falling back to `default` for empty/garbage input so
