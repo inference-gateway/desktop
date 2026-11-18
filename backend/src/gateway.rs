@@ -1,7 +1,7 @@
 use crate::AppState;
 use crate::agent::gateway_url;
 use crate::cli::config::auth_env;
-use crate::env::bin_dir;
+use crate::env::{bin_dir, gateway_download_supported};
 use crate::launch::collector_env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -37,19 +37,6 @@ impl GatewayStart {
             (true, _) => Self::Reuse,
         }
     }
-}
-
-pub(crate) fn gateway_download_supported() -> bool {
-    !cfg!(target_os = "windows")
-}
-
-/// Whether the desktop runs the gateway itself, so that no CLI child may run
-/// one. A child that found no gateway for a moment, while the desktop was
-/// restarting its own, started a second one, took the port and later stopped
-/// it. On Windows the desktop cannot install the gateway, and the CLI's own
-/// stays the fallback.
-pub(crate) fn desktop_runs_gateway() -> bool {
-    gateway_download_supported() && !crate::env::mock_mode()
 }
 
 /// A gateway build to run in place of the installed one, named by

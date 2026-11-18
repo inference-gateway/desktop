@@ -1,4 +1,4 @@
-use crate::env::{home_dir, mock_mode};
+use crate::env::{gateway_download_supported, home_dir, mock_mode};
 use std::path::Path;
 
 /// The Go OTLP/HTTP exporters in the CLI and gateway only speak
@@ -31,6 +31,15 @@ fn absolute_storage_path(configured: &str, home: &Path) -> String {
 /// The CLI's `gateway.run` as an environment variable.
 const CLI_RUNS_GATEWAY: &str = "INFER_GATEWAY_RUN";
 
+/// Whether the desktop runs the gateway itself, so that no CLI child may run
+/// one. A child that found no gateway for a moment, while the desktop was
+/// restarting its own, started a second one, took the port and later stopped
+/// it. On Windows the desktop cannot install the gateway, and the CLI's own
+/// stays the fallback.
+fn desktop_runs_gateway() -> bool {
+    gateway_download_supported() && !mock_mode()
+}
+
 /// Extra env vars for spawned infer processes: provider keys, the secrets
 /// assigned to this computer, the jsonl storage path resolved from
 /// storage.jsonl.path when one is set (an unset path lets the CLI use its
@@ -57,7 +66,7 @@ pub(crate) fn infer_env() -> Vec<(String, String)> {
     if mock_mode() {
         env.push(("INFER_GATEWAY_MOCK".into(), "true".into()));
     }
-    if crate::gateway::desktop_runs_gateway() {
+    if desktop_runs_gateway() {
         env.push((CLI_RUNS_GATEWAY.into(), "false".into()));
     }
     env
@@ -99,7 +108,7 @@ mod tests {
         assert!(!mock_mode());
         assert_eq!(
             infer_env().contains(&(CLI_RUNS_GATEWAY.to_string(), "false".to_string())),
-            crate::gateway::gateway_download_supported(),
+            gateway_download_supported(),
             "a CLI child runs no gateway where the desktop runs it"
         );
         unsafe { std::env::remove_var("DESKTOP_MOCK") };

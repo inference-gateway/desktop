@@ -26,6 +26,10 @@ pub(crate) fn binary_name() -> &'static str {
     }
 }
 
+pub(crate) fn gateway_download_supported() -> bool {
+    !cfg!(target_os = "windows")
+}
+
 pub(crate) fn home_dir() -> PathBuf {
     #[cfg(unix)]
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
