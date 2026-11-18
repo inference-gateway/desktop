@@ -1,4 +1,4 @@
-use crate::cli::workspace_config::{named_entries, text};
+use crate::cli::config::{named_entries, text};
 use crate::local_cluster::Runtime;
 use serde_norway::{Mapping, Value};
 use std::path::{Component, Path, PathBuf};

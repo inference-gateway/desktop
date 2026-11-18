@@ -1,13 +1,10 @@
-use crate::cli::workspace_config::{
-    filled, listed, named_entries, names, remove_named, set_or_remove, text,
-};
-use crate::workspace_settings::ClusterCheck;
+use crate::cli::config::{filled, listed, named_entries, names, remove_named, set_or_remove, text};
 use serde_norway::{Mapping, Value};
 use std::path::PathBuf;
 
 const CLUSTERS_KEY: &str = "clusters";
-const COMPUTE_FILE: &str = "compute.yaml";
-const COMPUTE_LABEL: &str = "inference-gateway.com/compute";
+pub(crate) const COMPUTE_FILE: &str = "compute.yaml";
+pub(crate) const COMPUTE_LABEL: &str = "inference-gateway.com/compute";
 const LABEL_VALUE_MAX: usize = 63;
 
 /// What every compute action answers on an `infer` that predates compute, so
@@ -59,7 +56,7 @@ pub(crate) fn read_clusters() -> Vec<ClusterConfig> {
 
 /// Whether `name` is a Kubernetes label value, which a cluster's name has to
 /// be because it labels the Gateway and the sessions of its workspaces.
-fn label_value(name: &str) -> bool {
+pub(crate) fn label_value(name: &str) -> bool {
     let edge = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric());
     !name.is_empty()
         && name.len() <= LABEL_VALUE_MAX
@@ -225,76 +222,6 @@ pub(crate) async fn compute_supported() -> bool {
         .unwrap_or(false)
 }
 
-/// What a cluster has of what sessions need, and how many sessions every
-/// workspace on it runs.
-#[tauri::command]
-pub(crate) async fn check_cluster(name: String) -> ClusterCheck {
-    let Some(cluster) = read_clusters().into_iter().find(|c| c.name == name) else {
-        return crate::workspace_settings::unreachable(&format!("{name} is not in {COMPUTE_FILE}"));
-    };
-    let selector = format!("{COMPUTE_LABEL}={name}");
-    crate::workspace_settings::check(cluster.context, cluster.namespace, selector).await
-}
-
-/// A cluster for every kube context no cluster and no workspace uses yet,
-/// named after it, in the namespace detection always uses, with the names of
-/// the saved provider keys for its gateway. Nothing configured is replaced.
-pub(crate) fn detected_clusters(
-    clusters: &[ClusterConfig],
-    workspace_contexts: &[String],
-    contexts: &[String],
-    provider_keys: &[String],
-) -> Vec<ClusterConfig> {
-    let known = |context: &str| {
-        clusters
-            .iter()
-            .any(|cluster| cluster.context == context || cluster.name == context)
-            || workspace_contexts.iter().any(|used| used == context)
-    };
-    contexts
-        .iter()
-        .filter(|context| !known(context) && label_value(context))
-        .map(|context| ClusterConfig {
-            name: context.clone(),
-            context: context.clone(),
-            namespace: crate::workspace_settings::DETECTED_NAMESPACE.into(),
-            gateway_env: provider_keys.to_vec(),
-        })
-        .collect()
-}
-
-/// Adds a cluster for every kubeconfig context that has none yet and answers
-/// their names.
-#[tauri::command]
-pub(crate) async fn detect_clusters() -> Result<Vec<String>, String> {
-    tokio::task::spawn_blocking(|| {
-        require_compute()?;
-        let workspace_contexts: Vec<String> = crate::workspace_settings::workspace_configs()
-            .into_iter()
-            .filter(|workspace| workspace.compute.is_empty())
-            .map(|workspace| workspace.context)
-            .collect();
-        let detected = detected_clusters(
-            &read_clusters(),
-            &workspace_contexts,
-            &crate::workspace_settings::kube_contexts(),
-            &crate::workspace_settings::provider_keys(),
-        );
-        if detected.is_empty() {
-            return Ok(Vec::new());
-        }
-        crate::cli::config::update_file(&compute_path(), |existing| {
-            detected.iter().try_fold(
-                existing.unwrap_or_default().to_owned(),
-                |merged, cluster| merge_cluster(Some(&merged), cluster, None),
-            )
-        })?;
-        Ok(detected.into_iter().map(|cluster| cluster.name).collect())
-    })
-    .await
-    .map_err(|e| format!("detecting clusters stopped: {e}"))?
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,24 +294,5 @@ mod tests {
             renamed.contains("context: k3d"),
             "a workspace with its own connection is untouched: {renamed}"
         );
-    }
-
-    #[test]
-    fn detection_adds_a_cluster_per_context_nothing_uses_yet() {
-        let contexts = ["k3d-agents", "legacy-context", "fresh", "has space"].map(String::from);
-        let keys = ["OPENAI_API_KEY".to_string()];
-        let detected = detected_clusters(
-            &parse_clusters(Some(COMPUTE_YAML)),
-            &["legacy-context".to_string()],
-            &contexts,
-            &keys,
-        );
-        assert_eq!(detected.len(), 1);
-        assert_eq!(detected[0].name, "fresh");
-        assert_eq!(
-            detected[0].namespace,
-            crate::workspace_settings::DETECTED_NAMESPACE
-        );
-        assert_eq!(detected[0].gateway_env, keys);
     }
 }

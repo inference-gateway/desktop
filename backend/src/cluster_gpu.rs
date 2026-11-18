@@ -1,9 +1,7 @@
+use crate::cli::workspace_config::GPU_RESOURCE;
 use crate::local_cluster::Runtime;
 use crate::workspace_settings::{Prerequisite, prerequisite};
 
-/// The resource the node offers its GPU's render device as, which a computer
-/// asks for to get it.
-pub(crate) const RESOURCE: &str = "devic.es/dri";
 const RENDER_DEVICE: &str = "/dev/dri/renderD128";
 const DEVICE_PLUGIN_IMAGE: &str = "ghcr.io/squat/generic-device-plugin:latest@sha256:8dc84958301f054bf72d9753a7a2c9af3d6642a9844b34d1171b3f2cdb4a15f6";
 /// How many containers share the one render device at a time.
@@ -82,9 +80,9 @@ spec:
   limits:
     - type: Container
       default:
-        {RESOURCE}: "1"
+        {GPU_RESOURCE}: "1"
       defaultRequest:
-        {RESOURCE}: "1"
+        {GPU_RESOURCE}: "1"
 "#
     )
 }
@@ -267,7 +265,10 @@ mod tests {
         assert!(plugin["args"][3].as_str().unwrap().contains(RENDER_DEVICE));
         assert_eq!(documents[1]["kind"], "LimitRange");
         assert_eq!(documents[1]["metadata"]["namespace"], "agents");
-        assert_eq!(documents[1]["spec"]["limits"][0]["default"][RESOURCE], "1");
+        assert_eq!(
+            documents[1]["spec"]["limits"][0]["default"][GPU_RESOURCE],
+            "1"
+        );
     }
 
     #[test]

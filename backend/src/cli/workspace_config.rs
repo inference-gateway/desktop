@@ -1,10 +1,16 @@
 use crate::cli::compute::ClusterConfig;
+use crate::cli::config::{
+    filled, listed, named, named_entries, names, remove_named, scalar, set_or_remove, text,
+};
 use crate::cli::workspace_volumes::{WorkspaceVolume, listed_volumes, volumes_of};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeMap;
 
 const WORKSPACES_KEY: &str = "workspaces";
 pub(crate) const KUBERNETES: &str = "kubernetes";
+/// The resource the node offers its GPU's render device as, which a computer
+/// asks for to get it.
+pub(crate) const GPU_RESOURCE: &str = "devic.es/dri";
 
 /// A workspace entry of `daemon.yaml` as the Settings tab edits it. A key the
 /// tab does not know, such as `mode` or `address`, stays in the file as it is.
@@ -35,27 +41,6 @@ pub(crate) struct WorkspaceConfig {
     pub(crate) secrets: Vec<String>,
     #[serde(skip)]
     pub(crate) mcp_servers: Vec<String>,
-}
-
-fn scalar(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Bool(flag) => Some(flag.to_string()),
-        Value::Number(number) => Some(number.to_string()),
-        _ => None,
-    }
-}
-
-pub(crate) fn text(entry: &Value, key: &str) -> String {
-    entry.get(key).and_then(scalar).unwrap_or_default()
-}
-
-pub(crate) fn names(entry: &Value, key: &str) -> Vec<String> {
-    entry
-        .get(key)
-        .and_then(Value::as_sequence)
-        .map(|items| items.iter().filter_map(scalar).collect())
-        .unwrap_or_default()
 }
 
 fn environment(entry: &Value) -> BTreeMap<String, String> {
@@ -120,7 +105,7 @@ fn resources_of(entry: &Value) -> WorkspaceResources {
 /// Whether the entry asks for none of the GPU, which is how it opts out of
 /// the one its cluster gives by default.
 fn opts_out_of_gpu(entry: &Value) -> bool {
-    amount(entry, LIMITS_KEY, crate::cluster_gpu::RESOURCE) == NO_GPU
+    amount(entry, LIMITS_KEY, GPU_RESOURCE) == NO_GPU
 }
 
 fn child<'a>(parent: &'a mut Mapping, key: &str) -> Option<&'a mut Mapping> {
@@ -158,7 +143,7 @@ fn set_resources(entry: &mut Mapping, config: &WorkspaceConfig) {
         set_amount(entry, block, resource, filled(amount));
     }
     let no_gpu = (config.no_gpu && on_gpu_cluster(config)).then(|| NO_GPU.into());
-    set_amount(entry, LIMITS_KEY, crate::cluster_gpu::RESOURCE, no_gpu);
+    set_amount(entry, LIMITS_KEY, GPU_RESOURCE, no_gpu);
 }
 
 /// A workspace entry as the tab shows it. One on a cluster reads that cluster's
@@ -226,27 +211,6 @@ pub(crate) fn parse_configs(
         .unwrap_or_default()
 }
 
-pub(crate) fn set_or_remove(entry: &mut Mapping, key: &str, value: Option<Value>) {
-    match value {
-        Some(value) => {
-            entry.insert(key.into(), value);
-        }
-        None => {
-            entry.remove(key);
-        }
-    }
-}
-
-pub(crate) fn filled(text: &str) -> Option<Value> {
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.into())
-}
-
-pub(crate) fn listed(names: &[String]) -> Option<Value> {
-    let names: Vec<Value> = names.iter().filter_map(|name| filled(name)).collect();
-    (!names.is_empty()).then_some(Value::Sequence(names))
-}
-
 fn mapped(vars: &BTreeMap<String, String>) -> Option<Value> {
     let vars: Mapping = vars
         .iter()
@@ -293,36 +257,6 @@ fn apply(entry: &mut Mapping, config: &WorkspaceConfig) {
             entry.remove(key);
         }
     }
-}
-
-fn named(entry: &Value, name: &str) -> bool {
-    text(entry, "name") == name
-}
-
-/// The list of named entries under `key`, created empty when the file has none.
-pub(crate) fn named_entries<'a>(
-    root: &'a mut Mapping,
-    key: &str,
-    file: &str,
-) -> Result<&'a mut Vec<Value>, String> {
-    root.entry(key.into())
-        .or_insert_with(|| Value::Sequence(Vec::new()))
-        .as_sequence_mut()
-        .ok_or_else(|| format!("{key} in {file} is not a list"))
-}
-
-/// `yaml` without the entry called `name` in the list under `key`. Every
-/// other entry and key stays as written.
-pub(crate) fn remove_named(
-    yaml: Option<&str>,
-    key: &str,
-    file: &str,
-    name: &str,
-) -> Result<String, String> {
-    let mut yaml = crate::cli::config::config_mapping(yaml);
-    let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    named_entries(root, key, file)?.retain(|entry| !named(entry, name));
-    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
 fn workspaces_of(root: &mut Mapping) -> Result<&mut Vec<Value>, String> {
@@ -395,12 +329,12 @@ pub(crate) fn remove_workspace(daemon_yaml: Option<&str>, name: &str) -> Result<
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const DAEMON_YAML: &str = "binding:\n  enabled: true\n  token: secret\nworkspaces:\n  - name: laptop\n    kind: local\n  - name: build\n    kind: kubernetes\n    context: build-cluster\n    namespace: infer\n    mode: all-in-one\n    gateway_env:\n      - OPENAI_API_KEY\n    env:\n      INFER_AGENT_MODEL: openai/gpt-4o\n      INFER_COMPUTER_USE_ENABLED: true\n";
 
-    fn kubernetes(name: &str) -> WorkspaceConfig {
+    pub(crate) fn kubernetes(name: &str) -> WorkspaceConfig {
         WorkspaceConfig {
             name: name.into(),
             kind: "kubernetes".into(),

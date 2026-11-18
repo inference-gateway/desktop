@@ -37,7 +37,7 @@ fn given(resources: &Value, resource: &str) -> String {
 }
 
 fn is_gpu(resource: &str) -> bool {
-    resource == crate::cluster_gpu::RESOURCE || resource.ends_with(GPU_SUFFIX)
+    resource == crate::cli::workspace_config::GPU_RESOURCE || resource.ends_with(GPU_SUFFIX)
 }
 
 fn gpus(resources: &Value) -> u64 {
