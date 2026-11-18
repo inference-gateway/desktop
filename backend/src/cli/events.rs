@@ -1,6 +1,6 @@
+use crate::cli::thread::Sink;
 use crate::input_capture::{InputCapture, InputEvent, write_event};
 use crate::observability::json_val_i64;
-use crate::thread::Sink;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
@@ -148,14 +148,14 @@ fn recording_area(state: &serde_json::Value) -> Option<(String, RecordedArea)> {
 /// The agent recording a session's process owns: input captured since
 /// `RecordingStarted`, saved as `<recording>.events.jsonl` next to the MP4
 /// when it stops, so every event lines up with the video.
-pub(super) struct AgentRecording {
+pub(crate) struct AgentRecording {
     capture: InputCapture,
     inputs: Arc<Mutex<Vec<InputEvent>>>,
     path: Option<String>,
 }
 
 impl AgentRecording {
-    pub(super) fn start(path: String, sink: Sink) -> Self {
+    pub(crate) fn start(path: String, sink: Sink) -> Self {
         let inputs = Arc::new(Mutex::new(Vec::new()));
         let capture = InputCapture::start({
             let inputs = Arc::clone(&inputs);
@@ -174,7 +174,7 @@ impl AgentRecording {
         }
     }
 
-    pub(super) fn stop(self) {
+    pub(crate) fn stop(self) {
         self.capture.stop();
         let Some(path) = self.path else { return };
         let log = Path::new(&path).with_extension("events.jsonl");

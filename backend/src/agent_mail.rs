@@ -1,8 +1,8 @@
-use crate::config;
+use crate::cli::config;
+use crate::cli::secrets::{self, Secret};
+use crate::cli::thread::ThreadOptions;
 use crate::env::{home_dir, mock_mode};
 use crate::markdown_agents::{self, MarkdownAgent};
-use crate::secrets::{self, Secret};
-use crate::thread::ThreadOptions;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeSet;

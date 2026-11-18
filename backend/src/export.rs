@@ -1,5 +1,5 @@
 use crate::agent::a2a::{A2aAgent, add_a2a_agent, list_a2a_agents, set_a2a_agent_model};
-use crate::config::{DesktopConfig, merge_config, merge_default_model};
+use crate::cli::config::{DesktopConfig, merge_config, merge_default_model};
 use crate::env::{home_dir, infer_dir_in};
 use base64::Engine as _;
 use serde_json::json;
@@ -210,7 +210,7 @@ fn strip_git_project_remotes(
 /// The portable state rooted at `home`. `agents` comes from the `infer` CLI
 /// by the caller (it needs an async CLI round-trip). Tests pass a fixed list.
 fn build_export(home: &Path, agents: Vec<A2aAgent>) -> DesktopExport {
-    let mut config = crate::config::read_config_in(home);
+    let mut config = crate::cli::config::read_config_in(home);
     for path in [
         &mut config.storage_directory,
         &mut config.sqlite_path,
@@ -280,7 +280,7 @@ fn read_desktop_data_in(home: &Path) -> DesktopData {
 
 fn write_desktop_data(data: &DesktopData, home: &Path) -> Result<(), String> {
     let text = serde_norway::to_string(data).map_err(|e| e.to_string())?;
-    crate::config::update_file(&infer_dir_in(home).join("desktop.yaml"), |_| Ok(text))
+    crate::cli::config::update_file(&infer_dir_in(home).join("desktop.yaml"), |_| Ok(text))
 }
 
 // --- Applying an import -------------------------------------------------------
@@ -335,7 +335,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     ] {
         *path = expand_tilde(path, home);
     }
-    let local = crate::config::read_config_in(home);
+    let local = crate::cli::config::read_config_in(home);
     if cfg.postgres_password.is_empty() {
         cfg.postgres_password = local.postgres_password.clone();
     }
@@ -353,7 +353,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
         cfg.scheduler_github_app_private_key_secret =
             local.scheduler_github_app_private_key_secret.clone();
     }
-    crate::config::update_file(&infer_dir_in(home).join("config.yaml"), |existing| {
+    crate::cli::config::update_file(&infer_dir_in(home).join("config.yaml"), |existing| {
         merge_default_model(Some(&merge_config(existing, &cfg)?), &cfg.default_model)
     })?;
     imported.push("Settings (config.yaml)".into());
@@ -490,7 +490,7 @@ async fn apply_export_project_repos(
     }
     let home = home_dir();
     let root = PathBuf::from(expand_tilde(
-        &crate::config::read_config_in(&home).projects_root,
+        &crate::cli::config::read_config_in(&home).projects_root,
         &home,
     ));
     let mut cloned = BTreeMap::new();
@@ -963,7 +963,7 @@ mod tests {
         let home = TempDir::new("trav");
         let mut export = DesktopExport {
             version: EXPORT_VERSION,
-            config: crate::config::default_config(),
+            config: crate::cli::config::default_config(),
             projects: json!({}),
             project_remotes: BTreeMap::new(),
             agents: Vec::new(),

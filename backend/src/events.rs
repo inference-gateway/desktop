@@ -37,7 +37,7 @@ mod tests {
 
     /// The variants of `AgentEvent`, the kinds the backend sends.
     fn agent_event_kinds() -> BTreeSet<String> {
-        let source = include_str!("agent/events.rs");
+        let source = include_str!("cli/events.rs");
         let (_, after) = source.split_once("pub(crate) enum AgentEvent {").unwrap();
         let (block, _) = after.split_once("\n}").unwrap();
         block

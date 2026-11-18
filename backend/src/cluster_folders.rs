@@ -92,7 +92,7 @@ fn folder_of(entry: &Value) -> ClusterFolder {
 }
 
 fn parse_folders(yaml: Option<&str>) -> Vec<ClusterFolder> {
-    crate::config::config_mapping(yaml)
+    crate::cli::config::config_mapping(yaml)
         .get(FOLDERS_KEY)
         .and_then(Value::as_sequence)
         .map(|entries| entries.iter().map(folder_of).collect())
@@ -105,7 +105,7 @@ pub(crate) fn read_folders() -> Vec<ClusterFolder> {
 }
 
 fn parse_runtime(yaml: Option<&str>) -> Runtime {
-    crate::config::config_mapping(yaml)
+    crate::cli::config::config_mapping(yaml)
         .get(RUNTIME_KEY)
         .and_then(|runtime| serde_norway::from_value(runtime.clone()).ok())
         .unwrap_or_default()
@@ -117,7 +117,7 @@ pub(crate) fn read_runtime() -> Runtime {
 }
 
 fn merge_runtime(yaml: Option<&str>, runtime: Runtime) -> Result<String, String> {
-    let mut document = crate::config::config_mapping(yaml);
+    let mut document = crate::cli::config::config_mapping(yaml);
     let root = document
         .as_mapping_mut()
         .ok_or("yaml root is not a mapping")?;
@@ -128,7 +128,7 @@ fn merge_runtime(yaml: Option<&str>, runtime: Runtime) -> Result<String, String>
 
 /// Saves the runtime the local cluster is provisioned on, beside its folders.
 pub(crate) fn save_runtime(runtime: Runtime) -> Result<(), String> {
-    crate::config::update_file(&folders_path(), |existing| merge_runtime(existing, runtime))
+    crate::cli::config::update_file(&folders_path(), |existing| merge_runtime(existing, runtime))
 }
 
 fn folder_entry(folder: &ClusterFolder) -> Value {
@@ -196,7 +196,7 @@ fn folders_problem(folders: &[ClusterFolder], is_dir: impl Fn(&Path) -> bool) ->
 }
 
 fn merge_folders(yaml: Option<&str>, folders: &[ClusterFolder]) -> Result<String, String> {
-    let mut document = crate::config::config_mapping(yaml);
+    let mut document = crate::cli::config::config_mapping(yaml);
     let root = document
         .as_mapping_mut()
         .ok_or("yaml root is not a mapping")?;
@@ -247,7 +247,7 @@ pub(crate) fn save_cluster_folders(folders: Vec<ClusterFolder>) -> Result<(), St
     if let Some(problem) = folders_problem(&folders, Path::is_dir) {
         return Err(problem);
     }
-    crate::config::update_file(&folders_path(), |existing| {
+    crate::cli::config::update_file(&folders_path(), |existing| {
         merge_folders(existing, &folders)
     })
 }

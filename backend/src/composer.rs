@@ -40,10 +40,10 @@ async fn ask_project<T: DeserializeOwned + Send + 'static>(
 ) -> Vec<T> {
     tokio::task::spawn_blocking(move || {
         let project_dir = crate::agent::thread_dir(project.as_deref());
-        crate::daemon::ask(
+        crate::cli::daemon::ask(
             || {
                 let state = app.state::<crate::AppState>();
-                crate::daemon::ensure_running(&state.processes, &state.scheduler_log)
+                crate::cli::daemon::ensure_running(&state.processes, &state.scheduler_log)
             },
             project_frame(request, &project_dir),
             MENU_TIMEOUT,
@@ -83,14 +83,15 @@ mod tests {
 
     #[test]
     fn the_mock_daemon_lists_files_and_open_issues() {
-        let files = crate::daemon_mock::answer(&project_frame("list_files", Path::new("/p")))
+        let files = crate::cli::daemon_mock::answer(&project_frame("list_files", Path::new("/p")))
             .and_then(|frame| parse_list::<String>(&frame, "files"))
             .unwrap_or_default();
         assert_eq!(files.first().map(String::as_str), Some("README.md"));
 
-        let issues = crate::daemon_mock::answer(&project_frame("list_issues", Path::new("/p")))
-            .and_then(|frame| parse_list::<Issue>(&frame, "issues"))
-            .unwrap_or_default();
+        let issues =
+            crate::cli::daemon_mock::answer(&project_frame("list_issues", Path::new("/p")))
+                .and_then(|frame| parse_list::<Issue>(&frame, "issues"))
+                .unwrap_or_default();
         assert_eq!(
             issues.first(),
             Some(&Issue {

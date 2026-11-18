@@ -1,8 +1,8 @@
-use crate::agent::BackgroundJob;
-use crate::daemon::{Binding, ask};
+use crate::cli::daemon::{Binding, ask};
+use crate::cli::events::BackgroundJob;
+use crate::cli::thread::{exchange, uuid};
 use crate::env::mock_mode;
 use crate::error::Error;
-use crate::thread::{exchange, uuid};
 use serde_json::{Value, json};
 use std::path::Path;
 use std::time::Duration;
@@ -321,7 +321,7 @@ pub(crate) async fn list_workspaces(app: tauri::AppHandle) -> Vec<Workspace> {
         ask(
             || {
                 let state = app.state::<crate::AppState>();
-                crate::daemon::ensure_running(&state.processes, &state.scheduler_log)
+                crate::cli::daemon::ensure_running(&state.processes, &state.scheduler_log)
             },
             json!({ "type": "list_workspaces" }),
             LIST_TIMEOUT,
@@ -348,7 +348,7 @@ pub(crate) async fn list_artifacts(
             &project_dir.to_string_lossy(),
         );
         ask(
-            crate::daemon::binding,
+            crate::cli::daemon::binding,
             request,
             ARTIFACTS_TIMEOUT,
             parse_artifacts,
@@ -377,7 +377,7 @@ pub(crate) async fn rewind_conversation(
         request["content"] = prompt.text.into();
         request["occurrence"] = prompt.occurrence.into();
         ask(
-            crate::daemon::binding,
+            crate::cli::daemon::binding,
             request,
             REWIND_TIMEOUT,
             parse_rewound,
@@ -399,7 +399,7 @@ pub(crate) async fn list_background_jobs(
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = session_frame("list_tasks", &session_id, &project_dir.to_string_lossy());
         ask(
-            crate::daemon::binding,
+            crate::cli::daemon::binding,
             request,
             BACKGROUND_JOBS_TIMEOUT,
             parse_background_jobs,
@@ -414,7 +414,7 @@ fn fetch_artifact(session_id: &str, project: Option<&str>, name: &str) -> Result
     let mut request = session_frame("read_artifact", session_id, &project_dir.to_string_lossy());
     request["name"] = json!(name);
     ask(
-        crate::daemon::binding,
+        crate::cli::daemon::binding,
         request,
         ARTIFACT_TIMEOUT,
         parse_artifact,
@@ -466,9 +466,12 @@ pub(crate) async fn read_artifact(
 fn remove_machine(session: &MachineSession) -> Result<bool, String> {
     let project_dir = crate::agent::thread_dir(session.project.as_deref());
     let request = stop_thread_frame(&session.id, &project_dir.to_string_lossy());
-    ask(crate::daemon::binding, request, STOP_TIMEOUT, |frame| {
-        parse_thread_stopped(frame, &session.id)
-    })?
+    ask(
+        crate::cli::daemon::binding,
+        request,
+        STOP_TIMEOUT,
+        |frame| parse_thread_stopped(frame, &session.id),
+    )?
 }
 
 /// ponytail: one chat after another, each waiting on its workspace. Stop them
@@ -525,7 +528,13 @@ pub(crate) async fn screen_frame(
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request =
             read_frame_frame(&session_id, &project_dir.to_string_lossy(), have.as_deref());
-        ask(crate::daemon::binding, request, FRAME_TIMEOUT, parse_screen).ok()?
+        ask(
+            crate::cli::daemon::binding,
+            request,
+            FRAME_TIMEOUT,
+            parse_screen,
+        )
+        .ok()?
     })
     .await
     .ok()
@@ -542,7 +551,7 @@ async fn screen_request(
         let project_dir = crate::agent::thread_dir(project.as_deref());
         let request = request(&project_dir.to_string_lossy());
         ask(
-            crate::daemon::binding,
+            crate::cli::daemon::binding,
             request,
             SCREEN_TIMEOUT,
             parse_screen_result,
@@ -586,7 +595,7 @@ mod tests {
     use crate::test_support::TempDir;
 
     fn mock_answer(request: Value) -> Value {
-        crate::daemon_mock::answer(&request).expect("the mock daemon answers this request")
+        crate::cli::daemon_mock::answer(&request).expect("the mock daemon answers this request")
     }
 
     #[test]
@@ -667,7 +676,7 @@ mod tests {
     #[test]
     fn the_mock_daemon_leaves_background_jobs_to_the_real_one() {
         let request = session_frame("list_tasks", "s", "/p");
-        assert_eq!(crate::daemon_mock::answer(&request), None);
+        assert_eq!(crate::cli::daemon_mock::answer(&request), None);
     }
 
     #[test]

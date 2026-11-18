@@ -6,15 +6,13 @@ mod agent;
 mod agent_mail;
 mod avatars;
 mod binaries;
+mod cli;
 mod cli_install;
 mod cluster_folders;
 mod cluster_gpu;
 mod composer;
 mod compute_settings;
 mod computer_resources;
-mod config;
-mod daemon;
-mod daemon_mock;
 mod download;
 mod env;
 mod error;
@@ -34,11 +32,9 @@ mod processes;
 mod projects;
 mod scheduler;
 mod screen_records;
-mod secrets;
 mod skills;
 mod stt;
 mod tasks;
-mod thread;
 mod timeline;
 mod tools;
 mod tts_samples;
@@ -57,11 +53,12 @@ pub(crate) struct AppState {
     stored_traces: std::sync::Arc<std::sync::Mutex<VecDeque<StoredSpan>>>,
     stored_metrics: std::sync::Arc<std::sync::Mutex<VecDeque<StoredMetric>>>,
     screen_recording: std::sync::Mutex<Option<screen_records::RecordingHandle>>,
-    threads: thread::Threads,
+    threads: cli::thread::Threads,
     /// The main webview's channel per chat, replaced on every prompt.
-    channels:
-        std::sync::Mutex<std::collections::HashMap<String, tauri::ipc::Channel<agent::AgentEvent>>>,
-    extension: std::sync::Mutex<daemon::ExtensionStatus>,
+    channels: std::sync::Mutex<
+        std::collections::HashMap<String, tauri::ipc::Channel<cli::events::AgentEvent>>,
+    >,
+    extension: std::sync::Mutex<cli::daemon::ExtensionStatus>,
     /// Chats that run on their agent's own computer, so the overlay and the
     /// monitor never draw their computer use over this machine's screen.
     remote_sessions: std::sync::Mutex<std::collections::HashSet<String>>,
@@ -136,9 +133,9 @@ pub fn run() {
             stored_traces,
             stored_metrics,
             screen_recording: std::sync::Mutex::new(None),
-            threads: thread::Threads::default(),
+            threads: cli::thread::Threads::default(),
             channels: std::sync::Mutex::new(std::collections::HashMap::new()),
-            extension: std::sync::Mutex::new(daemon::ExtensionStatus::default()),
+            extension: std::sync::Mutex::new(cli::daemon::ExtensionStatus::default()),
             remote_sessions: std::sync::Mutex::new(std::collections::HashSet::new()),
         })
         .setup(|app| {
@@ -150,7 +147,8 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = handle.state::<AppState>();
-                if let Err(e) = daemon::ensure_running(&state.processes, &state.scheduler_log) {
+                if let Err(e) = cli::daemon::ensure_running(&state.processes, &state.scheduler_log)
+                {
                     eprintln!("infer daemon autostart failed: {e}");
                 }
             });
@@ -184,19 +182,19 @@ pub fn run() {
             projects::read_projects,
             projects::write_projects,
             agent::models::list_models,
-            config::get_auth,
-            config::set_auth,
-            secrets::list_secrets,
-            secrets::save_secret,
-            secrets::delete_secret,
+            cli::config::get_auth,
+            cli::config::set_auth,
+            cli::secrets::list_secrets,
+            cli::secrets::save_secret,
+            cli::secrets::delete_secret,
             mcp_settings::mcp_settings,
             mcp_settings::save_mcp_server,
             mcp_settings::delete_mcp_server,
             mcp_settings::set_mcp_enabled,
             agent_mail::save_inbox_secret,
-            config::get_config,
-            config::set_config,
-            config::set_default_model,
+            cli::config::get_config,
+            cli::config::set_config,
+            cli::config::set_default_model,
             export::export_desktop_file,
             export::export_desktop_github,
             export::import_desktop_file,
@@ -298,8 +296,8 @@ pub fn run() {
             observability::get_metrics,
             permissions::computer_use_permission_status,
             permissions::set_computer_use_enabled,
-            daemon::browser_use_status,
-            daemon::set_browser_use_enabled,
+            cli::daemon::browser_use_status,
+            cli::daemon::set_browser_use_enabled,
             permissions::request_accessibility_permission,
             permissions::request_screen_recording_permission,
             screen_records::start_screen_recording,

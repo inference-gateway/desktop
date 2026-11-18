@@ -1,5 +1,5 @@
-use crate::agent::events::{AgentEvent, AgentParser, run_outcome};
-use crate::daemon::{Binding, ExtensionStatus, lock};
+use crate::cli::daemon::{Binding, ExtensionStatus, lock};
+use crate::cli::events::{AgentEvent, AgentParser, run_outcome};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::TcpStream;

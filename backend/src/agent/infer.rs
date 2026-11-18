@@ -1,4 +1,4 @@
-use crate::config::read_config;
+use crate::cli::config::read_config;
 use crate::env::{agent_cwd, home_dir, infer_bin_path};
 use crate::launch::infer_env;
 

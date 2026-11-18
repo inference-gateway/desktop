@@ -2,7 +2,7 @@ use super::{
     expand_home, project_dir, project_groups, project_names, project_paths, resolved_dirs,
     sanitize_name,
 };
-use crate::config::read_config;
+use crate::cli::config::read_config;
 use notify::{RecursiveMode, Watcher};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

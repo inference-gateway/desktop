@@ -429,7 +429,7 @@ pub(crate) fn save_markdown_agent(
 #[tauri::command]
 pub(crate) fn delete_markdown_agent(name: String) -> Result<(), String> {
     delete_in(&agent_dir(&name), &name)?;
-    crate::config::set_agent_api_key_in(&home_dir(), &name, "")
+    crate::cli::config::set_agent_api_key_in(&home_dir(), &name, "")
 }
 
 /// Lets the user pick a picture for the agent. Returns false when they cancel.

@@ -1,6 +1,6 @@
 # Moving to a new machine
 
-Settings > General > **Export / Import** moves the portable part of the desktop state between machines: the settings stored in `~/.infer/config.yaml` (the fields of `DesktopConfig` in `backend/src/config.rs`), sidebar projects, A2A agents, scheduled jobs, snippets, the skills registry URL and installed skills - the list `build_export` in `backend/src/export.rs` collects. Everything below does not travel with the file, so plan to redo it on the new machine.
+Settings > General > **Export / Import** moves the portable part of the desktop state between machines: the settings stored in `~/.infer/config.yaml` (the fields of `DesktopConfig` in `backend/src/cli/config.rs`), sidebar projects, A2A agents, scheduled jobs, snippets, the skills registry URL and installed skills - the list `build_export` in `backend/src/export.rs` collects. Everything below does not travel with the file, so plan to redo it on the new machine.
 
 Export writes one portable file (JSON, YAML or TOML) in a native save dialog, or pushes it to a private GitHub repo you name (created on demand, public repos are refused). Import reads it back from either place and auto-detects the format.
 
