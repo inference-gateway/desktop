@@ -1,9 +1,10 @@
 use crate::cli::config;
 use crate::cli::secrets::valid_variable;
-use crate::env::infer_dir;
-use crate::workspace_settings::{
+use crate::cli::workspace_config::{
     self, KUBERNETES, WorkspaceConfig, filled, named_entries, remove_named, set_or_remove, text,
 };
+use crate::env::infer_dir;
+use crate::workspace_settings;
 use serde::{Deserialize, Serialize};
 use serde_norway::{Mapping, Value};
 use std::collections::BTreeSet;
@@ -284,7 +285,7 @@ fn list_on_workspaces(name: &str, on: &[String], before: &[String]) -> Result<bo
         return Ok(false);
     }
     config::update_file(&crate::env::daemon_config_path(), |existing| {
-        workspace_settings::list_on(existing, WORKSPACE_KEY, name, on)
+        workspace_config::list_on(existing, WORKSPACE_KEY, name, on)
     })?;
     Ok(true)
 }
@@ -300,7 +301,7 @@ fn read_settings() -> McpSettings {
 /// like the app does for every one when it starts. Answers what failed.
 async fn follow_container(name: &str, enabled: bool) -> Vec<String> {
     let action = if enabled { "start" } else { "stop" };
-    crate::agent::run_infer_in(None, &["mcp", action, name])
+    crate::cli::infer::run_infer_in(None, &["mcp", action, name])
         .await
         .err()
         .into_iter()
@@ -380,11 +381,12 @@ mod tests {
     const MCP_YAML: &str = "enabled: true\nconnection_timeout: 30\nservers:\n- name: agentmail\n  enabled: true\n  run: false\n  url: https://mcp.agentmail.to/mcp\n  include_tools:\n  - send_message\n  headers:\n    x-api-key: ${AGENTMAIL_API_KEY}\n    Authorization: Bearer ${GITHUB_TOKEN}\n    x-legacy: am_us_literal\n- name: filesystem\n  enabled: false\n  run: true\n  oci: mcp/filesystem:latest\n  port: 3000\n  volumes:\n  - /tmp:/data\n";
 
     fn kubernetes(name: &str, mcp_servers: &[&str]) -> WorkspaceConfig {
-        let mut workspace = WorkspaceConfig::default();
-        workspace.name = name.into();
-        workspace.kind = KUBERNETES.into();
-        workspace.mcp_servers = mcp_servers.iter().map(|s| s.to_string()).collect();
-        workspace
+        WorkspaceConfig {
+            name: name.into(),
+            kind: KUBERNETES.into(),
+            mcp_servers: mcp_servers.iter().map(|s| s.to_string()).collect(),
+            ..WorkspaceConfig::default()
+        }
     }
 
     fn header(name: &str, prefix: &str, variable: &str) -> McpHeader {

@@ -6,14 +6,12 @@ mod agent;
 mod agent_mail;
 mod auth_settings;
 mod avatars;
-mod binaries;
 mod cli;
 mod cli_install;
 mod cluster_folders;
 mod cluster_gpu;
 mod cluster_provisioning;
 mod composer;
-mod compute_settings;
 mod computer_resources;
 mod download;
 mod env;
@@ -24,10 +22,8 @@ mod gateway;
 mod hub_models;
 mod input_capture;
 mod kubectl_mock;
-mod launch;
 mod local_cluster;
 mod markdown_agents;
-mod mcp_settings;
 mod observability;
 mod permissions;
 mod processes;
@@ -44,7 +40,6 @@ mod updates;
 mod updates_mock;
 mod workspace_capabilities;
 mod workspace_settings;
-mod workspace_volumes;
 mod workspaces;
 
 use observability::{StoredMetric, StoredSpan, start_collector};
@@ -201,10 +196,10 @@ pub fn run() {
             cli::secrets::list_secrets,
             cli::secrets::save_secret,
             cli::secrets::delete_secret,
-            mcp_settings::mcp_settings,
-            mcp_settings::save_mcp_server,
-            mcp_settings::delete_mcp_server,
-            mcp_settings::set_mcp_enabled,
+            cli::mcp::mcp_settings,
+            cli::mcp::save_mcp_server,
+            cli::mcp::delete_mcp_server,
+            cli::mcp::set_mcp_enabled,
             agent_mail::save_inbox_secret,
             cli::config::get_config,
             cli::config::set_config,
@@ -332,12 +327,12 @@ pub fn run() {
             workspace_settings::save_workspace,
             workspace_settings::delete_workspace,
             workspace_settings::kube_contexts,
-            compute_settings::cluster_configs,
-            compute_settings::save_cluster,
-            compute_settings::delete_cluster,
-            compute_settings::check_cluster,
-            compute_settings::compute_supported,
-            compute_settings::detect_clusters,
+            cli::compute::cluster_configs,
+            cli::compute::save_cluster,
+            cli::compute::delete_cluster,
+            cli::compute::check_cluster,
+            cli::compute::compute_supported,
+            cli::compute::detect_clusters,
             workspace_settings::check_workspace,
             workspace_settings::workspace_machines,
             workspace_settings::delete_workspace_machine,

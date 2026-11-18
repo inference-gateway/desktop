@@ -121,7 +121,7 @@ impl ProcessSupervisor {
         if crate::gateway::reuse_running_gateway(
             crate::gateway::gateway_reachable(),
             mode,
-            &crate::agent::gateway_url(),
+            &crate::cli::infer::gateway_url(),
         )? {
             return Ok(());
         }

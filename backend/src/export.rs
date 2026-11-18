@@ -434,7 +434,7 @@ async fn apply_export_skills(skills: &[String], warnings: &mut Vec<String>) -> u
         if installed.iter().any(|i| i == name) {
             continue;
         }
-        match crate::agent::run_infer(&["skills", "install", name, "--user"]).await {
+        match crate::cli::infer::run_infer(&["skills", "install", name, "--user"]).await {
             Ok(_) => n += 1,
             Err(e) => warnings.push(format!("skill {name} not installed: {e}")),
         }

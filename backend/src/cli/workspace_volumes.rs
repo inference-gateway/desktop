@@ -1,4 +1,4 @@
-use crate::workspace_settings::{filled, text};
+use crate::cli::workspace_config::{filled, text};
 use serde_norway::{Mapping, Value};
 
 /// An existing PersistentVolumeClaim of the workspace's namespace that every

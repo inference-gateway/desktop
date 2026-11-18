@@ -1,4 +1,4 @@
-use crate::binaries::{self, owned_bin};
+use crate::cli::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
 use crate::projects::{ProjectFile, list_local_files, project_dir};
 use crate::stt::{ensure_whisper_model, find_on_path};

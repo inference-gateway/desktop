@@ -1,4 +1,5 @@
-use crate::workspace_settings::{KUBERNETES, kubectl, workspace_configs};
+use crate::cli::workspace_config::KUBERNETES;
+use crate::workspace_settings::{kubectl, workspace_configs};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 

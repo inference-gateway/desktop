@@ -1,6 +1,6 @@
+use crate::cli::launch::infer_env;
 use crate::cli::thread::Threads;
 use crate::env::{DAEMON_FILE, agent_cwd, home_dir, infer_bin_path, infer_dir_in, mock_mode};
-use crate::launch::infer_env;
 use crate::processes::ProcessSupervisor;
 use serde::Serialize;
 use std::collections::VecDeque;

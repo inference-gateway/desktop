@@ -1,7 +1,8 @@
 use crate::cli::config;
 use crate::cli::secret_store::{StoredSecret, read_stored_in, secrets_path, write_stored_in};
+use crate::cli::workspace_config::{self, KUBERNETES, WorkspaceConfig};
 use crate::env::{home_dir, infer_dir_in};
-use crate::workspace_settings::{self, KUBERNETES, WorkspaceConfig};
+use crate::workspace_settings;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_norway::Value;
@@ -319,7 +320,7 @@ fn sync(
     let listed_set: BTreeSet<String> = listed.iter().cloned().collect();
     if listed_set != before {
         config::update_file(&crate::env::daemon_config_path(), |existing| {
-            workspace_settings::list_on(existing, "secrets", &name, &listed)
+            workspace_config::list_on(existing, "secrets", &name, &listed)
         })?;
     }
     for place in stale(&workspaces, &before, &listed_set) {
@@ -488,13 +489,14 @@ mod tests {
     use super::*;
 
     fn workspace(name: &str, kind: &str, namespace: &str, secrets: &[&str]) -> WorkspaceConfig {
-        let mut workspace = WorkspaceConfig::default();
-        workspace.name = name.into();
-        workspace.kind = kind.into();
-        workspace.context = "k3d-agents".into();
-        workspace.namespace = namespace.into();
-        workspace.secrets = secrets.iter().map(|s| s.to_string()).collect();
-        workspace
+        WorkspaceConfig {
+            name: name.into(),
+            kind: kind.into(),
+            context: "k3d-agents".into(),
+            namespace: namespace.into(),
+            secrets: secrets.iter().map(|s| s.to_string()).collect(),
+            ..WorkspaceConfig::default()
+        }
     }
 
     fn stored(label: &str, variable: &str, computer: bool) -> StoredSecret {

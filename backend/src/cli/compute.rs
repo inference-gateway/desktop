@@ -1,6 +1,7 @@
-use crate::workspace_settings::{
-    ClusterCheck, filled, listed, named_entries, names, remove_named, set_or_remove, text,
+use crate::cli::workspace_config::{
+    filled, listed, named_entries, names, remove_named, set_or_remove, text,
 };
+use crate::workspace_settings::ClusterCheck;
 use serde_norway::{Mapping, Value};
 use std::path::PathBuf;
 
@@ -156,7 +157,7 @@ fn rename_workspaces(daemon_yaml: Option<&str>, from: &str, to: &str) -> Result<
 /// the compute commands. Mock mode always does.
 pub(crate) fn compute_supported_blocking() -> bool {
     crate::env::mock_mode()
-        || crate::launch::infer_command(&crate::env::home_dir())
+        || crate::cli::launch::infer_command(&crate::env::home_dir())
             .args(["compute", "clusters", "list"])
             .output()
             .is_ok_and(|output| output.status.success())
