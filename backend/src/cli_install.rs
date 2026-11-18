@@ -204,18 +204,19 @@ fn extract_cli(
     Ok(staging)
 }
 
-// --- Pinned download URLs ---
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_cli_release_base() {
-    assert_eq!(
-        cli_release_base(Some("v0.249.0")),
-        "https://github.com/inference-gateway/cli/releases/download/v0.249.0"
-    );
-    assert_eq!(
-        cli_release_base(None),
-        "https://github.com/inference-gateway/cli/releases/latest/download"
-    );
+    #[test]
+    fn test_cli_release_base() {
+        assert_eq!(
+            cli_release_base(Some("v0.249.0")),
+            "https://github.com/inference-gateway/cli/releases/download/v0.249.0"
+        );
+        assert_eq!(
+            cli_release_base(None),
+            "https://github.com/inference-gateway/cli/releases/latest/download"
+        );
+    }
 }
-
-// --- Agent streaming types ---

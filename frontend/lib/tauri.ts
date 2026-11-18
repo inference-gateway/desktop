@@ -105,8 +105,7 @@ export type ProgressEvent =
   | { kind: "Verifying" }
   | { kind: "Installing" }
   | { kind: "Initializing" }
-  | { kind: "Ready" }
-  | { kind: "Error"; message: string };
+  | { kind: "Ready" };
 
 export type UpdateInfo = {
   name: string;

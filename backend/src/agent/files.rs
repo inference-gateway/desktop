@@ -1,4 +1,4 @@
-use crate::env::{home_dir, uploads_dir};
+use crate::env::home_dir;
 use std::path::{Component, Path, PathBuf};
 
 /// Whether `path` lies in one of the CLI's runtime dirs `names`, either
@@ -94,46 +94,6 @@ pub(crate) fn attached_image_paths(prompt: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
-
-#[tauri::command]
-pub(crate) fn save_upload(data: String, mime: String) -> Result<String, String> {
-    let ext = match mime.as_str() {
-        "image/png" => "png",
-        "image/jpeg" => "jpg",
-        "image/heic" => "heic",
-        "image/heif" => "heif",
-        "image/svg+xml" => "svg",
-        "application/pdf" => "pdf",
-        _ => return Err(format!("Unsupported file type: {mime}")),
-    };
-
-    use base64::Engine as _;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data)
-        .map_err(|e| format!("Invalid upload data: {e}"))?;
-
-    const MAX_BYTES: usize = 25 * 1024 * 1024;
-    if bytes.len() > MAX_BYTES {
-        return Err(format!("File too large: {} bytes (max 25 MB)", bytes.len()));
-    }
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let name = format!("{nanos:x}.{ext}");
-    let dest = uploads_dir().join(&name);
-    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to save upload: {e}"))?;
-    Ok(dest.to_string_lossy().to_string())
-}
-
-// --- A2A Agent configuration ---
-// A2A agents live in the `infer` CLI's own config (~/.infer/agents.yaml). Rather
-// than reimplement the CLI's agent knowledge - it auto-fills oci/run/model/env
-// for known agents (browser-agent, documentation-agent, ...) and distinguishes
-// local containers from external URL agents - the desktop shells out to
-// `infer agents add|remove|list` so the two stay perfectly in sync. Keyed by
-// name (the CLI's primary key).
 
 #[cfg(test)]
 mod tests {

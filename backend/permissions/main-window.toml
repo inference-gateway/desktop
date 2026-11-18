@@ -112,7 +112,6 @@ commands.allow = [
     "list_history",
     "save_image",
     "save_audio",
-    "save_upload",
     "create_project_dir",
     "move_project",
     "scan_git_repos",
