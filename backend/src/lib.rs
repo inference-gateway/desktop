@@ -24,6 +24,7 @@ mod gateway;
 mod hub_models;
 mod input_capture;
 mod kubectl_mock;
+mod launch;
 mod local_cluster;
 mod markdown_agents;
 mod mcp_settings;

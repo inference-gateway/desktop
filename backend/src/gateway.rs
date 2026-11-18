@@ -1,7 +1,8 @@
 use crate::AppState;
 use crate::agent::gateway_url;
 use crate::config::auth_env;
-use crate::env::{bin_dir, collector_env};
+use crate::env::bin_dir;
+use crate::launch::collector_env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -133,7 +134,7 @@ fn run_infer(args: &[&str]) -> Result<(), String> {
     let output = crate::env::command(crate::env::infer_bin_path())
         .args(args)
         .env("HOME", crate::env::home_dir())
-        .envs(crate::env::infer_env())
+        .envs(crate::launch::infer_env())
         .output()
         .map_err(|e| format!("Failed to run infer {}: {e}", args.join(" ")))?;
     if output.status.success() {

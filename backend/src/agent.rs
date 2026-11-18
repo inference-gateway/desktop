@@ -6,7 +6,7 @@ pub(crate) mod infer;
 pub(crate) mod models;
 
 use crate::AppState;
-use crate::env::{agent_cwd, compose_extras};
+use crate::env::agent_cwd;
 use crate::thread::{Sink, Thread, ThreadOptions, Threads};
 use events::AgentRecording;
 pub(crate) use events::{AgentEvent, BackgroundJob};
@@ -47,6 +47,25 @@ fn agent_commit_message(prompt: &str) -> String {
 
 /// The daemon thread a chat runs in: its worker's launch options come from
 /// the first open, since the daemon applies them once.
+const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility actions over screenshots. On macOS, target the intended app by its process or bundle name (`app:<name>`) instead of `frontmost` or its display title; for this desktop use `app:inference-gateway-desktop`. If accessibility is temporarily unavailable immediately after launching an app, wait briefly and retry once before falling back to screenshots.";
+
+const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and TextToSpeech WAVs inline in the transcript with playback and download controls. After generating one, state the file path in plain text and stop - do not run `open`, suggest a command to open it, or ask for approval to view or play it.";
+
+const PROJECTS_GUIDANCE: &str = "For anything about organising projects or chats (grouping, moving, renaming, the projects root, assigning conversations to a project), read and follow ~/.infer/skills/desktop-projects/SKILL.md, which is already installed. Do not modify the app's source code for this.";
+
+/// Append the agent's actual working directory to the custom instructions so
+/// the model states it instead of guessing (Finder launches land in $HOME).
+fn compose_extras(extra_instructions: Option<&str>, cwd: &Path) -> String {
+    let desktop_notes = format!(
+        "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: {}",
+        cwd.display()
+    );
+    match extra_instructions.filter(|s| !s.trim().is_empty()) {
+        Some(ei) => format!("{ei}\n\n{desktop_notes}"),
+        None => desktop_notes,
+    }
+}
+
 fn thread_options(
     model: &str,
     mode: &str,
@@ -522,6 +541,33 @@ pub(crate) async fn cancel_agent(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn compose_extras_appends_cwd_to_instructions() {
+        let cwd = Path::new("/Users/edenreich/project");
+        let desktop_notes = compose_extras(None, cwd);
+        assert!(desktop_notes.contains("`app:inference-gateway-desktop`"));
+        assert!(desktop_notes.contains("instead of `frontmost`"));
+        assert!(desktop_notes.contains("desktop-projects/SKILL.md"));
+        assert_eq!(
+            desktop_notes,
+            format!(
+                "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
+        );
+        assert_eq!(
+            compose_extras(Some("  "), cwd),
+            format!(
+                "{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
+        );
+        assert_eq!(
+            compose_extras(Some("be a pirate"), cwd),
+            format!(
+                "be a pirate\n\n{COMPUTER_USE_GUIDANCE}\n\n{MEDIA_GUIDANCE}\n\n{PROJECTS_GUIDANCE}\n\nCurrent working directory: /Users/edenreich/project"
+            )
+        );
+    }
 
     fn block_on<T>(future: impl Future<Output = T>) -> T {
         tokio::runtime::Builder::new_current_thread()
