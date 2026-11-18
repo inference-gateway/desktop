@@ -7,12 +7,18 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
 
 permissions:
   contents: read
 
 jobs:
   check:
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
     strategy:
       fail-fast: false
       matrix:
@@ -20,6 +26,8 @@ jobs:
           - ubuntu-24.04
           - macos-15
           - windows-2025
+        exclude:
+          - os: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:macos') && 'macos-15' || 'none' }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
