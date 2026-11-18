@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/tauri";
+import { createWriteQueue } from "@/lib/write-queue";
 import { parseSidebarDocument, serializeSidebarDocument, type ProjectType } from "@/lib/sidebar-document";
 import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
@@ -50,31 +51,36 @@ function useSidebarStore() {
     loadProjects();
   }, [loadProjects]);
 
+  // Saves go through a queue so a burst of changes collapses into one follow-up
+  // write (only the latest document) and still lands in call order: write_projects
+  // is async, so the queue is what keeps the writes ordered.
+  const saveProjects = useMemo(() => createWriteQueue((data) => api.writeProjects(data)), []);
+
   useEffect(() => {
     if (!projectsLoaded) return;
     const gitRelevantFields = JSON.stringify([projectNames, projectPaths, projectGroups]);
     const gitChanged = gitRelevantFields !== gitSigRef.current;
     gitSigRef.current = gitRelevantFields;
-    api
-      .writeProjects(
-        serializeSidebarDocument({
-          assignments: projects,
-          names: projectNames,
-          contexts: projectContexts,
-          paths: projectPaths,
-          groups: projectGroups,
-          types: projectTypes,
-          agents: agentOf,
-          workspaces: workspaceOf,
-          titles: workspaceTitles,
-          selected: initSelection,
-          active: activeProject,
-        }),
-      )
+    saveProjects(
+      serializeSidebarDocument({
+        assignments: projects,
+        names: projectNames,
+        contexts: projectContexts,
+        paths: projectPaths,
+        groups: projectGroups,
+        types: projectTypes,
+        agents: agentOf,
+        workspaces: workspaceOf,
+        titles: workspaceTitles,
+        selected: initSelection,
+        active: activeProject,
+      }),
+    )
       .then(() => (gitChanged ? fetchGitProjects() : undefined))
       .catch((e) => setError(String(e)));
   }, [
     projectsLoaded,
+    saveProjects,
     projects,
     projectNames,
     projectContexts,
