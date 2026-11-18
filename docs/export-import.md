@@ -13,4 +13,3 @@ The export file (`DesktopExport` in `backend/src/export.rs`) has no field for th
 Credentials are never exported: `scrub_credentials` in `backend/src/export.rs` blanks the database passwords and tokens and, along with them, the scheduler's two GitHub App secret names (`auth.yaml` keys are never read for the export at all). The file carries those fields blank, and an import keeps the values already on the new machine.
 
 Machine-specific paths are stored `~/`-relative so they resolve against the new machine's home. Projects that are GitHub checkouts travel as their `owner/name` rather than a full copy: Import re-clones them under the projects root and re-reads their `AGENTS.md`, keeping the file small (edited project instructions are still carried in full).
-
