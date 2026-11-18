@@ -113,6 +113,17 @@ fn realize_hidden_windows(app: &tauri::App) {
     }
 }
 
+/// Brings the running copy's main window forward when the app starts again.
+/// Registered before every other plugin, so the new copy exits before they set up.
+fn single_instance() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.unminimize();
+            let _ = main.set_focus();
+        }
+    })
+}
+
 pub fn run() {
     let stored_traces: Arc<Mutex<VecDeque<StoredSpan>>> = Arc::new(Mutex::new(VecDeque::new()));
     let stored_metrics: Arc<Mutex<VecDeque<StoredMetric>>> = Arc::new(Mutex::new(VecDeque::new()));
@@ -120,6 +131,7 @@ pub fn run() {
     let processes = Arc::new(processes::ProcessSupervisor::new());
 
     let app = tauri::Builder::default()
+        .plugin(single_instance())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -349,8 +361,13 @@ pub fn run() {
     })
     .expect("failed to install SIGINT/SIGTERM handler");
 
-    app.run(|app_handle, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
+    app.run(|app_handle, event| match event {
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } if label == "main" => app_handle.exit(0),
+        tauri::RunEvent::Exit => {
             let state = app_handle.state::<AppState>();
             tools::stop_services();
             if let Err(error) = state.processes.shutdown() {
@@ -360,6 +377,7 @@ pub fn run() {
             app_handle.state::<timeline::Export>().cancel();
             state.threads.close_all();
         }
+        _ => {}
     });
 }
 
