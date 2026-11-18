@@ -1,3 +1,5 @@
+import { CommandError } from "./tauri";
+
 /** One input of the person on a screen they took over, in the frame space the daemon serves the screen in. */
 export type ScreenInput =
   | { kind: "move"; x: number; y: number }
@@ -104,5 +106,5 @@ export function latestOnly<T>(): { put: (value: T) => boolean; take: () => T | n
 
 /** Whether a computer refused an input because its CLI is older than the input kind. */
 export function isUnsupportedInput(error: unknown): boolean {
-  return String(error).includes("unsupported screen input");
+  return error instanceof CommandError && error.kind === "unsupported_input";
 }

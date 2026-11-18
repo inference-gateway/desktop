@@ -1,8 +1,44 @@
-import { invoke, Channel, convertFileSrc } from "@tauri-apps/api/core";
+import {
+  invoke as invokeCommand,
+  Channel,
+  convertFileSrc,
+  type InvokeArgs,
+  type InvokeOptions,
+} from "@tauri-apps/api/core";
 import type { ScreenInput } from "./screen-input";
 import type { AgentMode, PlanAction } from "./agent-mode";
 
 export { Channel, convertFileSrc };
+
+/** A command's typed failure: the message worded for the person, and the kind
+ * a caller can act on. It prints as its message, as a plain string error does. */
+export class CommandError extends Error {
+  constructor(
+    readonly kind: string,
+    message: string,
+  ) {
+    super(message);
+  }
+
+  override toString(): string {
+    return this.message;
+  }
+}
+
+/** A command's rejection as callers see it: a backend error with a kind becomes
+ * a CommandError, and a plain string error stays as it is. */
+export function commandError(error: unknown): unknown {
+  if (typeof error === "object" && error !== null && "kind" in error && "message" in error) {
+    return new CommandError(String(error.kind), String(error.message));
+  }
+  return error;
+}
+
+function invoke<T>(cmd: string, args?: InvokeArgs, options?: InvokeOptions): Promise<T> {
+  return invokeCommand<T>(cmd, args, options).catch((error: unknown) => {
+    throw commandError(error);
+  });
+}
 
 export type ToolCallInfo = { id: string; name: string; args: string };
 

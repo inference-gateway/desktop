@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { framePoint, isUnsupportedInput, keyInput, latestOnly, mouseButton, wheelInputs } from "./screen-input";
+import { CommandError } from "./tauri";
 
 const key = (key: string, modifiers: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   key,
@@ -56,8 +57,8 @@ test("latestOnly keeps the newest value and tells when the slot was empty", () =
   expect(moves.put(4)).toBe(true);
 });
 
-test("isUnsupportedInput recognises an older CLI refusing an input kind", () => {
-  expect(isUnsupportedInput('unsupported screen input "mouse_down"')).toBe(true);
-  expect(isUnsupportedInput(new Error('unsupported screen input "mouse_up"'))).toBe(true);
-  expect(isUnsupportedInput("the screen is not held by the person")).toBe(false);
+test("isUnsupportedInput recognises an older CLI refusing an input kind by the error's kind", () => {
+  expect(isUnsupportedInput(new CommandError("unsupported_input", 'unsupported screen input "mouse_down"'))).toBe(true);
+  expect(isUnsupportedInput(new CommandError("message", "the screen is not held by the person"))).toBe(false);
+  expect(isUnsupportedInput('unsupported screen input "mouse_up"')).toBe(false);
 });
