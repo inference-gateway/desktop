@@ -83,7 +83,7 @@ The e2e harness drives the real UI through the accessibility tree. When editing 
 
 Each window has its own capability file in `backend/capabilities/` and may only call the commands its permission in `backend/permissions/` allows. A new `#[tauri::command]` must be added to `permissions/main-window.toml` as well as to `generate_handler!` - `cargo test` fails until both lists match. Add it to `monitor-window.toml` only if the monitor bar calls it. The overlay calls no commands.
 
-The content security policy in `backend/tauri.conf.json` blocks inline and remote scripts. A new kind of remote resource (a font host, a media host) needs its directive widened there.
+The content security policy in `backend/tauri.conf.json` blocks inline and remote scripts, and loads remote images only from the two emoji repositories the agent editor uses. A new kind of remote resource (an image host, a font host, a media host) needs its directive widened there.
 
 State lives in context stores: the main one in `frontend/store.tsx` (`useDesktop`) and one per feature in `frontend/stores/` (`useActivity`, `useAgents`, `useBackend`, `useGit`, `useSidebar`, `useSnippets`, `useStatus`), each with its own context so its readers re-render only when that feature changes. New feature state goes in `frontend/stores/`, not in the main store. The main store holds chat sessions and gives two hooks: `useDesktop` for sessions and actions, and `useChatStream` for what changes on every agent event (transcripts, items, token usage, run labels). A component reads `useChatStream` only if it shows the stream. The typed Tauri client and transcript state machine live in `frontend/lib/`.
 

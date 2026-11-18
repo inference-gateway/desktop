@@ -58,7 +58,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' asset: http://asset.localhost data: blob: https: http:",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https://raw.githubusercontent.com/microsoft/fluentui-emoji/ https://media.githubusercontent.com/media/microsoft/fluentui-emoji-animated/",
         "media-src": "'self' asset: http://asset.localhost data: blob:",
         "font-src": "'self' data:",
         "connect-src": "'self' ipc: http://ipc.localhost asset: http://asset.localhost blob: https: http://localhost:* http://127.0.0.1:*",
