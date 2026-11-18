@@ -30,7 +30,7 @@ pub(crate) async fn check_and_install_cli(
     crate::blocking_with_state(app, move |state| {
         install_cli(&on_event, force, tag.as_deref())?;
         if restart {
-            crate::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)?;
+            crate::cli::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)?;
         }
         let _ = on_event.send(ProgressEvent::Ready);
         Ok(())

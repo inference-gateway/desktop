@@ -1,7 +1,7 @@
+use crate::cli::thread::Threads;
 use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, mock_mode};
 use crate::launch::infer_env;
 use crate::processes::ProcessSupervisor;
-use crate::thread::Threads;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::net::TcpStream;
@@ -88,16 +88,16 @@ fn binding_in(home: &Path) -> Result<Binding, String> {
         return Ok(Binding { port, token });
     }
     let token = hex::encode(rand::random::<[u8; 16]>());
-    crate::config::update_file(&daemon_path, |existing| {
+    crate::cli::config::update_file(&daemon_path, |existing| {
         merge_binding(existing, port, &token)
     })?;
     Ok(Binding { port, token })
 }
 
 fn merge_binding(existing: Option<&str>, port: u16, token: &str) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(existing);
+    let mut yaml = crate::cli::config::config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
-    crate::config::set_section(
+    crate::cli::config::set_section(
         map,
         "binding",
         vec![
@@ -119,12 +119,12 @@ pub(crate) fn ask<T>(
     mut parse: impl FnMut(&serde_json::Value) -> Option<T>,
 ) -> Result<T, String> {
     if mock_mode()
-        && let Some(answer) = crate::daemon_mock::answer(&request)
+        && let Some(answer) = crate::cli::daemon_mock::answer(&request)
     {
         return parse(&answer)
             .ok_or_else(|| format!("no parser took the mock answer to {}", request["type"]));
     }
-    crate::thread::exchange(&binding()?, request, timeout, parse)
+    crate::cli::thread::exchange(&binding()?, request, timeout, parse)
 }
 
 pub(crate) fn reachable(port: u16) -> bool {
@@ -253,7 +253,7 @@ pub(crate) fn read_settings() -> Settings {
 /// Flip `enabled`, and on enable also force `backend: extension` and seed a
 /// token if none is set. Every other key the CLI owns is preserved.
 fn merge_enabled(existing: Option<&str>, enabled: bool, seed: &str) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(existing);
+    let mut yaml = crate::cli::config::config_mapping(existing);
     let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     map.insert("enabled".into(), enabled.into());
     if enabled {
@@ -264,7 +264,7 @@ fn merge_enabled(existing: Option<&str>, enabled: bool, seed: &str) -> Result<St
             .and_then(serde_norway::Value::as_str)
             .is_some_and(|t| !t.is_empty());
         if !has_token {
-            crate::config::set_section(map, "extension", vec![("token", seed.into())]);
+            crate::cli::config::set_section(map, "extension", vec![("token", seed.into())]);
         }
     }
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
@@ -272,7 +272,7 @@ fn merge_enabled(existing: Option<&str>, enabled: bool, seed: &str) -> Result<St
 
 fn write_enabled(path: &Path, enabled: bool) -> Result<(), String> {
     let seed = hex::encode(rand::random::<[u8; 16]>());
-    crate::config::update_file(path, |existing| merge_enabled(existing, enabled, &seed))
+    crate::cli::config::update_file(path, |existing| merge_enabled(existing, enabled, &seed))
 }
 
 fn bridge_status(extension: &Mutex<ExtensionStatus>) -> BridgeStatus {

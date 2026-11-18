@@ -1,6 +1,6 @@
 use crate::AppState;
 use crate::agent::gateway_url;
-use crate::config::auth_env;
+use crate::cli::config::auth_env;
 use crate::env::bin_dir;
 use crate::launch::collector_env;
 use std::path::{Path, PathBuf};
@@ -205,7 +205,7 @@ fn video_env(ttv_enabled: bool) -> Option<(&'static str, &'static str)> {
 }
 
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
-    let cfg = crate::config::read_config();
+    let cfg = crate::cli::config::read_config();
     crate::env::command(bin)
         .envs(auth_env())
         .envs(collector_env())

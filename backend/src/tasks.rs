@@ -275,7 +275,7 @@ pub(crate) async fn github_install_workflow(
     if !valid_repo(&repo) {
         return Err(format!("invalid repository: {repo}").into());
     }
-    let cfg = crate::config::read_config();
+    let cfg = crate::cli::config::read_config();
     if !valid_secret_name(&cfg.scheduler_github_app_client_id_secret)
         || !valid_secret_name(&cfg.scheduler_github_app_private_key_secret)
     {

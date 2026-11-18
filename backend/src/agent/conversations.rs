@@ -1,8 +1,8 @@
 use super::infer::{run_infer, run_infer_in};
 use crate::AppState;
-use crate::config::read_config;
+use crate::cli::config::read_config;
+use crate::cli::thread::Thread;
 use crate::env::{agent_cwd, infer_dir};
-use crate::thread::Thread;
 use std::path::{Path, PathBuf};
 
 /// Keeps only the conversations stored under one of `owned` directories (the
@@ -76,8 +76,8 @@ async fn stop_worker(session_id: &str, cwd: Option<&str>) {
         .into_owned();
     let session_id = session_id.to_string();
     let _ = tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
-        if !crate::daemon::reachable(binding.port) {
+        let binding = crate::cli::daemon::binding()?;
+        if !crate::cli::daemon::reachable(binding.port) {
             return Ok(());
         }
         Thread::stop(&binding, &session_id, &project_dir)

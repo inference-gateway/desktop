@@ -2,7 +2,7 @@ pub(crate) mod attachments;
 pub(crate) mod checkpoints;
 pub(crate) mod git;
 
-use crate::config::read_config;
+use crate::cli::config::read_config;
 pub(crate) use attachments::{ProjectFile, list_local_files};
 pub(crate) use checkpoints::{checkpoint, ensure_content_repo};
 use git::repo_context;
@@ -131,7 +131,7 @@ pub(crate) fn read_projects_in(home: &Path) -> serde_json::Value {
 /// the save fails, since the sidebar read it as empty and would erase it.
 pub(crate) fn write_projects_in(home: &Path, val: &serde_json::Value) -> Result<(), String> {
     let text = serde_norway::to_string(val).map_err(|e| e.to_string())?;
-    crate::config::update_file(&projects_path(home), |_| Ok(text))
+    crate::cli::config::update_file(&projects_path(home), |_| Ok(text))
 }
 
 /// Read ~/.infer/projects.yaml as JSON text for the sidebar. The file is YAML

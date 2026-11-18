@@ -1,4 +1,4 @@
-use crate::config;
+use crate::cli::config;
 use crate::env::{home_dir, infer_dir_in};
 use crate::workspace_settings::{self, KUBERNETES, WorkspaceConfig};
 use base64::Engine as _;
@@ -372,7 +372,7 @@ fn sync(
     });
     let listed_set: BTreeSet<String> = listed.iter().cloned().collect();
     if listed_set != before {
-        config::update_file(&crate::daemon::config_path(), |existing| {
+        config::update_file(&crate::cli::daemon::config_path(), |existing| {
             workspace_settings::list_on(existing, "secrets", &name, &listed)
         })?;
     }

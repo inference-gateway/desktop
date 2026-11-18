@@ -1,6 +1,6 @@
-use crate::config;
+use crate::cli::config;
+use crate::cli::secrets::valid_variable;
 use crate::env::infer_dir;
-use crate::secrets::valid_variable;
 use crate::workspace_settings::{
     self, KUBERNETES, WorkspaceConfig, filled, named_entries, remove_named, set_or_remove, text,
 };
@@ -268,7 +268,7 @@ fn merge_enabled(mcp_yaml: Option<&str>, enabled: bool) -> Result<String, String
 
 /// The variables a header may expand: those of the secrets and the API keys.
 fn known_variables() -> BTreeSet<String> {
-    crate::secrets::list_secrets()
+    crate::cli::secrets::list_secrets()
         .into_iter()
         .map(|secret| secret.variable)
         .chain(config::auth_env().into_iter().map(|(key, _)| key))
@@ -283,7 +283,7 @@ fn list_on_workspaces(name: &str, on: &[String], before: &[String]) -> Result<bo
     if on_set == before_set {
         return Ok(false);
     }
-    config::update_file(&crate::daemon::config_path(), |existing| {
+    config::update_file(&crate::cli::daemon::config_path(), |existing| {
         workspace_settings::list_on(existing, WORKSPACE_KEY, name, on)
     })?;
     Ok(true)

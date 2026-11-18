@@ -1,15 +1,13 @@
 pub(crate) mod a2a;
 pub(crate) mod conversations;
-pub(crate) mod events;
 pub(crate) mod files;
 pub(crate) mod infer;
 pub(crate) mod models;
 
 use crate::AppState;
+use crate::cli::events::{AgentEvent, AgentRecording};
+use crate::cli::thread::{Sink, Thread, ThreadOptions, Threads};
 use crate::env::agent_cwd;
-use crate::thread::{Sink, Thread, ThreadOptions, Threads};
-use events::AgentRecording;
-pub(crate) use events::{AgentEvent, BackgroundJob};
 use files::attached_image_paths;
 pub(crate) use infer::{gateway_url, infer_command, run_infer, run_infer_in};
 use std::collections::HashSet;
@@ -174,7 +172,7 @@ fn open_on_daemon(
     move || {
         crate::agent_mail::resync_allowlist(&options);
         let state = app.state::<AppState>();
-        let binding = crate::daemon::ensure_running(&state.processes, &state.scheduler_log)?;
+        let binding = crate::cli::daemon::ensure_running(&state.processes, &state.scheduler_log)?;
         let status_app = app.clone();
         Thread::open(
             &binding,
@@ -182,7 +180,7 @@ fn open_on_daemon(
             &project_dir,
             &options,
             session_sink(app.clone(), session_id.clone()),
-            Arc::new(move |status| crate::daemon::extension_status(&status_app, status)),
+            Arc::new(move |status| crate::cli::daemon::extension_status(&status_app, status)),
         )
     }
 }
@@ -398,7 +396,7 @@ async fn teleport_thread(
         target.clone(),
     );
     let outcome = tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
+        let binding = crate::cli::daemon::binding()?;
         crate::workspaces::teleport(&binding, &session_id, &project_dir, &name, |stage| {
             let _ = progress.send(AgentEvent::AgentStatus {
                 name: name.clone(),
@@ -434,7 +432,7 @@ pub(crate) async fn move_session(
     let project_dir = thread_dir(project.as_deref());
     let (id, name) = (session_id.clone(), target);
     tokio::task::spawn_blocking(move || {
-        let binding = crate::daemon::binding()?;
+        let binding = crate::cli::daemon::binding()?;
         crate::workspaces::teleport(&binding, &id, &project_dir, &name, |stage| {
             let _ = on_stage.send(stage.to_owned());
         })

@@ -37,12 +37,12 @@ const CLI_RUNS_GATEWAY: &str = "INFER_GATEWAY_RUN";
 /// home-anchored default, ~/.infer/projects/<slug>/conversations), plus the
 /// CLI mock switch when the desktop runs in mock mode.
 pub(crate) fn infer_env() -> Vec<(String, String)> {
-    let mut env = crate::config::auth_env();
-    env.extend(crate::secrets::computer_env());
+    let mut env = crate::cli::config::auth_env();
+    env.extend(crate::cli::secrets::computer_env());
     env.extend(collector_env());
     #[cfg(unix)]
     env.push(("PATH".into(), crate::env::composed_path()));
-    let storage_directory = crate::config::read_config().storage_directory;
+    let storage_directory = crate::cli::config::read_config().storage_directory;
     if !storage_directory.is_empty() {
         env.push((
             "INFER_STORAGE_JSONL_PATH".into(),

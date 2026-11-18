@@ -1,5 +1,5 @@
 use super::{project_dir, project_is_content, sanitize_name};
-use crate::config::{DesktopConfig, read_config};
+use crate::cli::config::{DesktopConfig, read_config};
 use base64::Engine as _;
 use std::collections::BTreeSet;
 use std::path::Path;

@@ -299,7 +299,7 @@ fn on_cluster(config: WorkspaceConfig, clusters: &[ClusterConfig]) -> WorkspaceC
 }
 
 fn parse_configs(daemon_yaml: Option<&str>, clusters: &[ClusterConfig]) -> Vec<WorkspaceConfig> {
-    crate::config::config_mapping(daemon_yaml)
+    crate::cli::config::config_mapping(daemon_yaml)
         .get(WORKSPACES_KEY)
         .and_then(Value::as_sequence)
         .map(|entries| {
@@ -404,7 +404,7 @@ pub(crate) fn remove_named(
     file: &str,
     name: &str,
 ) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(yaml);
+    let mut yaml = crate::cli::config::config_mapping(yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     named_entries(root, key, file)?.retain(|entry| !named(entry, name));
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
@@ -425,7 +425,7 @@ fn merge_workspace(
     if name.is_empty() {
         return Err("a workspace needs a name".into());
     }
-    let mut yaml = crate::config::config_mapping(daemon_yaml);
+    let mut yaml = crate::cli::config::config_mapping(daemon_yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     let entries = workspaces_of(root)?;
     let replaced =
@@ -457,7 +457,7 @@ pub(crate) fn list_on(
     item: &str,
     on: &[String],
 ) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(daemon_yaml);
+    let mut yaml = crate::cli::config::config_mapping(daemon_yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     for entry in workspaces_of(root)?.iter_mut() {
         let wanted = on.contains(&text(entry, "name"));
@@ -783,7 +783,7 @@ pub(crate) fn default_workspace_image() -> String {
 
 /// The names of the provider keys the user saved, for a workspace's gateway.
 pub(crate) fn provider_keys() -> Vec<String> {
-    crate::config::auth_env()
+    crate::cli::config::auth_env()
         .into_iter()
         .map(|(name, _)| name)
         .collect()
@@ -981,9 +981,9 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
             )?;
         }
         stage("Restoring the workspaces' secrets...");
-        unrestored = crate::secrets::restore_in(crate::local_cluster::CONTEXT);
+        unrestored = crate::cli::secrets::restore_in(crate::local_cluster::CONTEXT);
         stage("Adding the cluster to your kubeconfig...");
-        crate::config::update_file(&user_kubeconfig(), |existing| {
+        crate::cli::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
         })?;
     }
@@ -992,14 +992,14 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
     let registered = crate::compute_settings::read_clusters()
         .iter()
         .any(|existing| existing.name == cluster.name);
-    crate::config::update_file(&crate::compute_settings::compute_path(), |existing| {
+    crate::cli::config::update_file(&crate::compute_settings::compute_path(), |existing| {
         crate::compute_settings::merge_cluster(
             existing,
             &cluster,
             registered.then_some(cluster.name.as_str()),
         )
     })?;
-    crate::config::update_file(&crate::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
         merge_workspace(existing, &workspace, slot)
     })?;
     Ok(Provisioned {
@@ -1035,7 +1035,7 @@ fn parse_contexts(kubeconfig: &str) -> Vec<String> {
 #[tauri::command]
 pub(crate) fn workspace_configs() -> Vec<WorkspaceConfig> {
     parse_configs(
-        std::fs::read_to_string(crate::daemon::config_path())
+        std::fs::read_to_string(crate::cli::daemon::config_path())
             .ok()
             .as_deref(),
         &crate::compute_settings::read_clusters(),
@@ -1049,14 +1049,14 @@ pub(crate) fn save_workspace(
     config: WorkspaceConfig,
     previous_name: Option<String>,
 ) -> Result<(), String> {
-    crate::config::update_file(&crate::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
         merge_workspace(existing, &config, previous_name.as_deref())
     })
 }
 
 #[tauri::command]
 pub(crate) fn delete_workspace(name: String) -> Result<(), String> {
-    crate::config::update_file(&crate::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
         remove_workspace(existing, &name)
     })
 }

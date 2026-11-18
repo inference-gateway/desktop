@@ -45,7 +45,7 @@ fn cluster_of(entry: &Value) -> Option<ClusterConfig> {
 
 /// The clusters `compute.yaml` registers, in file order.
 pub(crate) fn parse_clusters(compute_yaml: Option<&str>) -> Vec<ClusterConfig> {
-    crate::config::config_mapping(compute_yaml)
+    crate::cli::config::config_mapping(compute_yaml)
         .get(CLUSTERS_KEY)
         .and_then(Value::as_sequence)
         .map(|entries| entries.iter().filter_map(cluster_of).collect())
@@ -96,7 +96,7 @@ pub(crate) fn merge_cluster(
     if config.namespace.trim().is_empty() {
         return Err("Name the namespace the cluster's sessions run in.".into());
     }
-    let mut yaml = crate::config::config_mapping(compute_yaml);
+    let mut yaml = crate::cli::config::config_mapping(compute_yaml);
     let root = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
     let entries = clusters_of(root)?;
     let named = |entry: &Value, wanted: &str| text(entry, "name") == wanted;
@@ -125,7 +125,7 @@ fn remove_cluster(compute_yaml: Option<&str>, name: &str) -> Result<String, Stri
 
 /// The workspaces of `daemon.yaml` that run on the cluster `name`.
 fn workspaces_on(daemon_yaml: Option<&str>, name: &str) -> Vec<String> {
-    crate::config::config_mapping(daemon_yaml)
+    crate::cli::config::config_mapping(daemon_yaml)
         .get("workspaces")
         .and_then(Value::as_sequence)
         .map(|entries| {
@@ -141,7 +141,7 @@ fn workspaces_on(daemon_yaml: Option<&str>, name: &str) -> Vec<String> {
 /// `daemon.yaml` with every workspace on the cluster `from` moved to `to`, so
 /// renaming a cluster keeps its workspaces on it.
 fn rename_workspaces(daemon_yaml: Option<&str>, from: &str, to: &str) -> Result<String, String> {
-    let mut yaml = crate::config::config_mapping(daemon_yaml);
+    let mut yaml = crate::cli::config::config_mapping(daemon_yaml);
     if let Some(entries) = yaml.get_mut("workspaces").and_then(Value::as_sequence_mut) {
         for entry in entries.iter_mut().filter_map(Value::as_mapping_mut) {
             if entry.get("compute").and_then(Value::as_str) == Some(from) {
@@ -180,12 +180,12 @@ pub(crate) async fn save_cluster(
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         require_compute()?;
-        crate::config::update_file(&compute_path(), |existing| {
+        crate::cli::config::update_file(&compute_path(), |existing| {
             merge_cluster(existing, &config, previous_name.as_deref())
         })?;
         match previous_name {
             Some(previous) if previous != config.name.trim() => {
-                crate::config::update_file(&crate::daemon::config_path(), |existing| {
+                crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
                     rename_workspaces(existing, &previous, config.name.trim())
                 })
             }
@@ -205,7 +205,7 @@ pub(crate) fn cluster_configs() -> Vec<ClusterConfig> {
 /// Removes a cluster no workspace runs on.
 #[tauri::command]
 pub(crate) fn delete_cluster(name: String) -> Result<(), String> {
-    let daemon_yaml = std::fs::read_to_string(crate::daemon::config_path()).ok();
+    let daemon_yaml = std::fs::read_to_string(crate::cli::daemon::config_path()).ok();
     let users = workspaces_on(daemon_yaml.as_deref(), &name);
     if !users.is_empty() {
         return Err(format!(
@@ -213,7 +213,7 @@ pub(crate) fn delete_cluster(name: String) -> Result<(), String> {
             users.join(", ")
         ));
     }
-    crate::config::update_file(&compute_path(), |existing| remove_cluster(existing, &name))
+    crate::cli::config::update_file(&compute_path(), |existing| remove_cluster(existing, &name))
 }
 
 /// Whether the installed `infer` reads `compute.yaml`.
@@ -282,7 +282,7 @@ pub(crate) async fn detect_clusters() -> Result<Vec<String>, String> {
         if detected.is_empty() {
             return Ok(Vec::new());
         }
-        crate::config::update_file(&compute_path(), |existing| {
+        crate::cli::config::update_file(&compute_path(), |existing| {
             detected.iter().try_fold(
                 existing.unwrap_or_default().to_owned(),
                 |merged, cluster| merge_cluster(Some(&merged), cluster, None),
