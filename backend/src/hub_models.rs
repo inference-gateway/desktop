@@ -1,5 +1,6 @@
-use crate::agent::{infer_command, run_infer};
+use crate::agent::run_infer;
 use crate::env::home_dir;
+use crate::launch::infer_command;
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
 use tauri::ipc::Channel;

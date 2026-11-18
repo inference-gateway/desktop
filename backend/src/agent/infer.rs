@@ -1,6 +1,6 @@
 use crate::cli::config::read_config;
-use crate::env::{agent_cwd, home_dir, infer_bin_path};
-use crate::launch::infer_env;
+use crate::env::agent_cwd;
+use crate::launch::infer_command;
 
 /// Resolve the local gateway URL from infer's config, defaulting to localhost:8080.
 pub(crate) fn gateway_url() -> String {
@@ -24,17 +24,6 @@ pub(crate) async fn run_infer_in(cwd: Option<String>, args: &[&str]) -> Result<S
     tokio::task::spawn_blocking(move || run_infer_blocking(cwd, &args))
         .await
         .map_err(|e| format!("infer task failed: {}", e))?
-}
-
-/// An `infer` command with the desktop's environment, run from `dir`.
-pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
-    let mut command = crate::env::command(infer_bin_path());
-    command
-        .env("HOME", home_dir().to_str().unwrap_or(""))
-        .envs(infer_env())
-        .env("PWD", dir)
-        .current_dir(dir);
-    command
 }
 
 /// Synchronous form of `run_infer_in` for paths without a runtime, such as

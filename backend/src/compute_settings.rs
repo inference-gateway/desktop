@@ -156,7 +156,7 @@ fn rename_workspaces(daemon_yaml: Option<&str>, from: &str, to: &str) -> Result<
 /// the compute commands. Mock mode always does.
 pub(crate) fn compute_supported_blocking() -> bool {
     crate::env::mock_mode()
-        || crate::agent::infer_command(&crate::env::home_dir())
+        || crate::launch::infer_command(&crate::env::home_dir())
             .args(["compute", "clusters", "list"])
             .output()
             .is_ok_and(|output| output.status.success())

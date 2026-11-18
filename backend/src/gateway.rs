@@ -1,7 +1,7 @@
 use crate::AppState;
 use crate::agent::gateway_url;
 use crate::cli::config::auth_env;
-use crate::env::{bin_dir, gateway_download_supported};
+use crate::env::{gateway_bin_path, gateway_download_supported, local_gateway_build_from_env};
 use crate::launch::collector_env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -37,29 +37,6 @@ impl GatewayStart {
             (true, _) => Self::Reuse,
         }
     }
-}
-
-/// A gateway build to run in place of the installed one, named by
-/// INFERENCE_GATEWAY_BIN, so a local build can be clicked through without
-/// touching ~/.infer/bin. The desktop never installs over it.
-fn local_gateway_build(named: Option<std::ffi::OsString>) -> Option<PathBuf> {
-    named.filter(|bin| !bin.is_empty()).map(PathBuf::from)
-}
-
-fn local_gateway_build_from_env() -> Option<PathBuf> {
-    local_gateway_build(std::env::var_os("INFERENCE_GATEWAY_BIN"))
-}
-
-pub(crate) fn gateway_bin_path() -> PathBuf {
-    if let Some(build) = local_gateway_build_from_env() {
-        return build;
-    }
-    let name = if cfg!(target_os = "windows") {
-        "inference-gateway.exe"
-    } else {
-        "inference-gateway"
-    };
-    bin_dir().join(name)
 }
 
 /// The local build the desktop was pointed at, or why it cannot run.
@@ -233,16 +210,6 @@ pub(crate) async fn start_gateway(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_local_gateway_build_is_named_by_a_non_empty_path() {
-        assert_eq!(local_gateway_build(None), None);
-        assert_eq!(local_gateway_build(Some("".into())), None);
-        assert_eq!(
-            local_gateway_build(Some("/src/gateway/bin/inference-gateway".into())),
-            Some(PathBuf::from("/src/gateway/bin/inference-gateway"))
-        );
-    }
 
     #[test]
     fn a_local_gateway_build_has_to_be_a_file() {

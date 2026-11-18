@@ -11,6 +11,7 @@ mod cli;
 mod cli_install;
 mod cluster_folders;
 mod cluster_gpu;
+mod cluster_provisioning;
 mod composer;
 mod compute_settings;
 mod computer_resources;
@@ -345,7 +346,7 @@ pub fn run() {
             workspace_settings::local_cluster_status,
             workspace_settings::save_local_cluster_runtime,
             computer_resources::computer_resources,
-            workspace_settings::provision_local_cluster,
+            cluster_provisioning::provision_local_cluster,
             cluster_folders::cluster_folders,
             cluster_folders::save_cluster_folders,
         ])
