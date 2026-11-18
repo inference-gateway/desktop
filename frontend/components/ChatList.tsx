@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
@@ -713,14 +714,11 @@ export function ChatList() {
     selectProjectsInGroup,
     isRunning,
     selectProject,
-    setInitialSettingsTab,
-    setInitialProjectFilter,
-    setCurrentView,
-    projectFilter: filter,
     visibleProjectNames,
     selectAgent,
     openAgentEditor,
   } = useDesktop();
+  const { setInitialSettingsTab, setInitialProjectFilter, setCurrentView, projectFilter: filter } = useNavigation();
   const { setError } = useStatusActions();
   const agentsFilter = filter === "agents";
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(() => new Set());

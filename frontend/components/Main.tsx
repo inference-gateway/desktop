@@ -7,6 +7,7 @@ import { Composer } from "./Composer";
 import { ResizeHandle } from "./ResizeHandle";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
@@ -27,7 +28,8 @@ const DEFAULT_CHAT_DOCK_WIDTH = 400;
 export function Main() {
   const { projectTypes } = useSidebar();
   const { agentEditor } = useAgents();
-  const { currentView, currentProject, sidebarOpen, setSidebarOpen, chatOpen } = useDesktop();
+  const { currentProject } = useDesktop();
+  const { currentView, sidebarOpen, setSidebarOpen, chatOpen } = useNavigation();
   const content = currentProject !== null && projectTypes[currentProject] === "content";
   useEffect(() => setSidebarOpen(!content), [content, setSidebarOpen]);
   if (currentView === "settings") {

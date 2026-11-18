@@ -41,6 +41,7 @@ import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend
 import { GitProvider, useGit } from "@/stores/git";
 import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 import { AgentsProvider, useAgents } from "@/stores/agents";
+import { NavigationProvider, useNavigation } from "@/stores/navigation";
 
 const AGENT_MODE_KEY = "agentMode";
 const AWAITING_LABELS = {
@@ -51,8 +52,6 @@ const AWAITING_LABELS = {
 import type { ProjectType } from "@/lib/sidebar-document";
 import { WINDOW_EVENTS } from "@/lib/events";
 export type { ProjectType };
-/** What the sidebar lists: every project, one project type, or the agents. */
-export type SidebarFilter = ProjectType | "agents";
 
 const CONTENT_GUIDANCE =
   'This is a content project, not a code repository. To add your voice to a video ("add my voice", "put a voiceover on this recording") to add captions or subtitles over it ("add captions", "caption this"), or to add title cards, lower thirds, callouts, step counters or charts over it, read and follow ~/.infer/skills/video-editing/SKILL.md, which is already installed; use only the tools and paths it names and never search the filesystem for tools or skills. The desktop renders <stem>.timeline.json in the project directory as an editable timeline, and the media/ folder as its media pool: put every recording, music file and generated voice clip there and reference it as media/<file> in the timeline. Every audio and video file (wav, mp3, m4a, mp4, mov and the like) MUST live inside media/, never in the project root or any other folder; the only exceptions are the scratch files the skill keeps in tmp/ and a voice.wav cut from the recording. Treat media/ as append-only: never overwrite or delete an existing file in it. When you need to replace a clip, write a new versioned filename (for example media/<name>-v2.<ext>) and point the timeline at the new file, leaving the old one in place.';
@@ -165,6 +164,7 @@ function useDesktopStore() {
     setProjectContext,
   } = useSidebar();
   const { gitProjects, refreshGitProjects, cleanupProject } = useGit();
+  const { setCurrentView, projectFilter, setProjectFilter } = useNavigation();
   const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
   const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -173,15 +173,11 @@ function useDesktopStore() {
     const n = parseInt(localStorage.getItem(MAX_SESSIONS_KEY) || "", 10);
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
   });
-  const [currentView, setCurrentView] = useState<"chat" | "settings" | "observability" | "computers">("chat");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chatOpen, setChatOpen] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
   const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
   const queuedRef = useRef<PromptQueue>({});
   const [showStatusBar, setShowStatusBar] = useState(true);
-  const [projectFilter, setProjectFilter] = useState<SidebarFilter | null>(null);
   const visibleProjectNames = useMemo(
     () =>
       projectFilter && projectFilter !== "agents"
@@ -198,8 +194,6 @@ function useDesktopStore() {
   useEffect(() => {
     movingRef.current = moving;
   }, [moving]);
-  const [initialSettingsTab, setInitialSettingsTab] = useState("general");
-  const [initialProjectFilter, setInitialProjectFilter] = useState("");
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [reply, setReply] = useState<string | null>(null);
@@ -1477,11 +1471,6 @@ function useDesktopStore() {
     currentAgent,
     openAgentEditor,
     saveAgent,
-    currentView,
-    sidebarOpen,
-    setSidebarOpen,
-    chatOpen,
-    setChatOpen,
     openSettings,
     openObservability,
     openComputers,
@@ -1494,7 +1483,6 @@ function useDesktopStore() {
     deleteMachine,
     promptProject,
     runningIds,
-    setCurrentView,
     saveSettings,
     getConfig,
     getAuth,
@@ -1512,10 +1500,6 @@ function useDesktopStore() {
     setShowStatusBar,
     currentProject,
     setProjectType,
-    initialSettingsTab,
-    setInitialSettingsTab,
-    initialProjectFilter,
-    setInitialProjectFilter,
     assignProject,
     unassignProject,
     initProject,
@@ -1528,8 +1512,6 @@ function useDesktopStore() {
     cancelInitSelection,
     toggleInitSelection,
     selectAllProjects,
-    projectFilter,
-    setProjectFilter,
     visibleProjectNames,
     clearProjectSelection,
     selectProjectsInGroup,
@@ -1568,7 +1550,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
             <GitProvider>
               <SidebarProvider>
                 <AgentsProvider>
-                  <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                  <NavigationProvider>
+                    <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                  </NavigationProvider>
                 </AgentsProvider>
               </SidebarProvider>
             </GitProvider>

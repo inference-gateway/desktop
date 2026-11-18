@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { PROVIDERS, useDesktop } from "@/store";
 import { useBackend } from "@/stores/backend";
+import { useNavigation } from "@/stores/navigation";
 import { useStatus } from "@/stores/status";
 import { selectableVersions, stripV, versionAction } from "@/lib/updates";
 import { GeneralTab } from "./GeneralTab";
@@ -63,8 +64,8 @@ const TABS: { id: Tab; label: string }[] = [
 export function SettingsView() {
   const { updates, selectedVersions, selectVersion, installUpdate, checkForUpdates, applyUpdates, updateButton } =
     useBackend();
-  const { setCurrentView, saveSettings, getAuth, initialSettingsTab, setInitialSettingsTab, setInitialProjectFilter } =
-    useDesktop();
+  const { saveSettings, getAuth } = useDesktop();
+  const { setCurrentView, initialSettingsTab, setInitialSettingsTab, setInitialProjectFilter } = useNavigation();
   const { statusText, statusError } = useStatus();
   const [tab, setTab] = useState<Tab>(
     TABS.some((t) => t.id === initialSettingsTab) ? (initialSettingsTab as Tab) : "general",

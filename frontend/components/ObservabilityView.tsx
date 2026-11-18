@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ChartColumn, Gauge } from "lucide-react";
 import { api, type StoredMetric, type StoredSpan } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 
 const METRICS_POLL_MS = 3000;
 const SERVICE_COLORS = ["#4f8ef7", "#2fbf71", "#f2a93b", "#e05d7e", "#9b6ef3", "#3ec3c9"];
@@ -183,7 +183,7 @@ function StatsSection({ metrics }: { metrics: StoredMetric[] }) {
 }
 
 export function ObservabilityView() {
-  const { setCurrentView } = useDesktop();
+  const { setCurrentView } = useNavigation();
   const [section, setSection] = useState<Section>("traces");
   const [traces, setTraces] = useState<StoredSpan[]>([]);
   const [metrics, setMetrics] = useState<StoredMetric[]>([]);

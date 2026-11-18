@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Bot, Clapperboard, Code, LayoutList, MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 import { useSidebar } from "@/stores/sidebar";
 import { Button } from "@/components/ui/button";
 import { ChatList } from "./ChatList";
@@ -10,15 +11,8 @@ import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, loadSidebarWidth, saveSidebar
 
 export function Sidebar() {
   const { projectNames, projectTypes } = useSidebar();
-  const {
-    newChat,
-    projectFilter: filter,
-    setProjectFilter: setFilter,
-    initSelecting,
-    startInitSelection,
-    cancelInitSelection,
-    initAllRunning,
-  } = useDesktop();
+  const { newChat, initSelecting, startInitSelection, cancelInitSelection, initAllRunning } = useDesktop();
+  const { projectFilter: filter, setProjectFilter: setFilter } = useNavigation();
   const [width, setWidth] = useState(() => loadSidebarWidth(window.innerWidth));
   const [dragging, setDragging] = useState(false);
   const mixedTypes = new Set(projectNames.map((n) => projectTypes[n] ?? "code")).size > 1;

@@ -14,6 +14,7 @@ import {
 import { useComputerFacts } from "@/hooks/useComputerFacts";
 import { useScreen } from "@/hooks/useScreen";
 import { useChatStream, useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useStatusActions } from "@/stores/status";
@@ -180,7 +181,8 @@ export function ComputersView() {
   const { workspaceOf, agentOf, projects } = useSidebar();
   const { agents } = useAgents();
   const { transcripts } = useChatStream();
-  const { runningIds, openConversation, setCurrentView, drivenId, takeOver, deleteMachine } = useDesktop();
+  const { runningIds, openConversation, drivenId, takeOver, deleteMachine } = useDesktop();
+  const { setCurrentView } = useNavigation();
   const tiles = computerTiles(workspaceOf, agentOf, agents, transcripts, runningIds);
   const driven = tiles.find((tile) => tile.sessionId === drivenId);
   const { resources, sandboxes } = useComputerFacts(tiles.map((tile) => tile.sessionId));
