@@ -153,23 +153,6 @@ fn open_on_daemon(
     }
 }
 
-/// The open thread for a chat: the one the app follows, else the one `open`
-/// dials, which the app follows from then on.
-async fn ensure_thread(
-    threads: &Threads,
-    session_id: &str,
-    open: impl FnOnce() -> Result<Arc<Thread>, String> + Send + 'static,
-) -> Result<Arc<Thread>, String> {
-    if let Some(thread) = threads.get(session_id) {
-        return Ok(thread);
-    }
-    let thread = tokio::task::spawn_blocking(open)
-        .await
-        .map_err(|e| format!("thread open task failed: {e}"))??;
-    threads.insert(session_id, Arc::clone(&thread));
-    Ok(thread)
-}
-
 /// The thread a prompt runs on. A chat with a computer is marked remote, and
 /// one the app and the daemon both see for the first time is moved there by
 /// `teleport` and reopened, so its first run already happens on that computer.
@@ -185,7 +168,7 @@ where
     Teleport: Future<Output = Result<(), String>>,
 {
     let is_new_to_the_app = threads.get(session_id).is_none();
-    let thread = ensure_thread(threads, session_id, open.clone()).await?;
+    let thread = threads.get_or_open(session_id, open.clone()).await?;
     let Some(target) = workspace.filter(|name| !name.trim().is_empty()) else {
         return Ok(thread);
     };
@@ -197,7 +180,7 @@ where
     }
     teleport(target).await?;
     threads.remove(session_id);
-    ensure_thread(threads, session_id, open).await
+    threads.get_or_open(session_id, open).await
 }
 
 /// Starts a prompt's run on its thread with the model and mode it asks for.
@@ -258,7 +241,7 @@ pub(crate) async fn open_thread(
         agent.as_deref(),
     );
     let open = open_on_daemon(app, session_id.clone(), &cwd, options);
-    let thread = ensure_thread(&state.threads, &session_id, open).await?;
+    let thread = state.threads.get_or_open(&session_id, open).await?;
     if let Ok(mut channels) = state.channels.lock() {
         channels.entry(session_id).or_insert(on_event);
     }
