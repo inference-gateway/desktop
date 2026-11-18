@@ -400,7 +400,7 @@ fn fetch_animated_emoji(url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("reading {url}: {e}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn list_markdown_agents() -> Vec<MarkdownAgent> {
     list_from(&agent_dirs())
 }

@@ -33,7 +33,7 @@ pub(crate) fn safe_image_source(path: &str, home: &Path) -> Result<PathBuf, Stri
 
 /// Copy a generated image (the absolute path `infer` reported) to the user's
 /// Downloads folder. Returns the destination path on success.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn save_image(path: String) -> Result<String, String> {
     let home = home_dir();
     let src = safe_image_source(&path, &home)?;
@@ -43,7 +43,7 @@ pub(crate) fn save_image(path: String) -> Result<String, String> {
 /// Copy a generated WAV (transcript speech or a voice sample) to the user's
 /// Downloads folder. Same guard shape as `safe_image_source`, scoped to the
 /// TTS output and samples-library directories.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn save_audio(path: String) -> Result<String, String> {
     let home = home_dir();
     let src = safe_audio_source(&path, &home)?;

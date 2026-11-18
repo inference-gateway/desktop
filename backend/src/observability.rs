@@ -633,7 +633,7 @@ pub(crate) fn start_collector(
 }
 
 /// Return all stored traces, newest first.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_traces(state: tauri::State<'_, AppState>) -> Result<Vec<StoredSpan>, String> {
     let guard = state.stored_traces.lock().map_err(|e| e.to_string())?;
     let mut spans: Vec<StoredSpan> = guard.iter().cloned().collect();
@@ -642,7 +642,7 @@ pub(crate) fn get_traces(state: tauri::State<'_, AppState>) -> Result<Vec<Stored
 }
 
 /// Return all stored metric data points in arrival order.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_metrics(state: tauri::State<'_, AppState>) -> Result<Vec<StoredMetric>, String> {
     let guard = state.stored_metrics.lock().map_err(|e| e.to_string())?;
     Ok(guard.iter().cloned().collect())
