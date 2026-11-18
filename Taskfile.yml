@@ -79,6 +79,13 @@ tasks:
     cmds:
       - cargo tauri dev
 
+  dev:hmr:
+    desc: Start the app on the Vite dev server - frontend edits apply on save, without the production CSP
+    deps:
+      - install
+    cmds:
+      - "cargo tauri dev --config '{\"build\":{\"devUrl\":\"http://localhost:1420\",\"beforeDevCommand\":\"bun run dev\"}}'"
+
   e2e:
     desc: 'Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/). Filter to specific files with: task e2e -- tests/computer-use.yaml'
     dir: e2e
