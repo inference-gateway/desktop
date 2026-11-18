@@ -693,11 +693,15 @@ fn stop_daemon(home: &Path) {
     else {
         return;
     };
-    let _ = Command::new("kill").arg(pid.to_string()).status();
+    let _ = Command::new("kill")
+        .arg(pid.to_string())
+        .stderr(Stdio::null())
+        .status();
     let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
     while Instant::now() < deadline {
         let alive = Command::new("kill")
             .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
             .status()
             .is_ok_and(|s| s.success());
         if !alive {

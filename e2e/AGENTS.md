@@ -7,7 +7,7 @@ Running the tests (macOS only):
 ```bash
 task e2e -- tests/approval-approve.yaml   # one feature
 task e2e                                  # all features, alphabetical
-cargo test -p desktop-e2e                 # parse/validate the YAML only (what CI does)
+cargo test -p desktop-e2e                 # parse/validate the YAML only (what the CI workflow does)
 ```
 
 Every model turn is tokenless: the runner launches the app with `DESKTOP_MOCK=true` and `INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml`, and the spawned `infer` children serve those scripted scenarios - nothing hits a real provider. A prompt with no matching scenario gets the `fallback` answer, so a test prompt must only promise what its scenario's turns produce. The `models:` block at the top of `scenarios.yaml` is the single source of truth for the mock-mode model list (the app reads it instead of hitting a gateway), so manual mock mode needs the same env var for both turns and models:

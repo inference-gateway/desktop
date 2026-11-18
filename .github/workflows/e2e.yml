@@ -1,0 +1,64 @@
+name: E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SMOKE_SPECS: >-
+    tests/approval-approve.yaml
+    tests/reasoning.yaml
+    tests/compute-settings.yaml
+
+jobs:
+  e2e:
+    runs-on: macos-15
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 120 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2.9.3
+
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Build frontend
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: Run the smoke specs
+        if: github.event_name == 'pull_request'
+        working-directory: e2e
+        run: cargo run -- ${{ env.SMOKE_SPECS }}
+
+      - name: Run the full suite
+        if: github.event_name != 'pull_request'
+        working-directory: e2e
+        run: cargo run
+
+      - name: Upload what the failing specs saw
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-artifacts
+          path: |
+            e2e/artifacts/*.png
+            e2e/artifacts/*.log
+            e2e/artifacts/*.mov
+          if-no-files-found: ignore
