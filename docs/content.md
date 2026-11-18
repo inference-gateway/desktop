@@ -22,7 +22,7 @@ The editor renders a `<stem>.timeline.json` file in the project directory - `dem
 ## The timeline's controls
 
 - **Split** - the scissors, or `S` / `Ctrl+B`, cuts every clip under the playhead in two.
-- **Undo** / **Redo** - the timeline keeps a checkpoint for every saved edit, yours and the agent's alike. `Ctrl/Cmd+Z` steps back and `Ctrl/Cmd+Shift+Z` forward.
+- **Undo** / **Redo** - the timeline keeps a checkpoint for every saved edit, yours and the agent's alike. `Ctrl/Cmd+Z` steps back and `Ctrl/Cmd+Shift+Z` forward. Undo stops at a commit made outside the app, so a project that was a git repository before it became a content project keeps its history.
 - **Add voice** / **Redo drafts** - the sparkles asks the agent to voice the video (or re-speak the clips you edited), see [Voice](voice.md).
 - **Add captions** - asks the agent to write a captions track from the spoken clips or the recording's transcript.
 - **Export** - renders the frame size set on the toolbar (`1920x1080`, `1080x1920` for vertical, `1350x1350` for square) with ffmpeg to `export/<output>` in the project, with progress and a **Cancel** button. It needs a full ffmpeg with H.264 encoding. The bundled one has it.
