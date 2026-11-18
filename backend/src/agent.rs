@@ -79,10 +79,26 @@ pub(crate) fn thread_dir(project: Option<&str>) -> PathBuf {
         .unwrap_or_else(agent_cwd)
 }
 
+/// Sends `event` to the monitor bar and the overlay, when they act on its kind.
+fn broadcast(app: &tauri::AppHandle, session_id: &str, event: &AgentEvent) {
+    let Ok(event) = serde_json::to_value(event) else {
+        return;
+    };
+    let read = event["kind"]
+        .as_str()
+        .is_some_and(|kind| crate::events::BROADCAST_KINDS.contains(&kind));
+    if read {
+        let _ = app.emit(
+            crate::events::AGENT_EVENT,
+            serde_json::json!({ "sessionId": session_id, "name": "", "event": event }),
+        );
+    }
+}
+
 /// Fan-out for one thread's events: the chat's IPC channel streams the
-/// ordered transcript to the main webview, a global "agent-event" broadcast
-/// reaches every window, and a recording the run starts captures input
-/// until it stops.
+/// ordered transcript to the main webview, a broadcast reaches the monitor
+/// bar and the overlay for a chat on this computer, and a recording the run
+/// starts captures input until it stops.
 fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
     let recording: Arc<Mutex<Option<AgentRecording>>> = Arc::new(Mutex::new(None));
     let sink: Arc<Mutex<Option<Sink>>> = Arc::new(Mutex::new(None));
@@ -93,10 +109,9 @@ fn session_sink(app: tauri::AppHandle, session_id: String) -> Sink {
             .remote_sessions
             .lock()
             .is_ok_and(|sessions| sessions.contains(&session_id));
-        let _ = app.emit(
-            crate::events::AGENT_EVENT,
-            serde_json::json!({ "sessionId": session_id, "name": "", "remote": remote, "event": event }),
-        );
+        if !remote {
+            broadcast(&app, &session_id, &event);
+        }
         if let Some(channel) = app
             .state::<AppState>()
             .channels
