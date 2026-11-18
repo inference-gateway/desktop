@@ -27,6 +27,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      markdown: ${{ steps.filter.outputs.markdown }}
       markdown_only: ${{ steps.markdown-only.outputs.markdown_only }}
       markdown_files: ${{ steps.filter.outputs.markdown_files }}
     steps:
@@ -159,7 +160,7 @@ jobs:
 
   markdown-lint:
     needs: changes
-    if: needs.changes.outputs.markdown_only == 'true'
+    if: needs.changes.outputs.markdown == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
