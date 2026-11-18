@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod agent;
 mod agent_mail;
+mod auth_settings;
 mod avatars;
 mod binaries;
 mod cli;
@@ -194,8 +195,8 @@ pub fn run() {
             projects::read_projects,
             projects::write_projects,
             agent::models::list_models,
-            cli::config::get_auth,
-            cli::config::set_auth,
+            auth_settings::get_auth,
+            auth_settings::set_auth,
             cli::secrets::list_secrets,
             cli::secrets::save_secret,
             cli::secrets::delete_secret,

@@ -112,6 +112,13 @@ pub(crate) fn config_path() -> PathBuf {
     infer_dir().join("config.yaml")
 }
 
+pub(crate) const DAEMON_FILE: &str = "daemon.yaml";
+
+/// Where the daemon's own configuration lives, `~/.infer/daemon.yaml`.
+pub(crate) fn daemon_config_path() -> PathBuf {
+    infer_dir().join(DAEMON_FILE)
+}
+
 /// Install directory for the CLI, the gateway binary and desktop tools (`~/.infer/bin`).
 pub(crate) fn bin_dir() -> PathBuf {
     infer_dir().join("bin")

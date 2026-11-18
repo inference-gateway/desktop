@@ -372,7 +372,7 @@ fn sync(
     });
     let listed_set: BTreeSet<String> = listed.iter().cloned().collect();
     if listed_set != before {
-        config::update_file(&crate::cli::daemon::config_path(), |existing| {
+        config::update_file(&crate::env::daemon_config_path(), |existing| {
             workspace_settings::list_on(existing, "secrets", &name, &listed)
         })?;
     }

@@ -1,5 +1,5 @@
 use crate::cli::thread::Threads;
-use crate::env::{agent_cwd, home_dir, infer_bin_path, infer_dir, infer_dir_in, mock_mode};
+use crate::env::{DAEMON_FILE, agent_cwd, home_dir, infer_bin_path, infer_dir_in, mock_mode};
 use crate::launch::infer_env;
 use crate::processes::ProcessSupervisor;
 use serde::Serialize;
@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 pub(crate) const DEFAULT_PORT: u16 = 52789;
-const DAEMON_FILE: &str = "daemon.yaml";
 const BROWSER_USE_FILE: &str = "browser_use.yaml";
 const BOOT_WAIT: Duration = Duration::from_secs(15);
 const PROBE: Duration = Duration::from_millis(300);
@@ -69,11 +68,6 @@ fn token_of(section: Option<&serde_norway::Value>) -> Option<String> {
 /// seeded with the binding on and a fresh token.
 pub(crate) fn binding() -> Result<Binding, String> {
     binding_in(&home_dir())
-}
-
-/// Where the daemon's own configuration lives, `~/.infer/daemon.yaml`.
-pub(crate) fn config_path() -> PathBuf {
-    infer_dir().join(DAEMON_FILE)
 }
 
 fn binding_in(home: &Path) -> Result<Binding, String> {

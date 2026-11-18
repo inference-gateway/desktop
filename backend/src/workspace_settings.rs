@@ -999,7 +999,7 @@ fn provision_local(stage: impl Fn(&str), recreate: bool) -> Result<Provisioned, 
             registered.then_some(cluster.name.as_str()),
         )
     })?;
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         merge_workspace(existing, &workspace, slot)
     })?;
     Ok(Provisioned {
@@ -1035,7 +1035,7 @@ fn parse_contexts(kubeconfig: &str) -> Vec<String> {
 #[tauri::command]
 pub(crate) fn workspace_configs() -> Vec<WorkspaceConfig> {
     parse_configs(
-        std::fs::read_to_string(crate::cli::daemon::config_path())
+        std::fs::read_to_string(crate::env::daemon_config_path())
             .ok()
             .as_deref(),
         &crate::compute_settings::read_clusters(),
@@ -1049,14 +1049,14 @@ pub(crate) fn save_workspace(
     config: WorkspaceConfig,
     previous_name: Option<String>,
 ) -> Result<(), String> {
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         merge_workspace(existing, &config, previous_name.as_deref())
     })
 }
 
 #[tauri::command]
 pub(crate) fn delete_workspace(name: String) -> Result<(), String> {
-    crate::cli::config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    crate::cli::config::update_file(&crate::env::daemon_config_path(), |existing| {
         remove_workspace(existing, &name)
     })
 }

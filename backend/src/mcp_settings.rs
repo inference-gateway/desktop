@@ -283,7 +283,7 @@ fn list_on_workspaces(name: &str, on: &[String], before: &[String]) -> Result<bo
     if on_set == before_set {
         return Ok(false);
     }
-    config::update_file(&crate::cli::daemon::config_path(), |existing| {
+    config::update_file(&crate::env::daemon_config_path(), |existing| {
         workspace_settings::list_on(existing, WORKSPACE_KEY, name, on)
     })?;
     Ok(true)
