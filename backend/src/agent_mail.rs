@@ -401,7 +401,7 @@ fn inbox_secret_label(name: &str) -> String {
 /// The agent's workspace when it is a Kubernetes one, the only kind a secret
 /// can be assigned to.
 fn kubernetes_workspace(name: &str) -> Vec<String> {
-    crate::workspace_settings::workspace_configs()
+    crate::compute::workspace_settings::workspace_configs()
         .into_iter()
         .filter(|w| w.name == name && w.kind == crate::cli::workspace_config::KUBERNETES)
         .map(|w| w.name)

@@ -1,6 +1,6 @@
 use crate::cli::workspace_config::GPU_RESOURCE;
-use crate::local_cluster::Runtime;
-use crate::workspace_settings::{Prerequisite, prerequisite};
+use crate::compute::local_cluster::Runtime;
+use crate::compute::workspace_settings::{Prerequisite, prerequisite};
 
 const RENDER_DEVICE: &str = "/dev/dri/renderD128";
 const DEVICE_PLUGIN_IMAGE: &str = "ghcr.io/squat/generic-device-plugin:latest@sha256:8dc84958301f054bf72d9753a7a2c9af3d6642a9844b34d1171b3f2cdb4a15f6";
@@ -142,7 +142,7 @@ fn machines_of(listing: &str) -> (Option<String>, usize) {
 }
 
 fn podman(args: &[&str]) -> Result<String, String> {
-    crate::local_cluster::run(Runtime::Podman, args)
+    crate::compute::local_cluster::run(Runtime::Podman, args)
 }
 
 fn krunkit_installed() -> bool {
@@ -200,7 +200,7 @@ fn probe_name() -> String {
 /// Runs `vulkaninfo` on the node. The time limit kills, because a call
 /// blocked on the GPU does not end when it is asked to.
 fn probe(image: &str) -> Prerequisite {
-    let output = crate::local_cluster::node_command(Runtime::Podman)
+    let output = crate::compute::local_cluster::node_command(Runtime::Podman)
         .args(["timeout", "-s", "KILL", PROBE_SECONDS])
         .args(["ctr", "-n", "k8s.io", "run", "--rm"])
         .args(["--device", RENDER_DEVICE, image, &probe_name()])
@@ -218,7 +218,7 @@ fn probe(image: &str) -> Prerequisite {
 /// Whether the GPU of the cluster on Podman answers. Nothing to say before
 /// the first computer ran, since only its image can ask.
 pub(crate) fn prerequisites() -> Vec<Prerequisite> {
-    let images = crate::local_cluster::node_command(Runtime::Podman)
+    let images = crate::compute::local_cluster::node_command(Runtime::Podman)
         .args(["ctr", "-n", "k8s.io", "images", "ls", "-q"])
         .output()
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
@@ -229,8 +229,8 @@ pub(crate) fn prerequisites() -> Vec<Prerequisite> {
 /// Whether the node offers the GPU yet, which a computer needs to be
 /// scheduled. The device plugin registers it a moment after it is applied.
 pub(crate) fn offered() -> Result<String, String> {
-    let amount = crate::workspace_settings::kubectl(
-        crate::local_cluster::CONTEXT,
+    let amount = crate::compute::workspace_settings::kubectl(
+        crate::compute::local_cluster::CONTEXT,
         &["get", "nodes", "-o", ALLOCATABLE],
     )?;
     match amount.trim() {

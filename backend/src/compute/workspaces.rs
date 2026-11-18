@@ -499,10 +499,10 @@ fn remove_machines(sessions: &[MachineSession]) -> Result<usize, String> {
             .map(usize::from)
             .map_err(|error| format!("{}: {error}", session.id))
     });
-    let configs = crate::workspace_settings::workspace_configs();
+    let configs = crate::compute::workspace_settings::workspace_configs();
     let left_behind = configs
         .iter()
-        .map(crate::workspace_settings::delete_machines);
+        .map(crate::compute::workspace_settings::delete_machines);
     let (removed, failures): (Vec<_>, Vec<_>) =
         of_chats.chain(left_behind).partition(Result::is_ok);
     if failures.is_empty() {

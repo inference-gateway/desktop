@@ -8,7 +8,7 @@ use crate::cli::workspace_config::{
     remove_workspace,
 };
 use crate::cli::workspace_volumes::WorkspaceVolume;
-use crate::local_cluster::Runtime;
+use crate::compute::local_cluster::Runtime;
 use serde_norway::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
@@ -140,15 +140,15 @@ fn namespace_prerequisites(namespace: &str, labels: Result<&str, &str>) -> Vec<P
 /// The runtime the local cluster's node is on, or the chosen one before a
 /// node exists.
 fn local_runtime() -> Runtime {
-    let chosen = crate::cluster_folders::read_runtime();
-    crate::local_cluster::running_on(chosen).unwrap_or(chosen)
+    let chosen = crate::compute::cluster_folders::read_runtime();
+    crate::compute::local_cluster::running_on(chosen).unwrap_or(chosen)
 }
 
 /// kubectl for `context`. The local cluster's goes through its container, so
 /// checking it needs no kubectl on this machine.
 fn kubectl_for(context: &str) -> std::process::Command {
-    if context == crate::local_cluster::CONTEXT {
-        return crate::local_cluster::kubectl_command(local_runtime());
+    if context == crate::compute::local_cluster::CONTEXT {
+        return crate::compute::local_cluster::kubectl_command(local_runtime());
     }
     let mut command = crate::env::command("kubectl");
     command
@@ -162,7 +162,7 @@ fn kubectl_for(context: &str) -> std::process::Command {
 /// `kubectl_mock` and everything above them runs as it does for real.
 pub(crate) fn kubectl(context: &str, args: &[&str]) -> Result<String, String> {
     if crate::env::mock_mode() {
-        return Ok(crate::kubectl_mock::output(args));
+        return Ok(crate::compute::kubectl_mock::output(args));
     }
     let output = kubectl_for(context)
         .arg(KUBECTL_TIMEOUT)
@@ -182,7 +182,7 @@ pub(crate) fn kubectl_with_input(
     use std::io::Write;
     use std::process::Stdio;
     if crate::env::mock_mode() {
-        return Ok(crate::kubectl_mock::output(args));
+        return Ok(crate::compute::kubectl_mock::output(args));
     }
     let mut child = kubectl_for(context)
         .arg(KUBECTL_TIMEOUT)
@@ -364,7 +364,7 @@ fn check_cluster_blocking(context: &str, namespace: &str, selector: &str) -> Clu
         labels.as_deref().map_err(String::as_str),
     ));
     if has_gpu(context) {
-        prerequisites.extend(crate::cluster_gpu::prerequisites());
+        prerequisites.extend(crate::compute::cluster_gpu::prerequisites());
     }
     ClusterCheck {
         prerequisites,
@@ -376,7 +376,7 @@ fn check_cluster_blocking(context: &str, namespace: &str, selector: &str) -> Clu
 /// Whether `context` is the local cluster on Podman, the one cluster the app
 /// gives a GPU. Mock mode runs no cluster.
 fn has_gpu(context: &str) -> bool {
-    context == crate::local_cluster::CONTEXT
+    context == crate::compute::local_cluster::CONTEXT
         && !crate::env::mock_mode()
         && local_runtime() == Runtime::Podman
 }
@@ -412,8 +412,8 @@ pub(crate) fn provider_keys() -> Vec<String> {
 /// provider key the user saved.
 fn local_cluster(provider_keys: &[String]) -> ClusterConfig {
     ClusterConfig {
-        name: crate::local_cluster::CONTEXT.into(),
-        context: crate::local_cluster::CONTEXT.into(),
+        name: crate::compute::local_cluster::CONTEXT.into(),
+        context: crate::compute::local_cluster::CONTEXT.into(),
         namespace: DETECTED_NAMESPACE.into(),
         gateway_env: provider_keys.to_vec(),
     }
@@ -422,10 +422,10 @@ fn local_cluster(provider_keys: &[String]) -> ClusterConfig {
 /// The workspace of the local cluster: an Ubuntu desktop pod per chat on it,
 /// given every capability a workspace can have.
 fn local_workspace() -> WorkspaceConfig {
-    let capabilities = &crate::workspace_capabilities::CAPABILITIES;
+    let capabilities = &crate::compute::workspace_capabilities::CAPABILITIES;
     WorkspaceConfig {
         name: LOCAL_WORKSPACE.into(),
-        compute: crate::local_cluster::CONTEXT.into(),
+        compute: crate::compute::local_cluster::CONTEXT.into(),
         image: of_installed_version(COMPUTER_IMAGE),
         storage: DETECTED_STORAGE.into(),
         env: capabilities
@@ -482,7 +482,7 @@ fn local_workspace_slot(existing: &[WorkspaceConfig]) -> Result<Option<&'static 
         .find(|workspace| workspace.name == LOCAL_WORKSPACE)
     {
         None => Ok(None),
-        Some(workspace) if workspace.context == crate::local_cluster::CONTEXT => {
+        Some(workspace) if workspace.context == crate::compute::local_cluster::CONTEXT => {
             Ok(Some(LOCAL_WORKSPACE))
         }
         Some(workspace) => Err(format!(
@@ -576,36 +576,40 @@ pub(crate) fn provision_local(
     };
     let mut unrestored = Vec::new();
     if !crate::env::mock_mode() {
-        let runtime = crate::cluster_folders::read_runtime();
+        let runtime = crate::compute::cluster_folders::read_runtime();
         if let Some(problem) = runtime_problem(runtime) {
             return Err(problem);
         }
-        let folders = crate::cluster_folders::read_folders();
-        let binds = crate::cluster_folders::binds(&folders);
-        let kubeconfig = crate::local_cluster::provision(&stage, runtime, &binds, recreate)?;
+        let folders = crate::compute::cluster_folders::read_folders();
+        let binds = crate::compute::cluster_folders::binds(&folders);
+        let kubeconfig =
+            crate::compute::local_cluster::provision(&stage, runtime, &binds, recreate)?;
         stage("Creating the workspace namespace...");
-        managed_namespace(crate::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
+        managed_namespace(crate::compute::local_cluster::CONTEXT, DETECTED_NAMESPACE)?;
         if runtime == Runtime::Podman {
             stage("Giving the cluster's computers the GPU...");
             kubectl_with_input(
-                crate::local_cluster::CONTEXT,
+                crate::compute::local_cluster::CONTEXT,
                 &["apply", "-f", "-"],
-                &crate::cluster_gpu::manifest(DETECTED_NAMESPACE),
+                &crate::compute::cluster_gpu::manifest(DETECTED_NAMESPACE),
             )?;
-            crate::local_cluster::wait_until("the GPU", crate::cluster_gpu::offered)?;
+            crate::compute::local_cluster::wait_until(
+                "the GPU",
+                crate::compute::cluster_gpu::offered,
+            )?;
         }
         if let Some(manifest) =
-            crate::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
+            crate::compute::cluster_folders::claims_manifest(&folders, DETECTED_NAMESPACE)
         {
             stage("Sharing this computer's folders...");
             kubectl_with_input(
-                crate::local_cluster::CONTEXT,
+                crate::compute::local_cluster::CONTEXT,
                 &["apply", "-f", "-"],
                 &manifest,
             )?;
         }
         stage("Restoring the workspaces' secrets...");
-        unrestored = restore_secrets(crate::local_cluster::CONTEXT);
+        unrestored = restore_secrets(crate::compute::local_cluster::CONTEXT);
         stage("Adding the cluster to your kubeconfig...");
         crate::cli::config::update_file(&user_kubeconfig(), |existing| {
             merge_kubeconfig(existing, &kubeconfig)
@@ -863,8 +867,10 @@ const NO_DOCKER: &str = "Install and start Docker to provision a local cluster w
 /// what fixes it. Docker without a GPU setup needs only its daemon.
 fn runtime_problem(runtime: Runtime) -> Option<String> {
     match runtime {
-        Runtime::Docker => (!crate::local_cluster::answers(runtime)).then(|| NO_DOCKER.to_owned()),
-        Runtime::Podman => crate::cluster_gpu::podman_problem(),
+        Runtime::Docker => {
+            (!crate::compute::local_cluster::answers(runtime)).then(|| NO_DOCKER.to_owned())
+        }
+        Runtime::Podman => crate::compute::cluster_gpu::podman_problem(),
     }
 }
 
@@ -894,7 +900,7 @@ fn offered_runtimes() -> Vec<Runtime> {
 fn mock_local_cluster(runtime: Runtime) -> LocalCluster {
     let provisioned = crate::cli::compute::read_clusters()
         .iter()
-        .any(|cluster| cluster.name == crate::local_cluster::CONTEXT);
+        .any(|cluster| cluster.name == crate::compute::local_cluster::CONTEXT);
     LocalCluster {
         runtime,
         runtimes: offered_runtimes(),
@@ -905,17 +911,18 @@ fn mock_local_cluster(runtime: Runtime) -> LocalCluster {
 }
 
 fn local_cluster_now() -> LocalCluster {
-    let runtime = crate::cluster_folders::read_runtime();
+    let runtime = crate::compute::cluster_folders::read_runtime();
     if crate::env::mock_mode() {
         return mock_local_cluster(runtime);
     }
-    let binds = crate::cluster_folders::binds(&crate::cluster_folders::read_folders());
+    let binds =
+        crate::compute::cluster_folders::binds(&crate::compute::cluster_folders::read_folders());
     LocalCluster {
         runtime,
         runtimes: offered_runtimes(),
-        running: crate::local_cluster::running_on(runtime),
+        running: crate::compute::local_cluster::running_on(runtime),
         problem: runtime_problem(runtime),
-        pending: crate::local_cluster::recreate_pending(runtime, &binds),
+        pending: crate::compute::local_cluster::recreate_pending(runtime, &binds),
     }
 }
 
@@ -931,7 +938,7 @@ pub(crate) async fn local_cluster_status() -> Result<LocalCluster, String> {
 /// runs on the other one moves only when it is recreated.
 #[tauri::command]
 pub(crate) fn save_local_cluster_runtime(runtime: Runtime) -> Result<(), String> {
-    crate::cluster_folders::save_runtime(runtime)
+    crate::compute::cluster_folders::save_runtime(runtime)
 }
 
 #[cfg(test)]
@@ -942,26 +949,27 @@ mod tests {
 
     #[test]
     fn the_mock_cluster_meets_every_prerequisite_and_runs_nothing() {
-        let crds = crate::kubectl_mock::output(&["get", "crd", "-o", "name"]);
+        let crds = crate::compute::kubectl_mock::output(&["get", "crd", "-o", "name"]);
         assert!(
             installed_prerequisites(&crd_names(&crds))
                 .iter()
                 .all(|check| check.met)
         );
-        let labels = crate::kubectl_mock::output(&["get", "namespace", "ns"]);
+        let labels = crate::compute::kubectl_mock::output(&["get", "namespace", "ns"]);
         assert!(
             namespace_prerequisites("ns", Ok(&labels))
                 .iter()
                 .all(|check| check.met)
         );
-        let statuses = crate::kubectl_mock::output(&["get", ORCHESTRATORS, "-o", READY_STATUSES]);
+        let statuses =
+            crate::compute::kubectl_mock::output(&["get", ORCHESTRATORS, "-o", READY_STATUSES]);
         assert_eq!(session_counts(&statuses), (0, 0));
     }
 
     #[test]
     fn the_mock_cluster_holds_one_broken_machine_until_it_is_deleted() {
         let list = || {
-            parse_machines(&crate::kubectl_mock::output(&[
+            parse_machines(&crate::compute::kubectl_mock::output(&[
                 "get",
                 ORCHESTRATORS,
                 "-o",
@@ -973,10 +981,16 @@ mod tests {
         assert!(!listed[0].ready);
         assert_eq!(listed[0].reason, "SandboxNotReady");
 
-        crate::kubectl_mock::output(&["delete", ORCHESTRATORS, "-l", "workspace=any"]);
+        crate::compute::kubectl_mock::output(&["delete", ORCHESTRATORS, "-l", "workspace=any"]);
         assert_eq!(list().len(), 1);
 
-        crate::kubectl_mock::output(&["delete", ORCHESTRATORS, &listed[0].name, "-n", "ns"]);
+        crate::compute::kubectl_mock::output(&[
+            "delete",
+            ORCHESTRATORS,
+            &listed[0].name,
+            "-n",
+            "ns",
+        ]);
         assert!(list().is_empty());
     }
 
@@ -1151,8 +1165,8 @@ mod tests {
     #[test]
     fn the_local_workspace_runs_the_computer_image_on_the_local_cluster() {
         let cluster = local_cluster(&["OLLAMA_CLOUD_API_KEY".into()]);
-        assert_eq!(cluster.name, crate::local_cluster::CONTEXT);
-        assert_eq!(cluster.context, crate::local_cluster::CONTEXT);
+        assert_eq!(cluster.name, crate::compute::local_cluster::CONTEXT);
+        assert_eq!(cluster.context, crate::compute::local_cluster::CONTEXT);
         assert_eq!(cluster.gateway_env, ["OLLAMA_CLOUD_API_KEY"]);
         let workspace = local_workspace();
         assert_eq!(workspace.name, "ubuntu-desktop");

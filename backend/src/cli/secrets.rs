@@ -1,8 +1,8 @@
 use crate::cli::config;
 use crate::cli::secret_store::{StoredSecret, read_stored_in, secrets_path, write_stored_in};
 use crate::cli::workspace_config::{self, KUBERNETES, WorkspaceConfig};
+use crate::compute::workspace_settings;
 use crate::env::{home_dir, infer_dir_in};
-use crate::workspace_settings;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_norway::Value;
