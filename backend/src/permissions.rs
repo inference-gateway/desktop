@@ -160,11 +160,16 @@ pub(crate) fn ensure_recording_permissions() -> Result<(), String> {
     ))
 }
 
+/// Saves only the top-level `enabled` flag, keeping the CLI's other computer-use
+/// settings and refusing a file it cannot rewrite, like every other CLI file.
 fn write_computer_use_enabled(path: &Path, enabled: bool) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(path, format!("enabled: {enabled}\n")).map_err(|e| e.to_string())
+    crate::cli::config::update_file(path, |existing| {
+        let mut yaml = crate::cli::config::config_mapping(existing);
+        yaml.as_mapping_mut()
+            .ok_or("yaml root is not a mapping")?
+            .insert("enabled".into(), enabled.into());
+        serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
@@ -343,6 +348,38 @@ mod tests {
         assert!(enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
         write_computer_use_enabled(&path, false).unwrap();
         assert!(!enabled_from_yaml(&std::fs::read_to_string(&path).unwrap()));
+    }
+
+    #[test]
+    fn toggling_enabled_keeps_the_cli_s_other_keys() {
+        let dir = TempDir::new("cu-keep");
+        let path = dir.join(COMPUTER_USE_CONFIG_FILE);
+        std::fs::write(
+            &path,
+            "enabled: false\nrecording:\n  output_dir: /shots\napproval:\n  require: true\n",
+        )
+        .unwrap();
+        write_computer_use_enabled(&path, true).unwrap();
+        let saved: serde_norway::Value =
+            serde_norway::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved.get("enabled").and_then(serde_norway::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            saved
+                .get("recording")
+                .and_then(|r| r.get("output_dir"))
+                .and_then(serde_norway::Value::as_str),
+            Some("/shots")
+        );
+        assert_eq!(
+            saved
+                .get("approval")
+                .and_then(|a| a.get("require"))
+                .and_then(serde_norway::Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]
