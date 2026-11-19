@@ -1,8 +1,15 @@
+#[cfg(not(target_os = "linux"))]
 mod driver;
+#[cfg(target_os = "linux")]
+#[path = "webdriver.rs"]
+mod driver;
+mod home;
+mod podman;
 mod spec;
 
 use anyhow::{Context, Result, bail};
-use driver::{AppDriver, Seeds};
+use driver::AppDriver;
+use home::Seeds;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -11,7 +18,7 @@ use std::time::Duration;
 /// How long the overlay bounds assertion waits for the overlay to appear.
 const OVERLAY_BOUNDS_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// YAML-driven e2e runner: `e2e [--no-build] [--no-mock] [--record] [files...]`.
+/// YAML-driven e2e runner: `e2e [--podman] [--no-build] [--no-mock] [--record] [files...]`.
 fn main() {
     install_sigint_cleanup();
     match run() {
@@ -31,7 +38,7 @@ fn main() {
 fn install_sigint_cleanup() {
     let _ = ctrlc::set_handler(|| {
         let _ = Command::new("pkill")
-            .args(["-f", driver::PROCESS_MATCH])
+            .args(["-f", home::PROCESS_MATCH])
             .status();
         std::process::exit(130);
     });
@@ -49,8 +56,15 @@ fn run() -> Result<bool> {
     let mut build = true;
     let mut mock = true;
     let mut record_all = false;
+    let mut in_podman = false;
+    let mut forwarded: Vec<String> = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
     for arg in std::env::args().skip(1) {
+        if arg == "--podman" {
+            in_podman = true;
+            continue;
+        }
+        forwarded.push(arg.clone());
         match arg.as_str() {
             "--no-build" => build = false,
             "--no-mock" => mock = false,
@@ -58,6 +72,9 @@ fn run() -> Result<bool> {
             _ if arg.starts_with("--") => bail!("unknown flag {arg}"),
             _ => files.push(PathBuf::from(arg)),
         }
+    }
+    if in_podman {
+        return podman::run(&repo_root, &forwarded);
     }
     if files.is_empty() {
         let mut entries: Vec<_> = std::fs::read_dir(manifest_dir.join("tests"))?
@@ -123,14 +140,19 @@ fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
         println!("using INFER_BIN override: {}", PathBuf::from(&p).display());
         return Some(PathBuf::from(p));
     }
-    let asset = match std::env::consts::ARCH {
-        "aarch64" => "infer-darwin-arm64",
-        _ => "infer-darwin-amd64",
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        os => os,
     };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        _ => "amd64",
+    };
+    let asset = format!("infer-{os}-{arch}");
     let tag = include_str!("../../.cli-version").trim();
     let url =
         format!("https://github.com/inference-gateway/cli/releases/download/{tag}/{asset}.tar.gz");
-    let dir = artifacts.join("infer-tested");
+    let dir = artifacts.join(format!("infer-tested-{os}"));
     let tarball = dir.join(format!("{asset}.tar.gz"));
     let bin = dir.join("infer");
     let downloaded = std::fs::create_dir_all(&dir).is_ok()
@@ -228,6 +250,10 @@ impl Drop for Recording {
 
 fn start_recording(record: bool, artifacts: &Path, slug: &str) -> Result<Recording> {
     if !record {
+        return Ok(Recording(None));
+    }
+    if cfg!(target_os = "linux") {
+        println!("  not recording: screen recording needs the macOS run");
         return Ok(Recording(None));
     }
     let path = artifacts.join(format!("{slug}.mov"));

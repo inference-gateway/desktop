@@ -822,6 +822,7 @@ dependencies = [
  "anyhow",
  "ctrlc",
  "serde",
+ "serde_json",
  "serde_norway",
 ]
 
