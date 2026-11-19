@@ -281,6 +281,17 @@ fn step_run(app: &AppDriver, step: &Step) -> Result<()> {
         Step::Type { text } => app.type_text(text),
         Step::Keypress { keypress } => app.keypress(keypress),
         Step::Click { click } => app.click(&click.button),
+        Step::Drag { drag } => app.drag(&drag.from, drag.from_dx, &drag.to),
+        Step::AssertOrder { assert_order } => {
+            if !app.is_above(&assert_order.above, &assert_order.below)? {
+                bail!(
+                    "{:?} is not above {:?}",
+                    assert_order.above,
+                    assert_order.below
+                );
+            }
+            Ok(())
+        }
         Step::Screenshot { screenshot } => app.screenshot(screenshot).map(|_| ()),
         Step::AssertModel { assert_model } => {
             let got = app.model_value()?;
@@ -371,6 +382,13 @@ fn describe(step: &Step) -> String {
         Step::Type { text } => format!("type {text:?}"),
         Step::Keypress { keypress } => format!("keypress {keypress:?}"),
         Step::Click { click } => format!("click {:?}", click.button),
+        Step::Drag { drag } => format!("drag {:?} onto {:?}", drag.from, drag.to),
+        Step::AssertOrder { assert_order } => {
+            format!(
+                "assert_order {:?} above {:?}",
+                assert_order.above, assert_order.below
+            )
+        }
         Step::Screenshot { screenshot } => format!("screenshot {screenshot}"),
         Step::AssertModel { assert_model } => format!("assert_model {assert_model}"),
         Step::AssertComposer { .. } => "assert_composer".into(),

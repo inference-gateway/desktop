@@ -1,0 +1,23 @@
+name: timeline drag - a pool file dragged onto a lane becomes a clip there
+content_project: e2e-drag
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
+  - "Ask for a slow zoom. The model returns a Write of keyframe-zoom.timeline.json."
+  - "The Write pauses for approval."
+  - "Approve it."
+  - "The timeline loads, with its video lane."
+  - "Drag media/logo.png from the media pool onto the video lane."
+  - "The timeline saves a clip for logo.png."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-drag" }
+  - send: "add a slow zoom to this recording"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { button: "demo.mov (missing)", timeout: 20 }
+  - drag: { from: "media/logo.png", to: "Video lane video" }
+  - wait_for:
+      file: e2e/artifacts/home/projects/e2e-drag/keyframe-zoom.timeline.json
+      contains: media/logo.png
+      timeout: 10

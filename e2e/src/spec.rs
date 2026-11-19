@@ -57,6 +57,12 @@ pub enum Step {
     Click {
         click: ClickTarget,
     },
+    Drag {
+        drag: DragTarget,
+    },
+    AssertOrder {
+        assert_order: OrderTarget,
+    },
     AssertAbsent {
         assert_absent: FileTarget,
     },
@@ -103,6 +109,27 @@ pub struct GoneTarget {
     pub never: Option<String>,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
+}
+
+/// What `drag` moves with the mouse: the element named `from` onto the element
+/// named `to`, each matched by its accessible name or description. `from_dx`
+/// shifts the press sideways from `from`'s centre, onto a handle with no name.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DragTarget {
+    pub from: String,
+    #[serde(default)]
+    pub from_dx: f64,
+    pub to: String,
+}
+
+/// What `assert_order` checks: the element named `above` sits higher on screen
+/// than the element named `below`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderTarget {
+    pub above: String,
+    pub below: String,
 }
 
 #[derive(Debug, Deserialize)]
