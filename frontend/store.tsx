@@ -43,6 +43,7 @@ import { AgentsProvider, useAgents } from "@/stores/agents";
 import { NavigationProvider, useNavigation } from "@/stores/navigation";
 import { SelectionProvider, useSelection } from "@/stores/selection";
 import { PromptQueueProvider, usePromptQueue } from "@/stores/prompt-queue";
+import { ComputersProvider, useComputers } from "@/stores/computers";
 
 const AGENT_MODE_KEY = "agentMode";
 const AWAITING_LABELS = {
@@ -168,6 +169,7 @@ function useDesktopStore() {
   const { setCurrentView, projectFilter, setProjectFilter } = useNavigation();
   const { selected, setSelected, lastClickedIndex, clearSelection } = useSelection();
   const { queuedPrompts, queuePrompt, dropQueued, clearQueued, takeAllQueued } = usePromptQueue();
+  const { drivenId, setDrivenId, setMoving, movingRef } = useComputers();
   const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
   const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -189,11 +191,6 @@ function useDesktopStore() {
   useEffect(() => {
     workspaceOfRef.current = workspaceOf;
   }, [workspaceOf]);
-  const [moving, setMoving] = useState<Record<string, string>>(() => ({}));
-  const movingRef = useRef(moving);
-  useEffect(() => {
-    movingRef.current = moving;
-  }, [moving]);
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [reply, setReply] = useState<string | null>(null);
@@ -1027,8 +1024,6 @@ function useDesktopStore() {
     setCurrentView("computers");
   }, []);
 
-  const [drivenId, setDrivenId] = useState<string | null>(null);
-
   const handBack = useCallback(async () => {
     if (!drivenId) return;
     setDrivenId(null);
@@ -1439,10 +1434,8 @@ function useDesktopStore() {
     openSettings,
     openObservability,
     openComputers,
-    drivenId,
     takeOver,
     handBack,
-    moving,
     moveChat,
     cleanMachines,
     deleteMachine,
@@ -1518,7 +1511,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
                   <NavigationProvider>
                     <SelectionProvider>
                       <PromptQueueProvider>
-                        <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                        <ComputersProvider>
+                          <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                        </ComputersProvider>
                       </PromptQueueProvider>
                     </SelectionProvider>
                   </NavigationProvider>
