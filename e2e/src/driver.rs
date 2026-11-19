@@ -121,7 +121,7 @@ fn escape(s: &str) -> String {
 
 /// Offline fallback: the infer binary from the dev environment's PATH (the
 /// flox-pinned version), so e2e never silently tests a stale ~/.infer/bin
-/// install. The primary path is the latest release the runner downloads.
+/// install. The primary path is the tested release the runner downloads.
 fn which_infer() -> Option<std::path::PathBuf> {
     let out = Command::new("which").arg("infer").output().ok()?;
     if !out.status.success() {

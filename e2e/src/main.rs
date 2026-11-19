@@ -115,9 +115,9 @@ fn run() -> Result<bool> {
 }
 
 /// Resolve the infer binary for the whole suite: an explicit INFER_BIN wins,
-/// otherwise download the latest release once (the version users actually
-/// run - a pinned dev binary goes stale the day a new CLI ships), falling
-/// back to the dev environment's PATH when the download fails (offline).
+/// otherwise download the release `.cli-version` names once - the one a fresh
+/// install of this desktop takes - falling back to the dev environment's PATH
+/// when the download fails (offline).
 fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("INFER_BIN") {
         println!("using INFER_BIN override: {}", PathBuf::from(&p).display());
@@ -127,9 +127,10 @@ fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
         "aarch64" => "infer-darwin-arm64",
         _ => "infer-darwin-amd64",
     };
+    let tag = include_str!("../../.cli-version").trim();
     let url =
-        format!("https://github.com/inference-gateway/cli/releases/latest/download/{asset}.tar.gz");
-    let dir = artifacts.join("infer-latest");
+        format!("https://github.com/inference-gateway/cli/releases/download/{tag}/{asset}.tar.gz");
+    let dir = artifacts.join("infer-tested");
     let tarball = dir.join(format!("{asset}.tar.gz"));
     let bin = dir.join("infer");
     let downloaded = std::fs::create_dir_all(&dir).is_ok()
@@ -153,11 +154,11 @@ fn resolve_infer(artifacts: &Path) -> Option<PathBuf> {
             .ok()
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .unwrap_or_default();
-        println!("using latest released infer: {version}");
+        println!("using the tested infer release: {version}");
         return Some(bin);
     }
     println!(
-        "warning: could not download the latest infer release - falling back to the dev environment's (possibly stale) binary"
+        "warning: could not download the tested infer release - falling back to the dev environment's (possibly stale) binary"
     );
     None
 }

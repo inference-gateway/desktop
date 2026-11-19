@@ -1,3 +1,4 @@
+use crate::cli_install::tested_cli_tag;
 use crate::download::ProgressEvent;
 use crate::env::{gateway_bin_path, infer_bin_path};
 use std::io::Read;
@@ -135,28 +136,21 @@ fn latest_from_tags(versions: &[String]) -> String {
         .unwrap_or_default()
 }
 
+const GATEWAY_REPO: &str = "inference-gateway/inference-gateway";
+
+/// What each component can update to. The CLI is offered only the release this
+/// desktop is tested with, so a new CLI reaches users with the desktop that tests it.
 #[tauri::command]
 pub(crate) async fn check_updates(app: tauri::AppHandle) -> Result<Vec<UpdateInfo>, String> {
     if crate::env::mock_mode() {
         return Ok(crate::updates_mock::check());
     }
     let mut updates: Vec<UpdateInfo> = tokio::task::spawn_blocking(|| {
-        let components = [
-            ("CLI", infer_bin_path(), "inference-gateway/cli", "version"),
-            (
-                "Gateway",
-                gateway_bin_path(),
-                "inference-gateway/inference-gateway",
-                "--version",
-            ),
-        ];
-        components
-            .into_iter()
-            .filter_map(|(name, bin, repo, arg)| {
-                let current = installed_version(&bin, arg)?;
-                Some(UpdateInfo::new(name, current, recent_tags(repo)))
-            })
-            .collect()
+        let cli = installed_version(&infer_bin_path(), "version")
+            .map(|current| UpdateInfo::new("CLI", current, vec![tested_cli_tag().to_owned()]));
+        let gateway = installed_version(&gateway_bin_path(), "--version")
+            .map(|current| UpdateInfo::new("Gateway", current, recent_tags(GATEWAY_REPO)));
+        cli.into_iter().chain(gateway).collect()
     })
     .await
     .map_err(|e| e.to_string())?;
