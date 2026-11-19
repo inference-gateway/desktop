@@ -44,17 +44,36 @@ pub(crate) async fn list_conversations() -> Result<String, String> {
         "json",
     ])
     .await?;
-    let mut owned = crate::projects::project_dirs();
-    owned.push(agent_cwd());
+    let owned = owned_dirs();
     let listed = owned_conversations(&json, &owned);
     if !read_config().storage_directory.is_empty() {
         return Ok(listed);
     }
-    Ok(located_in_stores(&listed, &owned, |dir, id| {
-        conversation_store_dir(dir)
-            .join(format!("{id}.jsonl"))
-            .exists()
-    }))
+    Ok(located_in_stores(&listed, &owned, store_holds))
+}
+
+/// The owned directory whose conversation store holds `session_id`, so a chat
+/// the sidebar has no project for, such as a subagent's, still opens on its
+/// history. None when the CLI keeps every chat in one configured store.
+pub(crate) fn dir_holding(session_id: &str) -> Option<PathBuf> {
+    if !read_config().storage_directory.is_empty() {
+        return None;
+    }
+    owned_dirs()
+        .into_iter()
+        .find(|dir| store_holds(dir, session_id))
+}
+
+fn owned_dirs() -> Vec<PathBuf> {
+    let mut owned = crate::projects::project_dirs();
+    owned.push(agent_cwd());
+    owned
+}
+
+fn store_holds(dir: &Path, session_id: &str) -> bool {
+    conversation_store_dir(dir)
+        .join(format!("{session_id}.jsonl"))
+        .exists()
 }
 
 /// Points each chat at the project whose store holds its file. The listing
