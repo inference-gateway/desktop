@@ -125,6 +125,7 @@ import { Thumbnails, Waveform } from "./ClipMedia";
 import { Button } from "@/components/ui/button";
 import { BACKEND_EVENTS } from "@/lib/events";
 import { usePointerDrag } from "@/hooks/usePointerDrag";
+import { useFileDrop } from "@/hooks/useFileDrop";
 
 const SAVE_DEBOUNCE_MS = 600;
 const RELOAD_DEBOUNCE_MS = 200;
@@ -187,6 +188,7 @@ const FALLBACK_CLIP_S = 5;
 const VIDEO_EXT = /\.(?:mp4|mov|m4v|webm)$/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|webp|gif)$/i;
 const MEDIA_EXT = /\.(?:mp4|mov|m4v|webm|mp3|wav|m4a|aac|ogg|flac|png|jpe?g|webp|gif)$/i;
+const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
 const DEFAULT_TIMELINE = "main.timeline.json";
 
@@ -294,10 +296,10 @@ export function TimelineView() {
   const [zoom, setZoom] = useState<number | null>(null);
   const draggedFile = useRef<string | null>(null);
   const drag = usePointerDrag<string>((file, target, point) => dropOnLane(file, target, point.x));
+  const poolDrop = useFileDrop<HTMLDivElement>((paths) => importFiles(paths));
   const [importing, setImporting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(new Set());
-  const [poolOver, setPoolOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const timeRef = useRef(0);
@@ -1032,21 +1034,18 @@ export function TimelineView() {
     logActivity(project, "Draft voice clip", "done", 'use "Redo drafts" to voice it');
   };
 
-  const importFiles = async (files: FileList) => {
-    const dropped = Array.from(files);
-    const media = dropped.filter((f) => MEDIA_EXT.test(f.name));
-    const rejected = dropped.filter((f) => !MEDIA_EXT.test(f.name));
+  const importFiles = async (paths: string[]) => {
+    const media = paths.filter((p) => MEDIA_EXT.test(p));
+    const rejected = paths.filter((p) => !MEDIA_EXT.test(p)).map(fileName);
     if (rejected.length > 0) {
-      setError(
-        `Cannot use ${rejected.map((f) => f.name).join(", ")}: the media pool takes video, audio and image files`,
-      );
+      setError(`Cannot use ${rejected.join(", ")}: the media pool takes video, audio and image files`);
     }
     if (media.length === 0) return;
     setImporting(true);
     try {
-      for (const f of media) {
-        logActivity(project, "Import media", "running", f.name);
-        await api.importProjectFile(project, f.name, await f.arrayBuffer());
+      for (const path of media) {
+        logActivity(project, "Import media", "running", fileName(path));
+        await api.importProjectFile(project, path);
       }
       logActivity(project, "Import media", "done", `${media.length} file${media.length === 1 ? "" : "s"}`);
       await load();
@@ -1802,21 +1801,10 @@ export function TimelineView() {
 
         <div
           aria-label="Media pool"
-          onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes("Files")) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-            if (!poolOver) setPoolOver(true);
-          }}
-          onDragLeave={() => setPoolOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setPoolOver(false);
-            importFiles(e.dataTransfer.files);
-          }}
+          ref={poolDrop.ref}
           className={cn(
             "flex flex-col gap-1 rounded-lg border border-border bg-secondary/30 p-3",
-            poolOver && "border-dashed border-ring bg-primary/10",
+            poolDrop.over && "border-dashed border-ring bg-primary/10",
           )}
         >
           <div className="flex items-center gap-2">

@@ -604,10 +604,7 @@ export const api = {
   revealProjectFile: (project: string, name: string) => invoke<void>("reveal_project_file", { project, name }),
   deleteProjectFile: (project: string, name: string) => invoke<void>("delete_project_file", { project, name }),
   addProjectVideo: (project: string) => invoke<string | null>("add_project_video", { project }),
-  importProjectFile: (project: string, name: string, bytes: ArrayBuffer) =>
-    invoke<string>("import_project_file", bytes, {
-      headers: { "x-project": project, "x-name": hexEncode(name) },
-    }),
+  importProjectFile: (project: string, path: string) => invoke<string>("import_project_file", { project, path }),
   prepareContentTools: (onEvent: Channel<ProgressEvent>) => invoke<void>("prepare_content_tools", { onEvent }),
   exportBegin: (project: string, name: string, timeline: string) =>
     invoke<ExportPlan>("export_begin", { project, name, timeline }),
@@ -619,6 +616,7 @@ export const api = {
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveAudio: (path: string) => invoke<string>("save_audio", { path }),
   attachPick: (project: string | null) => invoke<string | null>("attach_pick", { project }),
+  attachPath: (project: string | null, path: string) => invoke<string>("attach_path", { project, path }),
   attachBytes: (project: string | null, name: string, bytes: ArrayBuffer) =>
     invoke<string>("attach_bytes", bytes, {
       headers: { "x-project": project ? hexEncode(project) : "", "x-name": hexEncode(name) },

@@ -25,6 +25,8 @@ import { useComputers } from "@/stores/computers";
 import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useFileDrop } from "@/hooks/useFileDrop";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
@@ -255,7 +257,6 @@ export function Composer() {
   const cursorRef = useRef(-1);
   const draftRef = useRef("");
   const [pending, setPending] = useState<PendingFile[]>([]);
-  const [dragOver, setDragOver] = useState(false);
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [installedSkills, setInstalledSkills] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
@@ -324,27 +325,29 @@ export function Composer() {
   /** Drop, paste and picker all land here: the backend saves the file at attach
    * time (media pool or uploads, and validates the allowlist), so a rejection
    * surfaces immediately instead of at send time. */
-  const addFile = async (file: File) => {
+  const attach = async (save: () => Promise<string>, preview?: string) => {
     try {
-      const path = await api.attachBytes(currentProject, file.name, await file.arrayBuffer());
-      setPending((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          path,
-          preview: kindOf(file.name) === "image" ? URL.createObjectURL(file) : undefined,
-        },
-      ]);
+      const path = await save();
+      setPending((prev) => [...prev, { id: crypto.randomUUID(), path, preview }]);
     } catch (e) {
       setError(`Failed to attach: ${e}`);
     }
   };
 
+  const drop = useFileDrop<HTMLDivElement>((paths) => {
+    for (const path of paths) {
+      attach(() => api.attachPath(currentProject, path), kindOf(path) === "image" ? convertFileSrc(path) : undefined);
+    }
+  });
+
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const file = e.clipboardData.files?.[0];
     if (!file) return;
     e.preventDefault();
-    addFile(file);
+    attach(
+      async () => api.attachBytes(currentProject, file.name, await file.arrayBuffer()),
+      kindOf(file.name) === "image" ? URL.createObjectURL(file) : undefined,
+    );
   };
 
   const onAttachPick = async () => {
@@ -661,26 +664,15 @@ export function Composer() {
       )}
       <div
         id="composer"
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          for (const file of Array.from(e.dataTransfer.files)) addFile(file);
-        }}
+        ref={drop.ref}
         className={cn(
           "relative mx-auto flex max-w-[52rem] flex-col rounded-[1.6rem] border border-border-strong bg-background shadow-sm transition-colors focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20",
           bashMode && "border-tool focus-within:border-tool focus-within:ring-tool/20",
           toolMode && "border-warn focus-within:border-warn focus-within:ring-warn/20",
-          dragOver && "border-dashed border-primary",
+          drop.over && "border-dashed border-primary",
         )}
       >
-        {dragOver && (
+        {drop.over && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[1.6rem] border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-primary">
             Drop to attach
           </div>

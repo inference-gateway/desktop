@@ -2,7 +2,8 @@ use super::{project_dir, project_is_content, sanitize_name};
 use crate::cli::config::{DesktopConfig, read_config};
 use base64::Engine as _;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 /// One file entry of a project's files summary.
@@ -245,27 +246,50 @@ pub(crate) async fn attach_pick(
     let Some(src) = picked.and_then(|fp| fp.into_path().ok()) else {
         return Ok(None);
     };
-    let saved = tokio::task::spawn_blocking(move || {
-        let fname = src
-            .file_name()
-            .and_then(|f| f.to_str())
-            .map(str::trim)
-            .filter(|f| !f.is_empty())
-            .ok_or_else(|| format!("invalid file name: {}", src.display()))?
-            .to_string();
-        let bytes = std::fs::read(&src).map_err(|e| e.to_string())?;
-        finish_attachment(project.as_deref(), fname, bytes)
-    })
-    .await
-    .map_err(|e| format!("attach task failed: {e}"))??;
+    let saved = tokio::task::spawn_blocking(move || attach_file(project.as_deref(), &src))
+        .await
+        .map_err(|e| format!("attach task failed: {e}"))??;
     Ok(Some(saved))
 }
 
-/// A file dropped or pasted onto the composer: raw bytes in the request body,
-/// with the project and file name in hex-encoded headers (header values are
-/// ASCII only). ponytail: the whole file streams through the webview, since a
-/// drop yields a File object rather than a path - the + button's native picker
-/// (attach_pick) avoids the round trip.
+/// A file dropped on the composer. Tauri hands the page the dropped paths, so
+/// the file's bytes never cross the webview.
+#[tauri::command(async)]
+pub(crate) fn attach_path(
+    app: tauri::AppHandle,
+    project: Option<String>,
+    path: PathBuf,
+) -> Result<String, String> {
+    require_dropped(&app, &path)?;
+    attach_file(project.as_deref(), &path)
+}
+
+/// Refuse a path the page could not already read. Tauri adds every dropped file
+/// to the asset protocol scope, so this takes dropped files and refuses the rest
+/// of the disk.
+pub(crate) fn require_dropped(app: &tauri::AppHandle, path: &Path) -> Result<(), String> {
+    if app.asset_protocol_scope().is_allowed(path) {
+        Ok(())
+    } else {
+        Err(format!("{} was not dropped on the window", path.display()))
+    }
+}
+
+fn attach_file(project: Option<&str>, src: &Path) -> Result<String, String> {
+    let fname = src
+        .file_name()
+        .and_then(|f| f.to_str())
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .ok_or_else(|| format!("invalid file name: {}", src.display()))?
+        .to_string();
+    let bytes = std::fs::read(src).map_err(|e| e.to_string())?;
+    finish_attachment(project, fname, bytes)
+}
+
+/// A file pasted onto the composer, which has no path: raw bytes in the request
+/// body, with the project and file name in hex-encoded headers (header values
+/// are ASCII only).
 #[tauri::command(async)]
 pub(crate) fn attach_bytes(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let header = |key: &str| -> Result<String, String> {
@@ -278,13 +302,24 @@ pub(crate) fn attach_bytes(request: tauri::ipc::Request<'_>) -> Result<String, S
     };
     let project = match header("x-project")? {
         hex if hex.is_empty() => None,
-        hex => Some(crate::timeline::hex_decode(&hex)?),
+        hex => Some(hex_decode(&hex)?),
     };
-    let fname = crate::timeline::hex_decode(&header("x-name")?)?;
+    let fname = hex_decode(&header("x-name")?)?;
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected raw file bytes".into());
     };
     finish_attachment(project.as_deref(), fname, bytes.to_vec())
+}
+
+fn hex_decode(hex: &str) -> Result<String, String> {
+    if !hex.len().is_multiple_of(2) {
+        return Err("odd hex length".into());
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<u8>, _>>()?;
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 fn save_to_local(project: &str, fname: String, bytes: Vec<u8>) -> Result<String, String> {
@@ -382,6 +417,14 @@ fn save_to_github(
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    #[test]
+    fn hex_decode_round_trips_utf8_names() {
+        let name = "Screen Recording 2026-09-16 at 18.57.04.mov";
+        let hex: String = name.bytes().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex_decode(&hex).unwrap(), name);
+        assert!(hex_decode("abc").is_err());
+    }
 
     #[test]
     fn validate_rejects_oversize_naming_the_limit() {

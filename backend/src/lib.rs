@@ -277,6 +277,7 @@ pub fn run() {
             projects::open_in_vs_code,
             projects::refresh_project_context,
             projects::attachments::attach_pick,
+            projects::attachments::attach_path,
             projects::attachments::attach_bytes,
             projects::attachments::list_project_files,
             projects::checkpoints::checkpoint_content_project,
