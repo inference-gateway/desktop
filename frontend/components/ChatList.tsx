@@ -18,6 +18,7 @@ import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
+import { useSelection } from "@/stores/selection";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
@@ -39,16 +40,9 @@ function CheckboxGlyph({ checked }: { checked: boolean }) {
 }
 
 function ChatItem({ index }: { index: number }) {
-  const {
-    conversations,
-    selected,
-    sessionId,
-    onChatClick,
-    deleteConversation,
-    isRunning,
-    isAwaitingApproval,
-    recordingOwner,
-  } = useDesktop();
+  const { conversations, sessionId, onChatClick, deleteConversation, isRunning, isAwaitingApproval, recordingOwner } =
+    useDesktop();
+  const { selected } = useSelection();
   const conv = conversations[index];
   const [confirm, setConfirm] = useState(false);
   const isSelected = selected.has(conv.id);
@@ -699,7 +693,6 @@ export function ChatList() {
   const { agents, activeAgent, deleteAgent, loadAgents } = useAgents();
   const {
     conversations,
-    selected,
     bulkDelete,
     assignProject,
     unassignProject,
@@ -719,6 +712,7 @@ export function ChatList() {
     openAgentEditor,
   } = useDesktop();
   const { setInitialSettingsTab, setInitialProjectFilter, setCurrentView, projectFilter: filter } = useNavigation();
+  const { selected } = useSelection();
   const { setError } = useStatusActions();
   const agentsFilter = filter === "agents";
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(() => new Set());
