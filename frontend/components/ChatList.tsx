@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from "react";
+import { createContext, useContext, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   Bot,
   FolderPlus,
@@ -16,6 +16,8 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
 import { subagentParentId } from "@/lib/transcript";
+import { groupTarget, projectTarget, sidebarDrop, UNGROUPED_TARGET, type SidebarDrag } from "@/lib/sidebar-drop";
+import { usePointerDrag } from "@/hooks/usePointerDrag";
 import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
 import { useSelection } from "@/stores/selection";
@@ -26,6 +28,8 @@ import { useStatusActions } from "@/stores/status";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "./AgentAvatar";
 import type { MarkdownAgent } from "@/lib/tauri";
+
+const StartDragContext = createContext<(e: ReactPointerEvent, drag: SidebarDrag) => void>(() => {});
 
 function CheckboxGlyph({ checked }: { checked: boolean }) {
   return (
@@ -46,6 +50,7 @@ function ChatItem({ index }: { index: number }) {
   const conv = conversations[index];
   const [confirm, setConfirm] = useState(false);
   const isSelected = selected.has(conv.id);
+  const startDrag = useContext(StartDragContext);
   const isActive = conv.id === sessionId;
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
@@ -63,12 +68,9 @@ function ChatItem({ index }: { index: number }) {
       }
       aria-selected={isSelected || undefined}
       onClick={(e) => onChatClick(index, e)}
-      draggable
-      onDragStart={(e) => {
+      onPointerDown={(e) => {
         e.stopPropagation();
-        const ids = isSelected ? Array.from(selected) : [conv.id];
-        e.dataTransfer.setData("text/plain", JSON.stringify(ids));
-        e.dataTransfer.effectAllowed = "move";
+        startDrag(e, { kind: "chats", ids: isSelected ? Array.from(selected) : [conv.id] });
       }}
       className={cn(
         "group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-[0.83rem] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
@@ -372,8 +374,8 @@ function ProjectGroup({
   onSettings,
   onRename,
   onDelete,
-  onDrop,
-  onDragOverProject,
+  onStartDrag,
+  dropOver,
   children,
 }: {
   name: string;
@@ -400,8 +402,8 @@ function ProjectGroup({
   onSettings: () => void;
   onRename: (newName: string) => void;
   onDelete: () => void;
-  onDrop: (e: DragEvent) => void;
-  onDragOverProject: (over: boolean) => void;
+  onStartDrag: (e: ReactPointerEvent) => void;
+  dropOver: boolean;
   children: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
@@ -427,22 +429,11 @@ function ProjectGroup({
 
   return (
     <div
-      draggable={!editing}
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", JSON.stringify({ project: name }));
-        e.dataTransfer.effectAllowed = "move";
+      data-drop-target={projectTarget(name)}
+      onPointerDown={(e) => {
+        if (!editing) onStartDrag(e);
       }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        onDragOverProject(true);
-      }}
-      onDragLeave={() => onDragOverProject(false)}
-      onDrop={(e) => {
-        onDrop(e);
-        onDragOverProject(false);
-      }}
-      className="group/project"
+      className={cn("group/project rounded-lg", dropOver && "ring-1 ring-primary/30")}
     >
       <div
         onClick={onSelect}
@@ -720,8 +711,6 @@ export function ChatList() {
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectGroup, setNewProjectGroup] = useState("");
-  const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
-  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [orchestratorsCollapsed, setOrchestratorsCollapsed] = useState(false);
   const [agentsCollapsed, setAgentsCollapsed] = useState(false);
 
@@ -751,45 +740,17 @@ export function ChatList() {
     };
   }, [conversations, projects, projectNames]);
 
-  const draggedIds = (e: DragEvent): string[] => {
-    try {
-      const parsed = JSON.parse(e.dataTransfer.getData("text/plain"));
-      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const draggedProject = (e: DragEvent): string | null => {
-    try {
-      const parsed = JSON.parse(e.dataTransfer.getData("text/plain"));
-      return typeof parsed?.project === "string" ? parsed.project : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleDropOnGroup = (e: DragEvent, label: string) => {
-    e.preventDefault();
-    setDragOverGroup(null);
-    const name = draggedProject(e);
-    if (!name || (projectGroups[name] ?? "") === label) return;
-    if (projectBusy(name)) {
-      setError(`${name} is running - stop it before moving`);
+  const drag = usePointerDrag<SidebarDrag>((dragged, target) => {
+    const drop = sidebarDrop(dragged, target);
+    if (drop?.kind === "assign") for (const id of drop.ids) assignProject(id, drop.project);
+    if (drop?.kind === "unassign") for (const id of drop.ids) unassignProject(id);
+    if (drop?.kind !== "moveProject" || (projectGroups[drop.name] ?? "") === drop.group) return;
+    if (projectBusy(drop.name)) {
+      setError(`${drop.name} is running - stop it before moving`);
       return;
     }
-    moveProject(name, label);
-  };
-
-  const handleDropOnProject = (e: DragEvent, projectName: string) => {
-    e.preventDefault();
-    for (const id of draggedIds(e)) assignProject(id, projectName);
-  };
-
-  const handleDropOnUngrouped = (e: DragEvent) => {
-    e.preventDefault();
-    for (const id of draggedIds(e)) unassignProject(id);
-  };
+    moveProject(drop.name, drop.group);
+  });
 
   const handleNewProject = () => {
     const trimmed = newProjectName.trim();
@@ -863,16 +824,10 @@ export function ChatList() {
         <div key={label || "(ungrouped)"} className="flex flex-col gap-1">
           {label && (
             <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                setDragOverGroup(label);
-              }}
-              onDragLeave={() => setDragOverGroup(null)}
-              onDrop={(e) => handleDropOnGroup(e, label)}
+              data-drop-target={groupTarget(label)}
               className={cn(
                 "mt-1 flex items-center justify-between rounded-md px-[0.4rem] text-[0.68rem] font-medium tracking-wide text-muted-foreground/50 uppercase",
-                dragOverGroup === label && "ring-1 ring-primary/30",
+                drag.over === groupTarget(label) && "ring-1 ring-primary/30",
               )}
             >
               <span className="flex items-center gap-1">
@@ -937,8 +892,8 @@ export function ChatList() {
                 }}
                 onRename={(n) => renameProject(name, n)}
                 onDelete={() => deleteProject(name)}
-                onDrop={(e) => handleDropOnProject(e, name)}
-                onDragOverProject={() => {}}
+                onStartDrag={(e) => drag.start(e, { kind: "project", name })}
+                dropOver={drag.over === projectTarget(name)}
               >
                 {indices.map((i) => (
                   <ChatItem key={conversations[i]?.id ?? i} index={i} />
@@ -951,14 +906,8 @@ export function ChatList() {
 
       {groups.ungrouped.length > 0 && (
         <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            setDragOverUngrouped(true);
-          }}
-          onDragLeave={() => setDragOverUngrouped(false)}
-          onDrop={handleDropOnUngrouped}
-          className={cn("flex flex-col gap-1 rounded-md", dragOverUngrouped && "ring-1 ring-primary/30")}
+          data-drop-target={UNGROUPED_TARGET}
+          className={cn("flex flex-col gap-1 rounded-md", drag.over === UNGROUPED_TARGET && "ring-1 ring-primary/30")}
         >
           {groups.ungrouped.map((i) => (
             <ChatItem key={conversations[i]?.id ?? i} index={i} />
@@ -969,7 +918,7 @@ export function ChatList() {
   );
 
   return (
-    <>
+    <StartDragContext.Provider value={drag.start}>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-1 overflow-y-auto select-none">
         {agentsFilter ? (
           agentRows
@@ -1080,6 +1029,6 @@ export function ChatList() {
         />
       )}
       {selected.size > 0 && <BulkDeleteBar count={selected.size} onDelete={bulkDelete} />}
-    </>
+    </StartDragContext.Provider>
   );
 }
