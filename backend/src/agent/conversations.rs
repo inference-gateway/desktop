@@ -148,10 +148,10 @@ pub(crate) fn conversation_store_dir(cwd: &Path) -> PathBuf {
         .join("conversations")
 }
 
-/// Moves a conversation's JSONL file between per-cwd stores so a chat dragged
-/// to another project resumes with its history instead of forking. Its thread
-/// closes first, or the daemon would save the next turn back to the old store.
-/// A no-op with a flat storage directory, an unsaved chat, or the same store.
+/// Moves a conversation to another project with `infer conversations move`,
+/// so a chat dragged there resumes with its history and is listed there. Its
+/// thread closes first, or the daemon would save the next turn back to the old
+/// project. An unsaved chat has nothing to move.
 #[tauri::command]
 pub(crate) async fn move_conversation(
     session_id: String,
@@ -159,12 +159,6 @@ pub(crate) async fn move_conversation(
     to_project: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    if session_id.contains(['/', '\\']) || session_id.contains("..") {
-        return Err("invalid session id".into());
-    }
-    if !read_config().storage_directory.is_empty() {
-        return Ok(());
-    }
     let from = from_cwd.map(PathBuf::from).unwrap_or_else(agent_cwd);
     let to = to_project
         .as_deref()
@@ -173,17 +167,19 @@ pub(crate) async fn move_conversation(
     if from == to {
         return Ok(());
     }
-    let file = format!("{session_id}.jsonl");
-    let src = conversation_store_dir(&from).join(&file);
-    if !src.exists() {
-        return Ok(());
-    }
+    let from = from.to_string_lossy().into_owned();
     state.threads.remove(&session_id);
-    stop_worker(&session_id, Some(&from.to_string_lossy())).await;
-    let dst_dir = conversation_store_dir(&to);
-    std::fs::create_dir_all(&dst_dir)
-        .map_err(|e| format!("creating {}: {e}", dst_dir.display()))?;
-    std::fs::rename(&src, dst_dir.join(&file)).map_err(|e| format!("moving conversation: {e}"))
+    stop_worker(&session_id, Some(&from)).await;
+    let to = to.to_string_lossy();
+    match run_infer_in(
+        Some(from),
+        &["conversations", "move", &session_id, "--to", &to],
+    )
+    .await
+    {
+        Err(e) if e.contains("conversation not found") => Ok(()),
+        other => other.map(|_| ()),
+    }
 }
 
 #[cfg(test)]
