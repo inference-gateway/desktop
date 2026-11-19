@@ -143,12 +143,45 @@ pub(crate) fn read_projects() -> Result<String, String> {
     serde_json::to_string(&read_projects_in(&crate::env::home_dir())).map_err(|e| e.to_string())
 }
 
+/// The projects.yaml text the sidebar saved last, so a reload can tell an
+/// agent's edit from a save of its own. Held over each save's write and each
+/// reload's read, so neither sees the other half done. Taken before
+/// `update_file`'s lock, never after it.
+static SIDEBAR_SAVE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 /// Write ~/.infer/projects.yaml, the whole mapping, atomically. It runs off the
 /// main thread, so the sidebar's save queue keeps the writes in order.
 #[tauri::command(async)]
 pub(crate) fn write_projects(data: String) -> Result<(), String> {
     let val: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-    write_projects_in(&crate::env::home_dir(), &val)
+    let home = crate::env::home_dir();
+    let mut saved = SIDEBAR_SAVE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    write_projects_in(&home, &val)?;
+    *saved = std::fs::read_to_string(projects_path(&home)).ok();
+    Ok(())
+}
+
+/// projects.yaml as JSON text when something other than the sidebar, such as
+/// an agent, changed it since the sidebar's last save, else None. Reading back
+/// its own save would drop the sidebar's newer changes that are still queued.
+#[tauri::command(async)]
+pub(crate) fn read_projects_if_edited() -> Result<Option<String>, String> {
+    let saved = SIDEBAR_SAVE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let text = std::fs::read_to_string(projects_path(&crate::env::home_dir())).ok();
+    edited_projects(text, saved.as_deref())
+        .map(|val| serde_json::to_string(&val).map_err(|e| e.to_string()))
+        .transpose()
+}
+
+/// The mapping in `text` when it differs from the sidebar's `saved` text and
+/// parses. A missing or broken file has nothing to offer the sidebar.
+fn edited_projects(text: Option<String>, saved: Option<&str>) -> Option<serde_json::Value> {
+    text.filter(|text| Some(text.as_str()) != saved)
+        .and_then(|text| serde_norway::from_str(&text).ok())
 }
 
 fn projects_state() -> serde_json::Value {
@@ -426,6 +459,27 @@ mod tests {
         assert_eq!(read_projects_in(&home), serde_json::json!({}));
         assert!(write_projects_in(&home, &serde_json::json!({})).is_err());
         assert_eq!(std::fs::read_to_string(projects_path(&home)).unwrap(), kept);
+    }
+
+    #[test]
+    fn a_reload_offers_only_a_projects_file_someone_else_edited() {
+        let saved = "names:\n- desktop\n";
+        let edited = "names:\n- desktop\n- docs\n";
+        let parsed = Some(serde_json::json!({ "names": ["desktop", "docs"] }));
+        let cases = [
+            (None, Some(saved), None),
+            (Some(saved), Some(saved), None),
+            (Some("names:\n\t- docs\n"), Some(saved), None),
+            (Some(edited), Some(saved), parsed.clone()),
+            (Some(edited), None, parsed),
+        ];
+        for (text, saved, expected) in cases {
+            assert_eq!(
+                edited_projects(text.map(String::from), saved),
+                expected,
+                "{text:?}"
+            );
+        }
     }
 
     #[test]

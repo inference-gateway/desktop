@@ -612,6 +612,7 @@ export const api = {
   exportEnd: () => invoke<string>("export_end"),
   exportCancel: () => invoke<void>("export_cancel"),
   readProjects: () => invoke<string>("read_projects"),
+  readProjectsIfEdited: () => invoke<string | null>("read_projects_if_edited"),
   writeProjects: (data: string) => invoke<void>("write_projects", { data }),
   saveImage: (path: string) => invoke<string>("save_image", { path }),
   saveAudio: (path: string) => invoke<string>("save_audio", { path }),

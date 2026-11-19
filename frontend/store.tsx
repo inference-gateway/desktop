@@ -155,7 +155,7 @@ function useDesktopStore() {
     workspaceOf,
     workspaceTitles,
     initSelection,
-    loadProjects,
+    reloadProjects,
     setProjects,
     setProjectNames,
     setActiveProject,
@@ -430,6 +430,7 @@ function useDesktopStore() {
           case "Done":
             refreshStatus();
             refreshConversations();
+            reloadProjects();
             setRunningIds((prev) => {
               const next = new Set(prev);
               next.delete(runId);
@@ -470,7 +471,16 @@ function useDesktopStore() {
       };
       return ch;
     },
-    [dispatchTo, refreshStatus, refreshConversations, refreshHistory, resolveApproval, recordTerminal, logActivity],
+    [
+      dispatchTo,
+      refreshStatus,
+      refreshConversations,
+      reloadProjects,
+      refreshHistory,
+      resolveApproval,
+      recordTerminal,
+      logActivity,
+    ],
   );
 
   const followThread = useCallback(
@@ -750,7 +760,6 @@ function useDesktopStore() {
           agent: agentName,
         });
         refreshConversations();
-        loadProjects();
       } catch (err) {
         dispatchTo(runId, { type: "error", text: `Error: ${err}` });
         if (isInit && projectName) logActivity(projectName, "Init", "failed", String(err));
@@ -774,7 +783,6 @@ function useDesktopStore() {
       setError,
       logActivity,
       refreshConversations,
-      loadProjects,
       dispatchTo,
       clearTerminal,
       recordTerminal,
@@ -1212,11 +1220,10 @@ function useDesktopStore() {
       activeIdRef.current = runId;
       const pr = gitProjects.has(name) ? INIT_PR_INSTRUCTION : undefined;
       await sendPrompt(runId, "/init", name, pr);
-      await loadProjects();
       const ctx = await api.refreshProjectContext(name).catch(() => null);
       if (ctx) setProjectContext(name, ctx);
     },
-    [gitProjects, maxSessions, assignProject, sendPrompt, loadProjects, setProjectContext, setError, logActivity],
+    [gitProjects, maxSessions, assignProject, sendPrompt, setProjectContext, setError, logActivity],
   );
 
   const startInitSelection = useCallback(() => {
