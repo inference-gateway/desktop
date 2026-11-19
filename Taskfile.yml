@@ -87,7 +87,7 @@ tasks:
       - "cargo tauri dev --config backend/tauri.dev.conf.json --config '{\"build\":{\"devUrl\":\"http://localhost:1420\",\"beforeDevCommand\":\"bun run dev\"}}'"
 
   e2e:
-    desc: 'Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/). Filter to specific files with: task e2e -- tests/computer-use.yaml'
+    desc: 'Run macOS e2e tests (AX-driven, mock mode; see e2e/tests/). Filter to specific files with: task e2e -- tests/computer-use.yaml. Add --podman to run them in a container'
     dir: e2e
     deps:
       - web
