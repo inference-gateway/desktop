@@ -17,6 +17,7 @@ import { api, type DesktopConfig, type GitRepo, type ProjectFile, type RepoEntry
 import { useDesktop, type ProjectType } from "@/store";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
+import { useNavigation } from "@/stores/navigation";
 import { DEFAULT_CONFIG } from "@/lib/desktop-config";
 
 export function ProjectsTab() {
@@ -32,7 +33,8 @@ export function ProjectsTab() {
     projectGroups,
     projectTypes,
   } = useSidebar();
-  const { setProjectType, initialProjectFilter } = useDesktop();
+  const { setProjectType } = useDesktop();
+  const { initialProjectFilter } = useNavigation();
   const [config, setConfigs] = useState<DesktopConfig>({ ...DEFAULT_CONFIG });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);

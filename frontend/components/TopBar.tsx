@@ -17,6 +17,7 @@ import { emit } from "@tauri-apps/api/event";
 import { api, isMacOS, screenRecordKeep } from "@/lib/tauri";
 import { autoGrow } from "@/lib/textarea";
 import { useDesktop } from "@/store";
+import { useNavigation } from "@/stores/navigation";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
@@ -29,18 +30,8 @@ const MAX_RECORD_SECS = 180;
 export function TopBar() {
   const { versionBadge, updateButton, updateBannerText, applyUpdates, restartBackend } = useBackend();
   const { projectTypes } = useSidebar();
-  const {
-    openSettings,
-    openObservability,
-    openComputers,
-    composerRef,
-    sidebarOpen,
-    setSidebarOpen,
-    chatOpen,
-    setChatOpen,
-    currentView,
-    currentProject,
-  } = useDesktop();
+  const { openSettings, openObservability, openComputers, composerRef, currentProject } = useDesktop();
+  const { sidebarOpen, setSidebarOpen, chatOpen, setChatOpen, currentView } = useNavigation();
   const { setError } = useStatusActions();
   const content = currentView === "chat" && currentProject !== null && projectTypes[currentProject] === "content";
   const isUpdating = updateButton === "busy";
