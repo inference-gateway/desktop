@@ -77,7 +77,7 @@ export function ClusterFolders({
   useEffect(() => {
     api
       .clusterFolders()
-      .then(setFolders)
+      .then((saved) => setFolders((added) => [...saved, ...added]))
       .catch((e) => setProblem(String(e)));
   }, []);
 

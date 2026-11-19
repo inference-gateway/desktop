@@ -35,7 +35,6 @@ These tests still need the macOS run:
 - `voice-input.yaml` records through a real microphone.
 - `artifacts-draft-review.yaml` makes its draft with the macOS `say` command.
 - `transcript-overflow.yaml` streams its long answer slower than its 30 s wait under the container's software rendering.
-- `cluster-folders.yaml` clicks **Add folder** before the saved folders load, and the load replaces the new row.
 
 ## Demo recordings
 
