@@ -21,6 +21,7 @@ import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
+import { useComputers } from "@/stores/computers";
 import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
@@ -84,7 +85,8 @@ function MoveToWorkspace({
   model: string;
   fixed: boolean;
 }) {
-  const { moveChat, moving } = useDesktop();
+  const { moveChat } = useDesktop();
+  const { moving } = useComputers();
   const [open, setOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
@@ -237,7 +239,6 @@ export function Composer() {
     currentAgent,
     selectAgent,
     sessionId,
-    drivenId,
     handBack,
     initSelecting,
     cancelInitSelection,
@@ -246,6 +247,7 @@ export function Composer() {
     reply,
     setReply,
   } = useDesktop();
+  const { drivenId } = useComputers();
   const { setStatus, setError } = useStatusActions();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
