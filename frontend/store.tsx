@@ -661,7 +661,6 @@ function useDesktopStore() {
     [conversations, refreshConversations, setError],
   );
 
-  /** Moving a chat closes its thread, which would end a run in flight. */
   const refuseRunningMove = useCallback(
     (sessionId: string) => {
       if (!runningIdsRef.current.has(sessionId)) return false;
