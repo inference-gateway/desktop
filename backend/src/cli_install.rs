@@ -5,26 +5,21 @@ use crate::env::{
 use std::io::Read;
 use tauri::ipc::Channel;
 
-/// Base URL for CLI release downloads: pinned to `tag` when given, `latest`
-/// otherwise. Release tags are spelled `v0.249.0`, so the tag must be passed
-/// through verbatim.
-fn cli_release_base(tag: Option<&str>) -> String {
-    match tag {
-        Some(tag) => format!("https://github.com/inference-gateway/cli/releases/download/{tag}"),
-        None => "https://github.com/inference-gateway/cli/releases/latest/download".to_string(),
-    }
+/// Base URL for the downloads of the CLI release `tag`. Release tags are
+/// spelled `v0.249.0`, so the tag must be passed through verbatim.
+fn cli_release_base(tag: &str) -> String {
+    format!("https://github.com/inference-gateway/cli/releases/download/{tag}")
 }
 
 /// The CLI release this desktop release was tested with, from `.cli-version`.
-fn tested_cli_tag() -> &'static str {
+pub(crate) fn tested_cli_tag() -> &'static str {
     include_str!("../../.cli-version").trim()
 }
 
-/// The release an install downloads: the `tag` asked for, the tested release on
-/// a fresh install, and the newest release (`None`) on an update, which forces
-/// the install without naming a tag.
-fn release_tag(tag: Option<&str>, force: bool) -> Option<&str> {
-    tag.or((!force).then(tested_cli_tag))
+/// The release an install downloads: the `tag` asked for, otherwise the tested
+/// release, on a fresh install and on **Update** alike.
+fn release_tag(tag: Option<&str>) -> &str {
+    tag.unwrap_or(tested_cli_tag())
 }
 
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
@@ -59,7 +54,7 @@ fn install_cli(
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
     let force = force || tag.is_some();
-    let tag = release_tag(tag, force);
+    let tag = release_tag(tag);
     if force && mock_mode() {
         crate::updates_mock::apply(|event| {
             let _ = on_event.send(event);
@@ -103,7 +98,7 @@ fn install_cli(
         received: 0,
         total: 0,
     });
-    if !try_gh_download(asset, &archive_path, tag)? {
+    if !try_gh_download(asset, &archive_path, Some(tag))? {
         download(
             &format!("{}/{}", release_base, asset),
             &archive_path,
@@ -115,7 +110,7 @@ fn install_cli(
     let checksums_url = format!("{}/checksums.txt", release_base);
     let checksums_text = {
         let checksums_temp = bin_dir.join("checksums.txt.tmp");
-        if try_gh_download("checksums.txt", &checksums_temp, tag)? {
+        if try_gh_download("checksums.txt", &checksums_temp, Some(tag))? {
             let text = std::fs::read_to_string(&checksums_temp).map_err(|e| e.to_string())?;
             let _ = std::fs::remove_file(&checksums_temp);
             text
@@ -222,10 +217,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_fresh_install_takes_the_tested_release_and_an_update_the_newest() {
-        assert_eq!(release_tag(None, false), Some(tested_cli_tag()));
-        assert_eq!(release_tag(None, true), None);
-        assert_eq!(release_tag(Some("v0.250.0"), true), Some("v0.250.0"));
+    fn an_install_takes_the_tested_release_unless_a_tag_is_asked_for() {
+        assert_eq!(release_tag(None), tested_cli_tag());
+        assert_eq!(release_tag(Some("v0.250.0")), "v0.250.0");
     }
 
     #[test]
@@ -240,12 +234,8 @@ mod tests {
     #[test]
     fn test_cli_release_base() {
         assert_eq!(
-            cli_release_base(Some("v0.249.0")),
+            cli_release_base("v0.249.0"),
             "https://github.com/inference-gateway/cli/releases/download/v0.249.0"
-        );
-        assert_eq!(
-            cli_release_base(None),
-            "https://github.com/inference-gateway/cli/releases/latest/download"
         );
     }
 }

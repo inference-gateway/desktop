@@ -33,7 +33,7 @@ To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BI
 INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 ```
 
-`.cli-version` names the CLI release this desktop is tested with. A fresh install takes it, and so do the e2e runs and CI's CLI contract check, while **Update** still installs the newest release. Bump it once the smoke set and the contract check pass on a new release.
+`.cli-version` names the CLI release this desktop is tested with. A fresh install and **Update** take it, and so do the e2e runs and CI's CLI contract check, so a new CLI reaches users with the desktop release that tests it. Bump it once the smoke set and the contract check pass on a new release.
 
 ## Verifying the UI
 
