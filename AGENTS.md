@@ -2,7 +2,7 @@
 
 ## Project
 
-Tauri v2 desktop client for Inference Gateway: a **React 19 + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) over a **Rust** backend. The cargo workspace holds `backend` (crate `inference-gateway-desktop`) and `e2e`. Run cargo from `backend/` or from the root with `-p inference-gateway-desktop`. The Taskfile wraps the common flows. Read `frontend/AGENTS.md` before changing the frontend: it holds the state layout and the DOM contract the e2e tests rely on.
+Tauri v2 desktop client for Inference Gateway: a **React 19 + TypeScript** frontend (Bun + Vite, Tailwind CSS v4 + shadcn/ui) over a **Rust** backend. The cargo workspace holds `backend` (crate `inference-gateway-desktop`) and `e2e`. Run cargo from `backend/` or from the root with `-p inference-gateway-desktop`. The Taskfile wraps the common flows. Read `frontend/AGENTS.md` before changing the frontend: it holds the state layout and the DOM contract the e2e tests rely on. `docs/` holds the user-facing guide the README links - update the feature's page in the same change.
 
 ## Before You Start
 
@@ -24,6 +24,7 @@ Activate the pre-commit hook before making changes - it is inert until you do. I
 | `task e2e:record` | Run all e2e tests while recording (`artifacts/<slug>.mov` per test) |
 | `bun test` | Frontend unit tests (`frontend/lib/*.test.ts`) |
 | `cargo tauri build` | Release bundle. Needs `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING) |
+| `gh workflow run release.yml` | Cut a release: semantic-release tags it, the updater keys are stamped in, and the three OS bundles plus the `latest.json` updater manifest publish (see CONTRIBUTING) |
 
 The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate builds `dist/` first**.
 
@@ -33,7 +34,7 @@ To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BI
 INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 ```
 
-`.cli-version` names the CLI release this desktop is tested with, and `.cli-checksums.txt` holds that release's `checksums.txt`. A fresh install and **Update** take that release and refuse an archive whose SHA-256 the file does not list, and the e2e runs and CI's CLI contract check take it too. CI's `cli-release` job verifies the file against the release's cosign signature and the CLI release workflow's identity. Move to a new release once the smoke set and the contract check pass on it:
+`.cli-version` names the CLI release this desktop is tested with, and `.cli-checksums.txt` holds that release's `checksums.txt`. A fresh install and **Update** take that release and refuse an archive whose SHA-256 the file does not list, and the e2e runs and CI's CLI contract check take it too. CI's `cli-release` job verifies the file against the release's cosign signature and the CLI release workflow's identity. The flox dev shell pins a separate `infer` in `.flox/env/manifest.toml`, so that pin can trail `.cli-version`. Move to a new release once the smoke set and the contract check pass on it:
 
 ```bash
 echo v0.265.0 > .cli-version
@@ -42,15 +43,17 @@ gh release download v0.265.0 --repo inference-gateway/cli -p checksums.txt -O .c
 
 ## Verifying the UI
 
-`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree. `task e2e -- --podman` runs them in a Podman container against the Linux build instead, so a run leaves this machine's screen and mouse alone. How to run and write them, and how to record a demo, is in `e2e/AGENTS.md`. CI runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test --workspace`, which validates the e2e test files without running them. It runs on ubuntu and windows for every pull request and on macOS for every push to `main`. A pull request builds on macOS and runs the e2e tests there only once it carries the `ci:macos` label, so add it when a change touches macOS-only code (`#[cfg(target_os = "macos")]`, the e2e harness) or the UI the tests drive. The `E2E` workflow runs the tests themselves. Every pull request runs the smoke set in its `SMOKE_SPECS` on Linux, through the WebDriver driver the container run uses. A pull request with the label runs it on macOS too, and the whole suite runs on macOS when started by hand (`gh workflow run e2e.yml`). A failed run uploads each test's log and failure screenshot as the `e2e-artifacts` artifact, or `e2e-linux-artifacts` for the Linux run.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree. `task e2e -- --podman` runs them in a Podman container against the Linux build instead, so a run leaves this machine's screen and mouse alone. How to run and write them, and how to record a demo, is in `e2e/AGENTS.md`. CI runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test --workspace`, which validates the e2e test files without running them. It runs on ubuntu and windows for every pull request and on macOS for every push to `main`. A pull request builds on macOS and runs the e2e tests there only once it carries the `ci:macos` label, so add it when a change touches macOS-only code (`#[cfg(target_os = "macos")]`, the e2e harness) or the UI the tests drive. The `E2E` workflow runs the tests themselves. Every pull request runs the smoke set in its `SMOKE_SPECS` on Linux, through the WebDriver driver the container run uses. A pull request with the label runs it on macOS too, and the whole suite runs on macOS when started by hand (`gh workflow run e2e.yml`). A failed run uploads each test's log and failure screenshot as the `e2e-artifacts` artifact, or `e2e-linux-artifacts` for the Linux run. A markdown-only pull request skips the CI build matrix and the E2E workflow - the `markdown-lint` job lints its changed files instead.
 
 ## Window permissions (load-bearing)
 
 Each window has its own capability file in `backend/capabilities/` and may only call the commands its permission in `backend/permissions/` allows. A new `#[tauri::command]` must be added to `permissions/main-window.toml` as well as to `generate_handler!` - `cargo test` fails until both lists match. Add it to `monitor-window.toml` only if the monitor bar calls it. The overlay calls no commands.
 
-A command that is a plain `fn` runs on the main thread, and the window freezes while it works. Mark it `#[tauri::command(async)]` when it reads or writes a file whose size the user controls, scans a project directory or starts a process. A small settings writer stays plain on purpose - the main thread keeps its writes in order. `write_projects` is the exception: the sidebar's save queue keeps its writes in order instead.
+A command that is a plain `fn` runs on the main thread, and the window freezes while it works. Keep that work off it by marking the command `#[tauri::command(async)]`, or by writing it as an `async fn` that pushes the blocking part through `spawn_blocking`, `error::blocking` or `blocking_with_state` - `start_gateway` and `download_hub_model` show that shape. A small settings writer stays plain on purpose - the main thread keeps its writes in order. `write_projects` is the exception: the sidebar's save queue keeps its writes in order instead.
 
-A command whose failure the UI handles differently returns `crate::error::Result` with a variant of its own in `backend/src/error.rs`. It reaches the frontend as a `CommandError` with that `kind`, which still prints as its message - never match on the wording of an error.
+A command whose failure the UI handles differently returns `crate::error::Result` with a variant of its own in `backend/src/error.rs`. It reaches the frontend as a `CommandError` with that `kind` (parsed in `frontend/lib/tauri.ts`), which still prints as its message - never match on the wording of an error.
+
+`cargo test` also pins event names: the kinds each window reads and the events `frontend/lib/events.ts` listens for must match what the backend emits (`backend/src/events.rs`), so a renamed event updates every listener in the same change.
 
 The content security policy in `backend/tauri.conf.json` blocks inline and remote scripts, and loads remote images only from the two emoji repositories the agent editor uses. A new kind of remote resource (an image host, a font host, a media host) needs its directive widened there.
 

@@ -10,6 +10,8 @@ task e2e                                  # all features, alphabetical
 cargo test -p desktop-e2e                 # parse/validate the YAML only (what the CI workflow does)
 ```
 
+`--no-build` skips the cargo build, and `--no-mock` starts the app outside mock mode.
+
 Every model turn is tokenless: the runner launches the app with `DESKTOP_MOCK=true` and `INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml`, and the spawned `infer` children serve those scripted scenarios - nothing hits a real provider. A prompt with no matching scenario gets the `fallback` answer, so a test prompt must only promise what its scenario's turns produce. The `models:` block at the top of `scenarios.yaml` is the single source of truth for the mock-mode model list (the app reads it instead of hitting a gateway), so manual mock mode needs the same env var for both turns and models:
 
 ```bash
@@ -24,12 +26,11 @@ Test-file extras: `record: true` wraps the run in `screencapture -v` and writes 
 
 ```bash
 task e2e -- --podman tests/approval-approve.yaml   # one feature, in the container
-task e2e -- --podman                               # all features, in the container
 ```
 
-The runner builds the image from `e2e/Containerfile`, mounts the repo at `/src` and runs itself in the container. The Linux build and cargo's downloads live in the `desktop-e2e-target` and `desktop-e2e-cargo-registry` volumes, so the host's `target/` and `node_modules/` stay untouched and only `dist/` comes from the host, which `task e2e` builds first. Inside, `src/webdriver.rs` drives the app over WebDriver through `tauri-driver` instead of the accessibility tree. It finds elements by the names the macOS run reads - the `aria-label`, else the rendered text without its `aria-hidden` parts - so the YAML runs unchanged. A failing test leaves its log and a screenshot of the page in `e2e/artifacts/`, printed under `/src/e2e/artifacts/`. Nothing is recorded there, whatever `record:` or `--record` say. CI's `e2e-linux` job runs the smoke set with the same driver straight on an Ubuntu runner, without the container.
+The runner builds the image from `e2e/Containerfile`, mounts the repo at `/src` and runs itself in the container. The Linux build and cargo's downloads live in the `desktop-e2e-target` and `desktop-e2e-cargo-registry` volumes, so the host's `target/` and `node_modules/` stay untouched and only `dist/` comes from the host, which `task e2e` builds first. Inside, `src/webdriver.rs` drives the app over WebDriver through `tauri-driver` instead of the accessibility tree. It finds elements by the names the macOS run reads - the `aria-label`, else the rendered text without its `aria-hidden` parts - so the YAML runs unchanged. A failing test leaves its log and a screenshot of the page in `e2e/artifacts/`, printed under `/src/e2e/artifacts/`. Nothing is recorded there, whatever `record:` or `--record` say. CI's `e2e-linux` job runs the smoke set with the same driver straight on an Ubuntu runner, without the container. The smoke set is the `SMOKE_SPECS` list in `.github/workflows/e2e.yml`, so a new test does not join it until you add it there.
 
-These tests still need the macOS run:
+These tests still need the macOS run, and a bare `task e2e -- --podman` still collects them and fails - name the files you want:
 
 - `computer-use.yaml` checks the overlay against the macOS menu bar and Dock.
 - `voice-input.yaml` records through a real microphone.
