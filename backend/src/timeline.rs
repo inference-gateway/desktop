@@ -1,5 +1,6 @@
 use crate::cli::binaries::{self, owned_bin};
 use crate::download::ProgressEvent;
+use crate::projects::attachments::require_dropped;
 use crate::projects::{ProjectFile, list_local_files, project_dir};
 use crate::stt::{ensure_whisper_model, find_on_path};
 use notify::{RecursiveMode, Watcher};
@@ -247,49 +248,28 @@ pub(crate) async fn add_project_video(
     let Some(src) = picked.and_then(|fp| fp.into_path().ok()) else {
         return Ok(None);
     };
+    copy_into_pool(&dir, &src).map(Some)
+}
+
+/// A file dropped from Finder onto the media pool. Tauri hands the page the
+/// dropped paths, so the file is copied on disk and never crosses the webview.
+#[tauri::command(async)]
+pub(crate) fn import_project_file(
+    app: tauri::AppHandle,
+    project: String,
+    path: PathBuf,
+) -> Result<String, String> {
+    require_dropped(&app, &path)?;
+    copy_into_pool(&dir_for(&project)?, &path)
+}
+
+fn copy_into_pool(dir: &Path, src: &Path) -> Result<String, String> {
     let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
         return Err(format!("invalid file name: {}", src.display()));
     };
-    let dest = media_dest(&dir, name)?;
-    std::fs::copy(&src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
-    Ok(Some(format!("{MEDIA_DIR}/{name}")))
-}
-
-/// Files dropped from Finder arrive as raw bytes (the webview keeps Tauri's
-/// own drag-drop off so in-page drag-and-drop works). The name travels in a
-/// hex-encoded header because header values are ASCII only.
-#[tauri::command(async)]
-pub(crate) fn import_project_file(request: tauri::ipc::Request<'_>) -> Result<String, String> {
-    let header = |key: &str| -> Result<String, String> {
-        request
-            .headers()
-            .get(key)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string)
-            .ok_or_else(|| format!("missing {key} header"))
-    };
-    let project = header("x-project")?;
-    let name = hex_decode(&header("x-name")?)?;
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
-        return Err("expected raw file bytes".into());
-    };
-    let dest = media_dest(&dir_for(&project)?, &name)?;
-    std::fs::write(&dest, bytes).map_err(|e| format!("writing {}: {e}", dest.display()))?;
+    let dest = media_dest(dir, name)?;
+    std::fs::copy(src, &dest).map_err(|e| format!("copying {}: {e}", src.display()))?;
     Ok(format!("{MEDIA_DIR}/{name}"))
-}
-
-/// Hex-decode a header value (the raw-IPC commands encode non-ASCII names so
-/// header values stay ASCII). Shared by the media pool import and the composer
-/// attach commands.
-pub(crate) fn hex_decode(hex: &str) -> Result<String, String> {
-    if !hex.len().is_multiple_of(2) {
-        return Err("odd hex length".into());
-    }
-    let bytes = (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
-        .collect::<Result<Vec<u8>, _>>()?;
-    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -919,14 +899,6 @@ mod tests {
         let names: Vec<String> = media_listing(&dir).into_iter().map(|f| f.name).collect();
         assert_eq!(names, ["media/a.mp4", "old.mov"]);
         assert!(media_dest(&dir, "../x.wav").is_err());
-    }
-
-    #[test]
-    fn hex_decode_round_trips_utf8_names() {
-        let name = "Screen Recording 2026-09-16 at 18.57.04.mov";
-        let hex: String = name.bytes().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(hex_decode(&hex).unwrap(), name);
-        assert!(hex_decode("abc").is_err());
     }
 
     #[test]
