@@ -159,6 +159,27 @@ jobs:
           if (-not (Test-Path (Join-Path $sandbox '.infer\config.yaml'))) { throw 'infer init did not create the userspace config.yaml' }
           Write-Host 'CLI init contract verified: bare infer init seeds the userspace config, --userspace is gone'
 
+  cli-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: sigstore/cosign-installer@v4.1.3
+
+      - name: Verify the tested CLI release against its signature
+        env:
+          CLI_RELEASE_IDENTITY: https://github.com/inference-gateway/cli/.github/workflows/release.yml@refs/heads/main
+          GITHUB_ACTIONS_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          base="https://github.com/inference-gateway/cli/releases/download/$(cat .cli-version)"
+          curl -fsSL -o "$RUNNER_TEMP/checksums.txt" "$base/checksums.txt"
+          curl -fsSL -o "$RUNNER_TEMP/checksums.txt.sigstore.json" "$base/checksums.txt.sigstore.json"
+          cosign verify-blob "$RUNNER_TEMP/checksums.txt" \
+            --bundle "$RUNNER_TEMP/checksums.txt.sigstore.json" \
+            --certificate-identity "$CLI_RELEASE_IDENTITY" \
+            --certificate-oidc-issuer "$GITHUB_ACTIONS_ISSUER"
+          diff "$RUNNER_TEMP/checksums.txt" .cli-checksums.txt
+
   markdown-lint:
     needs: changes
     if: needs.changes.outputs.markdown == 'true'

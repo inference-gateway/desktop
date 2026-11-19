@@ -33,7 +33,12 @@ To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BI
 INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 ```
 
-`.cli-version` names the CLI release this desktop is tested with. A fresh install and **Update** take it, and so do the e2e runs and CI's CLI contract check, so a new CLI reaches users with the desktop release that tests it. Bump it once the smoke set and the contract check pass on a new release.
+`.cli-version` names the CLI release this desktop is tested with, and `.cli-checksums.txt` holds that release's `checksums.txt`. A fresh install and **Update** take that release and refuse an archive whose SHA-256 the file does not list, and the e2e runs and CI's CLI contract check take it too. CI's `cli-release` job verifies the file against the release's cosign signature and the CLI release workflow's identity. Move to a new release once the smoke set and the contract check pass on it:
+
+```bash
+echo v0.265.0 > .cli-version
+gh release download v0.265.0 --repo inference-gateway/cli -p checksums.txt -O .cli-checksums.txt --clobber
+```
 
 ## Verifying the UI
 

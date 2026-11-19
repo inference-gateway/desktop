@@ -16,6 +16,25 @@ pub(crate) fn tested_cli_tag() -> &'static str {
     include_str!("../../.cli-version").trim()
 }
 
+/// The tested release's `checksums.txt`, from `.cli-checksums.txt`, which CI
+/// checks against the release's cosign signature.
+fn tested_cli_checksums() -> &'static str {
+    include_str!("../../.cli-checksums.txt")
+}
+
+/// The SHA-256 an archive of the CLI release `tag` must have. Only the tested
+/// release has one, so an install of any other release is refused.
+fn pinned_checksum(tag: &str, asset: &str) -> Result<String, String> {
+    let tested = tested_cli_tag();
+    if tag != tested {
+        return Err(format!(
+            "This desktop installs only the CLI release it is tested with, {tested}, not {tag}"
+        ));
+    }
+    find_checksum(tested_cli_checksums(), asset)
+        .ok_or_else(|| format!("The tested CLI release {tested} has no checksum for {asset}"))
+}
+
 /// The release an install downloads: the `tag` asked for, otherwise the tested
 /// release, on a fresh install and on **Update** alike.
 fn release_tag(tag: Option<&str>) -> &str {
@@ -87,6 +106,7 @@ fn install_cli(
         )
     })?;
 
+    let expected_hash = pinned_checksum(tag, asset)?;
     let release_base = cli_release_base(tag);
 
     let bin_dir = bin_dir();
@@ -107,36 +127,11 @@ fn install_cli(
     }
 
     let _ = on_event.send(ProgressEvent::Verifying);
-    let checksums_url = format!("{}/checksums.txt", release_base);
-    let checksums_text = {
-        let checksums_temp = bin_dir.join("checksums.txt.tmp");
-        if try_gh_download("checksums.txt", &checksums_temp, Some(tag))? {
-            let text = std::fs::read_to_string(&checksums_temp).map_err(|e| e.to_string())?;
-            let _ = std::fs::remove_file(&checksums_temp);
-            text
-        } else {
-            let checksums_resp = ureq::get(&checksums_url)
-                .call()
-                .map_err(|e| format!("Failed to download checksums.txt: {}", e))?;
-            let mut text = String::new();
-            checksums_resp
-                .into_body()
-                .into_reader()
-                .read_to_string(&mut text)
-                .map_err(|e| e.to_string())?;
-            text
-        }
-    };
-
-    let expected_hash = find_checksum(&checksums_text, asset)
-        .ok_or_else(|| format!("Checksum not found for {}", asset))?;
     let actual_hash = sha256_digest(&archive_path)?;
-
     if actual_hash != expected_hash {
         let _ = std::fs::remove_file(&archive_path);
         return Err(format!(
-            "Checksum mismatch for {}: expected {}, got {}",
-            asset, expected_hash, actual_hash
+            "{asset} does not match the tested CLI release {tag} and was not installed: expected SHA-256 {expected_hash}, got {actual_hash}"
         ));
     }
 
@@ -220,6 +215,16 @@ mod tests {
     fn an_install_takes_the_tested_release_unless_a_tag_is_asked_for() {
         assert_eq!(release_tag(None), tested_cli_tag());
         assert_eq!(release_tag(Some("v0.250.0")), "v0.250.0");
+    }
+
+    #[test]
+    fn only_the_tested_release_has_a_pinned_checksum() {
+        let asset = asset_name().expect("a supported platform");
+        let hash = pinned_checksum(tested_cli_tag(), asset).unwrap();
+        assert_eq!(hash.len(), 64, "{hash:?}");
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "{hash:?}");
+        assert!(pinned_checksum("v0.1.0", asset).is_err());
+        assert!(pinned_checksum(tested_cli_tag(), "infer-plan9-mips.tar.gz").is_err());
     }
 
     #[test]
