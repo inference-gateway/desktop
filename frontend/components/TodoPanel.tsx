@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/elapsed";
 import { currentTodo, todoElapsedMs, todosDiffer, todosFrom, type TodoItem, type TodoStatus } from "@/lib/transcript";
 import { useNow } from "@/hooks/useNow";
+import { usePointerDrag } from "@/hooks/usePointerDrag";
 import { useChatStream, useDesktop } from "@/store";
 
 const STATUS_ORDER: TodoStatus[] = ["pending", "in_progress", "completed"];
@@ -22,6 +23,8 @@ const STATUS_ICON = { pending: Circle, in_progress: CircleDot, completed: Check 
 const STATUS_CLASS = { pending: "text-muted-foreground", in_progress: "text-warn", completed: "text-tool" } as const;
 
 const PEEK_MS = 5000;
+
+const TODO_TARGET = "todo:";
 
 /** The edge a dragged row lands on: move(from, to) puts it after the hovered row
  * when dragging down and before it when dragging up. */
@@ -76,7 +79,6 @@ export function TodoPanel() {
     setOpen(next);
   };
   const [input, setInput] = useState("");
-  const [dropAt, setDropAt] = useState<number | null>(null);
   const dragFrom = useRef<number | null>(null);
   const current = currentTodo(shown);
   const done = shown.filter((t) => t.status === "completed").length;
@@ -86,6 +88,19 @@ export function TodoPanel() {
     const agentCaughtUpWithDraft = draft?.length && !todosDiffer(draft, agentTodos);
     if (agentCaughtUpWithDraft) setTodoDraft(draftKey, null);
   }, [draft, agentTodos, draftKey, setTodoDraft]);
+
+  const update = (next: TodoItem[]) => setTodoDraft(draftKey, next);
+
+  const move = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= shown.length) return;
+    const next = [...shown];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    update(next);
+  };
+  const drag = usePointerDrag<number>((from, target) => {
+    if (target.startsWith(TODO_TARGET)) move(from, Number(target.slice(TODO_TARGET.length)));
+  });
 
   const noListYet = draft === null && agentTodos.length === 0;
   if (noListYet) {
@@ -104,16 +119,6 @@ export function TodoPanel() {
       </div>
     );
   }
-
-  const update = (next: TodoItem[]) => setTodoDraft(draftKey, next);
-
-  const move = (from: number, to: number) => {
-    if (from === to || to < 0 || to >= shown.length) return;
-    const next = [...shown];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    update(next);
-  };
 
   const add = () => {
     const content = input.trim();
@@ -191,7 +196,7 @@ export function TodoPanel() {
             {shown.map((t, i) => {
               const StatusIcon = STATUS_ICON[t.status];
               const dropEdge =
-                dropAt === i &&
+                drag.over === `${TODO_TARGET}${i}` &&
                 dragFrom.current !== null &&
                 dragFrom.current !== i &&
                 dropEdgeClass(dragFrom.current, i);
@@ -203,25 +208,14 @@ export function TodoPanel() {
                     t.status === "in_progress" && "bg-warn/5",
                     dropEdge,
                   )}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDropAt(i);
-                  }}
-                  onDrop={() => {
-                    if (dragFrom.current !== null) move(dragFrom.current, i);
-                    dragFrom.current = null;
-                    setDropAt(null);
-                  }}
+                  data-drop-target={`${TODO_TARGET}${i}`}
                 >
                   <span
-                    draggable
                     aria-hidden="true"
-                    onDragStart={(e) => {
+                    onPointerDown={(e) => {
                       dragFrom.current = i;
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", String(i));
+                      drag.start(e, i);
                     }}
-                    onDragEnd={() => setDropAt(null)}
                     className={cn("cursor-grab text-muted-foreground", ROW_EDIT)}
                   >
                     <GripVertical size={12} />
