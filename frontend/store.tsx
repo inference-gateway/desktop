@@ -42,6 +42,7 @@ import { GitProvider, useGit } from "@/stores/git";
 import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 import { AgentsProvider, useAgents } from "@/stores/agents";
 import { NavigationProvider, useNavigation } from "@/stores/navigation";
+import { SelectionProvider, useSelection } from "@/stores/selection";
 
 const AGENT_MODE_KEY = "agentMode";
 const AWAITING_LABELS = {
@@ -165,10 +166,10 @@ function useDesktopStore() {
   } = useSidebar();
   const { gitProjects, refreshGitProjects, cleanupProject } = useGit();
   const { setCurrentView, projectFilter, setProjectFilter } = useNavigation();
+  const { selected, setSelected, lastClickedIndex, clearSelection } = useSelection();
   const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
   const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [maxSessions, setMaxSessionsState] = useState<number>(() => {
     const n = parseInt(localStorage.getItem(MAX_SESSIONS_KEY) || "", 10);
     return Number.isFinite(n) && n >= 1 ? n : DEFAULT_MAX_SESSIONS;
@@ -199,7 +200,6 @@ function useDesktopStore() {
   const [reply, setReply] = useState<string | null>(null);
   const computerApprovalsRef = useRef<Map<string, string>>(new Map());
   const initRan = useRef(false);
-  const lastClickedIndex = useRef(-1);
   const runningIdsRef = useRef<Set<string>>(runningIds);
   useEffect(() => {
     runningIdsRef.current = runningIds;
@@ -367,11 +367,6 @@ function useDesktopStore() {
         }
       })
       .catch(() => {});
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelected(new Set());
-    lastClickedIndex.current = -1;
   }, []);
 
   const displayConversations = useSameContent(
@@ -1444,14 +1439,12 @@ function useDesktopStore() {
     maxSessions,
     setMaxSessions,
     conversations: displayConversations,
-    selected,
     sessionId: activeId,
     isRunning,
     isAwaitingApproval,
     recordingOwner,
     runningCount: runningIds.size,
     onChatClick,
-    clearSelection,
     deleteConversation,
     bulkDelete,
     send,
@@ -1551,7 +1544,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
               <SidebarProvider>
                 <AgentsProvider>
                   <NavigationProvider>
-                    <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                    <SelectionProvider>
+                      <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                    </SelectionProvider>
                   </NavigationProvider>
                 </AgentsProvider>
               </SidebarProvider>
