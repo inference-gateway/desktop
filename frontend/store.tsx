@@ -661,13 +661,23 @@ function useDesktopStore() {
     [conversations, refreshConversations, setError],
   );
 
+  const refuseRunningMove = useCallback(
+    (sessionId: string) => {
+      if (!runningIdsRef.current.has(sessionId)) return false;
+      setError("A running chat cannot move - stop it first");
+      return true;
+    },
+    [setError],
+  );
+
   const assignProject = useCallback(
     (sessionId: string, projectName: string) => {
+      if (refuseRunningMove(sessionId)) return;
       setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
       setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
       moveConversationStore(sessionId, projectName);
     },
-    [moveConversationStore],
+    [moveConversationStore, refuseRunningMove],
   );
 
   const openAgentEditor = useCallback(
@@ -1130,6 +1140,7 @@ function useDesktopStore() {
 
   const unassignProject = useCallback(
     (sessionId: string) => {
+      if (refuseRunningMove(sessionId)) return;
       setProjects((prev) => {
         const next = { ...prev };
         delete next[sessionId];
@@ -1137,7 +1148,7 @@ function useDesktopStore() {
       });
       moveConversationStore(sessionId, undefined);
     },
-    [moveConversationStore],
+    [moveConversationStore, refuseRunningMove],
   );
 
   /** Content projects need ffmpeg, whisper-cli and the whisper model in

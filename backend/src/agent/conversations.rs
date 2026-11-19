@@ -46,7 +46,53 @@ pub(crate) async fn list_conversations() -> Result<String, String> {
     .await?;
     let mut owned = crate::projects::project_dirs();
     owned.push(agent_cwd());
-    Ok(owned_conversations(&json, &owned))
+    let listed = owned_conversations(&json, &owned);
+    if !read_config().storage_directory.is_empty() {
+        return Ok(listed);
+    }
+    Ok(located_in_stores(&listed, &owned, |dir, id| {
+        conversation_store_dir(dir)
+            .join(format!("{id}.jsonl"))
+            .exists()
+    }))
+}
+
+/// Points each chat at the project whose store holds its file. The listing
+/// names a chat's project from the chat's own metadata, which keeps the project
+/// it was created in after `move_conversation` moves the file, so a delete or a
+/// move run from there would not find it.
+fn located_in_stores(json: &str, dirs: &[PathBuf], holds: impl Fn(&Path, &str) -> bool) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return json.to_string();
+    };
+    if let Some(list) = value
+        .get_mut("conversations")
+        .and_then(|v| v.as_array_mut())
+    {
+        for conversation in list {
+            relocate(conversation, dirs, &holds);
+        }
+    }
+    value.to_string()
+}
+
+fn relocate(
+    conversation: &mut serde_json::Value,
+    dirs: &[PathBuf],
+    holds: &impl Fn(&Path, &str) -> bool,
+) {
+    let (Some(id), Some(project)) = (
+        conversation["id"].as_str().map(str::to_owned),
+        conversation["project"].as_str().map(PathBuf::from),
+    ) else {
+        return;
+    };
+    if project.as_os_str().is_empty() || holds(&project, &id) {
+        return;
+    }
+    if let Some(dir) = dirs.iter().find(|dir| holds(dir, &id)) {
+        conversation["project"] = dir.to_string_lossy().into_owned().into();
+    }
 }
 
 #[tauri::command]
@@ -103,14 +149,15 @@ pub(crate) fn conversation_store_dir(cwd: &Path) -> PathBuf {
 }
 
 /// Moves a conversation's JSONL file between per-cwd stores so a chat dragged
-/// to another project resumes with its history instead of forking. A no-op
-/// when an explicit flat storage directory is configured, when the source
-/// file was never persisted, or when source and destination match.
+/// to another project resumes with its history instead of forking. Its thread
+/// closes first, or the daemon would save the next turn back to the old store.
+/// A no-op with a flat storage directory, an unsaved chat, or the same store.
 #[tauri::command]
 pub(crate) async fn move_conversation(
     session_id: String,
     from_cwd: Option<String>,
     to_project: Option<String>,
+    state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     if session_id.contains(['/', '\\']) || session_id.contains("..") {
         return Err("invalid session id".into());
@@ -131,6 +178,8 @@ pub(crate) async fn move_conversation(
     if !src.exists() {
         return Ok(());
     }
+    state.threads.remove(&session_id);
+    stop_worker(&session_id, Some(&from.to_string_lossy())).await;
     let dst_dir = conversation_store_dir(&to);
     std::fs::create_dir_all(&dst_dir)
         .map_err(|e| format!("creating {}: {e}", dst_dir.display()))?;
@@ -140,6 +189,31 @@ pub(crate) async fn move_conversation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_moved_chat_is_listed_in_the_project_whose_store_holds_its_file() {
+        let json = serde_json::json!({
+            "conversations": [
+                {"id": "moved", "project": "/p/typescript"},
+                {"id": "home", "project": "/p/rust"},
+                {"id": "lost", "project": "/p/gone"},
+                {"id": "local", "project": ""},
+            ],
+        })
+        .to_string();
+        let dirs = [PathBuf::from("/p/rust"), PathBuf::from("/p/typescript")];
+        let stored = [("/p/rust", "moved"), ("/p/rust", "home")];
+        let holds = |dir: &Path, id: &str| stored.contains(&(dir.to_str().unwrap(), id));
+        let out: serde_json::Value =
+            serde_json::from_str(&located_in_stores(&json, &dirs, holds)).unwrap();
+        let projects: Vec<&str> = out["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["project"].as_str().unwrap())
+            .collect();
+        assert_eq!(projects, vec!["/p/rust", "/p/rust", "/p/gone", ""]);
+    }
 
     #[test]
     fn owned_conversations_drops_chats_from_foreign_directories() {
