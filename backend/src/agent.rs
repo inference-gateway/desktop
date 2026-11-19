@@ -96,6 +96,13 @@ pub(crate) fn thread_dir(project: Option<&str>) -> PathBuf {
         .unwrap_or_else(agent_cwd)
 }
 
+/// The directory a chat's thread opens in: the one whose store already holds
+/// its session, else its project's. A subagent's session lives in its
+/// orchestrator's project, which the sidebar never assigns it to.
+fn session_dir(session_id: &str, project: Option<&str>) -> PathBuf {
+    conversations::dir_holding(session_id).unwrap_or_else(|| thread_dir(project))
+}
+
 /// Sends `event` to the monitor bar and the overlay, when they act on its kind.
 fn broadcast(app: &tauri::AppHandle, session_id: &str, event: &AgentEvent) {
     let Ok(event) = serde_json::to_value(event) else {
@@ -263,7 +270,7 @@ pub(crate) async fn open_thread(
     project: Option<String>,
     agent: Option<String>,
 ) -> Result<String, String> {
-    let cwd = thread_dir(project.as_deref());
+    let cwd = session_dir(&session_id, project.as_deref());
     let options = thread_options(
         &model,
         &mode,
@@ -344,7 +351,7 @@ pub(crate) async fn send_message(
     if !is_bash_command(&prompt) {
         crate::tools::await_services().await;
     }
-    let cwd = thread_dir(project.as_deref());
+    let cwd = session_dir(&session_id, project.as_deref());
     let content_dir = checkpoint_content_project(project.as_deref());
     let options = thread_options(
         &model,
