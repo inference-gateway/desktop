@@ -33,7 +33,6 @@ import { modeAfterPlan, nextMode, parseMode, type AgentMode, type PlanAction } f
 import { coalesce } from "@/lib/coalesce";
 import { isBashCommand } from "@/lib/tools";
 import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
-import { enqueue, takeAll, takeFirst, type PromptQueue } from "@/lib/queue";
 import { ActivityProvider, useActivity } from "@/stores/activity";
 import { SnippetsProvider } from "@/stores/snippets";
 import { StatusProvider, useStatusActions } from "@/stores/status";
@@ -43,6 +42,7 @@ import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 import { AgentsProvider, useAgents } from "@/stores/agents";
 import { NavigationProvider, useNavigation } from "@/stores/navigation";
 import { SelectionProvider, useSelection } from "@/stores/selection";
+import { PromptQueueProvider, usePromptQueue } from "@/stores/prompt-queue";
 
 const AGENT_MODE_KEY = "agentMode";
 const AWAITING_LABELS = {
@@ -167,6 +167,7 @@ function useDesktopStore() {
   const { gitProjects, refreshGitProjects, cleanupProject } = useGit();
   const { setCurrentView, projectFilter, setProjectFilter } = useNavigation();
   const { selected, setSelected, lastClickedIndex, clearSelection } = useSelection();
+  const { queuedPrompts, queuePrompt, dropQueued, clearQueued, takeAllQueued } = usePromptQueue();
   const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
   const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -176,8 +177,6 @@ function useDesktopStore() {
   });
   const [history, setHistory] = useState<string[]>([]);
   const [todoDrafts, setTodoDrafts] = useState<Record<string, TodoItem[]>>({});
-  const [queuedPrompts, setQueuedPrompts] = useState<PromptQueue>(() => ({}));
-  const queuedRef = useRef<PromptQueue>({});
   const [showStatusBar, setShowStatusBar] = useState(true);
   const visibleProjectNames = useMemo(
     () =>
@@ -224,37 +223,10 @@ function useDesktopStore() {
   const currentProjectRef = useRef<string | null>(null);
   const refreshHistory = useMemo(() => coalesce(() => api.listHistory(currentProjectRef.current).then(setHistory)), []);
 
-  const queuePrompt = useCallback((id: string, text: string) => {
-    const next = enqueue(queuedRef.current, id, text);
-    queuedRef.current = next;
-    setQueuedPrompts(next);
-  }, []);
-
-  const dropQueued = useCallback((id: string) => {
-    if (!(id in queuedRef.current)) return;
-    const next = { ...queuedRef.current };
-    delete next[id];
-    queuedRef.current = next;
-    setQueuedPrompts(next);
-  }, []);
-
-  const clearQueued = useCallback((id: string): string | null => {
-    const { queue, text } = takeFirst(queuedRef.current, id);
-    if (text === null) return null;
-    queuedRef.current = queue;
-    setQueuedPrompts(queue);
-    return text;
-  }, []);
-
   const popQueued = useCallback((): string | null => {
     const id = activeIdRef.current;
-    if (!id) return null;
-    const { queue, text } = takeAll(queuedRef.current, id);
-    if (text === null) return null;
-    queuedRef.current = queue;
-    setQueuedPrompts(queue);
-    return text;
-  }, []);
+    return id ? takeAllQueued(id) : null;
+  }, [takeAllQueued]);
 
   const discardQueued = useCallback(() => {
     const id = activeIdRef.current;
@@ -1545,7 +1517,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
                 <AgentsProvider>
                   <NavigationProvider>
                     <SelectionProvider>
-                      <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                      <PromptQueueProvider>
+                        <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                      </PromptQueueProvider>
                     </SelectionProvider>
                   </NavigationProvider>
                 </AgentsProvider>
