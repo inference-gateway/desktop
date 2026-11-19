@@ -4,6 +4,11 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     paths-ignore:
       - '*.md'
       - '**/*.md'
@@ -14,7 +19,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci:macos' }}
 
 env:
   SMOKE_SPECS: >-
@@ -24,6 +29,7 @@ env:
 
 jobs:
   e2e:
+    if: github.event_name == 'workflow_dispatch' || (contains(github.event.pull_request.labels.*.name, 'ci:macos') && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
     runs-on: macos-15
     timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 120 }}
     steps:
