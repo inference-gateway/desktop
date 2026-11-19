@@ -802,6 +802,26 @@ function useDesktopStore() {
     }
   }, [runningIds, sendPrompt, projects, clearQueued]);
 
+  const runEndWaitersRef = useRef<Map<string, () => void>>(new Map());
+  useEffect(() => {
+    for (const [id, ended] of runEndWaitersRef.current) {
+      if (runningIds.has(id)) continue;
+      runEndWaitersRef.current.delete(id);
+      ended();
+    }
+  }, [runningIds]);
+
+  /** Settles once `runId` stops running, or at once when it is not running.
+   * A project queue awaits it, so its session limit counts runs, not starts. */
+  const runEnded = useCallback(
+    (runId: string) =>
+      new Promise<void>((resolve) => {
+        if (runningIdsRef.current.has(runId)) runEndWaitersRef.current.set(runId, resolve);
+        else resolve();
+      }),
+    [],
+  );
+
   const runOnProjects = useCallback(
     async (names: string[], runOne: (name: string) => Promise<void>, action?: string) => {
       setInitAllRunning(true);
@@ -846,9 +866,10 @@ function useDesktopStore() {
         }
         const extra = isInit && gitProjects.has(name) ? INIT_PR_INSTRUCTION : undefined;
         await sendPrompt(runId, text, name, extra);
+        await runEnded(runId);
       });
     },
-    [runOnProjects, assignProject, gitProjects, sendPrompt],
+    [runOnProjects, assignProject, gitProjects, sendPrompt, runEnded],
   );
 
   useEffect(() => {
@@ -1220,10 +1241,11 @@ function useDesktopStore() {
       activeIdRef.current = runId;
       const pr = gitProjects.has(name) ? INIT_PR_INSTRUCTION : undefined;
       await sendPrompt(runId, "/init", name, pr);
+      await runEnded(runId);
       const ctx = await api.refreshProjectContext(name).catch(() => null);
       if (ctx) setProjectContext(name, ctx);
     },
-    [gitProjects, maxSessions, assignProject, sendPrompt, setProjectContext, setError, logActivity],
+    [gitProjects, maxSessions, assignProject, sendPrompt, runEnded, setProjectContext, setError, logActivity],
   );
 
   const startInitSelection = useCallback(() => {
