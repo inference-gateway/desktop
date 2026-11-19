@@ -24,26 +24,37 @@ function useSidebarStore() {
   const loadRan = useRef(false);
   const gitSigRef = useRef("");
 
+  const applyProjects = useCallback((json: string) => {
+    const doc = parseSidebarDocument(json);
+    setProjects(doc.assignments);
+    setProjectNames(doc.names);
+    setProjectContexts(doc.contexts);
+    setProjectPaths(doc.paths);
+    setProjectGroups(doc.groups);
+    setProjectTypes(doc.types);
+    setAgentOf(doc.agents);
+    setWorkspaceOf(doc.workspaces);
+    setWorkspaceTitles(doc.titles);
+    setInitSelection(doc.selected);
+    setActiveProject(doc.active);
+  }, []);
+
   const loadProjects = useCallback(async () => {
     try {
-      const doc = parseSidebarDocument(await api.readProjects());
-      setProjects(doc.assignments);
-      setProjectNames(doc.names);
-      setProjectContexts(doc.contexts);
-      setProjectPaths(doc.paths);
-      setProjectGroups(doc.groups);
-      setProjectTypes(doc.types);
-      setAgentOf(doc.agents);
-      setWorkspaceOf(doc.workspaces);
-      setWorkspaceTitles(doc.titles);
-      setInitSelection(doc.selected);
-      setActiveProject(doc.active);
+      applyProjects(await api.readProjects());
     } catch (e) {
       console.error("Failed to load projects:", e);
     } finally {
       setProjectsLoaded(true);
     }
-  }, []);
+  }, [applyProjects]);
+
+  /** Picks up an agent's edits to projects.yaml after a run. It skips a file the
+   * sidebar saved itself, since reading that back drops changes still queued. */
+  const reloadProjects = useCallback(async () => {
+    const json = await api.readProjectsIfEdited().catch((e) => console.error("Failed to reload projects:", e));
+    if (json) applyProjects(json);
+  }, [applyProjects]);
 
   useEffect(() => {
     if (loadRan.current) return;
@@ -251,6 +262,7 @@ function useSidebarStore() {
       workspaceTitles,
       initSelection,
       loadProjects,
+      reloadProjects,
       setProjects,
       setProjectNames,
       setActiveProject,
@@ -283,6 +295,7 @@ function useSidebarStore() {
       workspaceTitles,
       initSelection,
       loadProjects,
+      reloadProjects,
       createProject,
       importProjects,
       deleteProjects,

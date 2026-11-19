@@ -28,6 +28,7 @@ commands.allow = [
     "move_conversation",
     "read_projects",
     "write_projects",
+    "read_projects_if_edited",
     "list_models",
     "get_auth",
     "set_auth",

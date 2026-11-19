@@ -183,6 +183,7 @@ pub fn run() {
             agent::conversations::move_conversation,
             projects::read_projects,
             projects::write_projects,
+            projects::read_projects_if_edited,
             agent::models::list_models,
             auth_settings::get_auth,
             auth_settings::set_auth,
