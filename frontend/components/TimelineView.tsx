@@ -124,10 +124,12 @@ import { AudioPlayer } from "./AudioPlayer";
 import { Thumbnails, Waveform } from "./ClipMedia";
 import { Button } from "@/components/ui/button";
 import { BACKEND_EVENTS } from "@/lib/events";
+import { usePointerDrag } from "@/hooks/usePointerDrag";
 
 const SAVE_DEBOUNCE_MS = 600;
 const RELOAD_DEBOUNCE_MS = 200;
 const SYNC_TOLERANCE_S = 0.3;
+const laneTarget = (trackId: string) => `lane:${trackId}`;
 
 function clipSrc(dir: string, src: string): string | null {
   const path = resolveSrc(dir, src);
@@ -290,8 +292,8 @@ export function TimelineView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [laneWidth, setLaneWidth] = useState(0);
   const [zoom, setZoom] = useState<number | null>(null);
-  const dragRef = useRef<string | null>(null);
-  const [dropLane, setDropLane] = useState<string | null>(null);
+  const draggedFile = useRef<string | null>(null);
+  const drag = usePointerDrag<string>((file, target, point) => dropOnLane(file, target, point.x));
   const [importing, setImporting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(new Set());
@@ -1094,14 +1096,11 @@ export function TimelineView() {
     return picture ? tr.kind !== "audio" : tr.kind === "audio";
   };
 
-  const dropOn = (tr: Track, e: React.DragEvent<HTMLDivElement>) => {
-    const file = dragRef.current;
-    dragRef.current = null;
-    setDropLane(null);
-    if (!laneAccepts(tr, file)) return;
-    e.preventDefault();
-    const at = duration > 0 ? timeAt(e.clientX) : 0;
-    update(addClip(shown, tr.id, file!, durations[file!] ?? FALLBACK_CLIP_S, at));
+  const dropOnLane = (file: string, target: string, clientX: number) => {
+    const tr = shown.tracks.find((t) => laneTarget(t.id) === target);
+    if (!tr || !laneAccepts(tr, file)) return;
+    const at = duration > 0 ? timeAt(clientX) : 0;
+    update(addClip(shown, tr.id, file, durations[file] ?? FALLBACK_CLIP_S, at));
   };
 
   return (
@@ -1622,17 +1621,12 @@ export function TimelineView() {
                 <div
                   key={tr.id}
                   aria-label={`${TRACK_LABEL[tr.kind]} lane ${tr.id}`}
-                  onDragOver={(e) => {
-                    if (!laneAccepts(tr, dragRef.current)) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "copy";
-                    if (dropLane !== tr.id) setDropLane(tr.id);
-                  }}
-                  onDragLeave={() => dropLane === tr.id && setDropLane(null)}
-                  onDrop={(e) => dropOn(tr, e)}
+                  data-drop-target={laneTarget(tr.id)}
                   className={cn(
                     "relative h-14 border-b border-zinc-800/70",
-                    dropLane === tr.id && "bg-primary/15 ring-1 ring-inset ring-primary",
+                    drag.over === laneTarget(tr.id) &&
+                      laneAccepts(tr, draggedFile.current) &&
+                      "bg-primary/15 ring-1 ring-inset ring-primary",
                   )}
                 >
                   {tr.clips.map((c) => {
@@ -1809,14 +1803,13 @@ export function TimelineView() {
         <div
           aria-label="Media pool"
           onDragOver={(e) => {
-            if (dragRef.current || !e.dataTransfer.types.includes("Files")) return;
+            if (!e.dataTransfer.types.includes("Files")) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
             if (!poolOver) setPoolOver(true);
           }}
           onDragLeave={() => setPoolOver(false)}
           onDrop={(e) => {
-            if (dragRef.current) return;
             e.preventDefault();
             setPoolOver(false);
             importFiles(e.dataTransfer.files);
@@ -1860,15 +1853,9 @@ export function TimelineView() {
                 <div className="flex items-center gap-2 text-[0.8rem]">
                   <button
                     title="Drag onto a lane, or click to select"
-                    draggable
-                    onDragStart={(e) => {
-                      dragRef.current = f.name;
-                      e.dataTransfer.setData("text/plain", f.name);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onDragEnd={() => {
-                      dragRef.current = null;
-                      setDropLane(null);
+                    onPointerDown={(e) => {
+                      draggedFile.current = f.name;
+                      drag.start(e, f.name);
                     }}
                     onClick={() => setSelectedFile(f.name)}
                     className={cn(

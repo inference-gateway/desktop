@@ -24,7 +24,7 @@ function swallowNextClick() {
  * A source calls `start` on pointerdown, a target carries `data-drop-target`,
  * and `over` is the target under the pointer while a drag is on. The pointer is
  * captured once a press turns into a drag, so a release outside the window ends it. */
-export function usePointerDrag<P>(onDrop: (payload: P, target: string) => void) {
+export function usePointerDrag<P>(onDrop: (payload: P, target: string, point: { x: number; y: number }) => void) {
   const [over, setOver] = useState<string | null>(null);
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
@@ -50,7 +50,7 @@ export function usePointerDrag<P>(onDrop: (payload: P, target: string) => void) 
       setOver(null);
       swallowNextClick();
       const target = drop ? dropTargetAt(ev.clientX, ev.clientY) : null;
-      if (target !== null) onDropRef.current(payload, target);
+      if (target !== null) onDropRef.current(payload, target, { x: ev.clientX, y: ev.clientY });
     };
     const up = (ev: PointerEvent) => finish(ev, true);
     const cancel = (ev: PointerEvent) => finish(ev, false);
