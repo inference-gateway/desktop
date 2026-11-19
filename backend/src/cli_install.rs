@@ -15,6 +15,18 @@ fn cli_release_base(tag: Option<&str>) -> String {
     }
 }
 
+/// The CLI release this desktop release was tested with, from `.cli-version`.
+fn tested_cli_tag() -> &'static str {
+    include_str!("../../.cli-version").trim()
+}
+
+/// The release an install downloads: the `tag` asked for, the tested release on
+/// a fresh install, and the newest release (`None`) on an update, which forces
+/// the install without naming a tag.
+fn release_tag(tag: Option<&str>, force: bool) -> Option<&str> {
+    tag.or((!force).then(tested_cli_tag))
+}
+
 /// Install the CLI if it is missing. `force` reinstalls over an existing binary,
 /// which is how an update is applied. `restart` also restarts the daemon, so
 /// its workers run the installed binary. `tag` pins the release to install,
@@ -47,6 +59,7 @@ fn install_cli(
 ) -> Result<(), String> {
     let _ = on_event.send(ProgressEvent::Checking);
     let force = force || tag.is_some();
+    let tag = release_tag(tag, force);
     if force && mock_mode() {
         crate::updates_mock::apply(|event| {
             let _ = on_event.send(event);
@@ -207,6 +220,22 @@ fn extract_cli(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fresh_install_takes_the_tested_release_and_an_update_the_newest() {
+        assert_eq!(release_tag(None, false), Some(tested_cli_tag()));
+        assert_eq!(release_tag(None, true), None);
+        assert_eq!(release_tag(Some("v0.250.0"), true), Some("v0.250.0"));
+    }
+
+    #[test]
+    fn the_tested_release_is_a_version_tag() {
+        let tag = tested_cli_tag();
+        let numbers: Vec<&str> = tag.trim_start_matches('v').split('.').collect();
+        assert!(tag.starts_with('v'), "{tag:?}");
+        assert_eq!(numbers.len(), 3, "{tag:?}");
+        assert!(numbers.iter().all(|n| n.parse::<u32>().is_ok()), "{tag:?}");
+    }
 
     #[test]
     fn test_cli_release_base() {

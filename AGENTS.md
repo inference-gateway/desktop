@@ -33,6 +33,8 @@ To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BI
 INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 ```
 
+`.cli-version` names the CLI release this desktop is tested with. A fresh install takes it, and so do the e2e runs and CI's CLI contract check, while **Update** still installs the newest release. Bump it once the smoke set and the contract check pass on a new release.
+
 ## Verifying the UI
 
 `task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree. How to run and write them, and how to record a demo, is in `e2e/AGENTS.md`. CI runs `bun run build` and `bun test` plus `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test --workspace`, which validates the e2e test files without running them. It runs on ubuntu and windows for every pull request and on macOS for every push to `main`. A pull request builds on macOS only once it carries the `ci:macos` label, so add it when a change touches macOS-only code (`#[cfg(target_os = "macos")]`, the e2e harness). The `E2E` workflow runs the tests themselves on macOS: the smoke set in its `SMOKE_SPECS` for every pull request, and the whole suite when started by hand (`gh workflow run e2e.yml`). A failed run uploads each test's log and failure screenshot as the `e2e-artifacts` artifact.
