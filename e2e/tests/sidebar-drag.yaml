@@ -1,0 +1,16 @@
+name: sidebar drag - a chat dragged onto a project joins it
+content_project: e2e-sorted
+narration:
+  - "Open a fresh chat, with no project picked."
+  - "Send a prompt, so the chat lands in the sidebar outside every project."
+  - "The reply lands."
+  - "The project holds no chat yet."
+  - "Drag the chat onto the project."
+  - "The chat joins the content project, so its timeline editor opens beside the chat."
+steps:
+  - new_chat
+  - send: "sort me into a project"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - wait_for: { text: "(0)", timeout: 10 }
+  - drag: { from: "sort me into a project", to: "Select project e2e-sorted" }
+  - wait_for: { button: "Add recording", timeout: 20 }

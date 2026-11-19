@@ -60,6 +60,50 @@ on findText(el, needle, depth)
 end findText
 "#;
 
+/// Recursive finder for any element whose description is `needle` or whose name
+/// starts with it: a drag runs between rows and lanes that are not buttons,
+/// WebKit exposes a `div`'s `aria-label` as its description, and it folds a
+/// button's text into its name, so a pool row reads `logo.png 36 KB`.
+const FIND_NAMED_FN: &str = r#"
+on findNamed(el, needle, depth)
+	tell application "System Events"
+		if depth > 12 then return missing value
+		try
+			if name of el starts with needle then return el
+		end try
+		try
+			if description of el is needle then return el
+		end try
+		try
+			repeat with c in (UI elements of el)
+				set r to my findNamed(c, needle, depth + 1)
+				if r is not missing value then return r
+			end repeat
+		end try
+		return missing value
+	end tell
+end findNamed
+"#;
+
+/// Drags with real mouse events from one screen point to another, in steps,
+/// so the page sees a press, pointer moves past its drag threshold, and a release.
+const DRAG_SWIFT: &str = r#"
+import CoreGraphics
+import Foundation
+func post(_ type: CGEventType, _ x: Double, _ y: Double) {
+    CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .left)!.post(tap: .cghidEventTap)
+    usleep(30_000)
+}
+let (fx, fy, tx, ty): (Double, Double, Double, Double) = (FROM_X, FROM_Y, TO_X, TO_Y)
+post(.mouseMoved, fx, fy)
+post(.leftMouseDown, fx, fy)
+for i in 1...20 {
+    let t = Double(i) / 20
+    post(.leftMouseDragged, fx + (tx - fx) * t, fy + (ty - fy) * t)
+}
+post(.leftMouseUp, tx, ty)
+"#;
+
 // The main window is addressed by title: "window 1" is ambiguous now that the
 // app also has the computer-use monitor and overlay windows.
 fn ax_root() -> String {
@@ -486,6 +530,44 @@ impl AppDriver {
         osascript(&script)
             .map(|_| ())
             .map_err(|e| anyhow!("clicking {:?}: {}", button, e))
+    }
+
+    /// Drags the element named `from` onto the element named `to`, centre to
+    /// centre, with the press moved `from_dx` points sideways.
+    pub fn drag(&self, from: &str, from_dx: f64, to: &str) -> Result<()> {
+        let (fx, fy) = self.centre_of(from)?;
+        let fx = fx + from_dx;
+        let (tx, ty) = self.centre_of(to)?;
+        let script = DRAG_SWIFT
+            .replace("FROM_X", &fx.to_string())
+            .replace("FROM_Y", &fy.to_string())
+            .replace("TO_X", &tx.to_string())
+            .replace("TO_Y", &ty.to_string());
+        run_with_stdin("swift", &["-"], &script)
+            .map(|_| ())
+            .map_err(|e| anyhow!("dragging {from:?} onto {to:?}: {e}"))
+    }
+
+    /// Whether the element named `above` sits higher on screen than `below`.
+    pub fn is_above(&self, above: &str, below: &str) -> Result<bool> {
+        Ok(self.centre_of(above)?.1 < self.centre_of(below)?.1)
+    }
+
+    fn centre_of(&self, name: &str) -> Result<(f64, f64)> {
+        let script = format!(
+            "{find}\ntell application \"System Events\"\n{root}\nset e to my findNamed(root, \"{name}\", 0)\nif e is missing value then error \"element not found\"\nset p to position of e\nset s to size of e\nreturn ((item 1 of p) + (item 1 of s) / 2 as text) & \" \" & ((item 2 of p) + (item 2 of s) / 2 as text)\nend tell",
+            find = FIND_NAMED_FN,
+            root = ax_root(),
+            name = escape(name),
+        );
+        let out = osascript(&script).map_err(|e| anyhow!("finding {name:?}: {e}"))?;
+        let mut nums = out
+            .split_whitespace()
+            .map(|n| n.replace(',', ".").parse::<f64>());
+        match (nums.next(), nums.next()) {
+            (Some(Ok(x)), Some(Ok(y))) => Ok((x, y)),
+            _ => bail!("could not parse the centre of {name:?} from {out:?}"),
+        }
     }
 
     /// Layout guard: the named button's bottom edge must sit above the
