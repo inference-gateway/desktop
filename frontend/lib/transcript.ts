@@ -523,8 +523,9 @@ function applyEvent(state: ChatState, event: AgentEvent, now: number): ChatState
       if (!event.content.trim()) return state;
       const last = state.items[state.items.length - 1];
       if (last?.kind === "user" && last.text === event.content) return state;
+      const kind = backgroundNoteHeader(event.content) ? "task_result" : "user";
       let seq = state.seq;
-      const items = [...state.items, { kind: "user", id: String(seq++), text: event.content } as TranscriptItem];
+      const items = [...state.items, { kind, id: String(seq++), text: event.content } as TranscriptItem];
       return { ...state, items, seq, currentAssistantId: null, currentAssistantMessageId: null };
     }
     case "BackgroundNote": {

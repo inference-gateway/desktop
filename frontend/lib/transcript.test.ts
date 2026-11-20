@@ -904,6 +904,16 @@ test("a stored subagent's completed and closed notes load as task_result cards, 
   });
 });
 
+test("a live subagent note the daemon echoes as a user message lands as a task_result card", () => {
+  const note = "[Subagent Completed: survey]\n\nTools: 0 succeeded, 0 failed\n\nTwo fixtures found.";
+  const s = run([
+    ev({ kind: "UserMessage", content: "delegate the fixture survey" }),
+    ev({ kind: "UserMessage", content: note }),
+  ]);
+  expect(s.items.map((i) => i.kind)).toEqual(["user", "task_result"]);
+  expect(s.items[1]).toMatchObject({ kind: "task_result", text: note });
+});
+
 test("background_tasks snapshot feeds delegations and clears on Done", () => {
   const jobs = [
     {
