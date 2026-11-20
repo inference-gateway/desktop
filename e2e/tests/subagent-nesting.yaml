@@ -1,0 +1,17 @@
+name: subagent chats - a subagent's chat sits under the chat that spawned it
+narration:
+  - "Open a fresh chat."
+  - "Ask the agent to hand a survey to a subagent. The model calls the Agent tool."
+  - "Spawning a subagent asks first."
+  - "Approve it."
+  - "The orchestrator dispatches the subagent."
+  - "The subagent reports back and the orchestrator answers."
+  - "The subagent's chat sits under the chat that spawned it."
+steps:
+  - new_chat
+  - send: "delegate the fixture survey"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "Survey dispatched.", timeout: 60 }
+  - wait_for: { text: "The survey is in.", timeout: 60 }
+  - assert_order: { above: "delegate the fixture survey", below: "Survey the e2e fixtures" }
