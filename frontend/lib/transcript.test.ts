@@ -10,6 +10,7 @@ import {
   initialChatState,
   pendingInput,
   subagentParentId,
+  subagentsByParent,
   currentTodo,
   todoElapsedMs,
   todosDiffer,
@@ -723,6 +724,19 @@ test("subagentParentId extracts the orchestrator id from subagent session ids", 
   );
   expect(subagentParentId("28f1b14b-7b10-4950-9487-8c0e10bf4917")).toBeNull();
   expect(subagentParentId("subagent-not-a-uuid")).toBeNull();
+});
+
+test("subagentsByParent groups each listed orchestrator's subagent chats under it", () => {
+  const parent = "28f1b14b-7b10-4950-9487-8c0e10bf4917";
+  const gone = "9a0e7c1d-1111-4222-8333-444455556666";
+  const conversations = [
+    { id: `subagent-${parent}-464d7ff2-5da8-4d97-bedb-a3c86e78daff` },
+    { id: parent },
+    { id: "other-chat" },
+    { id: `subagent-${parent}-0b9d2f8e-7c6a-4b5e-9d4c-3a2b1c0d9e8f` },
+    { id: `subagent-${gone}-5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716` },
+  ];
+  expect(subagentsByParent(conversations)).toEqual({ [parent]: [0, 3] });
 });
 
 test("todosFrom returns the latest TodoWrite list with sane status defaults", () => {

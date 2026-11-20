@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
-import { subagentParentId } from "@/lib/transcript";
+import { subagentParentId, subagentsByParent } from "@/lib/transcript";
 import { groupTarget, projectTarget, sidebarDrop, UNGROUPED_TARGET, type SidebarDrag } from "@/lib/sidebar-drop";
 import { usePointerDrag } from "@/hooks/usePointerDrag";
 import { useDesktop } from "@/store";
@@ -210,34 +210,20 @@ function InitBar({
   );
 }
 
-function Section({
-  title,
-  count,
-  collapsed,
-  onToggle,
-  className,
-  children,
-}: {
-  title: string;
-  count: number;
-  collapsed: boolean;
-  onToggle: () => void;
-  className?: string;
-  children: React.ReactNode;
-}) {
+// A chat row with the subagent chats it spawned indented under it.
+function ChatThread({ index, subagents }: { index: number; subagents?: number[] }) {
+  const { conversations } = useDesktop();
   return (
-    <div className={className}>
-      <button
-        onClick={onToggle}
-        aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-        className="flex w-full items-center gap-1 border-b border-border/60 px-[0.4rem] pb-1.5 pt-1 text-[0.82rem] font-semibold text-foreground/90"
-      >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-        {title}
-        <span className="ml-1 text-[0.72rem] font-normal text-muted-foreground/60">({count})</span>
-      </button>
-      {!collapsed && <div className="mt-1 flex flex-col gap-1 pl-3">{children}</div>}
-    </div>
+    <>
+      <ChatItem index={index} />
+      {subagents && (
+        <div className="ml-3 flex flex-col gap-1 border-l border-border pl-2">
+          {subagents.map((i) => (
+            <ChatItem key={conversations[i]?.id ?? i} index={i} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -711,8 +697,6 @@ export function ChatList() {
   const [newProjectInput, setNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectGroup, setNewProjectGroup] = useState("");
-  const [orchestratorsCollapsed, setOrchestratorsCollapsed] = useState(false);
-  const [agentsCollapsed, setAgentsCollapsed] = useState(false);
 
   const groups = useMemo(() => {
     const map: Record<string, number[]> = {};
@@ -720,12 +704,10 @@ export function ChatList() {
       map[name] = [];
     }
     const ungrouped: number[] = [];
-    const agents: number[] = [];
+    const subagents = subagentsByParent(conversations);
+    const nested = new Set(Object.values(subagents).flat());
     conversations.forEach((conv, i) => {
-      if (subagentParentId(conv.id)) {
-        agents.push(i);
-        return;
-      }
+      if (nested.has(i)) return;
       const p = projects[conv.id];
       if (p && map[p]) {
         map[p].push(i);
@@ -736,9 +718,13 @@ export function ChatList() {
     return {
       projects: Object.entries(map),
       ungrouped,
-      agents,
+      subagents,
     };
   }, [conversations, projects, projectNames]);
+
+  const chatThread = (i: number) => (
+    <ChatThread key={conversations[i]?.id ?? i} index={i} subagents={groups.subagents[conversations[i]?.id ?? ""]} />
+  );
 
   const drag = usePointerDrag<SidebarDrag>((dragged, target) => {
     const drop = sidebarDrop(dragged, target);
@@ -895,9 +881,7 @@ export function ChatList() {
                 onStartDrag={(e) => drag.start(e, { kind: "project", name })}
                 dropOver={drag.over === projectTarget(name)}
               >
-                {indices.map((i) => (
-                  <ChatItem key={conversations[i]?.id ?? i} index={i} />
-                ))}
+                {indices.map(chatThread)}
               </ProjectGroup>
             );
           })}
@@ -909,9 +893,7 @@ export function ChatList() {
           data-drop-target={UNGROUPED_TARGET}
           className={cn("flex flex-col gap-1 rounded-md", drag.over === UNGROUPED_TARGET && "ring-1 ring-primary/30")}
         >
-          {groups.ungrouped.map((i) => (
-            <ChatItem key={conversations[i]?.id ?? i} index={i} />
-          ))}
+          {groups.ungrouped.map(chatThread)}
         </div>
       )}
     </>
@@ -920,33 +902,7 @@ export function ChatList() {
   return (
     <StartDragContext.Provider value={drag.start}>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-1 overflow-y-auto select-none">
-        {agentsFilter ? (
-          agentRows
-        ) : groups.agents.length > 0 ? (
-          <>
-            <Section
-              title="Orchestrators"
-              count={conversations.length - groups.agents.length}
-              collapsed={orchestratorsCollapsed}
-              onToggle={() => setOrchestratorsCollapsed((v) => !v)}
-            >
-              {orchestratorRows}
-            </Section>
-            <Section
-              title="Subagents"
-              count={groups.agents.length}
-              collapsed={agentsCollapsed}
-              onToggle={() => setAgentsCollapsed((v) => !v)}
-              className="mt-4"
-            >
-              {groups.agents.map((i) => (
-                <ChatItem key={conversations[i]?.id ?? i} index={i} />
-              ))}
-            </Section>
-          </>
-        ) : (
-          orchestratorRows
-        )}
+        {agentsFilter ? agentRows : orchestratorRows}
 
         {!agentsFilter && conversations.length === 0 && (
           <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">No conversations yet</p>

@@ -59,4 +59,6 @@ Chats run in parallel: each one is its own session, and a session that is workin
 
 **Broadcast to projects** is the button next to **New project** in the sidebar. It turns the project list into checkboxes, and whatever you type is sent to every selected project, each in its own new session, all running at once - a fan-out for asking every project the same thing. The count of children is shown, and an approval card in one child can be answered from that same view.
 
+A chat that hands work to subagents through the CLI's `Agent` tool gets a chat for each subagent. The sidebar lists them indented under the chat that spawned them, so each subagent's prompt and its own tool calls are one click away from its orchestrator.
+
 **Try in mock mode:** send `create a file named s1.txt` in one chat and `create a file named s2.txt` in a second - both sessions run at the same time, each pausing at its own Write approval card.
