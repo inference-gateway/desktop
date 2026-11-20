@@ -841,8 +841,7 @@ pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result
 }
 
 /// Merge only `gateway.version` into the existing config text. `infer config
-/// set` would rewrite the whole file from the CLI's own schema and drop the
-/// keys only the desktop knows, such as `projects.root`.
+/// set` would rewrite the whole file and write every CLI default into it.
 pub(crate) fn merge_gateway_version(
     existing: Option<&str>,
     version: &str,
