@@ -1,0 +1,110 @@
+name: Bump CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: CLI release tag to test against, such as v0.266.0. Leave empty for the latest release.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bump-cli
+  cancel-in-progress: false
+
+env:
+  CLI_REPO: inference-gateway/cli
+  CLI_RELEASE_IDENTITY: https://github.com/inference-gateway/cli/.github/workflows/release.yml@refs/heads/main
+  GITHUB_ACTIONS_ISSUER: https://token.actions.githubusercontent.com
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/create-github-app-token@v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.INFERENCE_GATEWAY_MAINTAINER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.INFERENCE_GATEWAY_MAINTAINER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: sigstore/cosign-installer@v4.1.3
+
+      - name: Resolve the release
+        id: release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          tag="${REQUESTED:-$(gh release view --repo "$CLI_REPO" --json tagName --jq .tagName)}"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$tag' is not a release tag like v0.266.0"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "previous=$(cat .cli-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Pin the release once its signature verifies
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          base="https://github.com/$CLI_REPO/releases/download/$TAG"
+          curl -fsSL -o "$RUNNER_TEMP/checksums.txt" "$base/checksums.txt"
+          curl -fsSL -o "$RUNNER_TEMP/checksums.txt.sigstore.json" "$base/checksums.txt.sigstore.json"
+          cosign verify-blob "$RUNNER_TEMP/checksums.txt" \
+            --bundle "$RUNNER_TEMP/checksums.txt.sigstore.json" \
+            --certificate-identity "$CLI_RELEASE_IDENTITY" \
+            --certificate-oidc-issuer "$GITHUB_ACTIONS_ISSUER"
+          echo "$TAG" > .cli-version
+          cp "$RUNNER_TEMP/checksums.txt" .cli-checksums.txt
+
+      - name: Get the app's bot user id
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: echo "user-id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          BOT_ID: ${{ steps.bot.outputs.user-id }}
+          TAG: ${{ steps.release.outputs.tag }}
+          PREVIOUS: ${{ steps.release.outputs.previous }}
+        run: |
+          if git diff --quiet; then
+            echo "::notice::.cli-version already pins $TAG"
+            exit 0
+          fi
+          branch="chore/bump-cli-$TAG"
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "::notice::a pull request for $TAG is already open"
+            exit 0
+          fi
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add .cli-version .cli-checksums.txt
+          git commit -m "chore(cli): bump the tested CLI to $TAG"
+          git push --force origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "chore(cli): bump the tested CLI to $TAG" \
+            --body "## Summary
+
+          Moves the CLI release this desktop is tested with from \`$PREVIOUS\` to \`$TAG\`. The release's \`checksums.txt\` verified against its cosign signature and the CLI release workflow's identity before it was pinned.
+
+          Changes in the CLI: https://github.com/$CLI_REPO/compare/$PREVIOUS...$TAG
+
+          ## Changes
+
+          - \`.cli-version\` - \`$TAG\`
+          - \`.cli-checksums.txt\` - the \`checksums.txt\` of \`$TAG\`"
