@@ -296,12 +296,15 @@ export function todosFrom(items: TranscriptItem[]): TodoItem[] {
 }
 
 // A background job's landed note starts with the supervisor's header line,
-// e.g. "[A2A Task Completed: <label>]" (see the CLI's Supervisor.formatResult).
-const BACKGROUND_NOTE = /^\[(A2A Task|Background Shell|Subagent|Background Job) (Completed|Failed): (.*)\]/;
+// e.g. "[A2A Task Completed: <label>]" (see the CLI's Supervisor.formatResult),
+// or "[Subagent Closed: <label>]" when an idle subagent is closed.
+const BACKGROUND_NOTE = /^\[(A2A Task|Background Shell|Subagent|Background Job) (Completed|Failed|Closed): (.*)\]/;
 
-export function backgroundNoteHeader(text: string): { kind: string; failed: boolean; label: string } | null {
+export function backgroundNoteHeader(
+  text: string,
+): { kind: string; status: string; failed: boolean; label: string } | null {
   const m = BACKGROUND_NOTE.exec(text.trimStart());
-  return m ? { kind: m[1], failed: m[2] === "Failed", label: m[3] } : null;
+  return m ? { kind: m[1], status: m[2].toLowerCase(), failed: m[2] === "Failed", label: m[3] } : null;
 }
 
 // Panel edits are dirty when they differ from the agent's last written list.

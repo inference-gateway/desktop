@@ -193,7 +193,7 @@ function TaskResultCard({ item }: { item: Extract<TranscriptItem, { kind: "task_
             <Check className="mr-[0.4rem] inline h-3.5 w-3.5 text-tool" aria-hidden />
           )}
           <span className={cn("font-bold", failed ? "text-err" : "text-tool")}>
-            {header ? `${header.kind} ${failed ? "failed" : "completed"}` : "Background task"}
+            {header ? `${header.kind} ${header.status}` : "Background task"}
           </span>
           {header && <span className="ml-[0.4rem] text-muted-foreground">{header.label}</span>}
         </summary>

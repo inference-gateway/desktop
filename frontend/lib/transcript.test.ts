@@ -874,9 +874,34 @@ test("a background note lands as its own task_result item and ends the open assi
   ]);
   expect(s.items.map((i) => i.kind)).toEqual(["assistant", "task_result", "assistant"]);
   expect(s.items[1]).toMatchObject({ kind: "task_result", text: note });
-  expect(backgroundNoteHeader(note)).toEqual({ kind: "A2A Task", failed: false, label: "delay" });
+  expect(backgroundNoteHeader(note)).toEqual({ kind: "A2A Task", status: "completed", failed: false, label: "delay" });
   expect(backgroundNoteHeader("[Background Shell Failed: build]\n\nexit 1")?.failed).toBe(true);
   expect(backgroundNoteHeader("plain text")).toBeNull();
+});
+
+test("a stored subagent's completed and closed notes load as task_result cards, not user bubbles", () => {
+  const completed = "[Subagent Completed: support-meta]\n\nTools: 39 succeeded\n\nthe report";
+  const closed = "[Subagent Closed: support-meta]\n\nclosed after 5m0s of inactivity\n\nthe report";
+  const s = chatReducer(initialChatState, {
+    type: "loadHistory",
+    messages: [
+      { id: "1", role: "user", content: completed },
+      { id: "2", role: "user", content: closed },
+    ],
+  });
+  expect(s.items.map((i) => i.kind)).toEqual(["task_result", "task_result"]);
+  expect(backgroundNoteHeader(completed)).toEqual({
+    kind: "Subagent",
+    status: "completed",
+    failed: false,
+    label: "support-meta",
+  });
+  expect(backgroundNoteHeader(closed)).toEqual({
+    kind: "Subagent",
+    status: "closed",
+    failed: false,
+    label: "support-meta",
+  });
 });
 
 test("background_tasks snapshot feeds delegations and clears on Done", () => {
