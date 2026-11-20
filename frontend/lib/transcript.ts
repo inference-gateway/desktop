@@ -155,6 +155,19 @@ export function subagentParentId(sessionId: string): string | null {
   return SUBAGENT_SESSION.exec(sessionId)?.[1] ?? null;
 }
 
+/** Each listed orchestrator's subagent chats, as indices into `conversations`.
+ * A subagent whose orchestrator is not listed is left out, so the sidebar
+ * still shows it as a chat of its own. */
+export function subagentsByParent(conversations: { id: string }[]): Record<string, number[]> {
+  const listed = new Set(conversations.map((c) => c.id));
+  const byParent: Record<string, number[]> = {};
+  conversations.forEach((conv, i) => {
+    const parent = subagentParentId(conv.id);
+    if (parent && listed.has(parent)) (byParent[parent] ??= []).push(i);
+  });
+  return byParent;
+}
+
 /** The stored session of a subagent delegation under `parentId`: the parent's
  * only child session, or the one whose title matches the delegation label.
  * A2A, shell and recording delegations have no session of their own. */

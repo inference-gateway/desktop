@@ -366,6 +366,19 @@ scenarios:
           - { name: RecordStop, args: {} }
       - content: "Recording saved."
 
+  - name: subagent-orchestrator
+    match: '(?i)delegate the fixture survey'
+    turns:
+      - tool_calls:
+          - { name: Agent, args: { description: "Survey the e2e fixtures", label: survey } }
+      - content: "Survey dispatched."
+      - content: "The survey is in."
+
+  - name: subagent-survey
+    match: '(?i)survey the e2e fixtures'
+    turns:
+      - content: "Two fixtures found."
+
   - name: reasoning-demo
     match: '(?i)think out loud'
     turns:
