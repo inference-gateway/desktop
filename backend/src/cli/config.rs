@@ -840,6 +840,28 @@ pub(crate) fn merge_default_model(existing: Option<&str>, model: &str) -> Result
     serde_norway::to_string(&yaml).map_err(|e| e.to_string())
 }
 
+/// Merge only `gateway.version` into the existing config text. `infer config
+/// set` would rewrite the whole file from the CLI's own schema and drop the
+/// keys only the desktop knows, such as `projects.root`.
+pub(crate) fn merge_gateway_version(
+    existing: Option<&str>,
+    version: &str,
+) -> Result<String, String> {
+    let mut yaml = config_mapping(existing);
+    let map = yaml.as_mapping_mut().ok_or("yaml root is not a mapping")?;
+    let gateway = map
+        .entry("gateway".into())
+        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
+    if !gateway.is_mapping() {
+        *gateway = serde_norway::Value::Mapping(Default::default());
+    }
+    gateway
+        .as_mapping_mut()
+        .ok_or("gateway is not a mapping")?
+        .insert("version".into(), version.to_string().into());
+    serde_norway::to_string(&yaml).map_err(|e| e.to_string())
+}
+
 /// Serializes every `update_file`, so two edits of one file at once never drop
 /// each other's change. `f` must not call `update_file` itself.
 static FILE_EDITS: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1513,6 +1535,21 @@ mod tests {
         assert_eq!(val.get("default_model"), None);
         assert_eq!(val["agent"]["max_turns"].as_i64(), Some(5));
         assert_eq!(str_field(&val, &["storage", "type"]), Some("jsonl"));
+    }
+
+    #[test]
+    fn merge_gateway_version_keeps_the_keys_only_the_desktop_knows() {
+        let existing = "gateway:\n  url: http://localhost:8080\nprojects:\n  root: /home/x/repos\n";
+        let val = parse_yaml(&merge_gateway_version(Some(existing), "v0.30.0").unwrap());
+        assert_eq!(str_field(&val, &["gateway", "version"]), Some("v0.30.0"));
+        assert_eq!(
+            str_field(&val, &["gateway", "url"]),
+            Some("http://localhost:8080")
+        );
+        assert_eq!(
+            str_field(&val, &["projects", "root"]),
+            Some("/home/x/repos")
+        );
     }
 
     #[test]

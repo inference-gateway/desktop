@@ -67,7 +67,7 @@ const centre = (el) => {
 };
 const textArea = () => [...document.querySelectorAll("textarea")].find(shown);
 switch (op) {
-  case "ready": return !!document.querySelector("#app button");
+  case "ready": return !!document.querySelector("#app button") && !!document.getElementById("model-select")?.value;
   case "click": {
     const el = findButton(arg);
     if (!el) return false;
@@ -191,7 +191,7 @@ impl AppDriver {
         })? {
             return Ok(());
         }
-        bail!("the app's page never rendered")
+        bail!("the app's page never rendered with a model selected")
     }
 
     fn page(&self, op: &str, arg: &str) -> Result<Value> {

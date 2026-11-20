@@ -127,12 +127,9 @@ pub(crate) fn ensure_gateway_binary(
     }
 
     if mode == GatewayStart::Reinstall {
-        run_infer(&[
-            "config",
-            "set",
-            "gateway.version",
-            chosen_gateway_version(tag),
-        ])?;
+        crate::cli::config::update_config_file(|existing| {
+            crate::cli::config::merge_gateway_version(existing, chosen_gateway_version(tag))
+        })?;
     }
     run_infer(&["gateway", "install"])?;
 
