@@ -25,6 +25,7 @@ Activate the pre-commit hook before making changes - it is inert until you do. I
 | `bun test` | Frontend unit tests (`frontend/lib/*.test.ts`) |
 | `cargo tauri build` | Release bundle. Needs `TAURI_SIGNING_PRIVATE_KEY` (see CONTRIBUTING) |
 | `gh workflow run release.yml` | Cut a release: semantic-release tags it, the updater keys are stamped in, and the three OS bundles plus the `latest.json` updater manifest publish (see CONTRIBUTING) |
+| `gh workflow run bump-cli.yml` | Open a draft pull request that moves `.cli-version` and `.cli-checksums.txt` to the latest CLI release, or to the one named with `-f version=v0.266.0`, once its checksums verify against the release signature |
 
 The Rust build embeds `frontendDist` (`../dist`) via `generate_context!`, so **every path that compiles the crate builds `dist/` first**.
 
@@ -34,7 +35,7 @@ To click a local gateway build through the app, name it in `INFERENCE_GATEWAY_BI
 INFERENCE_GATEWAY_BIN=/path/to/inference-gateway task dev
 ```
 
-`.cli-version` names the CLI release this desktop is tested with, and `.cli-checksums.txt` holds that release's `checksums.txt`. A fresh install and **Update** take that release and refuse an archive whose SHA-256 the file does not list, and the e2e runs and CI's CLI contract check take it too. CI's `cli-release` job verifies the file against the release's cosign signature and the CLI release workflow's identity. The flox dev shell pins a separate `infer` in `.flox/env/manifest.toml`, so that pin can trail `.cli-version`. Move to a new release once the smoke set and the contract check pass on it:
+`.cli-version` names the CLI release this desktop is tested with, and `.cli-checksums.txt` holds that release's `checksums.txt`. A fresh install and **Update** take that release and refuse an archive whose SHA-256 the file does not list, and the e2e runs and CI's CLI contract check take it too. CI's `cli-release` job verifies the file against the release's cosign signature and the CLI release workflow's identity. The flox dev shell pins a separate `infer` in `.flox/env/manifest.toml`, so that pin can trail `.cli-version`. Move to a new release once the smoke set and the contract check pass on it. `gh workflow run bump-cli.yml` opens that pull request, and its CI runs both. By hand:
 
 ```bash
 echo v0.265.0 > .cli-version
