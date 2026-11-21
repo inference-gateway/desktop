@@ -227,6 +227,7 @@ where
 fn run_prompt(
     thread: &Thread,
     prompt: &str,
+    agent: Option<&str>,
     model: &str,
     mode: &str,
     content_dir: Option<PathBuf>,
@@ -237,7 +238,7 @@ fn run_prompt(
             let _ = crate::projects::checkpoint(&dir, &commit);
         }) as Box<dyn Fn() + Send + Sync>
     });
-    thread.select(model, mode)?;
+    thread.select(agent.unwrap_or_default(), model, mode)?;
     thread.run(Some(message_content(prompt)))
 }
 
@@ -374,7 +375,14 @@ pub(crate) async fn send_message(
     if let Ok(mut channels) = state.channels.lock() {
         channels.insert(session_id, on_event);
     }
-    run_prompt(&thread, &prompt, &model, &mode, content_dir)
+    run_prompt(
+        &thread,
+        &prompt,
+        agent.as_deref(),
+        &model,
+        &mode,
+        content_dir,
+    )
 }
 
 /// Places a new chat on its agent's computer before the first run, showing
@@ -674,11 +682,46 @@ mod tests {
     fn a_prompt_switches_the_model_before_its_run() {
         let (thread, frames) = Thread::detached("chat", Vec::new());
 
-        run_prompt(&thread, "hello", "openai/gpt-5", "auto", None).unwrap();
+        run_prompt(&thread, "hello", None, "openai/gpt-5", "auto", None).unwrap();
 
         assert_eq!(
             frame_types(&frames),
             ["select_model", "set_mode", "run_agent_input"]
+        );
+    }
+
+    #[test]
+    fn a_prompt_names_the_chats_agent_once_before_its_model() {
+        let (thread, frames) = Thread::detached("chat", Vec::new());
+
+        run_prompt(
+            &thread,
+            "hello",
+            Some("explore"),
+            "openai/gpt-5",
+            "auto",
+            None,
+        )
+        .unwrap();
+        run_prompt(
+            &thread,
+            "again",
+            Some("explore"),
+            "openai/gpt-5",
+            "auto",
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            frame_types(&frames),
+            [
+                "select_agent",
+                "select_model",
+                "set_mode",
+                "run_agent_input",
+                "run_agent_input"
+            ]
         );
     }
 

@@ -53,6 +53,13 @@ scenarios:
     turns:
       - content: "Answered on the agent's own model."
 
+  # The reply after a plain chat switched to an agent, distinct from the
+  # fallback its first message got.
+  - name: after-agent-switch
+    match: '(?i)who answers now'
+    turns:
+      - content: "The switched agent answers."
+
   - name: write-approved
     match: '(?i)create a file named approved\.txt'
     turns:
