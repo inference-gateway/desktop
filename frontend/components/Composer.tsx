@@ -28,6 +28,7 @@ import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { useDismiss } from "@/hooks/useDismiss";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
@@ -92,6 +93,8 @@ function MoveToWorkspace({
   const { moveChat } = useDesktop();
   const { moving } = useComputers();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
   const stage = moving[sessionId];
@@ -146,7 +149,7 @@ function MoveToWorkspace({
   );
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
         aria-label="Move to workspace"
         aria-expanded={open}
@@ -189,6 +192,8 @@ function AgentSwitchMenu() {
   const { agents } = useAgents();
   const { sessionId, currentProject, currentAgent, switchAgent, selectAgent } = useDesktop();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
 
   const pick = (name: string | null) => {
     setOpen(false);
@@ -197,7 +202,7 @@ function AgentSwitchMenu() {
   };
 
   return (
-    <div className="relative shrink-0">
+    <div ref={menuRef} className="relative shrink-0">
       <button
         aria-label="Switch agent"
         aria-expanded={open}
@@ -251,6 +256,8 @@ function ProjectMenu() {
   const { projectNames, setActiveProject } = useSidebar();
   const { sessionId, currentProject, assignProject, unassignProject } = useDesktop();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
 
   const pick = (project: string | null) => {
     setOpen(false);
@@ -273,7 +280,7 @@ function ProjectMenu() {
   );
 
   return (
-    <div className="relative shrink-0">
+    <div ref={menuRef} className="relative shrink-0">
       <button
         aria-label="Choose project"
         aria-expanded={open}
