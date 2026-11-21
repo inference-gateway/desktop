@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Bot,
   Check,
   FileText,
   Film,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { withReply } from "@/lib/reply";
+import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
@@ -181,6 +183,53 @@ function MoveToWorkspace({
 
 // Picks the project a new agent chat opens in, or none. The first message
 // fixes it, since the project is the folder the chat's thread runs in.
+/** Switches a plain chat to one of the agents. An open chat keeps its
+ * conversation and the agent answers its next message. Before the first
+ * message the agent's new chat opens in the current project. */
+function AgentSwitchMenu() {
+  const { agents } = useAgents();
+  const { sessionId, currentProject, switchAgent, selectAgent } = useDesktop();
+  const [open, setOpen] = useState(false);
+
+  const pick = (name: string) => {
+    setOpen(false);
+    if (sessionId) void switchAgent(sessionId, name);
+    else selectAgent(name, currentProject ?? undefined);
+  };
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        aria-label="Switch agent"
+        aria-expanded={open}
+        title="Switch this chat to an agent"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
+      >
+        <Bot size={13} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-10 mb-1 flex max-h-[18rem] w-[18rem] flex-col overflow-y-auto rounded-md border border-border bg-card p-1 shadow-md">
+          {agents.length === 0 && (
+            <span className="px-2 py-1.5 text-[0.8rem] text-muted-foreground">No agents yet</span>
+          )}
+          {agents.map((agent) => (
+            <button
+              key={agent.name}
+              aria-label={`Switch to agent ${agent.name}`}
+              onClick={() => pick(agent.name)}
+              className={MENU_ITEM}
+            >
+              <AgentAvatar agent={agent} size={16} />
+              <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentProjectMenu() {
   const { projectNames, setActiveProject } = useSidebar();
   const { currentProject } = useDesktop();
@@ -646,11 +695,12 @@ export function Composer() {
           )}
         </div>
       )}
-      {currentProject && !currentAgent && (
+      {!currentAgent && (
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{currentProject}</span>
-          {currentProject === activeProject && (
+          <span className="min-w-0 flex-1 truncate">{currentProject ?? "No project"}</span>
+          {!subagentParentId(sessionId ?? "") && <AgentSwitchMenu />}
+          {currentProject && currentProject === activeProject && (
             <button
               aria-label={`Leave project ${currentProject}`}
               title={`Leave project ${currentProject}`}

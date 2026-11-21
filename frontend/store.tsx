@@ -1101,6 +1101,26 @@ function useDesktopStore() {
     [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
   );
 
+  /** Switches an open chat to agent `name` from its next message, keeping its
+   * conversation: the daemon swaps the agent the chat's worker runs as, and a
+   * running turn finishes as the agent it started with. A chat on another
+   * computer than the agent's moves there first, so an agent never drives a
+   * machine it was not given - and a move waits for the turn to end. */
+  const switchAgent = useCallback(
+    async (sessionId: string, name: string) => {
+      const target = agents.find((a) => a.name === name)?.workspace || THIS_COMPUTER;
+      const moves = target !== chatWorkspace(sessionId, workspaceOf, agentOf, agents);
+      if (movingRef.current[sessionId] || (moves && runningIdsRef.current.has(sessionId))) {
+        setError(`Wait for the chat to finish before it moves to ${target || "this computer"} for agent ${name}`);
+        return;
+      }
+      assignAgent(sessionId, name);
+      setActiveAgent(name);
+      if (moves) await moveChat(sessionId, target);
+    },
+    [assignAgent, setActiveAgent, agents, workspaceOf, agentOf, moveChat, setError],
+  );
+
   /** Removes the machine of every chat on a workspace. Their transcripts go with
    * the machines, so the chats start over on their agent's workspace or here. */
   const cleanMachines = useCallback(async () => {
@@ -1477,6 +1497,7 @@ function useDesktopStore() {
     takeOver,
     handBack,
     moveChat,
+    switchAgent,
     cleanMachines,
     deleteMachine,
     promptProject,
