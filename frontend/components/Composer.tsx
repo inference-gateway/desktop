@@ -181,14 +181,12 @@ function MoveToWorkspace({
   );
 }
 
-// Picks the project a new agent chat opens in, or none. The first message
-// fixes it, since the project is the folder the chat's thread runs in.
-/** Switches a plain chat to one of the agents. An open chat keeps its
- * conversation and the agent answers its next message. Before the first
- * message the agent's new chat opens in the current project. */
+/** Switches the chat to one of the agents, the current one checked. An open
+ * chat keeps its conversation and the agent answers its next message. Before
+ * the first message the agent's new chat opens in the current project. */
 function AgentSwitchMenu() {
   const { agents } = useAgents();
-  const { sessionId, currentProject, switchAgent, selectAgent } = useDesktop();
+  const { sessionId, currentProject, currentAgent, switchAgent, selectAgent } = useDesktop();
   const [open, setOpen] = useState(false);
 
   const pick = (name: string) => {
@@ -217,9 +215,15 @@ function AgentSwitchMenu() {
             <button
               key={agent.name}
               aria-label={`Switch to agent ${agent.name}`}
+              aria-pressed={agent.name === currentAgent}
               onClick={() => pick(agent.name)}
               className={MENU_ITEM}
             >
+              <Check
+                size={13}
+                className={agent.name === currentAgent ? "shrink-0" : "invisible shrink-0"}
+                aria-hidden="true"
+              />
               <AgentAvatar agent={agent} size={16} />
               <span className="min-w-0 flex-1 truncate">{agent.name}</span>
             </button>
@@ -230,6 +234,8 @@ function AgentSwitchMenu() {
   );
 }
 
+// Picks the project a new agent chat opens in, or none. The first message
+// fixes it, since the project is the folder the chat's thread runs in.
 function AgentProjectMenu() {
   const { projectNames, setActiveProject } = useSidebar();
   const { currentProject } = useDesktop();
@@ -673,6 +679,7 @@ export function Composer() {
             {driving && " - you are driving its computer"}
             {agentEmail && <span className="block truncate text-[0.7rem] text-muted-foreground/70">{agentEmail}</span>}
           </span>
+          {!subagentParentId(sessionId ?? "") && <AgentSwitchMenu />}
           {sessionId === null && <AgentProjectMenu />}
           {driving && (
             <button
