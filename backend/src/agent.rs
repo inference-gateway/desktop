@@ -49,6 +49,10 @@ const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility
 
 const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and TextToSpeech WAVs inline in the transcript with playback and download controls. After generating one, state the file path in plain text and stop - do not run `open`, suggest a command to open it, or ask for approval to view or play it.";
 
+/// The CLI's default agent. A chat without an agent of its own names it with
+/// `select_agent` only, so opening its thread asks for no agent.
+const MAIN_AGENT: &str = "main";
+
 const PROJECTS_GUIDANCE: &str = "For anything about organising projects or chats (grouping, moving, renaming, the projects root, assigning conversations to a project), read and follow ~/.infer/skills/desktop-projects/SKILL.md, which is already installed. Do not modify the app's source code for this.";
 
 /// Append the agent's actual working directory to the custom instructions so
@@ -83,7 +87,9 @@ fn thread_options(
             .map(|dirs| dirs.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         max_turns: 500,
-        agent: agent.filter(|a| !a.trim().is_empty()).map(str::to_owned),
+        agent: agent
+            .filter(|a| !a.trim().is_empty() && *a != MAIN_AGENT)
+            .map(str::to_owned),
     }
 }
 
@@ -227,6 +233,7 @@ where
 fn run_prompt(
     thread: &Thread,
     prompt: &str,
+    agent: Option<&str>,
     model: &str,
     mode: &str,
     content_dir: Option<PathBuf>,
@@ -237,7 +244,7 @@ fn run_prompt(
             let _ = crate::projects::checkpoint(&dir, &commit);
         }) as Box<dyn Fn() + Send + Sync>
     });
-    thread.select(model, mode)?;
+    thread.select(agent.unwrap_or_default(), model, mode)?;
     thread.run(Some(message_content(prompt)))
 }
 
@@ -374,7 +381,14 @@ pub(crate) async fn send_message(
     if let Ok(mut channels) = state.channels.lock() {
         channels.insert(session_id, on_event);
     }
-    run_prompt(&thread, &prompt, &model, &mode, content_dir)
+    run_prompt(
+        &thread,
+        &prompt,
+        agent.as_deref(),
+        &model,
+        &mode,
+        content_dir,
+    )
 }
 
 /// Places a new chat on its agent's computer before the first run, showing
@@ -674,11 +688,57 @@ mod tests {
     fn a_prompt_switches_the_model_before_its_run() {
         let (thread, frames) = Thread::detached("chat", Vec::new());
 
-        run_prompt(&thread, "hello", "openai/gpt-5", "auto", None).unwrap();
+        run_prompt(&thread, "hello", None, "openai/gpt-5", "auto", None).unwrap();
 
         assert_eq!(
             frame_types(&frames),
             ["select_model", "set_mode", "run_agent_input"]
+        );
+    }
+
+    #[test]
+    fn a_thread_opens_as_no_agent_for_the_main_agent() {
+        let cwd = Path::new("/tmp");
+
+        let main = thread_options("m", "auto", None, None, cwd, Some(MAIN_AGENT));
+        let own = thread_options("m", "auto", None, None, cwd, Some("explore"));
+
+        assert_eq!(main.agent, None);
+        assert_eq!(own.agent.as_deref(), Some("explore"));
+    }
+
+    #[test]
+    fn a_prompt_names_the_chats_agent_once_before_its_model() {
+        let (thread, frames) = Thread::detached("chat", Vec::new());
+
+        run_prompt(
+            &thread,
+            "hello",
+            Some("explore"),
+            "openai/gpt-5",
+            "auto",
+            None,
+        )
+        .unwrap();
+        run_prompt(
+            &thread,
+            "again",
+            Some("explore"),
+            "openai/gpt-5",
+            "auto",
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            frame_types(&frames),
+            [
+                "select_agent",
+                "select_model",
+                "set_mode",
+                "run_agent_input",
+                "run_agent_input"
+            ]
         );
     }
 

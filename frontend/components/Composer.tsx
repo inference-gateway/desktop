@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Bot,
   Check,
   FileText,
   Film,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { withReply } from "@/lib/reply";
+import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
@@ -26,6 +28,7 @@ import { StatusBar } from "./StatusBar";
 import { SnippetBar } from "./SnippetBar";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useFileDrop } from "@/hooks/useFileDrop";
+import { useDismiss } from "@/hooks/useDismiss";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
@@ -90,6 +93,8 @@ function MoveToWorkspace({
   const { moveChat } = useDesktop();
   const { moving } = useComputers();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [configs, setConfigs] = useState<WorkspaceConfig[]>([]);
   const stage = moving[sessionId];
@@ -144,7 +149,7 @@ function MoveToWorkspace({
   );
 
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
         aria-label="Move to workspace"
         aria-expanded={open}
@@ -179,22 +184,94 @@ function MoveToWorkspace({
   );
 }
 
-// Picks the project a new agent chat opens in, or none. The first message
-// fixes it, since the project is the folder the chat's thread runs in.
-function AgentProjectMenu() {
-  const { projectNames, setActiveProject } = useSidebar();
-  const { currentProject } = useDesktop();
+/** Switches the chat to one of the agents, or back to the main agent, the
+ * current one checked. An open chat keeps its conversation and the agent
+ * answers its next message. Before the first message the agent's new chat
+ * opens in the current project. */
+function AgentSwitchMenu() {
+  const { agents } = useAgents();
+  const { sessionId, currentProject, currentAgent, switchAgent, selectAgent } = useDesktop();
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
+
+  const pick = (name: string | null) => {
+    setOpen(false);
+    if (sessionId) void switchAgent(sessionId, name);
+    else selectAgent(name, currentProject ?? undefined);
+  };
+
+  return (
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        aria-label="Switch agent"
+        aria-expanded={open}
+        title="Switch this chat to an agent"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
+      >
+        <Bot size={13} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-10 mb-1 flex max-h-[18rem] w-[18rem] flex-col overflow-y-auto rounded-md border border-border bg-card p-1 shadow-md">
+          <button
+            aria-label="Switch to main agent"
+            aria-pressed={!currentAgent}
+            onClick={() => pick(null)}
+            className={MENU_ITEM}
+          >
+            <Check size={13} className={currentAgent ? "invisible shrink-0" : "shrink-0"} aria-hidden="true" />
+            <Bot size={16} className="shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">Main agent</span>
+          </button>
+          {agents.length === 0 && (
+            <span className="px-2 py-1.5 text-[0.8rem] text-muted-foreground">No agents yet</span>
+          )}
+          {agents.map((agent) => (
+            <button
+              key={agent.name}
+              aria-label={`Switch to agent ${agent.name}`}
+              aria-pressed={agent.name === currentAgent}
+              onClick={() => pick(agent.name)}
+              className={MENU_ITEM}
+            >
+              <Check
+                size={13}
+                className={agent.name === currentAgent ? "shrink-0" : "invisible shrink-0"}
+                aria-hidden="true"
+              />
+              <AgentAvatar agent={agent} size={16} />
+              <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Picks the chat's project, or none. A new chat opens in it, and an open chat
+ * moves there with its history, as dragging it onto the project does. */
+function ProjectMenu() {
+  const { projectNames, setActiveProject } = useSidebar();
+  const { sessionId, currentProject, assignProject, unassignProject } = useDesktop();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, open, setOpen);
+
+  const pick = (project: string | null) => {
+    setOpen(false);
+    if (project === currentProject) return;
+    const moved = !sessionId || (project ? assignProject(sessionId, project) : unassignProject(sessionId));
+    if (moved) setActiveProject(project);
+  };
 
   const choice = (project: string | null, label: string) => (
     <button
       key={label}
       aria-label={label}
       aria-pressed={currentProject === project}
-      onClick={() => {
-        setOpen(false);
-        setActiveProject(project);
-      }}
+      onClick={() => pick(project)}
       className={MENU_ITEM}
     >
       <Check size={13} className={currentProject === project ? "shrink-0" : "invisible shrink-0"} aria-hidden="true" />
@@ -203,11 +280,11 @@ function AgentProjectMenu() {
   );
 
   return (
-    <div className="relative shrink-0">
+    <div ref={menuRef} className="relative shrink-0">
       <button
-        aria-label="Choose agent project"
+        aria-label="Choose project"
         aria-expanded={open}
-        title="Choose the project this chat opens in"
+        title="Choose the project of this chat"
         onClick={() => setOpen(!open)}
         className="inline-flex items-center justify-center rounded-full p-0.5 hover:bg-card hover:text-foreground"
       >
@@ -608,6 +685,7 @@ export function Composer() {
 
   const runsOn = sessionId !== null ? chatWorkspace(sessionId, workspaceOf, agentOf, agents) : THIS_COMPUTER;
   const driving = sessionId !== null && drivenId === sessionId;
+  const ownChat = !subagentParentId(sessionId ?? "");
   const agentEmail = agents.find((a) => a.name === currentAgent)?.email.trim() ?? "";
 
   return (
@@ -624,7 +702,8 @@ export function Composer() {
             {driving && " - you are driving its computer"}
             {agentEmail && <span className="block truncate text-[0.7rem] text-muted-foreground/70">{agentEmail}</span>}
           </span>
-          {sessionId === null && <AgentProjectMenu />}
+          {ownChat && <AgentSwitchMenu />}
+          {ownChat && runsOn === THIS_COMPUTER && <ProjectMenu />}
           {driving && (
             <button
               onClick={handBack}
@@ -646,11 +725,13 @@ export function Composer() {
           )}
         </div>
       )}
-      {currentProject && !currentAgent && (
+      {!currentAgent && (
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{currentProject}</span>
-          {currentProject === activeProject && (
+          <span className="min-w-0 flex-1 truncate">{currentProject ?? "No project"}</span>
+          {ownChat && <AgentSwitchMenu />}
+          {ownChat && runsOn === THIS_COMPUTER && <ProjectMenu />}
+          {currentProject && currentProject === activeProject && (
             <button
               aria-label={`Leave project ${currentProject}`}
               title={`Leave project ${currentProject}`}

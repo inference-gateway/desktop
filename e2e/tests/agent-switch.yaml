@@ -1,0 +1,29 @@
+name: agent switch - a plain chat switches to an agent from the bar above the composer, keeps its conversation and switches back to the main agent
+content_project: e2e-agent-docs
+project_agent: e2e-docs-writer
+narration:
+  - "Send a plain chat its first message."
+  - "The reply lands."
+  - "Open the agent menu in the bar above the composer."
+  - "Switch the chat to the seeded agent."
+  - "The bar now names the agent."
+  - "Send the next message, which the agent answers."
+  - "The reply lands."
+  - "The earlier reply is still in the chat."
+  - "The agent bar keeps the agent menu."
+  - "The menu lists the agents again."
+  - "Switch the chat back to the main agent."
+  - "The bar no longer names the agent."
+steps:
+  - send: "hi"
+  - wait_for: { text: "Done.", timeout: 30 }
+  - click: { button: "Switch agent" }
+  - click: { button: "Switch to agent e2e-docs-writer" }
+  - wait_for: { button: "Leave agent e2e-docs-writer", timeout: 10 }
+  - send: "who answers now"
+  - wait_for: { text: "The switched agent answers.", timeout: 30 }
+  - wait_for: { text: "Done.", timeout: 5 }
+  - click: { button: "Switch agent" }
+  - wait_for: { button: "Switch to agent e2e-docs-writer", timeout: 5 }
+  - click: { button: "Switch to main agent" }
+  - wait_gone: { button: "Leave agent e2e-docs-writer", timeout: 10 }

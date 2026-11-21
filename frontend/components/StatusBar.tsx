@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
+import { useDismiss } from "@/hooks/useDismiss";
 import { formatElapsed } from "@/lib/elapsed";
 import { delegationSessionId, type Delegation } from "@/lib/transcript";
 import { useChatStream, useDesktop } from "@/store";
@@ -59,24 +60,7 @@ export function StatusBar() {
   const [viewedShell, setViewedShell] = useState<ViewedShell | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (!dropdownRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  useDismiss(dropdownRef, open, setOpen);
 
   const agents = conversations
     .map((c) => ({ ...c, status: runLabel(c.id) }))

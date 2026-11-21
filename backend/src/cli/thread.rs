@@ -42,6 +42,7 @@ pub(crate) struct Thread {
     session_id: String,
     tx: mpsc::Sender<String>,
     history: Vec<serde_json::Value>,
+    agent: Mutex<String>,
     model: Mutex<String>,
     mode: Mutex<String>,
     parser: Mutex<AgentParser>,
@@ -118,6 +119,7 @@ impl Thread {
             session_id: session_id.to_string(),
             tx,
             history,
+            agent: Mutex::default(),
             model: Mutex::new(options.model.clone()),
             mode: Mutex::new(options.mode.clone()),
             parser: Mutex::new(AgentParser::new(Some(session_id.to_string()))),
@@ -176,9 +178,15 @@ impl Thread {
             .map_err(|_| format!("the connection for chat {} is closed", self.session_id))
     }
 
-    /// Switches the thread's model and mode for its next turns when they
-    /// differ from what the worker runs with.
-    pub(crate) fn select(&self, model: &str, mode: &str) -> Result<(), String> {
+    /// Switches the thread's main agent, model and mode for its next turns
+    /// when they differ from what the worker runs with. A new thread names its
+    /// agent once, since the daemon may keep a worker that switched before, and
+    /// the worker takes the agent it already runs as without a change.
+    pub(crate) fn select(&self, agent: &str, model: &str, mode: &str) -> Result<(), String> {
+        if !agent.is_empty() && *lock(&self.agent) != agent {
+            self.send(serde_json::json!({ "type": "select_agent", "agent": agent }))?;
+            *lock(&self.agent) = agent.to_string();
+        }
         if !model.is_empty() && *lock(&self.model) != model {
             self.send(serde_json::json!({ "type": "select_model", "model": model }))?;
             *lock(&self.model) = model.to_string();
@@ -264,6 +272,10 @@ impl Thread {
             (self.status)(extension_status(&frame));
             return;
         }
+        if kind == "agent" {
+            self.report_agent_switch(&frame);
+            return;
+        }
         if kind != kind.to_uppercase() {
             return;
         }
@@ -304,6 +316,23 @@ impl Thread {
             "RUN_ERROR" if self.ends_a_run(&frame) => self.done(1),
             _ => {}
         }
+    }
+
+    /// Shows a select_agent the daemon or the worker refused as an error in
+    /// the chat. The thread keeps its agent, so the next prompt names the
+    /// wanted one again.
+    fn report_agent_switch(&self, frame: &serde_json::Value) {
+        let Some(error) = frame
+            .get("error")
+            .and_then(|e| e.as_str())
+            .filter(|e| !e.is_empty())
+        else {
+            return;
+        };
+        lock(&self.agent).clear();
+        (self.sink)(AgentEvent::AgentError {
+            message: format!("Could not switch the agent: {error}"),
+        });
     }
 
     /// A worker reports its own failure without a runId, so an error ends the
@@ -905,6 +934,37 @@ mod tests {
         );
         assert!(answer.is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_refused_agent_switch_shows_as_an_error_and_is_named_again() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&events);
+        let (thread, frames) = Thread::following(
+            "chat",
+            Vec::new(),
+            &ThreadOptions::default(),
+            Arc::new(move |ev: AgentEvent| seen.lock().unwrap().push(ev)),
+            Arc::new(|_| {}),
+        );
+        thread.select("explore", "", "").unwrap();
+
+        thread.handle(r#"{"type":"agent","agent":"explore","model":"openai/gpt-4o"}"#);
+        thread.handle(r#"{"type":"agent","agent":"main","error":"unknown agent \"explore\""}"#);
+        thread.select("explore", "", "").unwrap();
+
+        let seen = events.lock().unwrap();
+        assert!(
+            matches!(&seen[..], [AgentEvent::AgentError { message }] if message == r#"Could not switch the agent: unknown agent "explore""#),
+            "only the refusal shows, got {} events",
+            seen.len()
+        );
+        let sent: Vec<String> = frames.try_iter().collect();
+        assert_eq!(
+            sent.len(),
+            2,
+            "the refused agent is named again on the next prompt"
+        );
     }
 
     #[test]
