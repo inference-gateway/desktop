@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "./AgentAvatar";
+import { ModelSelect } from "./ModelSelect";
 
 type SlashItem = { name: string; description: string; kind: "command" | "skill" };
 
@@ -702,6 +703,7 @@ export function Composer() {
             {driving && " - you are driving its computer"}
             {agentEmail && <span className="block truncate text-[0.7rem] text-muted-foreground/70">{agentEmail}</span>}
           </span>
+          <ModelSelect />
           {ownChat && <AgentSwitchMenu />}
           {ownChat && runsOn === THIS_COMPUTER && <ProjectMenu />}
           {driving && (
@@ -729,6 +731,7 @@ export function Composer() {
         <div className="mx-auto -mb-3 flex w-[calc(100%-1.5rem)] max-w-[50rem] items-center gap-2 rounded-t-[1rem] bg-secondary px-4 pb-4 pt-2 text-[0.85rem] text-muted-foreground">
           <Folder size={14} className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">{currentProject ?? "No project"}</span>
+          <ModelSelect />
           {ownChat && <AgentSwitchMenu />}
           {ownChat && runsOn === THIS_COMPUTER && <ProjectMenu />}
           {currentProject && currentProject === activeProject && (
