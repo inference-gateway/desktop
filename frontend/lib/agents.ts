@@ -5,6 +5,9 @@ import type { MarkdownAgent } from "./tauri";
 export type AgentFace =
   { kind: "picture"; src: string } | { kind: "emoji"; emoji: string } | { kind: "initial"; letter: string };
 
+/** The CLI's default agent, which a chat without an agent of its own runs as. */
+export const MAIN_AGENT = "main";
+
 const BOTTTS = new Style(bottts);
 const ROBOT_BACKGROUNDS = ["1e1b4b", "312e81", "0f172a", "134e4a"];
 const generated = new Map<string, string>();

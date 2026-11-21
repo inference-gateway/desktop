@@ -1,4 +1,4 @@
-name: agent project - an agent chat opens in its default project or one picked above the composer
+name: agent project - an agent chat opens in its default project or one picked above the composer, and moves to another from there
 content_project: e2e-agent-docs
 project_agent: e2e-docs-writer
 narration:
@@ -14,6 +14,9 @@ narration:
   - "Send the agent a prompt."
   - "The reply lands."
   - "The running chat keeps the picked project."
+  - "Open the project menu again."
+  - "Move the chat to the agent's default project."
+  - "The bar follows the move."
 steps:
   - click: { button: "New project" }
   - type: "e2e-agent-other"
@@ -21,9 +24,12 @@ steps:
   - click: { button: "Filter agents" }
   - click: { button: "Select agent e2e-docs-writer" }
   - wait_for: { text: "e2e-docs-writer (e2e-agent-docs)", timeout: 10 }
-  - click: { button: "Choose agent project" }
+  - click: { button: "Choose project" }
   - click: { button: "Use project e2e-agent-other" }
   - wait_for: { text: "e2e-docs-writer (e2e-agent-other)", timeout: 10 }
   - send: "hi"
   - wait_for: { text: "Done.", timeout: 30 }
   - wait_for: { text: "e2e-docs-writer (e2e-agent-other)", timeout: 5 }
+  - click: { button: "Choose project" }
+  - click: { button: "Use project e2e-agent-docs" }
+  - wait_for: { text: "e2e-docs-writer (e2e-agent-docs)", timeout: 10 }

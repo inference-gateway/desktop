@@ -30,6 +30,13 @@ function useAgentsStore() {
     [setAgentOf],
   );
 
+  const unassignAgent = useCallback(
+    (sessionId: string) => {
+      setAgentOf((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== sessionId)));
+    },
+    [setAgentOf],
+  );
+
   const showAgentEditor = useCallback((agent: MarkdownAgent | null) => setAgentEditor({ agent }), []);
   const closeAgentEditor = useCallback(() => setAgentEditor(null), []);
 
@@ -68,6 +75,7 @@ function useAgentsStore() {
       activeAgent,
       setActiveAgent,
       assignAgent,
+      unassignAgent,
       agentEditor,
       showAgentEditor,
       closeAgentEditor,
@@ -79,6 +87,7 @@ function useAgentsStore() {
       loadAgents,
       activeAgent,
       assignAgent,
+      unassignAgent,
       agentEditor,
       showAgentEditor,
       closeAgentEditor,

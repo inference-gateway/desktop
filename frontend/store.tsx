@@ -20,6 +20,7 @@ import {
   promptRef,
   COMPUTER_USE_TOOLS,
   autoApproves,
+  subagentParentId,
   type ChatAction,
   type ChatState,
   type Delegation,
@@ -32,7 +33,13 @@ import { matchShortcut } from "@/lib/shortcuts";
 import { modeAfterPlan, nextMode, parseMode, type AgentMode, type PlanAction } from "@/lib/agent-mode";
 import { coalesce } from "@/lib/coalesce";
 import { isBashCommand } from "@/lib/tools";
-import { agentDefaultProject, agentInstructionsPreamble, agentPinsModel, agentThreadModel } from "@/lib/agents";
+import {
+  agentDefaultProject,
+  agentInstructionsPreamble,
+  agentPinsModel,
+  agentThreadModel,
+  MAIN_AGENT,
+} from "@/lib/agents";
 import { ActivityProvider, useActivity } from "@/stores/activity";
 import { SnippetsProvider } from "@/stores/snippets";
 import { StatusProvider, useStatusActions } from "@/stores/status";
@@ -143,7 +150,7 @@ function useDesktopStore() {
   const [lastRun, setLastRun] = useState<Record<string, { label: string; error: boolean }>>({});
   const lastRunTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { logActivity } = useActivity();
-  const { agents, activeAgent, setActiveAgent, assignAgent, showAgentEditor, storeAgent } = useAgents();
+  const { agents, activeAgent, setActiveAgent, assignAgent, unassignAgent, showAgentEditor, storeAgent } = useAgents();
   const {
     projects,
     projectNames,
@@ -680,12 +687,14 @@ function useDesktopStore() {
     [setError],
   );
 
+  /** Moves a chat into a project, unless it is running. Says whether it moved. */
   const assignProject = useCallback(
     (sessionId: string, projectName: string) => {
-      if (refuseRunningMove(sessionId)) return;
+      if (refuseRunningMove(sessionId)) return false;
       setProjects((prev) => ({ ...prev, [sessionId]: projectName }));
       setProjectNames((prev) => (prev.includes(projectName) ? prev : [...prev, projectName]));
       moveConversationStore(sessionId, projectName);
+      return true;
     },
     [moveConversationStore, refuseRunningMove],
   );
@@ -757,7 +766,7 @@ function useDesktopStore() {
           mode,
           project: projectName,
           workspace: runsOn || undefined,
-          agent: agentName,
+          agent: agentName ?? (subagentParentId(runId) ? undefined : MAIN_AGENT),
         });
         refreshConversations();
       } catch (err) {
@@ -1101,13 +1110,18 @@ function useDesktopStore() {
     [workspaceOf, agentOf, agents, runningIds, drivenId, handBack, projects, setStatus, setError],
   );
 
-  /** Switches an open chat to agent `name` from its next message, keeping its
-   * conversation: the daemon swaps the agent the chat's worker runs as, and a
-   * running turn finishes as the agent it started with. A chat on another
-   * computer than the agent's moves there first, so an agent never drives a
-   * machine it was not given - and a move waits for the turn to end. */
+  /** Switches an open chat to agent `name`, or back to the main agent for
+   * null, from its next message, keeping its conversation. A running turn
+   * finishes as the agent it started with. A chat on another computer than the
+   * agent's moves there first, so an agent never drives a machine it was not
+   * given - and a move waits for the turn to end. */
   const switchAgent = useCallback(
-    async (sessionId: string, name: string) => {
+    async (sessionId: string, name: string | null) => {
+      if (!name) {
+        unassignAgent(sessionId);
+        setActiveAgent(null);
+        return;
+      }
       const target = agents.find((a) => a.name === name)?.workspace || THIS_COMPUTER;
       const moves = target !== chatWorkspace(sessionId, workspaceOf, agentOf, agents);
       if (movingRef.current[sessionId] || (moves && runningIdsRef.current.has(sessionId))) {
@@ -1118,7 +1132,7 @@ function useDesktopStore() {
       setActiveAgent(name);
       if (moves) await moveChat(sessionId, target);
     },
-    [assignAgent, setActiveAgent, agents, workspaceOf, agentOf, moveChat, setError],
+    [assignAgent, unassignAgent, setActiveAgent, agents, workspaceOf, agentOf, moveChat, setError],
   );
 
   /** Removes the machine of every chat on a workspace. Their transcripts go with
@@ -1187,15 +1201,17 @@ function useDesktopStore() {
     [startGatewayThenModels, setError],
   );
 
+  /** Takes a chat out of its project, unless it is running. Says whether it moved. */
   const unassignProject = useCallback(
     (sessionId: string) => {
-      if (refuseRunningMove(sessionId)) return;
+      if (refuseRunningMove(sessionId)) return false;
       setProjects((prev) => {
         const next = { ...prev };
         delete next[sessionId];
         return next;
       });
       moveConversationStore(sessionId, undefined);
+      return true;
     },
     [moveConversationStore, refuseRunningMove],
   );

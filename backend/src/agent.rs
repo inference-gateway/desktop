@@ -49,6 +49,10 @@ const COMPUTER_USE_GUIDANCE: &str = "Computer use: prefer Computer accessibility
 
 const MEDIA_GUIDANCE: &str = "Generated media: the desktop renders images and TextToSpeech WAVs inline in the transcript with playback and download controls. After generating one, state the file path in plain text and stop - do not run `open`, suggest a command to open it, or ask for approval to view or play it.";
 
+/// The CLI's default agent. A chat without an agent of its own names it with
+/// `select_agent` only, so opening its thread asks for no agent.
+const MAIN_AGENT: &str = "main";
+
 const PROJECTS_GUIDANCE: &str = "For anything about organising projects or chats (grouping, moving, renaming, the projects root, assigning conversations to a project), read and follow ~/.infer/skills/desktop-projects/SKILL.md, which is already installed. Do not modify the app's source code for this.";
 
 /// Append the agent's actual working directory to the custom instructions so
@@ -83,7 +87,9 @@ fn thread_options(
             .map(|dirs| dirs.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         max_turns: 500,
-        agent: agent.filter(|a| !a.trim().is_empty()).map(str::to_owned),
+        agent: agent
+            .filter(|a| !a.trim().is_empty() && *a != MAIN_AGENT)
+            .map(str::to_owned),
     }
 }
 
@@ -688,6 +694,17 @@ mod tests {
             frame_types(&frames),
             ["select_model", "set_mode", "run_agent_input"]
         );
+    }
+
+    #[test]
+    fn a_thread_opens_as_no_agent_for_the_main_agent() {
+        let cwd = Path::new("/tmp");
+
+        let main = thread_options("m", "auto", None, None, cwd, Some(MAIN_AGENT));
+        let own = thread_options("m", "auto", None, None, cwd, Some("explore"));
+
+        assert_eq!(main.agent, None);
+        assert_eq!(own.agent.as_deref(), Some("explore"));
     }
 
     #[test]
