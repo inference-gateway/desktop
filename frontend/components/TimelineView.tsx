@@ -1362,7 +1362,7 @@ export function TimelineView() {
               />
               {progress && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70">
-                  <p className="text-[0.8rem] font-medium text-zinc-100">Exporting {progress.pct}%</p>
+                  <p className="text-[0.8rem] font-medium text-zinc-100">{`Exporting ${progress.pct}%`}</p>
                   <div className="h-1.5 w-64 max-w-[70%] overflow-hidden rounded-full bg-white/15">
                     <div
                       className="h-full rounded-full bg-sky-400 transition-[width] duration-200 ease-out"
@@ -1419,7 +1419,7 @@ export function TimelineView() {
               onChange={(e) => reframe({ scale: Number(e.target.value) / 100 }, true)}
               className="h-1 w-56 accent-sky-400"
             />
-            <span className="w-14 tabular-nums text-zinc-300">{asPercent(scaleOf(framed))}%</span>
+            <span className="w-14 tabular-nums text-zinc-300">{`${asPercent(scaleOf(framed))}%`}</span>
             <Button
               size="icon-sm"
               variant="ghost"
@@ -2226,7 +2226,7 @@ function ClipEditor({
             onChange={(e) => onType(setClipVolume(timeline, track.id, clip.id, Number(e.target.value) / 100))}
             className="h-1 flex-1 accent-sky-400"
           />
-          <span className="w-14 text-right tabular-nums">{Math.round((clip.volume ?? 1) * 100)}%</span>
+          <span className="w-14 text-right tabular-nums">{`${Math.round((clip.volume ?? 1) * 100)}%`}</span>
         </div>
       )}
       {(spoken || caption) && (
