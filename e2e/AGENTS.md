@@ -1,6 +1,6 @@
 # AGENTS.md - e2e suite
 
-`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. The element ids and accessible names the steps use are the DOM contract in `frontend/AGENTS.md`.
+`task e2e` runs the YAML tests in `e2e/tests/` against a fresh mock-mode build, driving the real UI through the macOS accessibility tree - no WebDriver, no `tauri-driver`. A small Swift helper (`src/axhelper.swift`) reads and presses the tree through the AXUIElement API. The runner builds it with `swiftc` into `artifacts/` the first time its source changes, so a run needs the Xcode command line tools. Every test file demos exactly one feature and reads top to bottom as a walkthrough: `name:` states the behaviour, `narration:` carries one line per step that the runner prints as it goes, and `steps:` drives the UI. The element ids and accessible names the steps use are the DOM contract in `frontend/AGENTS.md`.
 
 Running the tests (macOS only):
 

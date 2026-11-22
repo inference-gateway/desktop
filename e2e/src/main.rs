@@ -1,4 +1,6 @@
 #[cfg(not(target_os = "linux"))]
+mod ax_helper;
+#[cfg(not(target_os = "linux"))]
 mod driver;
 #[cfg(target_os = "linux")]
 #[path = "webdriver.rs"]
