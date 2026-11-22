@@ -222,12 +222,18 @@ pub(crate) fn list_in(dir: &Path) -> Vec<MarkdownAgent> {
     agents
 }
 
-/// Every agent in `dirs`, the first one found winning on a name, sorted by name.
+/// The CLI's default agent, which a chat without an agent of its own runs as.
+/// `infer init` may seed its file, but the desktop offers it as no agent.
+pub(crate) const MAIN_AGENT: &str = "main";
+
+/// Every agent in `dirs` but the main agent, the first one found winning on a
+/// name, sorted by name.
 pub(crate) fn list_from(dirs: &[PathBuf]) -> Vec<MarkdownAgent> {
     let mut seen = std::collections::HashSet::new();
     let mut agents: Vec<MarkdownAgent> = dirs
         .iter()
         .flat_map(|dir| list_in(dir))
+        .filter(|agent| agent.name != MAIN_AGENT)
         .filter(|agent| seen.insert(agent.name.clone()))
         .collect();
     agents.sort_by(|a, b| a.name.cmp(&b.name));
@@ -546,6 +552,25 @@ mod tests {
         assert_eq!(dir_of("code-reviewer", &dirs, dirs[2].clone()), dirs[1]);
         assert_eq!(dir_of("helper", &dirs, dirs[2].clone()), dirs[3]);
         assert_eq!(dir_of("unsaved", &dirs, dirs[2].clone()), dirs[2]);
+    }
+
+    #[test]
+    fn the_main_agent_is_not_listed() {
+        let root = TempDir::new("main");
+        let dirs = agent_dirs_for(&root.join("proj"), &root.join("home"));
+        let main = MarkdownAgent {
+            name: MAIN_AGENT.into(),
+            ..sample()
+        };
+        write_in(&dirs[2], &main, &main.name).unwrap();
+        write_in(&dirs[2], &sample(), &sample().name).unwrap();
+
+        let listed = list_from(&dirs);
+
+        assert_eq!(
+            listed.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+            ["code-reviewer"]
+        );
     }
 
     #[test]

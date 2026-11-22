@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import {
   agentDefaultProject,
   agentFace,
-  agentInstructionsPreamble,
+  agentIdentity,
+  agentInboxes,
   agentPinsModel,
   agentThreadModel,
   normaliseAgentName,
@@ -68,40 +69,27 @@ test("normaliseAgentName produces a CLI-valid name", () => {
   expect(normaliseAgentName("a".repeat(70))).toHaveLength(64);
 });
 
-test("agentInstructionsPreamble names the agent and lists the others", () => {
-  const me = agent({ name: "writer" });
-  const reviewer = agent({ name: "reviewer", description: "Reviews drafts." });
-  expect(agentInstructionsPreamble(me, [me, reviewer])).toBe(
-    [
-      'You are running as the agent "writer": Writes prose.',
-      "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
-      "- reviewer: Reviews drafts.",
-    ].join("\n"),
-  );
-  expect(agentInstructionsPreamble(me, [me])).toBe('You are running as the agent "writer": Writes prose.');
+test("agentIdentity names the agent a chat starts as", () => {
+  expect(agentIdentity(agent({ name: "writer" }))).toBe('You are running as the agent "writer": Writes prose.');
 });
 
-test("the preamble carries the mail identity, the send whitelist and the others' addresses", () => {
-  const me = agent({
+test("agentInboxes lists every agent's inbox and whom it may mail", () => {
+  const writer = agent({
     name: "writer",
     email: "writer@agentmail.to",
     allowed_recipients: [" human@example.com ", "", "reviewer@agentmail.to"],
   });
-  const reviewer = agent({ name: "reviewer", description: "Reviews drafts.", email: "reviewer@agentmail.to" });
-  expect(agentInstructionsPreamble(me, [me, reviewer])).toBe(
+  const reviewer = agent({ name: "reviewer", email: "reviewer@agentmail.to" });
+  const addressless = agent({ name: "drafter", allowed_recipients: ["nobody@example.com"] });
+
+  expect(agentInboxes([writer, reviewer, addressless])).toBe(
     [
-      'You are running as the agent "writer": Writes prose.',
-      "Your email address is writer@agentmail.to. People and other agents can write to you there.",
-      "You may only send mail to these addresses: human@example.com, reviewer@agentmail.to.",
-      "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
-      "- reviewer: Reviews drafts. (email: reviewer@agentmail.to)",
+      "Agent email inboxes. The inbox of the agent you are running as is yours - people and other agents can write to you there:",
+      "- writer: writer@agentmail.to - may only send mail to human@example.com, reviewer@agentmail.to",
+      "- reviewer: reviewer@agentmail.to",
     ].join("\n"),
   );
-  const addressless = agent({ name: "writer", allowed_recipients: ["nobody@example.com"] });
-  expect(
-    agentInstructionsPreamble(addressless, [addressless]),
-    "a whitelist without an address says nothing about mail",
-  ).toBe('You are running as the agent "writer": Writes prose.');
+  expect(agentInboxes([addressless]), "agents without an address add nothing").toBe("");
 });
 
 test("fluent emoji entries are unique and resolve to the static and animated asset URLs", () => {

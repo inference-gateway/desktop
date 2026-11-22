@@ -67,28 +67,26 @@ export function normaliseAgentName(input: string): string {
     .slice(0, 64);
 }
 
-/** The extra instruction an agent chat carries: who it is, its mail identity,
- * and which sibling agents it can delegate to through the Agent tool's `agent`
- * argument. */
-export function agentInstructionsPreamble(agent: MarkdownAgent, all: MarkdownAgent[]): string {
-  const others = all.filter((a) => a.name !== agent.name);
-  const lines = [`You are running as the agent "${agent.name}": ${agent.description.trim()}`];
-  const email = agent.email.trim();
-  if (email) {
-    lines.push(`Your email address is ${email}. People and other agents can write to you there.`);
-    const recipients = agent.allowed_recipients.map((r) => r.trim()).filter(Boolean);
-    if (recipients.length > 0) {
-      lines.push(`You may only send mail to these addresses: ${recipients.join(", ")}.`);
-    }
-  }
-  if (others.length > 0) {
-    lines.push(
-      "Other agents you can delegate to by passing their name as the Agent tool's `agent` argument:",
-      ...others.map((a) => {
-        const otherEmail = a.email.trim();
-        return `- ${a.name}: ${a.description.trim()}${otherEmail ? ` (email: ${otherEmail})` : ""}`;
-      }),
-    );
-  }
-  return lines.join("\n");
+/** The line an agent chat opens with: the agent it starts as. A later switch
+ * is announced by the CLI, whose reminder supersedes this line. */
+export function agentIdentity(agent: MarkdownAgent): string {
+  return `You are running as the agent "${agent.name}": ${agent.description.trim()}`;
+}
+
+/** The inbox of every agent that has one and whom it may mail. Every chat
+ * carries the whole list, so a chat that switches agents still knows which
+ * inbox is its own. The CLI's Agent tool lists the agents themselves. */
+export function agentInboxes(all: MarkdownAgent[]): string {
+  const lines = all
+    .filter((a) => a.email.trim())
+    .map((a) => {
+      const recipients = a.allowed_recipients.map((r) => r.trim()).filter(Boolean);
+      const limit = recipients.length > 0 ? ` - may only send mail to ${recipients.join(", ")}` : "";
+      return `- ${a.name}: ${a.email.trim()}${limit}`;
+    });
+  if (lines.length === 0) return "";
+  return [
+    "Agent email inboxes. The inbox of the agent you are running as is yours - people and other agents can write to you there:",
+    ...lines,
+  ].join("\n");
 }

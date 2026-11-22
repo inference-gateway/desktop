@@ -35,7 +35,8 @@ import { coalesce } from "@/lib/coalesce";
 import { isBashCommand } from "@/lib/tools";
 import {
   agentDefaultProject,
-  agentInstructionsPreamble,
+  agentIdentity,
+  agentInboxes,
   agentPinsModel,
   agentThreadModel,
   MAIN_AGENT,
@@ -374,7 +375,7 @@ function useDesktopStore() {
     async (projectName?: string, extraInstruction?: string, agentName?: string) => {
       const cfg = await api.getConfig();
       const agent = agentName ? agents.find((a) => a.name === agentName) : undefined;
-      const agentPreamble = agent ? agentInstructionsPreamble(agent, agents) : undefined;
+      const identity = agent ? agentIdentity(agent) : undefined;
       const projectContext = projectName ? projectContexts[projectName] : undefined;
       const projectGroup =
         projectName && projectGroups[projectName]
@@ -384,7 +385,15 @@ function useDesktopStore() {
       return {
         systemPrompt: agent ? undefined : cfg.system_prompt || undefined,
         extraInstructions:
-          [cfg.extra_instructions, agentPreamble, projectGroup, projectType, projectContext, extraInstruction]
+          [
+            cfg.extra_instructions,
+            identity,
+            agentInboxes(agents),
+            projectGroup,
+            projectType,
+            projectContext,
+            extraInstruction,
+          ]
             .filter(Boolean)
             .join("\n\n") || undefined,
       };
