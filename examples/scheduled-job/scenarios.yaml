@@ -1,0 +1,27 @@
+# Mock turns for examples/scheduled-job: the reply of the one run the
+# scheduled-hello job fires, answered token-free. The daemon runs the job's
+# prompt in a fresh session, so the scenario matches the prompt itself. A prompt
+# matching no scenario gets the fallback.
+#
+# Try it from the checkout root:
+#   DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=examples/scheduled-job/scenarios.yaml task dev
+
+models:
+  - id: openai/gpt-4o
+    object: model
+    owned_by: openai
+    served_by: openai
+    modalities:
+      input:
+        - text
+      output:
+        - text
+
+fallback:
+  content: "No scripted turn for that prompt - this example only answers its scheduled job. Run the app without DESKTOP_MOCK for a real session."
+
+scenarios:
+  - name: scheduled-hello
+    match: '(?i)scheduled hello'
+    turns:
+      - content: "Hello from the scheduler - the daemon fired this run on its own, no chat needed."

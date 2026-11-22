@@ -1,0 +1,5 @@
+id: scheduled-hello
+name: Scheduled hello
+cron_expression: "@every 1m"
+prompt: "Scheduled hello: greet me in one sentence and say which day it is."
+run_once: true
