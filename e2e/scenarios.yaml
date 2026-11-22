@@ -526,6 +526,15 @@ scenarios:
 
   # A draft lands in the chat's artifacts for the user to review before the
   # final export (used by artifacts-draft-review).
+  # A file the session produces into the mock daemon's artifacts folder, the
+  # only artifacts a mock session lists (used by artifacts).
+  - name: notes-artifact
+    match: '(?i)export the release notes as an artifact'
+    turns:
+      - tool_calls:
+          - { name: Bash, args: { command: "mkdir -p ~/.infer/mock-artifacts && printf '# Release notes\\n' > ~/.infer/mock-artifacts/release-notes.md" } }
+      - content: "The release notes are in Artifacts."
+
   - name: draft-review
     match: '(?i)export a draft for review'
     turns:

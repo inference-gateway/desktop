@@ -2,7 +2,6 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 const WORKSPACE: &str = "mock-computer";
-const ARTIFACT: &str = "demo.gif";
 const FILES: &[&str] = &[
     "README.md",
     "backend/src/main.rs",
@@ -22,7 +21,8 @@ fn own_artifacts_dir() -> PathBuf {
     crate::env::infer_dir().join("mock-artifacts")
 }
 
-/// The sessions' own artifacts, newest first, then the demo GIF every session has.
+/// The files the sessions' scenarios produced, newest first. A session with
+/// none lists none, so the Artifacts badge only lights up for a real file.
 fn listed_artifacts(dir: &Path) -> Vec<Value> {
     let mut own: Vec<_> = std::fs::read_dir(dir)
         .into_iter()
@@ -40,7 +40,6 @@ fn listed_artifacts(dir: &Path) -> Vec<Value> {
     own.sort_by_key(|a| std::cmp::Reverse(a.0));
     own.into_iter()
         .map(|(_, name, size)| json!({ "name": name, "size": size, "modified_at": "" }))
-        .chain([json!({ "name": ARTIFACT, "size": 43, "modified_at": "" })])
         .collect()
 }
 
@@ -101,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_session_s_own_artifacts_come_first_and_read_back() {
+    fn a_session_lists_only_the_artifacts_it_produced_and_reads_them_back() {
         let dir = std::env::temp_dir().join(format!("igd-mock-artifacts-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("draft-v1.wav"), b"RIFF").unwrap();
@@ -110,9 +109,9 @@ mod tests {
             .iter()
             .map(|a| a["name"].clone())
             .collect();
-        assert_eq!(names, [json!("draft-v1.wav"), json!(ARTIFACT)]);
+        assert_eq!(names, [json!("draft-v1.wav")]);
         assert_eq!(read_artifact(&dir, "draft-v1.wav"), "UklGRg==");
-        assert_eq!(read_artifact(&dir, ARTIFACT), placeholder_image());
+        assert_eq!(read_artifact(&dir, "missing.gif"), placeholder_image());
 
         std::fs::remove_dir_all(dir).unwrap();
     }
