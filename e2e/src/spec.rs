@@ -37,12 +37,22 @@ pub struct Test {
     pub steps: Vec<Step>,
 }
 
-/// The system a test needs when it checks something only that system has,
-/// such as the macOS menu bar or a real microphone.
+/// The system a test needs when it checks something only that system has or
+/// allows, such as the macOS menu bar or a screen capture without a grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Macos,
+    Linux,
+}
+
+impl Platform {
+    pub fn label(self) -> &'static str {
+        match self {
+            Platform::Macos => "macOS",
+            Platform::Linux => "Linux",
+        }
+    }
 }
 
 impl Test {
@@ -51,6 +61,7 @@ impl Test {
         match self.platform {
             None => true,
             Some(Platform::Macos) => cfg!(target_os = "macos"),
+            Some(Platform::Linux) => cfg!(target_os = "linux"),
         }
     }
 }
@@ -228,11 +239,13 @@ mod tests {
     }
 
     #[test]
-    fn a_macos_test_runs_only_on_macos_and_any_other_everywhere() {
+    fn a_platform_test_runs_only_on_its_system_and_any_other_everywhere() {
         let macos = parse("name: a\nplatform: macos\nsteps:\n  - new_chat\n");
+        let linux = parse("name: d\nplatform: linux\nsteps:\n  - new_chat\n");
         let anywhere = parse("name: b\nsteps:\n  - new_chat\n");
 
         assert_eq!(macos.runs_on_this_system(), cfg!(target_os = "macos"));
+        assert_eq!(linux.runs_on_this_system(), cfg!(target_os = "linux"));
         assert!(anywhere.runs_on_this_system());
         assert!(
             serde_norway::from_str::<super::Test>(

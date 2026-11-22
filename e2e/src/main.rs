@@ -113,8 +113,8 @@ fn run() -> Result<bool> {
             test.name,
             file.display()
         );
-        if !test.runs_on_this_system() {
-            println!("SKIP {} (macOS only)", test.name);
+        if let Some(platform) = test.platform.filter(|_| !test.runs_on_this_system()) {
+            println!("SKIP {} ({} only)", test.name, platform.label());
             skipped += 1;
             continue;
         }

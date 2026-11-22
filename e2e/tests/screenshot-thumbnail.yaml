@@ -1,4 +1,9 @@
+# The Computer tool captures the real screen. macOS only lets an app it granted
+# Screen Recording do that, and the app under test never has the grant - the
+# CLI's capture fails there. The picture thumbnail itself runs on both systems
+# in resend-prompt, through the ImageGeneration tool.
 name: screenshot - shows as a thumbnail and opens full size on click
+platform: linux
 narration:
   - "Open a fresh chat."
   - "Ask for a screenshot. The model issues a Computer screenshot."

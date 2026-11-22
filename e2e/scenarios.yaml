@@ -327,6 +327,16 @@ scenarios:
           - { name: A2A_QueryAgent, args: { agent_url: "http://localhost:8085" } }
       - content: "The documentation-agent is available via A2A."
 
+  # A picture the CLI's ImageGeneration tool makes through the mock gateway's
+  # images endpoint: an image in the transcript with no screen capture, which
+  # macOS only allows an app it granted Screen Recording (used by resend-prompt).
+  - name: image-tool
+    match: '(?i)draw a picture with the image tool'
+    turns:
+      - tool_calls:
+          - { name: ImageGeneration, args: { prompt: "a cat" } }
+      - content: "The picture is ready."
+
   - name: image-generation
     match: '(?i)generate an image'
     turns:
