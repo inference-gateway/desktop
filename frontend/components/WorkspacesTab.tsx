@@ -596,14 +596,18 @@ export function WorkspacesTab() {
     }
   };
 
-  const startNew = () =>
+  /** Starts a workspace with every capability on. A click right after the tab
+   * opens can beat the capabilities' first load, so it asks for them itself. */
+  const startNew = async () => {
+    const offered = capabilities.length > 0 ? capabilities : await api.workspaceCapabilities().catch(() => []);
     setEditing({
       previous: null,
-      draft: capabilities.reduce(
+      draft: offered.reduce(
         (draft, capability) => withCapability(draft, capability, true),
         draftOf({ ...EMPTY_WORKSPACE, compute: clusters[0]?.name ?? "", image }),
       ),
     });
+  };
 
   return (
     <>
@@ -649,7 +653,7 @@ export function WorkspacesTab() {
           />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={startNew}>
+            <Button variant="outline" size="sm" onClick={() => void startNew()}>
               New workspace
             </Button>
             <Button
