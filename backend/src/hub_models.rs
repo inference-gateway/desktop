@@ -1,8 +1,6 @@
 use crate::cli::infer::run_infer;
-use crate::cli::launch::infer_command;
+use crate::cli::launch::run_infer_streaming;
 use crate::env::home_dir;
-use std::io::{BufRead, BufReader};
-use std::process::Stdio;
 use tauri::ipc::Channel;
 
 /// A model repository as the Hugging Face search lists it.
@@ -94,28 +92,12 @@ pub(crate) async fn download_hub_model(
 }
 
 /// Run `infer models download`, forwarding each stdout line as progress.
-/// shortcut: stderr is read after stdout closes, fine for the CLI's one error line, a reader thread if it ever streams more than a pipe buffer.
 fn download(id: &str, files: &[String], on_line: &Channel<String>) -> Result<(), String> {
-    let mut child = infer_command(&home_dir())
-        .args(["models", "download", id])
-        .args(files)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to run infer: {e}"))?;
-    if let Some(stdout) = child.stdout.take() {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            let _ = on_line.send(line);
-        }
-    }
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(format!(
-            "infer models download {id} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(())
+    let args = ["models", "download", id]
+        .into_iter()
+        .chain(files.iter().map(String::as_str));
+    run_infer_streaming(&home_dir(), args, on_line)
+        .map_err(|e| format!("infer models download {id} failed: {e}"))
 }
 
 #[cfg(test)]

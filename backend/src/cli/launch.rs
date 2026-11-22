@@ -1,5 +1,9 @@
 use crate::env::{gateway_download_supported, home_dir, infer_bin_path, mock_mode};
+use std::ffi::OsStr;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::process::{Command, Stdio};
+use tauri::ipc::Channel;
 
 /// The Go OTLP/HTTP exporters in the CLI and gateway only speak
 /// http/protobuf (the Go SDK never implemented http/json), so the collector
@@ -83,9 +87,86 @@ pub(crate) fn infer_command(dir: &std::path::Path) -> std::process::Command {
     command
 }
 
+/// Runs `infer <args>` from `dir`, forwarding each stdout line to `on_line` as
+/// progress. A failed run returns its trimmed stderr, which the caller prefixes
+/// with the subcommand and subject it ran.
+pub(crate) fn run_infer_streaming(
+    dir: &Path,
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+    on_line: &Channel<String>,
+) -> Result<(), String> {
+    let mut command = infer_command(dir);
+    command.args(args);
+    run_streaming(command, on_line)
+}
+
+/// shortcut: stderr is read after stdout closes, fine for the CLI's one error line, a reader thread if it ever streams more than a pipe buffer.
+fn run_streaming(mut command: Command, on_line: &Channel<String>) -> Result<(), String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run infer: {e}"))?;
+    if let Some(stdout) = child.stdout.take() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let _ = on_line.send(line);
+        }
+    }
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    mod streaming {
+        use super::super::*;
+        use std::sync::{Arc, Mutex};
+        use tauri::ipc::InvokeResponseBody;
+
+        fn sh(script: &str) -> Command {
+            let mut command = Command::new("sh");
+            command.args(["-c", script]);
+            command
+        }
+
+        fn collecting_channel() -> (Channel<String>, Arc<Mutex<Vec<String>>>) {
+            let lines = Arc::new(Mutex::new(Vec::new()));
+            let sink = Arc::clone(&lines);
+            let channel = Channel::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body {
+                    let line: String =
+                        serde_json::from_str(&json).expect("a sent line is a JSON string");
+                    sink.lock()
+                        .expect("the test holds no lock while sending")
+                        .push(line);
+                }
+                Ok(())
+            });
+            (channel, lines)
+        }
+
+        #[test]
+        fn a_streamed_run_forwards_each_stdout_line() {
+            let (channel, lines) = collecting_channel();
+            run_streaming(sh("echo one; echo two"), &channel).unwrap();
+            assert_eq!(*lines.lock().unwrap(), ["one", "two"]);
+        }
+
+        #[test]
+        fn a_failed_streamed_run_returns_its_trimmed_stderr() {
+            let (channel, lines) = collecting_channel();
+            let script = "echo progress; echo '  no such model  ' >&2; exit 3";
+            let err = run_streaming(sh(script), &channel).unwrap_err();
+            assert_eq!(err, "no such model");
+            assert_eq!(*lines.lock().unwrap(), ["progress"]);
+        }
+    }
 
     #[cfg(unix)]
     #[test]
