@@ -21,7 +21,6 @@ import { useNavigation } from "@/stores/navigation";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
-import { ModelSelect } from "./ModelSelect";
 import { WINDOW_EVENTS } from "@/lib/events";
 
 const RECORDING_TITLE = "Record your screen and key presses so the agent can turn the workflow into a skill";
@@ -125,7 +124,6 @@ export function TopBar() {
         </button>
       )}
       <div id="model-controls" className="ml-auto flex items-center gap-2">
-        <ModelSelect />
         <Button
           variant="ghost"
           size="icon-sm"

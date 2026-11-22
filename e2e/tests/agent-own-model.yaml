@@ -3,7 +3,7 @@ model_agent: e2e-sonnet
 narration:
   - "Switch the sidebar to the Agents filter."
   - "Select the seeded agent, whose front matter fixes anthropic/claude-sonnet-4-5."
-  - "The top-bar picker shows the agent's model, read-only - it is changed with Edit agent."
+  - "The model picker above the composer shows the agent's model, read-only - it is changed with Edit agent."
   - "Ask which model answers."
   - "Only a request on the agent's model gets this reply - the app's default model would get the fallback."
 steps:

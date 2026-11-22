@@ -11,6 +11,8 @@ const INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(500);
 const RETRY_PAUSE: Duration = Duration::from_millis(300);
 
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
+/// The accessible name of the model picker in the bar above the composer.
+const MODEL_PICKER: &str = "Model";
 const OVERLAY_WINDOW_TITLE: &str = "Computer Use Overlay";
 
 /// Recursive AXButton finder. `entire contents` is flaky (-1700) so every
@@ -420,7 +422,8 @@ impl AppDriver {
 
     pub fn model_value(&self) -> Result<String> {
         let script = format!(
-            "tell application \"System Events\"\n{root}\nreturn value of pop up button 1 of group 1 of root as text\nend tell",
+            "{find}\ntell application \"System Events\"\n{root}\nreturn value of my findButton(root, \"{MODEL_PICKER}\", 0) as text\nend tell",
+            find = FIND_BUTTON_FN,
             root = ax_root(),
         );
         osascript(&script)

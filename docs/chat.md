@@ -1,6 +1,6 @@
 # Chat
 
-A chat runs the `infer` agent in the directory of the project you picked from the sidebar (see [How it works](how-it-works.md)). **Choose project** in the bar above the composer moves an open chat to another project, or out of every project, with its history - as dragging the chat onto a project in the sidebar does. A running chat cannot move, and a chat on another computer keeps its project. This page documents the controls the chat itself puts in front of you: the four agent modes, plans and their approvals, the composer and its prefixes, and running several chats at once.
+A chat runs the `infer` agent in the directory of the project you picked from the sidebar (see [How it works](how-it-works.md)). The bar above the composer holds the chat's model picker, read-only for an agent that fixes its own model. Its **Choose project** moves an open chat to another project, or out of every project, with its history - as dragging the chat onto a project in the sidebar does. A running chat cannot move, and a chat on another computer keeps its project. This page documents the controls the chat itself puts in front of you: the four agent modes, plans and their approvals, the composer and its prefixes, and running several chats at once.
 
 Every prompt on this page is answered by a scenario in `e2e/scenarios.yaml`, so you can try each one without provider tokens in mock mode: `DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=e2e/scenarios.yaml task dev`.
 
