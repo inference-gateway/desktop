@@ -1,0 +1,19 @@
+version: "3"
+
+vars:
+  RUNTIME: docker
+  CONTAINER: a2a-mock-agent
+  IMAGE: ghcr.io/inference-gateway/mock-agent:0.5.3
+  URL: http://localhost:8085
+
+tasks:
+  up:
+    desc: Serve the mock A2A agent on http://localhost:8085 - you add it under Settings > Agents > Remote agents
+    cmds:
+      - "{{.RUNTIME}} run -d --rm --name {{.CONTAINER}} -p 8085:8080 -e A2A_AGENT_URL={{.URL}} {{.IMAGE}}"
+      - 'for attempt in $(seq 30); do curl -fsS {{.URL}}/health > /dev/null 2>&1 && exit 0; sleep 1; done; echo "the agent did not answer on {{.URL}}" >&2; exit 1'
+
+  down:
+    desc: Stop the mock A2A agent - the Remote agents row you added in the app stays until you remove it
+    cmds:
+      - "{{.RUNTIME}} stop {{.CONTAINER}}"

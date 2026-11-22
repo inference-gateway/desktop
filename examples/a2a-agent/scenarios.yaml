@@ -1,0 +1,35 @@
+# Mock turns for examples/a2a-agent: the chat's side of handing a task to the
+# mock A2A agent, answered token-free. The task itself really goes to the agent
+# on http://localhost:8085 and its reply is real - only the chat's own words are
+# scripted. The CLI reports the finished task as a notice the mock skips when it
+# matches, so the reply to it is the scenario's third turn. A prompt matching no
+# scenario gets the fallback.
+#
+# Try it from the checkout root:
+#   DESKTOP_MOCK=true INFER_GATEWAY_MOCK_SCENARIOS=examples/a2a-agent/scenarios.yaml task dev
+
+models:
+  - id: openai/gpt-4o
+    object: model
+    owned_by: openai
+    served_by: openai
+    modalities:
+      input:
+        - text
+      output:
+        - text
+
+fallback:
+  content: "No scripted turn for that prompt - this example only answers its walkthrough step. Run the app without DESKTOP_MOCK for a real session."
+
+scenarios:
+  - name: submit-to-mock-agent
+    match: '(?i)ask the mock agent'
+    turns:
+      - tool_calls:
+          - name: A2A_SubmitTask
+            args:
+              agent_url: "http://localhost:8085"
+              task_description: "Check you are reachable: echo the message hello from the desktop."
+      - content: "I handed the connectivity check to the mock agent at http://localhost:8085 and will report back when it finishes."
+      - content: "The mock agent at http://localhost:8085 is reachable - it completed the check and answered with its mock reply."

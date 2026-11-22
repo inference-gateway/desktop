@@ -10,6 +10,19 @@ Any chat can change agents without leaving it: **Switch agent** in the bar above
 
 Agents in `~/.infer/agents` can also hand work to each other through the CLI's `Agent` tool, so one agent's instructions can tell it to consult another by name.
 
+## A2A agents
+
+An A2A agent is a service of its own that a chat delegates to over the [Agent-to-Agent protocol](https://a2a-protocol.org). A Markdown agent is who the chat is - its instructions become the chat's system prompt and it works with the chat's own tools and computer. An A2A agent is someone the chat asks: it runs somewhere else with its own model and tools, takes a task, and sends back the result, while the chat keeps its own agent and model.
+
+**Settings > Agents** lists them below your Markdown agents and manages them through the CLI's `infer agents` commands:
+
+- **Local A2A Agents (containers)** lists the ready-made agents of the [inference-gateway/agents](https://github.com/inference-gateway/agents) catalog, each with its version, what it does and its skills. Ticking one adds it (`infer agents add <name>`) and the app runs it as a Docker container on this computer, so it needs Docker. An added agent shows a dropdown with the model it thinks with, and picking another one updates it (`infer agents update <name> --model <model>`). Unticking removes it.
+- **Remote agents** adds an agent that already runs - hosted elsewhere or started by you - by its URL, such as `http://localhost:8085`: type it and press **Add**. The app does not start it, so it must answer at that URL. **Remove** on its row takes it out again.
+
+Every chat is told the URL of each added agent and can hand it a task with the `A2A_SubmitTask` tool - name the agent or its URL in your prompt. Submitting a task asks for approval first in Standard mode, while `A2A_QueryAgent`, which only reads an agent's card, does not. A task the agent is still working on shows in the status bar with an `A2A` badge, and the bar's `A2A` count says how many of the added agents answer. The containers of the local agents start when the app does and stop when it quits.
+
+See [examples/a2a-agent](../examples/a2a-agent) to add one agent and send it a task.
+
 ## A computer of their own
 
 An agent can also get a computer of its own: add the compute under **Settings > Compute** - a Kubernetes cluster added with **New cluster** or found with **Detect clusters**, or the one on your machine with **Provision local cluster** - saved to `~/.infer/compute.yaml`. Then add a workspace under **Settings > Workspaces**, on one of those clusters or with its own connection, saved as a workspace of the `infer` daemon in `~/.infer/daemon.yaml`. Pick the workspace as the **Computer** in the agent's editor (`workspace` in the frontmatter) and every new chat with it is teleported there before its first run, so its computer use drives that machine, not yours.
