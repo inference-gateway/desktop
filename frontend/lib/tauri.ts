@@ -161,7 +161,12 @@ export type DownloadedModel = { id: string; path: string; files: number; bytes: 
 export type Artifact = { name: string; size: number; modified_at: string };
 /** An open GitHub issue of the project, as the `#` menu offers it. */
 export type Issue = { number: number; title: string; state: string };
-export type Conversation = { id: string; title?: string | null; project?: string | null };
+export type Conversation = {
+  id: string;
+  title?: string | null;
+  project?: string | null;
+  parent_session_id?: string | null;
+};
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 /** A Markdown agent (`<name>.md` in one of the agent dirs): frontmatter profile plus its instructions. */
 export type MarkdownAgent = {

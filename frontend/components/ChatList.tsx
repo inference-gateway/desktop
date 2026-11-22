@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
-import { subagentParentId, subagentsByParent } from "@/lib/transcript";
+import { conversationParentId, subagentsByParent } from "@/lib/transcript";
 import { groupTarget, projectTarget, sidebarDrop, UNGROUPED_TARGET, type SidebarDrag } from "@/lib/sidebar-drop";
 import { usePointerDrag } from "@/hooks/usePointerDrag";
 import { useDesktop } from "@/store";
@@ -55,7 +55,7 @@ function ChatItem({ index }: { index: number }) {
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
   const recording = recordingOwner === conv.id;
-  const parentId = subagentParentId(conv.id);
+  const parentId = conversationParentId(conv);
   const parentTitle = parentId ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5) : null;
 
   return (
