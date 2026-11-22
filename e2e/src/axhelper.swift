@@ -19,6 +19,7 @@ let buttonRoles: Set<String> = [
 let textRoles: Set<String> = ["AXStaticText", "AXButton", "AXCheckBox", "AXRadioButton"]
 let lookupDepth = 10
 let namedDepth = 12
+let dumpDepth = 24
 let valueSettle: useconds_t = 300_000
 let focusSettle: useconds_t = 500_000
 let dragPause: useconds_t = 30_000
@@ -154,6 +155,21 @@ func findNamed(_ element: AXUIElement, _ needle: String, _ depth: Int) -> AXUIEl
         }
     }
     return nil
+}
+
+/// One line per element down to `dumpDepth`, indented by depth, with what the
+/// finders read: role, name, description and screen frame.
+func dump(_ element: AXUIElement, _ depth: Int, _ lines: inout [String]) {
+    if depth > dumpDepth {
+        return
+    }
+    let box = frame(element).map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "-"
+    let indent = String(repeating: "  ", count: depth)
+    let description = string(element, kAXDescriptionAttribute)
+    lines.append("\(indent)\(depth) \(role(element)) name=\(name(element)) desc=\(description) at \(box)")
+    for child in children(element) {
+        dump(child, depth + 1, &lines)
+    }
 }
 
 func button(_ wanted: String) throws -> AXUIElement {
@@ -304,6 +320,10 @@ func serve(_ request: [String: Any]) throws -> Any {
         return try mainWindowId()
     case "overlay_bounds":
         return overlayBounds()
+    case "dump":
+        var lines: [String] = []
+        dump(try pageRoot(), 0, &lines)
+        return lines.joined(separator: "\n")
     case let op:
         throw Failure(message: "unknown op \(op)")
     }
