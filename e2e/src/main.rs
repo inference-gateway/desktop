@@ -13,7 +13,7 @@ use home::Seeds;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long the overlay bounds assertion waits for the overlay to appear.
 const OVERLAY_BOUNDS_TIMEOUT: Duration = Duration::from_secs(5);
@@ -99,11 +99,19 @@ fn run() -> Result<bool> {
 
     let infer_bin = resolve_infer(&artifacts);
 
+    let total = files.len();
+    let suite_started = Instant::now();
     let mut failed = Vec::new();
-    for file in &files {
+    for (index, file) in files.iter().enumerate() {
         let test = spec::load(file)?;
-        println!("\n=== {} ({})", test.name, file.display());
-        match run_test(
+        println!(
+            "\n=== [{}/{total}] {} ({})",
+            index + 1,
+            test.name,
+            file.display()
+        );
+        let started = Instant::now();
+        let outcome = run_test(
             &test,
             &repo_root,
             &artifacts,
@@ -111,24 +119,37 @@ fn run() -> Result<bool> {
             &scenarios,
             infer_bin.as_deref(),
             record_all || test.record,
-        ) {
-            Ok(()) => println!("PASS {}", test.name),
+        );
+        let took = elapsed(started.elapsed());
+        match outcome {
+            Ok(()) => println!("PASS {} ({took})", test.name),
             Err(e) => {
-                println!("FAIL {}: {e:#}", test.name);
+                println!("FAIL {} ({took}): {e:#}", test.name);
                 failed.push(test.name.clone());
             }
         }
     }
 
     println!(
-        "\n{} passed, {} failed",
-        files.len() - failed.len(),
+        "\n{total} tests in {}: {} passed, {} failed",
+        elapsed(suite_started.elapsed()),
+        total - failed.len(),
         failed.len()
     );
     for name in &failed {
         println!("  failed: {name}");
     }
     Ok(failed.is_empty())
+}
+
+/// A run's length as seconds under a minute, else minutes and seconds.
+fn elapsed(took: Duration) -> String {
+    let secs = took.as_secs();
+    if secs < 60 {
+        format!("{:.1}s", took.as_secs_f64())
+    } else {
+        format!("{}m{:02}s", secs / 60, secs % 60)
+    }
 }
 
 /// Resolve the infer binary for the whole suite: an explicit INFER_BIN wins,
@@ -444,5 +465,17 @@ fn describe(step: &Step) -> String {
                 .unwrap_or_else(|| "?".into());
             format!("wait_for {target} (≤{}s)", wait_for.timeout)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_reads_in_seconds_under_a_minute_and_in_minutes_after() {
+        assert_eq!(elapsed(Duration::from_millis(5_240)), "5.2s");
+        assert_eq!(elapsed(Duration::from_secs(2_892)), "48m12s");
+        assert_eq!(elapsed(Duration::from_secs(60)), "1m00s");
     }
 }
