@@ -7,12 +7,14 @@ mod driver;
 mod driver;
 mod home;
 mod podman;
+mod report;
 mod shard;
 mod spec;
 
 use anyhow::{Context, Result, bail};
 use driver::AppDriver;
 use home::Seeds;
+use report::{Outcome, TestResult};
 use shard::Shard;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
@@ -116,8 +118,7 @@ fn run() -> Result<bool> {
 
     let total = files.len();
     let suite_started = Instant::now();
-    let mut failed = Vec::new();
-    let mut skipped = 0;
+    let mut results: Vec<TestResult> = Vec::with_capacity(total);
     for (index, file) in files.iter().enumerate() {
         let test = spec::load(file)?;
         println!(
@@ -128,7 +129,11 @@ fn run() -> Result<bool> {
         );
         if let Some(platform) = test.platform.filter(|_| !test.runs_on_this_system()) {
             println!("SKIP {} ({} only)", test.name, platform.label());
-            skipped += 1;
+            results.push(TestResult {
+                name: test.name,
+                file: file.clone(),
+                outcome: Outcome::Skipped(platform),
+            });
             continue;
         }
         let started = Instant::now();
@@ -142,30 +147,46 @@ fn run() -> Result<bool> {
             record_all || test.record,
         );
         let took = elapsed(started.elapsed());
-        match outcome {
-            Ok(()) => println!("PASS {} ({took})", test.name),
-            Err(e) => {
-                println!("FAIL {} ({took}): {e:#}", test.name);
-                failed.push(test.name.clone());
+        let outcome = match outcome {
+            Ok(()) => {
+                println!("PASS {} ({took})", test.name);
+                Outcome::Passed
             }
-        }
+            Err(e) => {
+                let reason = format!("{e:#}");
+                println!("FAIL {} ({took}): {reason}", test.name);
+                if report::on_github() {
+                    let file = report::repo_relative(file, &repo_root);
+                    println!("{}", report::annotation(&file, &test.name, &reason));
+                }
+                Outcome::Failed(reason)
+            }
+        };
+        results.push(TestResult {
+            name: test.name,
+            file: file.clone(),
+            outcome,
+        });
     }
 
-    let skipped_note = if skipped > 0 {
-        format!(", {skipped} skipped")
+    let took = elapsed(suite_started.elapsed());
+    let tally = report::tally(&results);
+    let skipped_note = if tally.skipped > 0 {
+        format!(", {} skipped", tally.skipped)
     } else {
         String::new()
     };
     println!(
-        "\n{total} tests in {}: {} passed, {} failed{skipped_note}",
-        elapsed(suite_started.elapsed()),
-        total - failed.len() - skipped,
-        failed.len()
+        "\n{total} tests in {took}: {} passed, {} failed{skipped_note}",
+        tally.passed, tally.failed
     );
-    for name in &failed {
-        println!("  failed: {name}");
+    for result in &results {
+        if matches!(result.outcome, Outcome::Failed(_)) {
+            println!("  failed: {}", result.name);
+        }
     }
-    Ok(failed.is_empty())
+    report::publish(&report::summary(&results, &repo_root, shard, &took));
+    Ok(tally.failed == 0)
 }
 
 /// A run's length as seconds under a minute, else minutes and seconds.
