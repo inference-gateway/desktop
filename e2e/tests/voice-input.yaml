@@ -4,6 +4,7 @@
 # runner already needs. Only the speech-to-text engine is faked - mock mode
 # hears the same sentence whatever the microphone picks up.
 name: voice input - dictated speech lands in the composer
+platform: macos
 narration:
   - "Open a fresh chat."
   - "Start dictating - mock mode needs no voice tools."

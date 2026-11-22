@@ -1,0 +1,48 @@
+name: agent computer - an agent's computer shows in its transcript, a person takes it over and hands it back, and deletes it from Computers
+workspace_agent: e2e-pilot
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Pick the agent that has a computer of its own."
+  - "Send it a task, which teleports the new chat to its workspace first."
+  - "The computer's screen shows inside the transcript."
+  - "A few seconds later it minimizes to a tab on the right edge."
+  - "The agent answers from its computer."
+  - "Click the tab."
+  - "The screen is back."
+  - "Click the screen."
+  - "It is a tab again."
+  - "Click the tab to show the computer's tile once more."
+  - "Take the computer over from the tile."
+  - "The Computers view shows the screen under the person's control."
+  - "Hand the screen back to the agent."
+  - "The computer is a tile again, ready to be taken over."
+  - "Open the tile."
+  - "It lands back in the agent's chat."
+  - "Open the Computers view."
+  - "The agent's computer has a tile with a trash button."
+  - "Arm the trash button."
+  - "Click it again to delete the computer."
+  - "No chat runs on a workspace any more."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-pilot" }
+  - send: "open the docs on your computer"
+  - wait_for: { button: "Minimize computer e2e-pilot", timeout: 30 }
+  - wait_for: { button: "Show computer e2e-pilot", timeout: 15 }
+  - wait_for: { text: "The docs are open.", timeout: 30 }
+  - click: { button: "Show computer e2e-pilot" }
+  - wait_for: { button: "Minimize computer e2e-pilot", timeout: 10 }
+  - click: { button: "Minimize computer e2e-pilot" }
+  - wait_for: { button: "Show computer e2e-pilot", timeout: 10 }
+  - click: { button: "Show computer e2e-pilot" }
+  - click: { button: "Take over" }
+  - wait_for: { text: "You are driving the computer of e2e-pilot", timeout: 10 }
+  - click: { button: "Hand back" }
+  - wait_for: { button: "Take over", timeout: 10 }
+  - click: { button: "Open computer e2e-pilot" }
+  - wait_for: { text: "The docs are open.", timeout: 10 }
+  - click: { button: "Computers" }
+  - wait_for: { button: "Delete computer e2e-pilot", timeout: 10 }
+  - click: { button: "Delete computer e2e-pilot" }
+  - click: { button: "Delete computer e2e-pilot" }
+  - wait_for: { text: "No chat runs on a workspace yet.", timeout: 10 }

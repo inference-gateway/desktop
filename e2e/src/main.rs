@@ -104,6 +104,7 @@ fn run() -> Result<bool> {
     let total = files.len();
     let suite_started = Instant::now();
     let mut failed = Vec::new();
+    let mut skipped = 0;
     for (index, file) in files.iter().enumerate() {
         let test = spec::load(file)?;
         println!(
@@ -112,6 +113,11 @@ fn run() -> Result<bool> {
             test.name,
             file.display()
         );
+        if !test.runs_on_this_system() {
+            println!("SKIP {} (macOS only)", test.name);
+            skipped += 1;
+            continue;
+        }
         let started = Instant::now();
         let outcome = run_test(
             &test,
@@ -132,10 +138,15 @@ fn run() -> Result<bool> {
         }
     }
 
+    let skipped_note = if skipped > 0 {
+        format!(", {skipped} skipped")
+    } else {
+        String::new()
+    };
     println!(
-        "\n{total} tests in {}: {} passed, {} failed",
+        "\n{total} tests in {}: {} passed, {} failed{skipped_note}",
         elapsed(suite_started.elapsed()),
-        total - failed.len(),
+        total - failed.len() - skipped,
         failed.len()
     );
     for name in &failed {
