@@ -12,6 +12,12 @@ on:
     paths-ignore:
       - '*.md'
       - '**/*.md'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
@@ -30,9 +36,9 @@ env:
 
 jobs:
   e2e:
-    if: github.event_name == 'workflow_dispatch' || (contains(github.event.pull_request.labels.*.name, 'ci:macos') && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
+    if: github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'ci:macos') && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
     runs-on: macos-15
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 120 }}
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 45 }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -117,9 +123,9 @@ jobs:
       - name: Build frontend
         run: bun install --frozen-lockfile && bun run build
 
-      - name: Run the smoke specs
+      - name: Run the full suite
         working-directory: e2e
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" cargo run -- ${{ env.SMOKE_SPECS }}
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" cargo run
 
       - name: Upload what the failing specs saw
         if: failure()

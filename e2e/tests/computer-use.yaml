@@ -1,4 +1,5 @@
 name: Computer tool calls render and input actions are approval-gated
+platform: macos
 narration:
   - "Open a fresh chat."
   - "Ask to click a button on screen. The model issues a Computer tool call."
