@@ -1,7 +1,8 @@
 use anyhow::{Context, Result, bail};
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const DAEMON_EXIT_POLL: Duration = Duration::from_millis(100);
@@ -26,6 +27,7 @@ pub struct Seeds<'a> {
 pub fn prepare(home: &Path, repo_root: &Path, seeds: Seeds, infer: Option<&Path>) -> Result<()> {
     let _ = std::fs::remove_dir_all(home);
     std::fs::create_dir_all(home)?;
+    seed_daemon_binding(home)?;
     if let Some(name) = seeds.content_project {
         seed_content_project(home, name, repo_root)?;
     }
@@ -52,6 +54,26 @@ pub fn prepare(home: &Path, repo_root: &Path, seeds: Seeds, infer: Option<&Path>
         seed_voice_sample(home, name, seeds.speech_model, infer)?;
     }
     Ok(())
+}
+
+/// Gives the HOME's daemon a free port and a fresh token of its own. The app
+/// reuses any daemon already listening on its port, so on the shared default
+/// a daemon left over from the test before - or the developer's own - would
+/// answer this test's app and refuse its token.
+fn seed_daemon_binding(home: &Path) -> Result<()> {
+    let port = TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port();
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let infer = home.join(".infer");
+    std::fs::create_dir_all(&infer)?;
+    std::fs::write(
+        infer.join("daemon.yaml"),
+        daemon_binding_yaml(port, &format!("e2e{nanos:x}")),
+    )?;
+    Ok(())
+}
+
+fn daemon_binding_yaml(port: u16, token: &str) -> String {
+    format!("binding:\n  enabled: true\n  port: {port}\n  token: {token}\n")
 }
 
 /// Offline fallback: the infer binary from the dev environment's PATH (the
@@ -203,6 +225,7 @@ fn seed_hub_model(home: &Path, id: &str) -> Result<()> {
 
 /// Stops the `infer daemon` the app started under `home`, by the pid file the
 /// daemon keeps, so the next run talks to a daemon started with its own HOME.
+/// One still running after `DAEMON_EXIT_TIMEOUT` is killed outright.
 pub fn stop_daemon(home: &Path) {
     let pid_file = home.join(".infer").join("run").join("daemon.pid");
     let Some(pid) = std::fs::read_to_string(&pid_file)
@@ -216,16 +239,37 @@ pub fn stop_daemon(home: &Path) {
         .stderr(Stdio::null())
         .status();
     let deadline = Instant::now() + DAEMON_EXIT_TIMEOUT;
-    while Instant::now() < deadline {
-        let alive = Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success());
-        if !alive {
-            break;
-        }
+    while process_alive(pid) && Instant::now() < deadline {
         std::thread::sleep(DAEMON_EXIT_POLL);
     }
+    if process_alive(pid) {
+        let _ = Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status();
+    }
     let _ = std::fs::remove_file(pid_file);
+}
+
+fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_seeded_binding_reads_as_the_port_and_token_the_app_takes() {
+        let yaml: serde_norway::Value =
+            serde_norway::from_str(&daemon_binding_yaml(53111, "e2eabc")).unwrap();
+
+        assert_eq!(yaml["binding"]["enabled"].as_bool(), Some(true));
+        assert_eq!(yaml["binding"]["port"].as_u64(), Some(53111));
+        assert_eq!(yaml["binding"]["token"].as_str(), Some("e2eabc"));
+    }
 }
