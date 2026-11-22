@@ -22,6 +22,8 @@ import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
 import { useSelection } from "@/stores/selection";
 import { useAgents } from "@/stores/agents";
+import { useBackend } from "@/stores/backend";
+import { agentModelServed } from "@/lib/agents";
 import { useSidebar } from "@/stores/sidebar";
 import { useGit } from "@/stores/git";
 import { useStatusActions } from "@/stores/status";
@@ -250,6 +252,8 @@ function AgentGroup({
   children: React.ReactNode;
 }) {
   const [armed, setArmed] = useState(false);
+  const { models } = useBackend();
+  const served = agentModelServed(agent, models);
   return (
     <div className="group/agent">
       <div
@@ -293,10 +297,18 @@ function AgentGroup({
         </div>
         <span className="text-[0.7rem] text-muted-foreground/60">{`(${count})`}</span>
         <span
-          title={agent.model || "Runs on the model selected in the top bar"}
-          className="min-w-0 truncate text-[0.7rem] font-normal text-muted-foreground/60"
+          title={
+            served
+              ? agent.model || "Runs on the model selected in the top bar"
+              : `${agent.model} is not served by this computer's gateway, so a chat or subagent here cannot run it - edit the agent to pick another model or inherit the selected one`
+          }
+          className={cn(
+            "min-w-0 truncate text-[0.7rem] font-normal",
+            served ? "text-muted-foreground/60" : "text-warn",
+          )}
         >
           {agent.model.split("/").pop() || "selected model"}
+          {!served && " - not served"}
         </span>
         <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/agent:opacity-100 focus-within:opacity-100">
           <button
