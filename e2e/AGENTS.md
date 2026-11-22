@@ -5,7 +5,7 @@
 Running the tests (macOS only):
 
 ```bash
-task e2e -- tests/approval-approve.yaml   # one feature
+task e2e -- tests/approval-deny.yaml      # one feature
 task e2e                                  # all features, alphabetical
 cargo test -p desktop-e2e                 # parse/validate the YAML only (what the CI workflow does)
 ```
@@ -25,7 +25,7 @@ Test-file extras: `record: true` wraps the run in `screencapture -v` and writes 
 `task e2e -- --podman` runs the same tests in a Podman container, against the Linux build under Xvfb, so a run never touches this machine's screen, mouse or app. It needs Podman with a running machine (`podman machine start`).
 
 ```bash
-task e2e -- --podman tests/approval-approve.yaml   # one feature, in the container
+task e2e -- --podman tests/approval-deny.yaml      # one feature, in the container
 ```
 
 The runner builds the image from `e2e/Containerfile`, mounts the repo at `/src` and runs itself in the container. The Linux build and cargo's downloads live in the `desktop-e2e-target` and `desktop-e2e-cargo-registry` volumes, so the host's `target/` and `node_modules/` stay untouched and only `dist/` comes from the host, which `task e2e` builds first. Inside, `src/webdriver.rs` drives the app over WebDriver through `tauri-driver` instead of the accessibility tree. It finds elements by the names the macOS run reads - the `aria-label`, else the rendered text without its `aria-hidden` parts - so the YAML runs unchanged. A failing test leaves its log and a screenshot of the page in `e2e/artifacts/`, printed under `/src/e2e/artifacts/`. Nothing is recorded there, whatever `record:` or `--record` say. CI's `e2e-linux` job runs the whole suite with the same driver straight on an Ubuntu runner, without the container, on every pull request. The smoke set - the `SMOKE_SPECS` list in `.github/workflows/e2e.yml` - is what the macOS job runs on a pull request labelled `ci:macos`, so a new test joins it only when you add it there.

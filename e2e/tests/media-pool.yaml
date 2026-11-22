@@ -1,0 +1,22 @@
+name: media pool - a seeded png lists with its size, and a two-click delete removes it and reports it in the Activity panel
+content_project: e2e-media
+narration:
+  - "Open a fresh chat."
+  - "Pick the content project - its workspace is the timeline editor, with the chat docked beside it."
+  - "The pool header's Add recording button is a compact icon button, next to the pool's file count. There is no Activity panel yet - it renders nothing until something is logged."
+  - "The pool lists logo.png: the harness seeds the project's media folder with it, the way a drop would."
+  - "The row carries the image's own size - no bogus duration, since an image has no duration to probe."
+  - "The row's delete button shows on hover. The first click arms it."
+  - "The second click removes the file."
+  - "The pool counts zero and offers the drop hint again."
+  - "The removal shows up in the Activity panel, which only exists once an entry is logged - the status bar's agent slot is left for the agent."
+steps:
+  - new_chat
+  - click: { button: "Select project e2e-media" }
+  - wait_for: { button: "Add recording", timeout: 20 }
+  - wait_for: { text: "logo.png", timeout: 10 }
+  - wait_for: { text: "36 KB", timeout: 10 }
+  - click: { button: "Delete media/logo.png" }
+  - click: { button: "Delete media/logo.png" }
+  - wait_for: { text: "No media yet", timeout: 10 }
+  - wait_for: { button: "Toggle activity panel", timeout: 10 }

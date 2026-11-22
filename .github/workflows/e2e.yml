@@ -30,7 +30,7 @@ concurrency:
 env:
   SMOKE_SPECS: >-
     tests/agent-switch.yaml
-    tests/approval-approve.yaml
+    tests/approval-todo-batch.yaml
     tests/reasoning.yaml
     tests/compute-settings.yaml
 

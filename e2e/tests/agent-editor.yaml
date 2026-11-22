@@ -1,13 +1,19 @@
-name: agents - creating an agent from the sidebar opens a chat with it
+name: agents - an agent created from the sidebar with a face and an inbox opens a chat with it
 narration:
   - "Switch the sidebar to the Agents filter."
   - "Start a new agent."
   - "Name it e2e-helper."
   - "Describe what it is for."
-  - "Give it its instructions."
+  - "Give it its instructions - Enter is a newline there."
+  - "Tab out of the instructions into the address field."
+  - "Tab past the address - Create inbox fills it in."
+  - "Type an AgentMail API key."
+  - "Allow it to mail you@example.com - with none it could only mail itself."
+  - "Create the inbox - mock mode answers e2e-helper@agentmail.to without AgentMail."
   - "Pick the animated robot as its face."
   - "Save it, which also downloads the robot beside the agent file."
   - "The agent is selected and the composer addresses it."
+  - "The composer chip shows the agent's address."
   - "Send it a prompt."
   - "The reply lands."
   - "The agent sits in the sidebar with its chat."
@@ -18,9 +24,15 @@ steps:
   - type: "e2e-helper"
   - type: "Answers e2e questions tersely"
   - type: "You are the e2e helper. Keep every answer to one line."
+  - keypress: "tab"
+  - keypress: "tab"
+  - type: "am_us_mock-key-for-e2e"
+  - type: "you@example.com"
+  - click: { button: "Create inbox" }
   - click: { button: "Use animated robot" }
   - click: { button: "Save agent" }
   - wait_for: { button: "Leave agent e2e-helper", timeout: 15 }
+  - wait_for: { text: "e2e-helper@agentmail.to", timeout: 15 }
   - send: "hi"
   - wait_for: { text: "Done.", timeout: 30 }
   - wait_for: { button: "Select agent e2e-helper", timeout: 5 }
