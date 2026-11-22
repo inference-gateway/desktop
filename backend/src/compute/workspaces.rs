@@ -665,12 +665,9 @@ mod tests {
 
         let listed = parse_artifacts(&mock_answer(session_frame("list_artifacts", "s", "/p")));
         assert_eq!(
-            listed.and_then(|artifacts| artifacts.last().cloned()),
-            Some(Artifact {
-                name: "demo.gif".into(),
-                size: 43,
-                modified_at: String::new(),
-            })
+            listed.map(|artifacts| artifacts.iter().any(|a| a.name == "demo.gif")),
+            Some(false),
+            "a mock session lists no artifact it did not produce"
         );
 
         let file = parse_artifact(&mock_answer(session_frame("read_artifact", "s", "/p")));

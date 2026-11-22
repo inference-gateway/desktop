@@ -1,15 +1,23 @@
-name: artifacts - the files a chat produced are listed and saved to Downloads
+name: artifacts - a file the chat produced lights up Artifacts, is listed there and is saved to Downloads
 narration:
-  - "Send a message so a chat is open."
+  - "Open a fresh chat."
+  - "Ask the agent to export the release notes as an artifact. Its Bash call writes the file into the chat's artifacts."
+  - "The call pauses for approval."
+  - "Approve it."
   - "The agent answers."
+  - "Artifacts lights up for the new file - a chat that produced nothing has no badge."
   - "Open the chat's artifacts."
   - "The file the chat produced is listed."
   - "Save it."
   - "It lands in the Downloads folder."
 steps:
-  - send: "hi"
-  - wait_for: { text: "Done.", timeout: 30 }
+  - new_chat
+  - send: "export the release notes as an artifact"
+  - wait_for: { button: "Approve", timeout: 30 }
+  - click: { button: "Approve" }
+  - wait_for: { text: "The release notes are in Artifacts.", timeout: 30 }
+  - wait_for: { text: "new artifact", timeout: 15 }
   - click: { button: "Artifacts" }
-  - wait_for: { button: "Save artifact demo.gif", timeout: 10 }
-  - click: { button: "Save artifact demo.gif" }
-  - wait_for: { file: "e2e/artifacts/home/Downloads/demo.gif", timeout: 10 }
+  - wait_for: { button: "Save artifact release-notes.md", timeout: 10 }
+  - click: { button: "Save artifact release-notes.md" }
+  - wait_for: { file: "e2e/artifacts/home/Downloads/release-notes.md", timeout: 10 }
