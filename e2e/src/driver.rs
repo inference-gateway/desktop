@@ -161,6 +161,10 @@ impl AppDriver {
             mock_home: mock.then_some(home),
         };
         driver.wait_ready()?;
+        driver
+            .ax
+            .ask("fit_window", json!({}))
+            .context("fitting the window into the screen")?;
         Ok(driver)
     }
 
@@ -378,6 +382,15 @@ impl AppDriver {
         ))
         .map(|_| ())
         .map_err(|e| anyhow!("keypress {:?}: {}", key, e))
+    }
+
+    /// Writes the accessibility tree the helper sees into artifacts/<name>.log,
+    /// so a lookup that fails only on another macOS reads element by element.
+    pub fn dump_tree(&self, name: &str) -> Result<PathBuf> {
+        let tree = self.ax.ask("dump", json!({}))?;
+        let path = self.artifacts.join(format!("{name}.log"));
+        std::fs::write(&path, tree.as_str().unwrap_or_default())?;
+        Ok(path)
     }
 
     /// Capture the app's main window (by window id - a screen-rect capture

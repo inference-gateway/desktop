@@ -261,6 +261,11 @@ fn run_test(
             Ok(p) => println!("  screenshot: {}", p.display()),
             Err(e) => println!("  (no failure screenshot: {e})"),
         }
+        #[cfg(not(target_os = "linux"))]
+        match app.dump_tree(&format!("{slug}-ax")) {
+            Ok(p) => println!("  accessibility tree: {}", p.display()),
+            Err(e) => println!("  (no accessibility tree: {e})"),
+        }
     }
     clean(&app, &test.cleanup);
     result
