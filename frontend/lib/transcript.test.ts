@@ -11,6 +11,7 @@ import {
   initialChatState,
   pendingInput,
   subagentParentId,
+  descendantIds,
   subagentsByParent,
   currentTodo,
   todoElapsedMs,
@@ -751,6 +752,27 @@ test("subagentsByParent groups each listed orchestrator's subagent chats under i
     { id: `subagent-${parent}-464d7ff2-5da8-4d97-bedb-a3c86e78daff` },
   ];
   expect(subagentsByParent(conversations)).toEqual({ [parent]: [0, 3] });
+});
+
+test("descendantIds lists a chat's subagent chats and theirs, deepest first", () => {
+  const conversations = [
+    { id: "lead", parent_session_id: "" },
+    { id: "worker", parent_session_id: "lead" },
+    { id: "helper", parent_session_id: "worker" },
+    { id: "reviewer", parent_session_id: "lead" },
+    { id: "other", parent_session_id: null },
+  ];
+  expect(descendantIds(conversations, "lead")).toEqual(["helper", "worker", "reviewer"]);
+  expect(descendantIds(conversations, "worker")).toEqual(["helper"]);
+  expect(descendantIds(conversations, "other")).toEqual([]);
+});
+
+test("descendantIds stops at a parent cycle", () => {
+  const conversations = [
+    { id: "a", parent_session_id: "b" },
+    { id: "b", parent_session_id: "a" },
+  ];
+  expect(descendantIds(conversations, "a")).toEqual(["b"]);
 });
 
 test("conversationParentId reads an empty parent_session_id as no parent", () => {

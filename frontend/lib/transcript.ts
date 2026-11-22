@@ -162,6 +162,22 @@ export function conversationParentId(conv: Pick<Conversation, "parent_session_id
   return conv.parent_session_id || null;
 }
 
+/** The ids of the chats `id` spawned, and the chats those spawned, deepest
+ * first - the order a delete takes them in, so no subagent chat is left
+ * behind without its orchestrator. */
+export function descendantIds(
+  conversations: Pick<Conversation, "id" | "parent_session_id">[],
+  id: string,
+  seen: Set<string> = new Set([id]),
+): string[] {
+  return conversations
+    .filter((c) => conversationParentId(c) === id && !seen.has(c.id))
+    .flatMap((c) => {
+      seen.add(c.id);
+      return [...descendantIds(conversations, c.id, seen), c.id];
+    });
+}
+
 /** Each listed orchestrator's subagent chats, as indices into `conversations`.
  * A subagent whose orchestrator is not listed is left out, so the sidebar
  * still shows it as a chat of its own. */

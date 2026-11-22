@@ -1,4 +1,4 @@
-name: subagent chats - a subagent's chat sits under the chat that spawned it
+name: subagent chats - a subagent's chat sits under the chat that spawned it and is deleted with it
 narration:
   - "Open a fresh chat."
   - "Ask the agent to hand a survey to a subagent. The model calls the Agent tool."
@@ -7,6 +7,9 @@ narration:
   - "The orchestrator dispatches the subagent."
   - "The subagent reports back and the orchestrator answers."
   - "The subagent's chat sits under the chat that spawned it."
+  - "The orchestrator's delete button shows on hover. The first click arms it."
+  - "The second click deletes the orchestrator's chat."
+  - "Its subagent's chat goes with it."
 steps:
   - new_chat
   - send: "delegate the fixture survey"
@@ -15,3 +18,6 @@ steps:
   - wait_for: { text: "Survey dispatched.", timeout: 60 }
   - wait_for: { text: "The survey is in.", timeout: 60 }
   - assert_order: { above: "delegate the fixture survey", below: "Survey the e2e fixtures" }
+  - click: { button: "Delete conversation delegate the fixture survey" }
+  - click: { button: "Delete conversation delegate the fixture survey" }
+  - wait_gone: { button: "Delete conversation Survey the e2e fixtures", timeout: 15 }
