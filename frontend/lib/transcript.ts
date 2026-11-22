@@ -456,12 +456,11 @@ export function chatReducer(state: ChatState, action: ChatAction, now: number = 
       };
     }
     case "setPlan": {
-      if (!state.items.some((it) => it.kind === "plan" && it.planId === action.planId && it.status === "pending")) {
-        return state;
-      }
+      const plan = state.items.find((it) => it.kind === "plan" && it.planId === action.planId);
+      if (plan?.kind !== "plan" || !takesPlanDecision(plan.status)) return state;
       return {
         ...state,
-        typing: true,
+        typing: plan.status === "pending" || state.typing,
         items: state.items.map((it) =>
           it.kind === "plan" && it.planId === action.planId ? { ...it, status: action.action } : it,
         ),
@@ -788,6 +787,14 @@ function applyToolResult(state: ChatState, callId: string, content: string): Cha
     usage = { ...usage, total_tool_calls: usage.total_tool_calls + 1 };
   }
   return { ...state, items, seq, seenImages, usage };
+}
+
+/** Whether a plan still takes the user's decision: while it waits for one, and
+ * once its run already ended - the decision's reply and the run's events travel
+ * separately, so a quick reject can finish the run before the reply lands. A
+ * plan already decided keeps its first decision. */
+function takesPlanDecision(status: PlanAction | "pending" | "expired"): boolean {
+  return status === "pending" || status === "expired";
 }
 
 /** Closes a run's open items: a tool call still running takes `unfinished` -

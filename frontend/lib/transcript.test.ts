@@ -366,6 +366,18 @@ test("a plan waits for its decision, records it once and expires on run end", ()
   expect(s.items[1]).toMatchObject({ kind: "plan", status: "expired" });
 });
 
+test("a plan decision whose reply lands after the run already ended still records it", () => {
+  let s = run([
+    { type: "userSend", text: "plan it" },
+    ev({ kind: "PlanApprovalRequest", plan_id: "p1", plan: "## Changes" }),
+    ev({ kind: "Done", exit_code: 0, stderr: "" }),
+  ]);
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "expired" });
+  s = chatReducer(s, { type: "setPlan", planId: "p1", action: "reject" });
+  expect(s.items[1]).toMatchObject({ kind: "plan", status: "reject" });
+  expect(s.typing).toBe(false);
+});
+
 test("a plan card replaces the row of the call that submitted it, a reopened chat keeps the row", () => {
   const planCall = ev({
     kind: "AssistantMessage",
