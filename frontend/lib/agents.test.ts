@@ -4,6 +4,7 @@ import {
   agentFace,
   agentIdentity,
   agentInboxes,
+  agentModelServed,
   agentPinsModel,
   agentThreadModel,
   normaliseAgentName,
@@ -105,4 +106,14 @@ test("fluent emoji entries are unique and resolve to the static and animated ass
   expect(fluentAnimatedUrl(ninja)).toBe(
     "https://media.githubusercontent.com/media/microsoft/fluentui-emoji-animated/main/assets/Ninja/Default/animated/ninja_animated_default.png",
   );
+});
+
+test("agentModelServed flags only a pinned model the gateway does not serve", () => {
+  const served = ["openai/gpt-4o", "anthropic/claude-sonnet-5-5"];
+  expect(agentModelServed(agent({ model: "openai/gpt-4o" }), served)).toBe(true);
+  expect(agentModelServed(agent({ model: "mock/openai/gpt-4o" }), served)).toBe(false);
+  expect(agentModelServed(agent({ model: "" }), served)).toBe(true);
+  expect(agentModelServed(agent({ model: "inherit" }), served)).toBe(true);
+  expect(agentModelServed(agent({ model: "sonnet" }), served)).toBe(true);
+  expect(agentModelServed(agent({ model: "mock/openai/gpt-4o" }), [])).toBe(true);
 });

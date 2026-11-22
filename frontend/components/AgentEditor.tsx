@@ -6,7 +6,7 @@ import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
 import { api, type MarkdownAgent, type Workspace } from "@/lib/tauri";
-import { normaliseAgentName } from "@/lib/agents";
+import { agentModelServed, normaliseAgentName } from "@/lib/agents";
 import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl, type FluentEmoji } from "@/lib/fluent-emoji";
 import { AgentAvatar } from "./AgentAvatar";
 import { Button } from "@/components/ui/button";
@@ -276,7 +276,9 @@ export function AgentEditor() {
           >
             <option value="">Inherit the selected model</option>
             {draft.model && draft.model !== "inherit" && !models.includes(draft.model) && (
-              <option value={draft.model}>{draft.model}</option>
+              <option value={draft.model}>
+                {agentModelServed(draft, models) ? draft.model : `${draft.model} (not served)`}
+              </option>
             )}
             {models.map((m) => (
               <option key={m} value={m}>

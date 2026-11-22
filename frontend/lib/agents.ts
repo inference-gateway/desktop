@@ -47,6 +47,14 @@ export function agentPinsModel(agent: Pick<MarkdownAgent, "model"> | undefined):
   return agentThreadModel(agent, "") !== "";
 }
 
+/** Whether this computer's gateway serves the model the agent's file pins, so
+ * a chat or subagent here can run it. True for an agent that pins none, and
+ * while the served list has not loaded. */
+export function agentModelServed(agent: Pick<MarkdownAgent, "model">, served: string[]): boolean {
+  const pinned = agentThreadModel(agent, "");
+  return !pinned || served.length === 0 || served.includes(pinned);
+}
+
 /** The project a new chat with the agent opens in: its frontmatter project
  * while that project still exists, else none. */
 export function agentDefaultProject(
