@@ -11,9 +11,9 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(20);
 const AFTER_PKILL_SETTLE: Duration = Duration::from_millis(500);
 const INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(500);
 const KEYPRESS_FOCUS_SETTLE: Duration = Duration::from_millis(200);
-/// How long a click waits for its button: a lazily loaded view shows its
-/// buttons a beat after the click that opened it.
-const CLICK_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a step waits for the element it acts on: a lazily loaded view
+/// shows its buttons, and a fresh window its composer, a beat after it opens.
+const RENDER_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_PAUSE: Duration = Duration::from_millis(300);
 
 const MAIN_WINDOW_TITLE: &str = "Inference Gateway Desktop";
@@ -197,7 +197,9 @@ impl AppDriver {
     /// fall back to focusing the composer and committing with Return (the
     /// queued-prompt path).
     pub fn send(&self, text: &str) -> Result<()> {
-        let mut got = self.set_composer(text, false)?;
+        let mut got = once_rendered(RENDER_TIMEOUT, POLL_INTERVAL, || {
+            self.set_composer(text, false)
+        })?;
         if got.trim() != text {
             got = self.set_composer(text, true)?;
         }
@@ -241,16 +243,9 @@ impl AppDriver {
             .map_err(|e| anyhow!("committing {text:?}: {}", e))
     }
 
-    /// Presses the named button, waiting up to `CLICK_TIMEOUT` for it to show.
+    /// Presses the named button, waiting up to `RENDER_TIMEOUT` for it to show.
     pub fn click(&self, button: &str) -> Result<()> {
-        let deadline = Instant::now() + CLICK_TIMEOUT;
-        loop {
-            match self.press(button) {
-                Ok(()) => return Ok(()),
-                Err(e) if Instant::now() > deadline => return Err(e),
-                Err(_) => std::thread::sleep(POLL_INTERVAL),
-            }
-        }
+        once_rendered(RENDER_TIMEOUT, POLL_INTERVAL, || self.press(button))
     }
 
     /// Presses the named button once, failing when it is not on screen.
@@ -373,9 +368,10 @@ impl AppDriver {
             k if k.chars().count() == 1 && k.is_ascii() => format!("keystroke \"{}\"", escape(k)),
             _ => bail!("unsupported keypress key: {key:?}"),
         };
-        self.ax
-            .ask("composer_press", json!({}))
-            .map_err(|e| anyhow!("focusing the composer for {key:?}: {e}"))?;
+        once_rendered(RENDER_TIMEOUT, POLL_INTERVAL, || {
+            self.ax.ask("composer_press", json!({}))
+        })
+        .map_err(|e| anyhow!("focusing the composer for {key:?}: {e}"))?;
         std::thread::sleep(KEYPRESS_FOCUS_SETTLE);
         osascript(&format!(
             "tell application \"System Events\"\n{stroke}\nend tell"
@@ -411,6 +407,24 @@ impl Drop for AppDriver {
         let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
         if let Some(home) = &self.mock_home {
             home::stop_daemon(home);
+        }
+    }
+}
+
+/// Runs `action` until it succeeds, pausing between tries, for a step that
+/// can run before React has rendered the element it acts on. Past `timeout`
+/// the last failure stands.
+fn once_rendered<T>(
+    timeout: Duration,
+    pause: Duration,
+    mut action: impl FnMut() -> Result<T>,
+) -> Result<T> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match action() {
+            Ok(value) => return Ok(value),
+            Err(e) if Instant::now() > deadline => return Err(e),
+            Err(_) => std::thread::sleep(pause),
         }
     }
 }
@@ -454,6 +468,31 @@ fn osascript_once(script: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_step_retries_until_its_element_renders_and_keeps_the_last_failure_after() {
+        let mut tries = 0;
+        let rendered = once_rendered(Duration::from_secs(5), Duration::ZERO, || {
+            tries += 1;
+            if tries < 3 {
+                bail!("not rendered yet")
+            }
+            Ok(tries)
+        });
+        assert_eq!(rendered.unwrap(), 3);
+
+        let mut attempt = 0;
+        let never = once_rendered(Duration::ZERO, Duration::ZERO, || -> Result<()> {
+            attempt += 1;
+            bail!("missing after try {attempt}")
+        });
+        assert!(
+            never
+                .unwrap_err()
+                .to_string()
+                .starts_with("missing after try")
+        );
+    }
 
     #[test]
     fn a_reply_reads_as_two_numbers_only_when_it_holds_exactly_two() {
