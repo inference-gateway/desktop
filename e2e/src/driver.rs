@@ -347,17 +347,8 @@ impl AppDriver {
     }
 
     /// Wait until `cond` returns true or `timeout` elapses.
-    pub fn poll(&self, timeout: Duration, mut cond: impl FnMut() -> Result<bool>) -> Result<bool> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if cond()? {
-                return Ok(true);
-            }
-            if Instant::now() > deadline {
-                return Ok(false);
-            }
-            std::thread::sleep(POLL_INTERVAL);
-        }
+    pub fn poll(&self, timeout: Duration, cond: impl FnMut() -> Result<bool>) -> Result<bool> {
+        poll_until(timeout, POLL_INTERVAL, cond)
     }
 
     /// Send a single keystroke to the composer - a named key by AX key code,
@@ -442,6 +433,27 @@ fn once_rendered<T>(
     }
 }
 
+/// Checks `cond` until it holds or `timeout` passes. A check that errors -
+/// a busy app can miss an accessibility request - is tried again, and only
+/// the last try's error stands once the time is up.
+fn poll_until(
+    timeout: Duration,
+    pause: Duration,
+    mut cond: impl FnMut() -> Result<bool>,
+) -> Result<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let checked = cond();
+        if matches!(checked, Ok(true)) {
+            return Ok(true);
+        }
+        if Instant::now() > deadline {
+            return checked;
+        }
+        std::thread::sleep(pause);
+    }
+}
+
 /// The two numbers of a helper reply such as a centre or a pair of edges.
 fn two_numbers(value: &Value) -> Result<(f64, f64)> {
     match value.as_array().map(Vec::as_slice) {
@@ -505,6 +517,27 @@ mod tests {
                 .to_string()
                 .starts_with("missing after try")
         );
+    }
+
+    #[test]
+    fn a_wait_rides_out_a_failed_check_and_keeps_only_the_last_error() {
+        let mut checks = 0;
+        let held = poll_until(Duration::from_secs(5), Duration::ZERO, || {
+            checks += 1;
+            if checks < 3 {
+                bail!("the main window is not open")
+            }
+            Ok(true)
+        });
+        assert!(held.unwrap());
+
+        let never = poll_until(Duration::ZERO, Duration::ZERO, || Ok(false));
+        assert!(!never.unwrap());
+
+        let broken = poll_until(Duration::ZERO, Duration::ZERO, || -> Result<bool> {
+            bail!("the app is not running")
+        });
+        assert_eq!(broken.unwrap_err().to_string(), "the app is not running");
     }
 
     #[test]
