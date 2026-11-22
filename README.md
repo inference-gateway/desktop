@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/inference-gateway/desktop/actions/workflows/ci.yml"><img src="https://github.com/inference-gateway/desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/inference-gateway/desktop/actions/workflows/e2e.yml?query=branch%3Amain+event%3Apush"><img src="https://github.com/inference-gateway/desktop/actions/workflows/e2e.yml/badge.svg?branch=main&event=push" alt="E2E"></a>
   <a href="https://github.com/inference-gateway/desktop/actions/workflows/tasks.yml"><img src="https://github.com/inference-gateway/desktop/actions/workflows/tasks.yml/badge.svg" alt="OpenTask"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React">
