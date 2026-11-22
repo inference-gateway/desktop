@@ -312,12 +312,24 @@ export function todosFrom(items: TranscriptItem[]): TodoItem[] {
 // e.g. "[A2A Task Completed: <label>]" (see the CLI's Supervisor.formatResult),
 // or "[Subagent Closed: <label>]" when an idle subagent is closed.
 const BACKGROUND_NOTE = /^\[(A2A Task|Background Shell|Subagent|Background Job) (Completed|Failed|Closed): (.*)\]/;
+// A teammate's message, a message the lead bounced back, and the relay cap of
+// an agent team (see the CLI's tools/team.go).
+const TEAM_MESSAGE = /^\[Message from (.+?)\]/;
+const TEAM_MESSAGE_BOUNCED = /^\[Message to (.+?) not delivered: (.*)\]/;
+const TEAM_MESSAGE_LIMIT = /^\[Team message limit reached\]/;
 
 export function backgroundNoteHeader(
   text: string,
 ): { kind: string; status: string; failed: boolean; label: string } | null {
-  const m = BACKGROUND_NOTE.exec(text.trimStart());
-  return m ? { kind: m[1], status: m[2].toLowerCase(), failed: m[2] === "Failed", label: m[3] } : null;
+  const note = text.trimStart();
+  const job = BACKGROUND_NOTE.exec(note);
+  if (job) return { kind: job[1], status: job[2].toLowerCase(), failed: job[2] === "Failed", label: job[3] };
+  const message = TEAM_MESSAGE.exec(note);
+  if (message) return { kind: "Message", status: "from", failed: false, label: message[1] };
+  const bounced = TEAM_MESSAGE_BOUNCED.exec(note);
+  if (bounced) return { kind: `Message to ${bounced[1]}`, status: "not delivered", failed: true, label: bounced[2] };
+  if (TEAM_MESSAGE_LIMIT.test(note)) return { kind: "Team message limit", status: "reached", failed: true, label: "" };
+  return null;
 }
 
 // Panel edits are dirty when they differ from the agent's last written list.
