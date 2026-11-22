@@ -5,7 +5,7 @@ vars:
   NAMESPACE: computer-use
   WORKSPACE: computer-use
   AGENT_SANDBOX_VERSION: v1.0.8
-  OPERATOR_VERSION: v0.35.0
+  OPERATOR_VERSION: v0.37.0
   INFER_DIR: '{{.HOME}}/.infer'
   MODEL: mock/openai/gpt-4o
   USER_DATA: ../../backend/src/computer_user_data.sh
@@ -22,9 +22,9 @@ tasks:
     desc: Create the k3d cluster with ctlptl, install agent-sandbox, the Inference Gateway operator and the workspace namespace
     cmds:
       - ctlptl apply -f Cluster.yaml
-      - kubectl --context k3d-{{.CLUSTER}} apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{{.AGENT_SANDBOX_VERSION}}/sandbox.yaml
+      - kubectl --context k3d-{{.CLUSTER}} apply --server-side -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{{.AGENT_SANDBOX_VERSION}}/sandbox.yaml
       - kubectl --context k3d-{{.CLUSTER}} -n agent-sandbox-system wait --for=condition=Available deployment --all --timeout=180s
-      - kubectl --context k3d-{{.CLUSTER}} apply -f https://github.com/inference-gateway/operator/releases/download/{{.OPERATOR_VERSION}}/install.yaml
+      - kubectl --context k3d-{{.CLUSTER}} apply --server-side -f https://github.com/inference-gateway/operator/releases/download/{{.OPERATOR_VERSION}}/install.yaml
       - kubectl --context k3d-{{.CLUSTER}} -n inference-gateway-system wait --for=condition=Available deployment --all --timeout=180s
       - kubectl --context k3d-{{.CLUSTER}} apply -f k8s/namespace.yaml
 
