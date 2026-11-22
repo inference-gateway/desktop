@@ -1,10 +1,9 @@
 use crate::cli::infer::run_infer;
-use crate::cli::launch::infer_command;
+use crate::cli::launch::{infer_command, run_infer_streaming};
 use crate::env::{agent_cwd, home_dir, infer_dir};
 use crate::tts_samples::{sample_path, samples_dir, speak_blocking, tool_outcome, voice_test_dir};
-use std::io::{BufRead, BufReader};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use tauri::ipc::Channel;
 use tauri_plugin_dialog::DialogExt;
 
@@ -105,29 +104,13 @@ pub(crate) async fn snapshot_avatar(
 }
 
 /// Run `infer avatars create`, forwarding each stdout line as progress.
-/// ponytail: stderr is read after stdout closes - fine for the CLI's one
-/// error line, a reader thread if it ever streams more than a pipe buffer.
 fn create(name: &str, photo: &Path, on_line: &Channel<String>) -> Result<(), String> {
-    let mut child = infer_command(&agent_cwd())
-        .args(["avatars", "create", name, "--from"])
-        .arg(photo)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to run infer: {e}"))?;
-    if let Some(stdout) = child.stdout.take() {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            let _ = on_line.send(line);
-        }
-    }
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(format!(
-            "infer avatars create {name} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(())
+    let args = ["avatars", "create", name, "--from"]
+        .map(OsStr::new)
+        .into_iter()
+        .chain([photo.as_os_str()]);
+    run_infer_streaming(&agent_cwd(), args, on_line)
+        .map_err(|e| format!("infer avatars create {name} failed: {e}"))
 }
 
 /// Where an avatar's test clip lands: one file per avatar, so a new test
