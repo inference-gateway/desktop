@@ -349,12 +349,7 @@ pub(crate) fn config_from_value(
         d1_base_url: str_at(&["storage", "d1", "base_url"]).unwrap_or(d.d1_base_url),
         extra_instructions: str_at(&["extra_instructions"]).unwrap_or_default(),
         system_prompt: str_at(&["system_prompt"]).unwrap_or_default(),
-        schedule_enabled: val
-            .get("tools")
-            .and_then(|t| t.get("schedule"))
-            .and_then(|s| s.get("enabled"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
+        schedule_enabled: d.schedule_enabled,
         scheduler_backend: str_at(&["scheduler", "backend"]).unwrap_or(d.scheduler_backend),
         projects_root: str_at(&["projects", "root"])
             .unwrap_or_else(|| crate::projects::default_projects_root(home)),
@@ -450,13 +445,63 @@ pub(crate) fn read_config() -> DesktopConfig {
 /// `read_config` rooted at an arbitrary home so export/import can run
 /// against a temp directory in tests.
 pub(crate) fn read_config_in(home: &std::path::Path) -> DesktopConfig {
-    match std::fs::read_to_string(infer_dir_in(home).join("config.yaml"))
+    let mut cfg = match std::fs::read_to_string(infer_dir_in(home).join("config.yaml"))
         .ok()
         .and_then(|text| serde_norway::from_str::<serde_norway::Value>(&text).ok())
     {
         Some(val) => config_from_value(&val, home),
         None => default_config(),
+    };
+    cfg.schedule_enabled = schedule_enabled_in(home);
+    cfg
+}
+
+/// The CLI reads its tools policy, the Schedule tool's switch with it, from
+/// `~/.infer/tools.yaml` alone, and the daemon runs its local scheduler only
+/// while that switch is on.
+const TOOLS_FILE: &str = "tools.yaml";
+
+fn tools_path_in(home: &Path) -> PathBuf {
+    infer_dir_in(home).join(TOOLS_FILE)
+}
+
+/// Whether `tools.yaml` turns the Schedule tool, and with it the daemon's
+/// local scheduler, on. A missing file or key reads as off, the CLI's default.
+fn schedule_enabled_in(home: &Path) -> bool {
+    std::fs::read_to_string(tools_path_in(home))
+        .ok()
+        .and_then(|text| serde_norway::from_str::<Value>(&text).ok())
+        .and_then(|val| val["tools"]["schedule"]["enabled"].as_bool())
+        .unwrap_or(false)
+}
+
+/// `tools.yaml` with the Schedule tool switched to `enabled`, every other key
+/// kept as found. A file holding only this key leaves the CLI's defaults for
+/// the rest of the tools.
+fn merge_schedule_enabled(existing: Option<&str>, enabled: bool) -> Result<String, String> {
+    let mut val = config_mapping(existing);
+    let map = val
+        .as_mapping_mut()
+        .ok_or("tools.yaml is not a YAML mapping")?;
+    let tools = map
+        .entry("tools".into())
+        .or_insert_with(|| Value::Mapping(Default::default()));
+    let tmap = tools
+        .as_mapping_mut()
+        .ok_or("the tools key of tools.yaml is not a mapping")?;
+    set_section(tmap, "schedule", vec![("enabled", enabled.into())]);
+    serde_norway::to_string(&val).map_err(|e| e.to_string())
+}
+
+/// Saves the scheduling switch where the CLI reads it, touching `tools.yaml`
+/// only when the switch changed, so a save of other settings never creates it.
+pub(crate) fn save_schedule_enabled_in(home: &Path, enabled: bool) -> Result<(), String> {
+    if schedule_enabled_in(home) == enabled {
+        return Ok(());
     }
+    update_file(&tools_path_in(home), |existing| {
+        merge_schedule_enabled(existing, enabled)
+    })
 }
 
 /// Parse `text` as a YAML mapping, or start from a fresh one, so a reader gets
@@ -697,17 +742,6 @@ pub(crate) fn merge_config(existing: Option<&str>, cfg: &DesktopConfig) -> Resul
     }
 
     insert_settings_read_back_fields(map, cfg);
-
-    let tools = map
-        .entry("tools".into())
-        .or_insert_with(|| serde_norway::Value::Mapping(Default::default()));
-    if let Some(tmap) = tools.as_mapping_mut() {
-        set_section(
-            tmap,
-            "schedule",
-            vec![("enabled", cfg.schedule_enabled.into())],
-        );
-    }
 
     set_speech_section(map, cfg);
     set_section(map, "text_to_video", video_settings(cfg));
@@ -968,7 +1002,8 @@ pub(crate) async fn get_config() -> Result<DesktopConfig, String> {
 
 #[tauri::command]
 pub(crate) async fn set_config(cfg: DesktopConfig) -> Result<(), String> {
-    update_config_file(|existing| merge_config(existing, &cfg))
+    update_config_file(|existing| merge_config(existing, &cfg))?;
+    save_schedule_enabled_in(&home_dir(), cfg.schedule_enabled)
 }
 
 #[tauri::command]
@@ -1403,13 +1438,7 @@ mod tests {
         assert_eq!(str_field(&val, &["gateway", "url"]), Some("http://gw"));
         assert!(val.get("default_model").is_none());
         assert!(val.get("prompts").is_none());
-        assert_eq!(
-            val.get("tools")
-                .and_then(|t| t.get("schedule"))
-                .and_then(|s| s.get("enabled"))
-                .and_then(|v| v.as_bool()),
-            Some(false)
-        );
+        assert!(val.get("tools").and_then(|t| t.get("schedule")).is_none());
     }
 
     #[test]
@@ -1690,5 +1719,28 @@ mod tests {
             std::fs::read_to_string(auth_path(&home)).unwrap(),
             "GROQ_API_KEY: gsk-test\n"
         );
+    }
+
+    #[test]
+    fn the_scheduling_switch_merges_into_tools_yaml_and_keeps_the_rest() {
+        let existing = "enabled: true\ntools:\n  bash:\n    enabled: false\n";
+        let merged = parse_yaml(&merge_schedule_enabled(Some(existing), true).unwrap());
+        assert_eq!(merged["enabled"].as_bool(), Some(true));
+        assert_eq!(merged["tools"]["bash"]["enabled"].as_bool(), Some(false));
+        assert_eq!(merged["tools"]["schedule"]["enabled"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn the_scheduling_switch_is_saved_and_read_where_the_cli_reads_it() {
+        let home = TempDir::new("schedule-switch");
+        save_schedule_enabled_in(&home, false).unwrap();
+        assert!(!tools_path_in(&home).exists());
+
+        save_schedule_enabled_in(&home, true).unwrap();
+        assert!(read_config_in(&home).schedule_enabled);
+        assert!(!infer_dir_in(&home).join("config.yaml").exists());
+
+        save_schedule_enabled_in(&home, false).unwrap();
+        assert!(!read_config_in(&home).schedule_enabled);
     }
 }

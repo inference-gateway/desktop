@@ -82,7 +82,7 @@ function SchedulingTab() {
       <p className="mb-5 text-[0.8rem] text-muted-foreground">
         Run <code className="rounded bg-secondary px-1">infer daemon</code> locally to fire scheduled agent jobs (and
         listen on configured channels like Telegram). Job runs are recorded to your configured storage. The daemon
-        starts on Save, runs while the app is open, and stops on quit.
+        restarts on Save to take the new settings, runs while the app is open, and stops on quit.
       </p>
       <div className="mb-3 flex items-center gap-3">
         <input

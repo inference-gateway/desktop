@@ -30,10 +30,13 @@ pub(crate) fn pipe_logger<R: std::io::Read + Send + 'static>(
     });
 }
 
+/// Restarts the daemon on the saved scheduling settings. It decides on its
+/// scheduler only when it starts, so one already running would never begin
+/// firing jobs.
 #[tauri::command]
 pub(crate) async fn start_scheduler(app: tauri::AppHandle) -> Result<(), String> {
     crate::blocking_with_state(app, |state| {
-        crate::cli::daemon::ensure_running(&state.processes, &state.scheduler_log).map(|_| ())
+        crate::cli::daemon::restart(&state.processes, &state.scheduler_log, &state.threads)
     })
     .await
 }
