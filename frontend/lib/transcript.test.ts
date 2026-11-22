@@ -918,6 +918,36 @@ test("a stored subagent's completed and closed notes load as task_result cards, 
   });
 });
 
+test("an agent team's notes load and land as task_result cards, not user bubbles", () => {
+  const message = '[Message from explore]\n\nfound it\n\nReply with Agent(to: "explore", message: "...").';
+  const bounced = "[Message to scout not delivered: no teammate is named scout. Your team: lead, explore]";
+  const limit = "[Team message limit reached]\n\nYour teammates used all 100 team messages.";
+  const loaded = chatReducer(initialChatState, {
+    type: "loadHistory",
+    messages: [message, bounced, limit].map((content, i) => ({ id: String(i), role: "user", content })),
+  });
+  const live = [message, bounced, limit].reduce(
+    (s, content) => chatReducer(s, { type: "event", event: { kind: "BackgroundNote", content } }),
+    initialChatState,
+  );
+
+  expect(loaded.items.map((i) => i.kind)).toEqual(["task_result", "task_result", "task_result"]);
+  expect(live.items.map((i) => i.kind)).toEqual(["task_result", "task_result", "task_result"]);
+  expect(backgroundNoteHeader(message)).toEqual({ kind: "Message", status: "from", failed: false, label: "explore" });
+  expect(backgroundNoteHeader(bounced)).toEqual({
+    kind: "Message to scout",
+    status: "not delivered",
+    failed: true,
+    label: "no teammate is named scout. Your team: lead, explore",
+  });
+  expect(backgroundNoteHeader(limit)).toEqual({
+    kind: "Team message limit",
+    status: "reached",
+    failed: true,
+    label: "",
+  });
+});
+
 test("background_tasks snapshot feeds delegations and clears on Done", () => {
   const jobs = [
     {
