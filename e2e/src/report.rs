@@ -157,10 +157,18 @@ pub fn publish(markdown: &str) {
 mod tests {
     use super::*;
 
+    fn repo_root() -> PathBuf {
+        std::path::absolute("repo").expect("the working directory resolves")
+    }
+
+    fn test_file(name: &str) -> PathBuf {
+        Path::new("e2e").join("tests").join(format!("{name}.yaml"))
+    }
+
     fn result(name: &str, outcome: Outcome) -> TestResult {
         TestResult {
             name: name.into(),
-            file: PathBuf::from(format!("/repo/e2e/tests/{name}.yaml")),
+            file: repo_root().join(test_file(name)),
             outcome,
         }
     }
@@ -180,22 +188,22 @@ mod tests {
 
     #[test]
     fn a_test_file_reads_relative_to_the_repository_root() {
-        let root = Path::new("/repo");
+        let root = repo_root();
         assert_eq!(
-            repo_relative(Path::new("/repo/e2e/tests/a.yaml"), root),
-            Path::new("e2e/tests/a.yaml")
+            repo_relative(&root.join(test_file("a")), &root),
+            test_file("a")
         );
-        assert_eq!(
-            repo_relative(Path::new("/elsewhere/a.yaml"), root),
-            Path::new("/elsewhere/a.yaml")
-        );
+        let elsewhere = std::path::absolute("elsewhere")
+            .expect("the working directory resolves")
+            .join("a.yaml");
+        assert_eq!(repo_relative(&elsewhere, &root), elsewhere);
     }
 
     #[test]
     fn a_green_run_summarises_as_one_line() {
         let results = [result("a", Outcome::Passed), result("b", Outcome::Passed)];
         assert_eq!(
-            summary(&results, Path::new("/repo"), None, "4.2s"),
+            summary(&results, &repo_root(), None, "4.2s"),
             format!("### ✅ E2E {THIS_SYSTEM}: 2 passed (4.2s)\n\n")
         );
     }
@@ -210,13 +218,14 @@ mod tests {
             ),
             result("c", Outcome::Skipped(Platform::Macos)),
         ];
-        let text = summary(&results, Path::new("/repo"), "2/3".parse().ok(), "1m02s");
+        let text = summary(&results, &repo_root(), "2/3".parse().ok(), "1m02s");
         assert!(text.starts_with(&format!(
             "### ❌ E2E {THIS_SYSTEM} shard 2/3: 1 failed · 1 passed · 1 skipped (1m02s)\n"
         )));
-        assert!(text.contains(
-            "| b | `e2e/tests/b.yaml` | step 5 (wait_for text \"x \\| y\"): timed out |\n"
-        ));
+        assert!(text.contains(&format!(
+            "| b | `{}` | step 5 (wait_for text \"x \\| y\"): timed out |\n",
+            test_file("b").display()
+        )));
         assert!(text.contains("Skipped: c (macOS only)\n"));
     }
 }
