@@ -291,7 +291,7 @@ function AgentGroup({
             </span>
           )}
         </div>
-        <span className="text-[0.7rem] text-muted-foreground/60">({count})</span>
+        <span className="text-[0.7rem] text-muted-foreground/60">{`(${count})`}</span>
         <span
           title={agent.model || "Runs on the model selected in the top bar"}
           className="min-w-0 truncate text-[0.7rem] font-normal text-muted-foreground/60"
@@ -483,7 +483,7 @@ function ProjectGroup({
               {name}
             </button>
           )}
-          <span className="ml-1 text-[0.7rem] text-muted-foreground/60">({count})</span>
+          <span className="ml-1 text-[0.7rem] text-muted-foreground/60">{`(${count})`}</span>
           {isContent && <Clapperboard size={11} className="ml-1 shrink-0 text-muted-foreground/60" />}
           {isGit &&
             (remote && onOpenOnGithub ? (
