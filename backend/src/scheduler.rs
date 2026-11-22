@@ -268,15 +268,18 @@ pub(crate) async fn github_list_repos(owner: String) -> Result<Vec<RepoEntry>, S
 }
 
 pub(crate) fn valid_repo(repo: &str) -> bool {
-    let Some((owner, name)) = repo.split_once('/') else {
-        return false;
-    };
-    let ok = |s: &str| {
-        !s.is_empty()
-            && s.chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    };
-    ok(owner) && ok(name)
+    repo.split_once('/')
+        .is_some_and(|(owner, name)| valid_owner(owner) && valid_owner(name))
+}
+
+/// Rejects anything but a GitHub `owner/name` slug before it reaches a `gh`
+/// argument, with the one error every repository command returns for it.
+pub(crate) fn ensure_valid_repo(repo: &str) -> Result<(), String> {
+    if valid_repo(repo) {
+        Ok(())
+    } else {
+        Err(format!("invalid repository: {repo}"))
+    }
 }
 
 pub(crate) fn valid_secret_name(name: &str) -> bool {
@@ -289,9 +292,7 @@ pub(crate) fn valid_secret_name(name: &str) -> bool {
 
 #[tauri::command]
 pub(crate) async fn github_repo_exists(repo: String) -> Result<bool, String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    ensure_valid_repo(&repo)?;
     tokio::task::spawn_blocking(move || {
         Ok(gh_output(&["repo", "view", &repo, "--json", "name"]).is_ok())
     })
@@ -303,9 +304,7 @@ pub(crate) async fn github_repo_exists(repo: String) -> Result<bool, String> {
 /// default branch exists - mirrors the CLI's ensureRepo.
 #[tauri::command]
 pub(crate) async fn github_create_repo(repo: String) -> Result<(), String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    ensure_valid_repo(&repo)?;
     tokio::task::spawn_blocking(move || {
         gh_output(&["repo", "create", &repo, "--private", "--add-readme"]).map(|_| ())?;
         forget_repos(repo.split_once('/').map_or("", |(owner, _)| owner));
@@ -318,9 +317,7 @@ pub(crate) async fn github_create_repo(repo: String) -> Result<(), String> {
 /// Names of the Actions secrets already set on `repo`.
 #[tauri::command]
 pub(crate) async fn github_list_secrets(repo: String) -> Result<Vec<String>, String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    ensure_valid_repo(&repo)?;
     tokio::task::spawn_blocking(move || {
         let out = gh_output(&[
             "secret", "list", "--repo", &repo, "--json", "name", "--jq", ".[].name",
@@ -339,9 +336,7 @@ pub(crate) async fn github_set_secret(
     name: String,
     value: String,
 ) -> Result<(), String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    ensure_valid_repo(&repo)?;
     if !valid_secret_name(&name) {
         return Err(format!("invalid secret name: {name}"));
     }
@@ -409,7 +404,10 @@ pub(crate) async fn get_scheduler_log(
 
 #[cfg(test)]
 mod tests {
-    use super::{Entries, GH_TTL, cached, read_schedules_dir, valid_repo, valid_secret_name};
+    use super::{
+        Entries, GH_TTL, cached, ensure_valid_repo, read_schedules_dir, valid_repo,
+        valid_secret_name,
+    };
     use crate::test_support::TempDir;
     use std::cell::Cell;
     use std::collections::HashMap;
@@ -426,6 +424,15 @@ mod tests {
         assert!(!valid_repo("a/b/c"));
         assert!(!valid_repo("owner/na me"));
         assert!(!valid_repo("owner/$(rm)"));
+    }
+
+    #[test]
+    fn ensure_valid_repo_names_the_rejected_slug() {
+        assert_eq!(ensure_valid_repo("inference-gateway/desktop"), Ok(()));
+        assert_eq!(
+            ensure_valid_repo("owner/$(rm)"),
+            Err("invalid repository: owner/$(rm)".to_string())
+        );
     }
 
     #[test]

@@ -690,9 +690,7 @@ pub(crate) async fn export_desktop_github(
     format: String,
     token: Option<String>,
 ) -> Result<ExportResult, String> {
-    if !crate::scheduler::valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    crate::scheduler::ensure_valid_repo(&repo)?;
     let format = ExportFormat::parse(&format)?;
     let (export, warnings) = collect_export(&home_dir()).await;
     let text = serialize_export(&export, format)?;
@@ -736,9 +734,7 @@ pub(crate) async fn import_desktop_github(
     repo: String,
     token: Option<String>,
 ) -> Result<ImportReport, String> {
-    if !crate::scheduler::valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    crate::scheduler::ensure_valid_repo(&repo)?;
     let text = tokio::task::spawn_blocking(move || github_fetch(&repo, token.as_deref()))
         .await
         .map_err(|e| e.to_string())??;

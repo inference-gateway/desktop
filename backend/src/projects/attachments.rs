@@ -362,9 +362,7 @@ fn gh_stdin(args: &[&str], input: &str) -> Result<String, String> {
 }
 
 fn ensure_github_repo(full: &str) -> Result<(), String> {
-    if !crate::scheduler::valid_repo(full) {
-        return Err(format!("invalid repository: {full}"));
-    }
+    crate::scheduler::ensure_valid_repo(full)?;
     if crate::scheduler::gh_output(&["repo", "view", full, "--json", "name"]).is_ok() {
         return Ok(());
     }

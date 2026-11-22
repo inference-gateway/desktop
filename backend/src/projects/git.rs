@@ -182,9 +182,7 @@ pub(crate) fn clone_repo_under(root: &Path, repo: &str) -> Result<GitRepo, Strin
 /// importProjects.
 #[tauri::command]
 pub(crate) async fn clone_github_repo(repo: String) -> Result<GitRepo, String> {
-    if !crate::scheduler::valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}"));
-    }
+    crate::scheduler::ensure_valid_repo(&repo)?;
     let root = PathBuf::from(expand_home(&read_config().projects_root));
     tokio::task::spawn_blocking(move || clone_repo_under(&root, &repo))
         .await
