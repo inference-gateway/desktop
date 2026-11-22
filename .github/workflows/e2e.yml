@@ -49,6 +49,9 @@ jobs:
           toolchain: stable
 
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - uses: oven-sh/setup-bun@v2.2.0
         with:
@@ -79,7 +82,7 @@ jobs:
           if-no-files-found: ignore
 
   e2e-linux:
-    if: github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos')
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -112,6 +115,9 @@ jobs:
           toolchain: stable
 
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: Install tauri-driver at the version the e2e image pins
         run: cargo install tauri-driver --locked --version "$(sed -n 's/^ARG TAURI_DRIVER_VERSION=//p' e2e/Containerfile)"
