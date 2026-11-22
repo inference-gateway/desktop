@@ -42,6 +42,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Chat](docs/chat.md) - the four agent modes, plans and approvals, and the composer's prefixes, menus and per-message actions.
 - [How it works](docs/how-it-works.md) - the gateway and CLI, working directory and sandbox, updates, supported platforms.
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
+- [A2A agents](docs/agents.md#a2a-agents) - Settings > Agents: catalog agents in containers and remote agents by URL that a chat hands tasks to.
 - [MCP servers](docs/mcp.md) - Settings > MCPs end to end: hosted and container servers, headers whose values are secrets, where a server goes.
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
@@ -55,6 +56,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [examples/drone-footage](examples/drone-footage) - an agent edits raw drone footage end to end: stabilisation, a color grade, ElevenLabs sound and one export per platform shape.
 - [examples/feature-video](examples/feature-video) - a `feature-editor` agent turns a screen recording into a tutorial: it cuts, speeds up and zooms, adds captions and cards and speaks the narration in your voice, with a draft to approve before the final export.
 - [examples/voiceover](examples/voiceover) - a screen recording becomes a voiced, captioned MP4 on the app's own timeline, token-free in mock mode.
+- [examples/a2a-agent](examples/a2a-agent) - a chat hands a task to an A2A agent served on localhost, token-free in mock mode.
 
 ## Development
 
