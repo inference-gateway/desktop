@@ -1,14 +1,17 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 
-/// A YAML test file (tests/*.yaml): a `name`, optional cleanup paths, record
-/// and narration flags, the agents, projects, voice samples and models seeded
-/// into the fresh HOME before launch (the AX driver cannot drive the native
-/// `<select>` pickers themselves), and the steps.
+/// A YAML test file (tests/*.yaml): a `name`, the one `platform` it needs when
+/// it cannot run on every system, optional cleanup paths, record and narration
+/// flags, the agents, projects, voice samples and models seeded into the fresh
+/// HOME before launch (the AX driver cannot drive the native `<select>` pickers
+/// themselves), and the steps.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Test {
     pub name: String,
+    #[serde(default)]
+    pub platform: Option<Platform>,
     #[serde(default)]
     pub cleanup: Vec<PathBuf>,
     #[serde(default)]
@@ -32,6 +35,24 @@ pub struct Test {
     #[serde(default)]
     pub hub_model: Option<String>,
     pub steps: Vec<Step>,
+}
+
+/// The system a test needs when it checks something only that system has,
+/// such as the macOS menu bar or a real microphone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Platform {
+    Macos,
+}
+
+impl Test {
+    /// Whether the test can run on the system the runner is on.
+    pub fn runs_on_this_system(&self) -> bool {
+        match self.platform {
+            None => true,
+            Some(Platform::Macos) => cfg!(target_os = "macos"),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,5 +221,25 @@ mod tests {
         unique.sort();
         unique.dedup();
         assert_eq!(unique.len(), names.len(), "duplicate test names: {names:?}");
+    }
+
+    fn parse(yaml: &str) -> super::Test {
+        serde_norway::from_str(yaml).unwrap()
+    }
+
+    #[test]
+    fn a_macos_test_runs_only_on_macos_and_any_other_everywhere() {
+        let macos = parse("name: a\nplatform: macos\nsteps:\n  - new_chat\n");
+        let anywhere = parse("name: b\nsteps:\n  - new_chat\n");
+
+        assert_eq!(macos.runs_on_this_system(), cfg!(target_os = "macos"));
+        assert!(anywhere.runs_on_this_system());
+        assert!(
+            serde_norway::from_str::<super::Test>(
+                "name: c\nplatform: windows\nsteps:\n  - new_chat\n"
+            )
+            .is_err(),
+            "an unknown platform is rejected"
+        );
     }
 }

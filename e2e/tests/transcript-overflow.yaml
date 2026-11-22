@@ -1,4 +1,5 @@
 name: long transcript scrolls instead of overflowing the conversation area
+platform: macos
 cleanup:
   - long-transcript.txt
 narration:

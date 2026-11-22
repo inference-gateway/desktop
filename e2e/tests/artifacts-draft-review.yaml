@@ -1,4 +1,5 @@
 name: artifacts - a new draft lights up Artifacts and plays in the dialog
+platform: macos
 narration:
   - "Open a fresh chat."
   - "Ask the agent for a draft to review."
