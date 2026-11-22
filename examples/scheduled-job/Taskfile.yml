@@ -1,0 +1,26 @@
+version: "3"
+
+vars:
+  INFER_DIR: "{{.HOME}}/.infer"
+  JOB: scheduled-hello
+  JOB_FILE: "{{.INFER_DIR}}/schedules/{{.JOB}}.yaml"
+
+tasks:
+  up:
+    desc: Schedule the one-off scheduled-hello job in ~/.infer/schedules - it fires within a minute while local scheduling is on
+    preconditions:
+      - sh: '[ ! -e {{.JOB_FILE}} ] || grep -q "^prompt: \"Scheduled hello:" {{.JOB_FILE}}'
+        msg: ~/.infer/schedules already holds a scheduled-hello job of your own - move it aside first
+    cmds:
+      - mkdir -p {{.INFER_DIR}}/schedules
+      - cp job.yaml {{.JOB_FILE}}
+
+  runs:
+    desc: Print the run records of the scheduled-hello job from ~/.infer/schedules/runs
+    cmds:
+      - 'grep -l "^job_id: {{.JOB}}$" {{.INFER_DIR}}/schedules/runs/*.yaml 2>/dev/null | xargs cat || echo "no run of {{.JOB}} yet"'
+
+  down:
+    desc: Take the job back out if it has not fired yet - its run records and chats are yours and stay
+    cmds:
+      - rm -f {{.JOB_FILE}}

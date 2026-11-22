@@ -22,6 +22,7 @@ Like Codex or Co-Work, but provider-agnostic: OpenAI, Anthropic, Google, local O
 - **Give agents their own computer** - run an agent on a Kubernetes workspace, watch its screen inside its chat or under **Computers**, and take over the mouse and keyboard when it gets stuck. Each workspace has its own **Computer use**, **Browser use**, **Recording** and **Text to speech** switches in Settings > Workspaces, on by default - the ones in Settings > General, and the speech one in Settings > Voice samples, cover this computer only. A workspace can also mount **volumes** - existing claims of its namespace, read-only where the agent should copy before it edits - so a heavy app or raw footage is not downloaded to every machine. On the local cluster, Settings > Compute shares **folders of this computer** with its workspaces - mounted straight from here with no copy, read-only for every workspace or for one.
 - **Drive your browser** - the [opentask](https://github.com/inference-gateway/opentask) extension lets the agent navigate, click, type and read tabs in your everyday browser.
 - **Write your own agents** - Markdown files with a name, instructions, model and face. Agents can hand work to each other.
+- **Schedule agents** - a prompt runs on a cron schedule on this computer or on GitHub Actions, and GitHub issues become tasks an agent picks up.
 - **Make content** - talking-avatar clips, text to speech and text to video on a timeline in Content projects.
 - **Stay portable** - the app updates itself, and Export / Import moves your settings, sidebar projects, A2A agents, scheduled jobs, snippets and skills to a new machine. [docs/export-import.md](docs/export-import.md) lists what does not travel.
 
@@ -43,6 +44,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [How it works](docs/how-it-works.md) - the gateway and CLI, working directory and sandbox, updates, supported platforms.
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
 - [A2A agents](docs/agents.md#a2a-agents) - Settings > Agents: catalog agents in containers and remote agents by URL that a chat hands tasks to.
+- [Scheduled jobs and GitHub tasks](docs/scheduling.md) - Settings > GitHub: jobs on a cron schedule on the local or the github backend, the Actions secrets, and issues as tasks.
 - [MCP servers](docs/mcp.md) - Settings > MCPs end to end: hosted and container servers, headers whose values are secrets, where a server goes.
 - [The Mac's GPU](docs/gpu.md) - run the local cluster on Podman so its computers use this Mac's GPU.
 - [Browser use](docs/browser-use.md) - connect the opentask extension.
@@ -57,6 +59,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [examples/feature-video](examples/feature-video) - a `feature-editor` agent turns a screen recording into a tutorial: it cuts, speeds up and zooms, adds captions and cards and speaks the narration in your voice, with a draft to approve before the final export.
 - [examples/voiceover](examples/voiceover) - a screen recording becomes a voiced, captioned MP4 on the app's own timeline, token-free in mock mode.
 - [examples/a2a-agent](examples/a2a-agent) - a chat hands a task to an A2A agent served on localhost, token-free in mock mode.
+- [examples/scheduled-job](examples/scheduled-job) - a one-off job fires within a minute and its run shows up as a chat, token-free in mock mode.
 
 ## Development
 
