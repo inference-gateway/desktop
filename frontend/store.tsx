@@ -21,6 +21,7 @@ import {
   COMPUTER_USE_TOOLS,
   autoApproves,
   subagentParentId,
+  descendantIds,
   type ChatAction,
   type ChatState,
   type Delegation,
@@ -590,7 +591,7 @@ function useDesktopStore() {
     [agentOf, agents, projectNames, newChat],
   );
 
-  const deleteConversation = useCallback(
+  const removeConversation = useCallback(
     async (id: string) => {
       dropQueued(id);
       if (runningIds.has(id)) {
@@ -605,24 +606,32 @@ function useDesktopStore() {
           return next;
         });
       }
+      const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
+      await api.deleteConversation(id, cwd);
+      setTranscripts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      clearTerminal(id);
+      setWorkspaceOf(({ [id]: _, ...rest }) => rest);
+      setWorkspaceTitles(({ [id]: _, ...rest }) => rest);
+      if (id === activeId) newChat();
+    },
+    [runningIds, activeId, conversations, newChat, clearTerminal, dropQueued],
+  );
+
+  /** Deletes a chat together with the subagent chats it spawned. */
+  const deleteConversation = useCallback(
+    async (id: string) => {
       try {
-        const cwd = conversations.find((c) => c.id === id)?.project ?? undefined;
-        await api.deleteConversation(id, cwd);
-        setTranscripts((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        clearTerminal(id);
-        setWorkspaceOf(({ [id]: _, ...rest }) => rest);
-        setWorkspaceTitles(({ [id]: _, ...rest }) => rest);
-        if (id === activeId) newChat();
-        await refreshConversations();
+        for (const target of [...descendantIds(conversations, id), id]) await removeConversation(target);
       } catch (err) {
         setError(`Failed to delete conversation: ${err}`);
       }
+      await refreshConversations();
     },
-    [runningIds, activeId, conversations, newChat, refreshConversations, setError, clearTerminal, dropQueued],
+    [conversations, removeConversation, refreshConversations, setError],
   );
 
   const onChatClick = useCallback(

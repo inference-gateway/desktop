@@ -92,7 +92,7 @@ function ChatItem({ index }: { index: number }) {
       )}
       <span className="min-w-0 flex-1 truncate">{conv.title || "(untitled)"}</span>
       <button
-        aria-label="Delete conversation"
+        aria-label={`Delete conversation ${conv.title || conv.id}`}
         title={confirm ? "Click again to delete" : "Delete conversation"}
         onClick={(e) => {
           e.stopPropagation();
