@@ -1,5 +1,5 @@
 import type { ComputerResources, Conversation, MarkdownAgent } from "./tauri";
-import { COMPUTER_USE_TOOLS, pendingInput, type ChatState, type TranscriptItem } from "./transcript";
+import { COMPUTER_USE_TOOLS, pendingInput, subagentParentId, type ChatState, type TranscriptItem } from "./transcript";
 
 export type ComputerStatus = "running" | "awaiting" | "idle";
 
@@ -64,7 +64,12 @@ export function sidebarConversations(
     const first = transcripts[id]?.items.find((item) => item.kind === "user");
     return first?.kind === "user" ? first.text : undefined;
   };
-  return [...unlisted.map((id) => ({ id, title: firstPrompt(id) ?? titles[id] ?? "New chat" })), ...conversations];
+  const live = unlisted.map((id) => ({
+    id,
+    title: firstPrompt(id) ?? titles[id] ?? "New chat",
+    parent_session_id: subagentParentId(id),
+  }));
+  return [...live, ...conversations];
 }
 
 function lastComputerAction(items: TranscriptItem[]): string | null {

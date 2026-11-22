@@ -106,11 +106,18 @@ test("a chat on a workspace stays in the sidebar once its run ends, a chat at ho
     { remote: chat([{ kind: "user", id: "u1", text: "open the docs" } as TranscriptItem]) },
   );
   expect(listed).toEqual([
-    { id: "fresh", title: "New chat" },
-    { id: "remote", title: "open the docs" },
-    { id: "restarted", title: "Hi" },
+    { id: "fresh", title: "New chat", parent_session_id: null },
+    { id: "remote", title: "open the docs", parent_session_id: null },
+    { id: "restarted", title: "Hi", parent_session_id: null },
     { id: "local", title: "Local" },
   ]);
+});
+
+test("a subagent run the store has not listed yet already names its orchestrator", () => {
+  const parent = "28f1b14b-7b10-4950-9487-8c0e10bf4917";
+  const child = `subagent-${parent}-464d7ff2-5da8-4d97-bedb-a3c86e78daff`;
+  const listed = sidebarConversations([{ id: parent, title: "Orchestrator" }], new Set([child]), {}, {}, {});
+  expect(listed[0]).toEqual({ id: child, title: "New chat", parent_session_id: parent });
 });
 
 test("a computer says whether it is a sandbox and what it was given", () => {

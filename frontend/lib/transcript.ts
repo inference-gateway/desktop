@@ -7,6 +7,7 @@ import type {
   UserQuestion,
   UserQuestionAnswer,
   PromptRef,
+  Conversation,
 } from "./tauri";
 import { imageFilename, parseToolResult, safeAudioSrc, safeImageSrc } from "./tools";
 import type { PlanAction } from "./agent-mode";
@@ -146,23 +147,31 @@ export function autoApproves(toolName: string): boolean {
 
 export type Delegation = { id: string; label: string; kind: "subagent" | "a2a" | "shell" | "recording" };
 
-// Subagent sessions are persisted by the CLI as "subagent-<parentId>-<childId>".
-// ponytail: correlation parsed from the id convention - replace with a real
-// parent_session_id field once the CLI exposes one in `conversations list`.
 const SUBAGENT_SESSION = /^subagent-([0-9a-fA-F-]{36})-[0-9a-fA-F-]{36}$/;
 
+/** The orchestrator of a live subagent run, read from the CLI's
+ * `subagent-<parentId>-<childId>` session id, for a run the conversations
+ * list does not hold yet. A listed chat names it in `parent_session_id`. */
 export function subagentParentId(sessionId: string): string | null {
   return SUBAGENT_SESSION.exec(sessionId)?.[1] ?? null;
+}
+
+/** The orchestrator a listed chat names as its parent. The CLI writes an
+ * empty string for a chat a human started, which reads as no parent. */
+export function conversationParentId(conv: Pick<Conversation, "parent_session_id">): string | null {
+  return conv.parent_session_id || null;
 }
 
 /** Each listed orchestrator's subagent chats, as indices into `conversations`.
  * A subagent whose orchestrator is not listed is left out, so the sidebar
  * still shows it as a chat of its own. */
-export function subagentsByParent(conversations: { id: string }[]): Record<string, number[]> {
+export function subagentsByParent(
+  conversations: Pick<Conversation, "id" | "parent_session_id">[],
+): Record<string, number[]> {
   const listed = new Set(conversations.map((c) => c.id));
   const byParent: Record<string, number[]> = {};
   conversations.forEach((conv, i) => {
-    const parent = subagentParentId(conv.id);
+    const parent = conversationParentId(conv);
     if (parent && listed.has(parent)) (byParent[parent] ??= []).push(i);
   });
   return byParent;
@@ -174,10 +183,10 @@ export function subagentsByParent(conversations: { id: string }[]): Record<strin
 export function delegationSessionId(
   parentId: string,
   delegation: Delegation,
-  conversations: { id: string; title?: string | null }[],
+  conversations: Pick<Conversation, "id" | "title" | "parent_session_id">[],
 ): string | null {
   if (delegation.kind !== "subagent") return null;
-  const children = conversations.filter((c) => subagentParentId(c.id) === parentId);
+  const children = conversations.filter((c) => conversationParentId(c) === parentId);
   if (children.length === 1) return children[0].id;
   const label = trimEllipsis(delegation.label);
   return children.find((c) => c.title && sameCut(trimEllipsis(c.title), label))?.id ?? null;

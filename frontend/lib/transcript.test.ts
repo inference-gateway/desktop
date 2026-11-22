@@ -5,6 +5,7 @@ import {
   chatReducer,
   promptRef,
   delegationsFrom,
+  conversationParentId,
   delegationSessionId,
   followsBottom,
   initialChatState,
@@ -730,13 +731,21 @@ test("subagentsByParent groups each listed orchestrator's subagent chats under i
   const parent = "28f1b14b-7b10-4950-9487-8c0e10bf4917";
   const gone = "9a0e7c1d-1111-4222-8333-444455556666";
   const conversations = [
+    { id: "child-a", parent_session_id: parent },
+    { id: parent, parent_session_id: "" },
+    { id: "other-chat", parent_session_id: null },
+    { id: "child-b", parent_session_id: parent },
+    { id: "orphan", parent_session_id: gone },
     { id: `subagent-${parent}-464d7ff2-5da8-4d97-bedb-a3c86e78daff` },
-    { id: parent },
-    { id: "other-chat" },
-    { id: `subagent-${parent}-0b9d2f8e-7c6a-4b5e-9d4c-3a2b1c0d9e8f` },
-    { id: `subagent-${gone}-5e4d3c2b-1a09-4f8e-8d7c-6b5a49382716` },
   ];
   expect(subagentsByParent(conversations)).toEqual({ [parent]: [0, 3] });
+});
+
+test("conversationParentId reads an empty parent_session_id as no parent", () => {
+  expect(conversationParentId({ parent_session_id: "p1" })).toBe("p1");
+  expect(conversationParentId({ parent_session_id: "" })).toBeNull();
+  expect(conversationParentId({ parent_session_id: null })).toBeNull();
+  expect(conversationParentId({})).toBeNull();
 });
 
 test("todosFrom returns the latest TodoWrite list with sane status defaults", () => {
@@ -1023,24 +1032,20 @@ test("auto mode approves tool calls but leaves sandbox access to the user", () =
 
 test("delegationSessionId resolves a subagent row to its child session", () => {
   const parent = "11111111-1111-4111-8111-111111111111";
-  const child = (n: string) =>
-    `subagent-${parent}-${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${n.repeat(12)}`;
+  const child = (n: string, title?: string) => ({ id: `child-${n}`, title, parent_session_id: parent });
   const row: Delegation = { id: "c1:0", label: "write docs", kind: "subagent" };
-  expect(delegationSessionId(parent, row, [{ id: parent }, { id: child("a") }])).toBe(child("a"));
-  const two = [
-    { id: child("a"), title: "fix tests" },
-    { id: child("b"), title: "write docs" },
-  ];
-  expect(delegationSessionId(parent, row, two)).toBe(child("b"));
+  expect(delegationSessionId(parent, row, [{ id: parent, parent_session_id: "" }, child("a")])).toBe("child-a");
+  const two = [child("a", "fix tests"), child("b", "write docs"), { id: "elsewhere", title: "write docs" }];
+  expect(delegationSessionId(parent, row, two)).toBe("child-b");
   expect(delegationSessionId(parent, { ...row, label: "other" }, two)).toBeNull();
   const cuts = [
-    { id: child("a"), title: "Write a long poem (at least 12 stanzas / 48" },
-    { id: child("b"), title: "Write a short poem (4-8 lines) about dawn breaking over" },
+    child("a", "Write a long poem (at least 12 stanzas / 48"),
+    child("b", "Write a short poem (4-8 lines) about dawn breaking over"),
   ];
   const long = { ...row, label: "Write a long poem (at least 12 stanzas / 48 line…" };
   const short = { ...row, label: "Write a short poem (4-8 lines) about dawn breaki…" };
-  expect(delegationSessionId(parent, long, cuts)).toBe(child("a"));
-  expect(delegationSessionId(parent, short, cuts)).toBe(child("b"));
+  expect(delegationSessionId(parent, long, cuts)).toBe("child-a");
+  expect(delegationSessionId(parent, short, cuts)).toBe("child-b");
   expect(delegationSessionId(parent, { ...row, kind: "a2a" }, two)).toBeNull();
 });
 
