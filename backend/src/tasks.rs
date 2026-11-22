@@ -1,5 +1,5 @@
 use crate::error::{Result, blocking};
-use crate::scheduler::{gh_output, valid_repo, valid_secret_name};
+use crate::scheduler::{ensure_valid_repo, gh_output, valid_secret_name};
 
 // infer-action workflow installed into a task repository, modeled on the
 // opentask extension's template. Placeholders filled by str::replace because
@@ -163,9 +163,7 @@ fn workflow_status(repo: &str, git_ref: Option<&str>) -> Result<WorkflowStatus> 
 /// Whether the infer-action task workflow exists in `repo`.
 #[tauri::command]
 pub(crate) async fn github_check_workflow(repo: String) -> Result<WorkflowStatus> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     blocking(move || {
         let mut status = workflow_status(&repo, None)?;
         if status.installed {
@@ -272,9 +270,7 @@ pub(crate) async fn github_install_workflow(
     vision_model: String,
     image_model: String,
 ) -> Result<String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     let cfg = crate::cli::config::read_config();
     if !valid_secret_name(&cfg.scheduler_github_app_client_id_secret)
         || !valid_secret_name(&cfg.scheduler_github_app_private_key_secret)
@@ -325,9 +321,7 @@ pub(crate) async fn github_install_workflow(
 /// pull request, leaving the rest of the user's file untouched.
 #[tauri::command]
 pub(crate) async fn github_bump_workflow(repo: String) -> Result<String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     blocking(move || {
         let base = gh_output(&["api", &format!("repos/{repo}"), "--jq", ".default_branch"])?
             .trim()
@@ -366,9 +360,7 @@ pub(crate) struct TaskIssue {
 /// ponytail: newest 30, no pagination - enough for a dashboard.
 #[tauri::command]
 pub(crate) async fn github_list_task_issues(repo: String) -> Result<Vec<TaskIssue>> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     blocking(move || {
         let out = gh_output(&[
             "api",
@@ -393,9 +385,7 @@ pub(crate) struct TaskPull {
 /// ponytail: newest 30, no pagination - enough for a dashboard.
 #[tauri::command]
 pub(crate) async fn github_list_task_pulls(repo: String) -> Result<Vec<TaskPull>> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     blocking(move || {
         let out = gh_output(&[
             "api",
@@ -421,9 +411,7 @@ pub(crate) struct WorkflowRun {
 /// Recent runs of the installed task workflow, newest first.
 #[tauri::command]
 pub(crate) async fn github_list_workflow_runs(repo: String) -> Result<Vec<WorkflowRun>> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     blocking(move || {
         let out = gh_output(&[
             "api",
@@ -448,9 +436,7 @@ pub(crate) async fn github_create_task_issue(
     title: String,
     body: String,
 ) -> Result<String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     if title.trim().is_empty() {
         return Err("task title is empty".into());
     }
@@ -480,9 +466,7 @@ pub(crate) async fn github_run_task_issue(
     number: u64,
     body: String,
 ) -> Result<String> {
-    if !valid_repo(&repo) {
-        return Err(format!("invalid repository: {repo}").into());
-    }
+    ensure_valid_repo(&repo)?;
     if body.trim().is_empty() {
         return Err("comment is empty".into());
     }
