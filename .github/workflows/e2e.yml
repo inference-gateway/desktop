@@ -39,6 +39,12 @@ jobs:
     if: github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'ci:macos') && (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
     runs-on: macos-15
     timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 45 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -50,7 +56,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}
           cache-on-failure: true
 
       - uses: oven-sh/setup-bun@v2.2.0
@@ -63,18 +69,18 @@ jobs:
       - name: Run the smoke specs
         if: github.event_name == 'pull_request'
         working-directory: e2e
-        run: cargo run -- ${{ env.SMOKE_SPECS }}
+        run: cargo run -- --shard=$(( ${{ strategy.job-index }} + 1 ))/${{ strategy.job-total }} ${{ env.SMOKE_SPECS }}
 
       - name: Run the full suite
         if: github.event_name != 'pull_request'
         working-directory: e2e
-        run: cargo run
+        run: cargo run -- --shard=$(( ${{ strategy.job-index }} + 1 ))/${{ strategy.job-total }}
 
       - name: Upload what the failing specs saw
         if: failure()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: e2e-artifacts
+          name: e2e-artifacts-${{ matrix.shard }}
           path: |
             e2e/artifacts/*.png
             e2e/artifacts/*.log
@@ -85,6 +91,13 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
     env:
       WEBKIT_DISABLE_DMABUF_RENDERER: 1
       WEBKIT_DISABLE_COMPOSITING_MODE: 1
@@ -116,7 +129,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' && strategy.job-index == 0 }}
           cache-on-failure: true
 
       - name: Install tauri-driver at the version the e2e image pins
@@ -131,13 +144,13 @@ jobs:
 
       - name: Run the full suite
         working-directory: e2e
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" cargo run
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" cargo run -- --shard=$(( ${{ strategy.job-index }} + 1 ))/${{ strategy.job-total }}
 
       - name: Upload what the failing specs saw
         if: failure()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: e2e-linux-artifacts
+          name: e2e-linux-artifacts-${{ matrix.shard }}
           path: |
             e2e/artifacts/*.png
             e2e/artifacts/*.log

@@ -70,8 +70,13 @@ impl AppDriver {
         infer_bin: Option<&Path>,
         seeds: Seeds,
     ) -> Result<Self> {
-        let _ = Command::new("pkill").args(["-f", PROCESS_MATCH]).status();
-        std::thread::sleep(AFTER_PKILL_SETTLE);
+        let killed_stale = Command::new("pkill")
+            .args(["-f", PROCESS_MATCH])
+            .status()
+            .is_ok_and(|s| s.success());
+        if killed_stale {
+            std::thread::sleep(AFTER_PKILL_SETTLE);
+        }
         let home = artifacts.join("home");
         if mock {
             home::stop_daemon(&home);
