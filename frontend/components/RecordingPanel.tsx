@@ -23,7 +23,7 @@ export function RecordingPanel() {
         Recording the screen
         {area && (
           <span className="font-normal text-muted-foreground">
-            {area.width}×{area.height} at ({area.x}, {area.y})
+            {`${area.width}×${area.height} at (${area.x}, ${area.y})`}
           </span>
         )}
       </div>
