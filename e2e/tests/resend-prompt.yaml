@@ -7,11 +7,11 @@ narration:
   - "The approval card shows Deny."
   - "Deny it, so the run ends and no file is written."
   - "The denial is reported."
-  - "Move on and ask for a screenshot."
+  - "Move on and ask for a picture. The ImageGeneration tool draws it through the mock gateway."
   - "Its thumbnail sits in the transcript."
   - "The run is over, so prompts can be resent."
   - "Press Resend prompt on the first prompt."
-  - "The screenshot turn is dropped - the conversation is back where that prompt was sent."
+  - "The picture turn is dropped - the conversation is back where that prompt was sent."
   - "The prompt runs again, and the Write asks for approval again."
   - "Approve it this time."
   - "approved.txt lands."
@@ -22,7 +22,7 @@ steps:
   - wait_for: { button: "Deny", timeout: 30 }
   - click: { button: "Deny" }
   - wait_for: { text: "Denied", timeout: 15 }
-  - send: "take a screenshot now"
+  - send: "draw a picture with the image tool"
   - wait_for: { button: "View image", timeout: 30 }
   - wait_gone: { button: "Stop", timeout: 15 }
   - click: { button: "Resend prompt" }
