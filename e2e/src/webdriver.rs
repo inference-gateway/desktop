@@ -405,11 +405,19 @@ impl Drop for AppDriver {
     }
 }
 
+/// Kills what is left of the app and its WebDriver, settling only after a kill
+/// so a test whose app already exited starts the next one at once.
 fn stop_app() {
+    let mut killed = false;
     for process in [PROCESS_MATCH, NATIVE_DRIVER] {
-        let _ = Command::new("pkill").args(["-f", process]).status();
+        killed |= Command::new("pkill")
+            .args(["-f", process])
+            .status()
+            .is_ok_and(|s| s.success());
     }
-    std::thread::sleep(AFTER_PKILL_SETTLE);
+    if killed {
+        std::thread::sleep(AFTER_PKILL_SETTLE);
+    }
 }
 
 fn wait_for_driver() -> Result<()> {

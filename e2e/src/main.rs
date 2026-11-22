@@ -7,11 +7,13 @@ mod driver;
 mod driver;
 mod home;
 mod podman;
+mod shard;
 mod spec;
 
 use anyhow::{Context, Result, bail};
 use driver::AppDriver;
 use home::Seeds;
+use shard::Shard;
 use spec::{BareStep, Step};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -20,7 +22,8 @@ use std::time::{Duration, Instant};
 /// How long the overlay bounds assertion waits for the overlay to appear.
 const OVERLAY_BOUNDS_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// YAML-driven e2e runner: `e2e [--podman] [--no-build] [--no-mock] [--record] [files...]`.
+/// YAML-driven e2e runner:
+/// `e2e [--podman] [--no-build] [--no-mock] [--record] [--shard=K/N] [files...]`.
 fn main() {
     install_sigint_cleanup();
     match run() {
@@ -59,6 +62,7 @@ fn run() -> Result<bool> {
     let mut mock = true;
     let mut record_all = false;
     let mut in_podman = false;
+    let mut shard: Option<Shard> = None;
     let mut forwarded: Vec<String> = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
     for arg in std::env::args().skip(1) {
@@ -67,6 +71,10 @@ fn run() -> Result<bool> {
             continue;
         }
         forwarded.push(arg.clone());
+        if let Some(spec) = arg.strip_prefix("--shard=") {
+            shard = Some(spec.parse()?);
+            continue;
+        }
         match arg.as_str() {
             "--no-build" => build = false,
             "--no-mock" => mock = false,
@@ -85,6 +93,11 @@ fn run() -> Result<bool> {
             .collect();
         entries.sort();
         files = entries;
+    }
+    if let Some(shard) = shard {
+        let suite = files.len();
+        files = shard.select(files);
+        println!("shard {shard}: {} of {suite} tests", files.len());
     }
 
     if build {
