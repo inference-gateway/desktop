@@ -148,13 +148,18 @@ pub struct FileTarget {
 #[serde(deny_unknown_fields)]
 pub struct TextTarget {
     pub text: String,
-    /// Seconds to wait for the text to show up. Without it the check is immediate.
-    #[serde(default)]
+    /// Seconds to wait for the text to show up. A key or a pick lands in the
+    /// composer a render after it, so even an unset wait gives it a moment.
+    #[serde(default = "default_settle_timeout")]
     pub timeout: u64,
 }
 
 fn default_timeout() -> u64 {
     15
+}
+
+fn default_settle_timeout() -> u64 {
+    5
 }
 
 pub fn load(path: &std::path::Path) -> anyhow::Result<Test> {
