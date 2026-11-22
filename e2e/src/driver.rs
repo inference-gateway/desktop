@@ -161,6 +161,10 @@ impl AppDriver {
             mock_home: mock.then_some(home),
         };
         driver.wait_ready()?;
+        driver
+            .ax
+            .ask("fit_window", json!({}))
+            .context("fitting the window into the screen")?;
         Ok(driver)
     }
 

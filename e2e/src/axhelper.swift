@@ -20,6 +20,7 @@ let textRoles: Set<String> = ["AXStaticText", "AXButton", "AXCheckBox", "AXRadio
 let lookupDepth = 10
 let namedDepth = 12
 let dumpDepth = 24
+let scrollSettle: useconds_t = 100_000
 let valueSettle: useconds_t = 300_000
 let focusSettle: useconds_t = 500_000
 let dragPause: useconds_t = 30_000
@@ -97,14 +98,19 @@ func firstChild(_ element: AXUIElement, role wanted: String?) -> AXUIElement? {
     children(element).first { wanted == nil || role($0) == wanted }
 }
 
-/// The page System Events reaches as UI element 1 of scroll area 1 of group 1
-/// of group 1 of the main window, found by its title.
-func pageRoot() throws -> AXUIElement {
+func mainWindow() throws -> AXUIElement {
     let app = AXUIElementCreateApplication(try appPid())
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     guard let window = windows.first(where: { string($0, kAXTitleAttribute) == windowTitle }) else {
         throw Failure(message: "the main window is not open")
     }
+    return window
+}
+
+/// The page System Events reaches as UI element 1 of scroll area 1 of group 1
+/// of group 1 of the main window, found by its title.
+func pageRoot() throws -> AXUIElement {
+    let window = try mainWindow()
     guard let outer = firstChild(window, role: kAXGroupRole),
         let inner = firstChild(outer, role: kAXGroupRole),
         let scroll = firstChild(inner, role: kAXScrollAreaRole),
@@ -170,6 +176,40 @@ func dump(_ element: AXUIElement, _ depth: Int, _ lines: inout [String]) {
     for child in children(element) {
         dump(child, depth + 1, &lines)
     }
+}
+
+/// The primary screen's area that neither the menu bar nor the Dock covers,
+/// in accessibility coordinates: origin at the top left, y growing down.
+func visibleArea() throws -> CGRect {
+    guard let screen = NSScreen.screens.first else {
+        throw Failure(message: "no screen")
+    }
+    let visible = screen.visibleFrame
+    return CGRect(
+        x: visible.minX, y: screen.frame.maxY - visible.maxY, width: visible.width, height: visible.height)
+}
+
+/// Moves and shrinks the main window into the visible area of the screen when
+/// it does not fit, so a real mouse event reaches every element. A CI runner's
+/// small display centres the window past its left edge. A window that fits
+/// stays as it is. Answers whether it moved.
+func fitWindow() throws -> Bool {
+    let window = try mainWindow()
+    let area = try visibleArea()
+    guard let box = frame(window) else {
+        throw Failure(message: "the main window has no frame")
+    }
+    if area.contains(box) {
+        return false
+    }
+    var size = CGSize(width: min(box.width, area.width), height: min(box.height, area.height))
+    var origin = CGPoint(x: area.minX, y: area.minY)
+    guard let sizeValue = AXValueCreate(.cgSize, &size), let originValue = AXValueCreate(.cgPoint, &origin) else {
+        throw Failure(message: "the window frame could not be encoded")
+    }
+    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, originValue)
+    AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+    return true
 }
 
 func button(_ wanted: String) throws -> AXUIElement {
@@ -289,10 +329,18 @@ func serve(_ request: [String: Any]) throws -> Any {
     case "value":
         return string(try button(wanted), kAXValueAttribute)
     case "centre":
-        guard let element = findNamed(try pageRoot(), wanted, 0), let box = frame(element) else {
+        guard let element = findNamed(try pageRoot(), wanted, 0) else {
+            throw Failure(message: "element not found")
+        }
+        if AXUIElementPerformAction(element, "AXScrollToVisible" as CFString) == .success {
+            usleep(scrollSettle)
+        }
+        guard let box = frame(element) else {
             throw Failure(message: "element not found")
         }
         return [Double(box.midX), Double(box.midY)]
+    case "fit_window":
+        return try fitWindow()
     case "above_composer":
         guard let buttonBox = frame(try button(wanted)), let areaBox = frame(try composer()) else {
             throw Failure(message: "no frame for the button or the composer")
