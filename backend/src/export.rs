@@ -356,6 +356,7 @@ fn apply_export_files(export: &DesktopExport, home: &Path) -> Result<ImportRepor
     crate::cli::config::update_file(&infer_dir_in(home).join("config.yaml"), |existing| {
         merge_default_model(Some(&merge_config(existing, &cfg)?), &cfg.default_model)
     })?;
+    crate::cli::config::save_schedule_enabled_in(home, cfg.schedule_enabled)?;
     imported.push("Settings (config.yaml)".into());
 
     let mut projects = crate::projects::read_projects_in(home);
