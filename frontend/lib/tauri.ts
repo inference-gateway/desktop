@@ -161,11 +161,17 @@ export type DownloadedModel = { id: string; path: string; files: number; bytes: 
 export type Artifact = { name: string; size: number; modified_at: string };
 /** An open GitHub issue of the project, as the `#` menu offers it. */
 export type Issue = { number: number; title: string; state: string };
+/** A listed chat. The CLI records how it started: the orchestrator that spawned
+ * it as a subagent, the agent it runs as, the label its orchestrator gave it,
+ * and the chat whose message to that agent started it. */
 export type Conversation = {
   id: string;
   title?: string | null;
   project?: string | null;
   parent_session_id?: string | null;
+  agent?: string | null;
+  label?: string | null;
+  sent_by?: string | null;
 };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
 /** A Markdown agent (`<name>.md` in one of the agent dirs): frontmatter profile plus its instructions. */

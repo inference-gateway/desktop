@@ -396,6 +396,19 @@ scenarios:
     turns:
       - content: "Two fixtures found."
 
+  - name: agent-message-sender
+    match: '(?i)send the docs writer a message'
+    turns:
+      - tool_calls:
+          - { name: Agent, args: { to: e2e-docs-writer, message: "Draft the release notes and report back when they are ready." } }
+      - content: "Message sent to the docs writer."
+      - content: "The docs writer answered."
+
+  - name: agent-message-recipient
+    match: '(?i)\[Message from e2e-sonnet\]'
+    turns:
+      - content: "Release notes drafted."
+
   - name: reasoning-demo
     match: '(?i)think out loud'
     turns:

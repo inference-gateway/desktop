@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/tauri";
-import { conversationParentId, subagentsByParent } from "@/lib/transcript";
+import { chatOrigin, conversationParentId, subagentsByParent } from "@/lib/transcript";
 import { groupTarget, projectTarget, sidebarDrop, UNGROUPED_TARGET, type SidebarDrag } from "@/lib/sidebar-drop";
 import { usePointerDrag } from "@/hooks/usePointerDrag";
 import { useDesktop } from "@/store";
@@ -57,17 +57,12 @@ function ChatItem({ index }: { index: number }) {
   const running = isRunning(conv.id);
   const awaiting = isAwaitingApproval(conv.id);
   const recording = recordingOwner === conv.id;
-  const parentId = conversationParentId(conv);
-  const parentTitle = parentId ? conversations.find((c) => c.id === parentId)?.title || parentId.slice(0, 5) : null;
+  const label = conversationParentId(conv) ? conv.label : null;
 
   return (
     <div
       role="listitem"
-      title={
-        parentTitle
-          ? `${conv.title || conv.id} - invoked by orchestrator: ${parentTitle}`
-          : `${conv.title || conv.id} - invoked by human`
-      }
+      title={chatOrigin(conv, conversations)}
       aria-selected={isSelected || undefined}
       onClick={(e) => onChatClick(index, e)}
       onPointerDown={(e) => {
@@ -89,6 +84,11 @@ function ChatItem({ index }: { index: number }) {
             awaiting ? "bg-amber-500" : recording ? "animate-pulse bg-red-500" : "animate-pulse bg-emerald-500",
           )}
         />
+      )}
+      {label && (
+        <span className="shrink-0 rounded bg-foreground/10 px-1.5 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {label}
+        </span>
       )}
       <span className="min-w-0 flex-1 truncate">{conv.title || "(untitled)"}</span>
       <button

@@ -40,6 +40,7 @@ import {
   agentInboxes,
   agentPinsModel,
   agentThreadModel,
+  listedAgentOf,
   MAIN_AGENT,
 } from "@/lib/agents";
 import { ActivityProvider, useActivity } from "@/stores/activity";
@@ -171,6 +172,7 @@ function useDesktopStore() {
     setProjectTypes,
     setWorkspaceOf,
     setWorkspaceTitles,
+    setListedAgentOf,
     setInitSelection,
     setProjectContext,
   } = useSidebar();
@@ -300,11 +302,13 @@ function useDesktopStore() {
   const refreshConversations = useCallback(async () => {
     try {
       const data = JSON.parse(await api.listConversations());
-      setConversations(data.conversations || []);
+      const listed: Conversation[] = data.conversations || [];
+      setConversations(listed);
+      setListedAgentOf(listedAgentOf(listed));
     } catch (e) {
       console.error("Failed to load conversations:", e);
     }
-  }, []);
+  }, [setListedAgentOf]);
 
   useEffect(() => {
     window.addEventListener("focus", refreshConversations);

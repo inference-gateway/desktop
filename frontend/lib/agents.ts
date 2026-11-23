@@ -1,6 +1,6 @@
 import { Avatar, Style } from "@dicebear/core";
 import bottts from "@dicebear/styles/bottts.json";
-import type { MarkdownAgent } from "./tauri";
+import type { Conversation, MarkdownAgent } from "./tauri";
 
 export type AgentFace =
   { kind: "picture"; src: string } | { kind: "emoji"; emoji: string } | { kind: "initial"; letter: string };
@@ -32,6 +32,17 @@ export function agentFace(agent: Pick<MarkdownAgent, "name" | "emoji" | "avatar"
   if (emoji) return { kind: "emoji", emoji };
   if (agent.name) return { kind: "picture", src: generatedRobot(agent.name) };
   return { kind: "initial", letter: "?" };
+}
+
+/** The agent each top-level chat runs as, as the CLI's listing records it. A
+ * subagent's chat stays under its orchestrator, and a chat of the main agent
+ * belongs to no agent. */
+export function listedAgentOf(
+  conversations: Pick<Conversation, "id" | "agent" | "parent_session_id">[],
+): Record<string, string> {
+  return Object.fromEntries(
+    conversations.flatMap((c) => (c.agent && c.agent !== MAIN_AGENT && !c.parent_session_id ? [[c.id, c.agent]] : [])),
+  );
 }
 
 /** The model an agent chat runs on, the rule the CLI applies to the agent
