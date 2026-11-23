@@ -34,6 +34,8 @@ import { autoGrow } from "@/lib/textarea";
 import { isBashCommand } from "@/lib/tools";
 import { fetchSkillsCatalog, type SkillMetadata } from "@/lib/skills";
 import { insertMention, mentionAt, menuKey, menuRows, type Mention } from "@/lib/mentions";
+import { tableFor, triggersFor } from "@/lib/composer";
+import { useComposer } from "@/stores/composer";
 import { api, type Issue, type Workspace, type WorkspaceConfig } from "@/lib/tauri";
 import { agentPinsModel, agentThreadModel } from "@/lib/agents";
 import { workspaceModel } from "@/lib/workspace-model";
@@ -329,6 +331,7 @@ export function Composer() {
   } = useDesktop();
   const { drivenId } = useComputers();
   const { setStatus, setError } = useStatusActions();
+  const { composer } = useComposer();
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
@@ -466,7 +469,7 @@ export function Composer() {
       }
       return;
     }
-    const found = mentionAt(el.value, el.selectionStart);
+    const found = mentionAt(el.value, el.selectionStart, triggersFor(composer, "chat"));
     setMention(found);
     setActiveMentionIdx(0);
     if (found) {
@@ -542,7 +545,7 @@ export function Composer() {
 
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
-  const mentionRows = menuRows(mention, files, issues);
+  const mentionRows = menuRows(mention, tableFor(composer, "chat"), { files, issues, agents });
 
   useEffect(() => {
     setReply(null);
@@ -878,6 +881,7 @@ export function Composer() {
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
+                {row.agent && <AgentAvatar agent={row.agent} size={16} />}
                 <span className="min-w-0 flex-1 truncate font-medium">{row.label}</span>
               </button>
             ))}
