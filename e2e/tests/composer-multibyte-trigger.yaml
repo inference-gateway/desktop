@@ -1,0 +1,26 @@
+name: a composer.yaml trigger may be a multi-byte character such as §
+platform: macos
+composer_yaml: |
+  triggers:
+    chat:
+      "§": [issues]
+narration:
+  - "Seeded composer.yaml maps the multi-byte § to the issues menu in a chat."
+  - "Open a fresh chat and start the CLI."
+  - "Type § in the composer."
+  - "The issue menu opens under the multi-byte trigger like any other."
+  - "Narrow it to flaky and press Enter."
+  - "The composer now holds the picked issue as #57, ready to send."
+steps:
+  - new_chat
+  - send: "hi"
+  - wait_for:
+      text: "Done."
+      timeout: 30
+  - keypress: "§"
+  - wait_for:
+      button: "#57 Fix the flaky test"
+      timeout: 10
+  - type: "flaky"
+  - assert_composer:
+      text: "#57"

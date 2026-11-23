@@ -1,0 +1,32 @@
+name: a seeded composer.yaml remaps the issue menu onto ^ so # opens nothing
+composer_yaml: |
+  triggers:
+    chat:
+      "^": [issues]
+narration:
+  - "Seeded composer.yaml puts the issues menu on ^, dropping @ and # from a chat."
+  - "Open a fresh chat and start the CLI."
+  - "Type # in the composer."
+  - "No menu opened, so pressing Enter sends the typed #57 to the agent."
+  - "Type ^ in the composer."
+  - "The issue menu opens under its new trigger, listing the open issues."
+  - "Narrow it to flaky and press Enter."
+  - "The composer now holds the picked issue as #57, ready to send."
+steps:
+  - new_chat
+  - send: "hi"
+  - wait_for:
+      text: "Done."
+      timeout: 30
+  - keypress: "#"
+  - type: "57"
+  - wait_for:
+      text: "#57"
+      timeout: 20
+  - keypress: "^"
+  - wait_for:
+      button: "#57 Fix the flaky test"
+      timeout: 10
+  - type: "flaky"
+  - assert_composer:
+      text: "#57"
