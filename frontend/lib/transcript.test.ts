@@ -5,6 +5,7 @@ import {
   chatReducer,
   promptRef,
   delegationsFrom,
+  chatOrigin,
   conversationParentId,
   delegationSessionId,
   followsBottom,
@@ -780,6 +781,29 @@ test("conversationParentId reads an empty parent_session_id as no parent", () =>
   expect(conversationParentId({ parent_session_id: "" })).toBeNull();
   expect(conversationParentId({ parent_session_id: null })).toBeNull();
   expect(conversationParentId({})).toBeNull();
+});
+
+test("chatOrigin tells who started a chat", () => {
+  const conversations = [
+    { id: "researcher-chat", title: "Can you send a message to the tester agent?" },
+    { id: "gone-chat-id", title: null },
+  ];
+  const cases: [Parameters<typeof chatOrigin>[0], string][] = [
+    [
+      { id: "s1", title: "Survey the fixtures", parent_session_id: "researcher-chat", label: "survey" },
+      "Survey the fixtures - invoked by orchestrator: Can you send a message to the tester agent? as survey",
+    ],
+    [
+      { id: "s2", title: "Unlabelled", parent_session_id: "unlisted-parent" },
+      "Unlabelled - invoked by orchestrator: unlis",
+    ],
+    [
+      { id: "p1", title: "test example.org", sent_by: "researcher-chat" },
+      "test example.org - sent by Can you send a message to the tester agent?",
+    ],
+    [{ id: "h1", title: null }, "h1 - invoked by human"],
+  ];
+  for (const [conv, want] of cases) expect(chatOrigin(conv, conversations)).toBe(want);
 });
 
 test("todosFrom returns the latest TodoWrite list with sane status defaults", () => {

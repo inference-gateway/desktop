@@ -7,6 +7,7 @@ import {
   agentModelServed,
   agentPinsModel,
   agentThreadModel,
+  listedAgentOf,
   normaliseAgentName,
 } from "./agents";
 import type { MarkdownAgent } from "./tauri";
@@ -116,4 +117,16 @@ test("agentModelServed flags only a pinned model the gateway does not serve", ()
   expect(agentModelServed(agent({ model: "inherit" }), served)).toBe(true);
   expect(agentModelServed(agent({ model: "sonnet" }), served)).toBe(true);
   expect(agentModelServed(agent({ model: "mock/openai/gpt-4o" }), [])).toBe(true);
+});
+
+test("listedAgentOf files a top-level chat under the agent the CLI lists it as", () => {
+  expect(
+    listedAgentOf([
+      { id: "peer", agent: "tester", parent_session_id: "" },
+      { id: "subagent", agent: "tester", parent_session_id: "peer" },
+      { id: "main", agent: "main" },
+      { id: "older", agent: null },
+      { id: "plain" },
+    ]),
+  ).toEqual({ peer: "tester" });
 });

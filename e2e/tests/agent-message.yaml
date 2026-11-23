@@ -1,0 +1,22 @@
+name: agent messages - an agent's message to another agent opens a chat of the recipient's own
+model_agent: e2e-sonnet
+content_project: e2e-agent-docs
+project_agent: e2e-docs-writer
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Select the sending agent."
+  - "Ask it to message the docs writer. The model calls the Agent tool with the docs writer's name."
+  - "The message starts the docs writer in a chat of its own while the sender carries on."
+  - "The docs writer's turn comes back to the sender."
+  - "The docs writer's chat is listed under the docs writer, opening on the sender's message."
+  - "It sits under the docs writer, not under the sender."
+  - "And above the sender's own row."
+steps:
+  - click: { button: "Filter agents" }
+  - click: { button: "Select agent e2e-sonnet" }
+  - send: "send the docs writer a message"
+  - wait_for: { text: "Message sent to the docs writer.", timeout: 60 }
+  - wait_for: { text: "The docs writer answered.", timeout: 60 }
+  - wait_for: { button: "Delete conversation [Message from e2e-sonnet] Draft the release notes and report back", timeout: 30 }
+  - assert_order: { above: "Select agent e2e-docs-writer", below: "Delete conversation [Message from e2e-sonnet] Draft the release notes and report back" }
+  - assert_order: { above: "Delete conversation [Message from e2e-sonnet] Draft the release notes and report back", below: "Select agent e2e-sonnet" }

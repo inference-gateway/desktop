@@ -16,7 +16,9 @@ function useSidebarStore() {
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>(() => ({}));
   const [projectGroups, setProjectGroups] = useState<Record<string, string>>(() => ({}));
   const [projectTypes, setProjectTypes] = useState<Record<string, ProjectType>>(() => ({}));
-  const [agentOf, setAgentOf] = useState<Record<string, string>>(() => ({}));
+  const [assignedAgentOf, setAgentOf] = useState<Record<string, string>>(() => ({}));
+  const [listedAgentOf, setListedAgentOf] = useState<Record<string, string>>(() => ({}));
+  const agentOf = useMemo(() => ({ ...listedAgentOf, ...assignedAgentOf }), [listedAgentOf, assignedAgentOf]);
   const [workspaceOf, setWorkspaceOf] = useState<Record<string, string>>(() => ({}));
   const [workspaceTitles, setWorkspaceTitles] = useState<Record<string, string>>(() => ({}));
   const [initSelection, setInitSelection] = useState<Set<string>>(() => new Set());
@@ -77,7 +79,7 @@ function useSidebarStore() {
         paths: projectPaths,
         groups: projectGroups,
         types: projectTypes,
-        agents: agentOf,
+        agents: assignedAgentOf,
         workspaces: workspaceOf,
         titles: workspaceTitles,
         selected: initSelection,
@@ -95,7 +97,7 @@ function useSidebarStore() {
     projectPaths,
     projectGroups,
     projectTypes,
-    agentOf,
+    assignedAgentOf,
     workspaceOf,
     workspaceTitles,
     initSelection,
@@ -268,6 +270,7 @@ function useSidebarStore() {
       setActiveProject,
       setProjectTypes,
       setAgentOf,
+      setListedAgentOf,
       setWorkspaceOf,
       setWorkspaceTitles,
       setInitSelection,

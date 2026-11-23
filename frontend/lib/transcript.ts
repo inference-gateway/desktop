@@ -162,6 +162,22 @@ export function conversationParentId(conv: Pick<Conversation, "parent_session_id
   return conv.parent_session_id || null;
 }
 
+/** Who started a listed chat, as its sidebar row's tooltip tells it: the
+ * orchestrator that spawned it and the label it gave it, the chat whose
+ * message started it, or a human. */
+export function chatOrigin(
+  conv: Pick<Conversation, "id" | "title" | "parent_session_id" | "label" | "sent_by">,
+  conversations: Pick<Conversation, "id" | "title">[],
+): string {
+  const titleOf = (id: string) => conversations.find((c) => c.id === id)?.title || id.slice(0, 5);
+  const name = conv.title || conv.id;
+  const parentId = conversationParentId(conv);
+  if (parentId)
+    return `${name} - invoked by orchestrator: ${titleOf(parentId)}${conv.label ? ` as ${conv.label}` : ""}`;
+  if (conv.sent_by) return `${name} - sent by ${titleOf(conv.sent_by)}`;
+  return `${name} - invoked by human`;
+}
+
 /** The ids of the chats `id` spawned, and the chats those spawned, deepest
  * first - the order a delete takes them in, so no subagent chat is left
  * behind without its orchestrator. */
