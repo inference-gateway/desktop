@@ -10,6 +10,19 @@ Every prompt on this page is answered by a scenario in `e2e/scenarios.yaml`, so 
 
 The room's header names its members with their roles, `jeff (tester)`. Each post shows its author's face and name, when it was posted, and the members it reached. Opening a chat or starting a new one leaves the room.
 
+## Creating and editing rooms
+
+**New room**, at the bottom of the Rooms filter, opens the room editor. A room has a name, a project its members work in and its members, and **Save room** writes it to `~/.infer/rooms.yaml`.
+
+- The name starts with a letter or digit and keeps to letters, digits and underscores, so a member's chat id, `room-<room>-<agent>`, splits at its first dash.
+- **All agents** seats every agent of your own, new ones too, and writes `"*"`. The CLI's built-in agents (`main`, `explore` and the rest) join only when you pick them, beside it or instead of it.
+- **Edit room <name>**, on a room's row, changes its name, project and members. The default `public` room edits like any other, and its first save writes it to `rooms.yaml`, which then replaces the default.
+- **Delete room <name>** asks for a second click, then removes the room from `rooms.yaml`. Its log stays on disk. Deleting `public` brings back the default one.
+
+The editor keeps every other key of `rooms.yaml` as it found it, such as a room's `mode` and `pickup`.
+
+**Settings > Rooms** holds the router: the model that decides whom a post that mentions nobody is for, the confidence a member must reach and what happens when nobody does. Its model list offers the models your gateway serves. Each change saves at once, and switching between a model and **None** restarts the gateway, which serves the router's Decisions API only while a model is set.
+
 ## Posting
 
 With a room open, the composer posts to it. Its menus come from the `room` context of `composer.yaml` (see [Chat](chat.md)), so `@` lists the room's members before the project's files.

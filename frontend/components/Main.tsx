@@ -19,6 +19,7 @@ const TimelineView = lazy(() => import("./TimelineView").then((m) => ({ default:
 const ObservabilityView = lazy(() => import("./ObservabilityView").then((m) => ({ default: m.ObservabilityView })));
 const ComputersView = lazy(() => import("./ComputersView").then((m) => ({ default: m.ComputersView })));
 const AgentEditor = lazy(() => import("./AgentEditor").then((m) => ({ default: m.AgentEditor })));
+const RoomEditor = lazy(() => import("./RoomEditor").then((m) => ({ default: m.RoomEditor })));
 
 const CHAT_DOCK_KEY = "chatDockWidth";
 const DEFAULT_CHAT_DOCK_WIDTH = 400;
@@ -30,7 +31,7 @@ const DEFAULT_CHAT_DOCK_WIDTH = 400;
 export function Main() {
   const { projectTypes } = useSidebar();
   const { agentEditor } = useAgents();
-  const { openRoom } = useRooms();
+  const { openRoom, roomEditor } = useRooms();
   const { currentProject } = useDesktop();
   const { currentView, sidebarOpen, setSidebarOpen, chatOpen } = useNavigation();
   const content = currentProject !== null && projectTypes[currentProject] === "content";
@@ -69,6 +70,12 @@ export function Main() {
         <div id="content" className="flex min-w-0 flex-1 flex-col">
           <Suspense>
             <AgentEditor key={agentEditor.agent?.name ?? "new"} />
+          </Suspense>
+        </div>
+      ) : roomEditor ? (
+        <div id="content" className="flex min-w-0 flex-1 flex-col">
+          <Suspense>
+            <RoomEditor key={roomEditor.room?.name ?? "new"} />
           </Suspense>
         </div>
       ) : openRoom ? (

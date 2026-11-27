@@ -16,6 +16,7 @@ import { selectableVersions, stripV, versionAction } from "@/lib/updates";
 import { GeneralTab } from "./GeneralTab";
 import { GithubTab, GITHUB_SUBTABS, type GithubSubTab } from "./GithubTab";
 import { AgentsTab } from "./AgentsTab";
+import { RoomsTab } from "./RoomsTab";
 import { ProjectsTab } from "./ProjectsTab";
 import { SnippetsTab } from "./SnippetsTab";
 import { SystemPromptTab } from "./SystemPromptTab";
@@ -32,6 +33,7 @@ type Tab =
   | "prompt"
   | "updates"
   | "agents"
+  | "rooms"
   | "compute"
   | "workspaces"
   | "snippets"
@@ -49,6 +51,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "mcps", label: "MCPs" },
   { id: "prompt", label: "System Prompt" },
   { id: "agents", label: "Agents" },
+  { id: "rooms", label: "Rooms" },
   { id: "compute", label: "Compute" },
   { id: "workspaces", label: "Workspaces" },
   { id: "projects", label: "Projects" },
@@ -284,6 +287,7 @@ export function SettingsView() {
           )}
 
           {tab === "agents" && <AgentsTab />}
+          {tab === "rooms" && <RoomsTab />}
           {tab === "secrets" && <SecretsTab />}
           {tab === "mcps" && <McpTab />}
           {tab === "compute" && <ComputeTab />}

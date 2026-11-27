@@ -24,6 +24,7 @@ mod observability;
 mod permissions;
 mod processes;
 mod projects;
+mod room_config;
 mod rooms;
 mod scheduler;
 mod screen_records;
@@ -310,6 +311,11 @@ pub fn run() {
             rooms::post_room,
             rooms::follow_room,
             rooms::leave_room,
+            room_config::read_rooms_settings,
+            room_config::save_room,
+            room_config::delete_room,
+            room_config::save_room_router,
+            room_config::list_room_agents,
             tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,

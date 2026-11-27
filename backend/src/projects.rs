@@ -292,6 +292,14 @@ pub(crate) fn project_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
+/// Every sidebar project with the directory it resolves to.
+pub(crate) fn project_names_at() -> Vec<(String, PathBuf)> {
+    let root = PathBuf::from(read_config().projects_root);
+    resolved_dirs(&root, &project_names(), &project_groups(), &project_paths())
+        .into_iter()
+        .collect()
+}
+
 pub(crate) fn project_dir(name: &str) -> Option<PathBuf> {
     let mut names = project_names();
     if !names.iter().any(|n| n == name) {
