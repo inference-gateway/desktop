@@ -3,6 +3,7 @@ narration:
   - "Switch the sidebar to the Agents filter."
   - "Start a new agent."
   - "Name it e2e-helper."
+  - "Give it a role - its job title, shown under its name."
   - "Describe what it is for."
   - "Give it its instructions - Enter is a newline there."
   - "Tab out of the instructions into the address field."
@@ -17,11 +18,13 @@ narration:
   - "Send it a prompt."
   - "The reply lands."
   - "The agent sits in the sidebar with its chat."
+  - "Its role shows under its name."
   - "Leave the agent."
 steps:
   - click: { button: "Filter agents" }
   - click: { button: "New agent" }
   - type: "e2e-helper"
+  - type: "concierge"
   - type: "Answers e2e questions tersely"
   - type: "You are the e2e helper. Keep every answer to one line."
   - keypress: "tab"
@@ -36,4 +39,5 @@ steps:
   - send: "hi"
   - wait_for: { text: "Done.", timeout: 30 }
   - wait_for: { button: "Select agent e2e-helper", timeout: 5 }
+  - wait_for: { text: "concierge", timeout: 5 }
   - click: { button: "Leave agent e2e-helper" }

@@ -175,6 +175,7 @@ pub fn run() {
             agent::send_message,
             markdown_agents::list_markdown_agents,
             markdown_agents::save_markdown_agent,
+            markdown_agents::create_agent_from_role,
             markdown_agents::delete_markdown_agent,
             markdown_agents::pick_agent_avatar,
             markdown_agents::remove_agent_avatar,

@@ -16,6 +16,7 @@ import { FLUENT_EMOJIS, fluentAnimatedUrl, fluentStaticUrl } from "./fluent-emoj
 const agent = (over: Partial<MarkdownAgent>): MarkdownAgent => ({
   name: "writer",
   description: "Writes prose.",
+  role: "",
   emoji: "",
   model: "",
   workspace: "",

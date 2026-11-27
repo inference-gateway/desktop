@@ -243,6 +243,8 @@ export type ComposerSettings = {
 export type MarkdownAgent = {
   name: string;
   description: string;
+  /** The agent's job title, shown after its name as `jeff (tester)`, blank for none. */
+  role: string;
   emoji: string;
   model: string;
   /** The daemon workspace the agent's chats run on, blank for this computer. */
@@ -726,6 +728,7 @@ export const api = {
   deleteRoom: (name: string) => invoke<void>("delete_room", { name }),
   saveRoomRouter: (router: RouterSettings) => invoke<void>("save_room_router", { router }),
   listRoomAgents: () => invoke<RoomAgent[]>("list_room_agents"),
+  createAgentFromRole: (agent: MarkdownAgent) => invoke<MarkdownAgent>("create_agent_from_role", { agent }),
   listHistory: (project: string | null) => invoke<string[]>("list_history", { project }),
   listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
