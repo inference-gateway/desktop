@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Answering can start a worker in the project first.
 const MENU_TIMEOUT: Duration = Duration::from_secs(15);
@@ -78,7 +78,7 @@ pub(crate) fn watch_composer_file(
             let _ = app.emit(crate::events::COMPOSER_CHANGED, ());
         }
     })?;
-    let _ = watcher.watch(infer_dir(), RecursiveMode::NonRecursive);
+    let _ = watcher.watch(&infer_dir(), RecursiveMode::NonRecursive);
     Ok(watcher)
 }
 
@@ -251,7 +251,7 @@ mod tests {
             vec!["agents".to_owned(), "files".to_owned()]
         );
         assert_eq!(composer.triggers["chat"]["#"], vec!["issues".to_owned()]);
-        assert_eq!(composer.status_bar.indicators["cost"], false);
+        assert!(!composer.status_bar.indicators["cost"]);
     }
 
     /// Keys the CLI's answer leaves out keep the defaults, and a switch the
@@ -281,17 +281,17 @@ mod tests {
                     event.add_path(std::path::PathBuf::from(path))
                 })
         };
-        assert!(touches_composer_yaml(&event([
+        assert!(touches_composer_yaml(&event(&[
             "/home/x/.infer/composer.yaml"
         ])));
-        assert!(touches_composer_yaml(&event([
+        assert!(touches_composer_yaml(&event(&[
             "/home/x/.infer/config.yaml",
             "/home/x/.infer/composer.yaml"
         ])));
-        assert!(!touches_composer_yaml(&event([
+        assert!(!touches_composer_yaml(&event(&[
             "/home/x/.infer/config.yaml",
             "/home/x/.infer/composer.yaml.tmp"
         ])));
-        assert!(!touches_composer_yaml(&event([])));
+        assert!(!touches_composer_yaml(&event(&[])));
     }
 }

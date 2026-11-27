@@ -19,7 +19,8 @@ steps:
   - assert_order:
       above: "README.md"
       below: "reviewer"
-  - click: "reviewer"
+  - click:
+      button: "reviewer"
   - assert_composer:
       text: "@reviewer"
 workspace_agent: reviewer
