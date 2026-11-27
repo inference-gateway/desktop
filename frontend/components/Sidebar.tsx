@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bot, Clapperboard, Code, LayoutList, MessageSquarePlus, Radio } from "lucide-react";
+import { Bot, Clapperboard, Code, Hash, LayoutList, MessageSquarePlus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
@@ -17,7 +17,7 @@ export function Sidebar() {
   const [dragging, setDragging] = useState(false);
   const mixedTypes = new Set(projectNames.map((n) => projectTypes[n] ?? "code")).size > 1;
   useEffect(() => {
-    if (!mixedTypes) setFilter((f) => (f === "agents" ? f : null));
+    if (!mixedTypes) setFilter((f) => (f === "agents" || f === "rooms" ? f : null));
   }, [mixedTypes, setFilter]);
   const filters = [
     { id: null, label: "Filter all", title: "Show everything", icon: <LayoutList /> },
@@ -33,6 +33,7 @@ export function Sidebar() {
         ]
       : []),
     { id: "agents" as const, label: "Filter agents", title: "Show your agents", icon: <Bot /> },
+    { id: "rooms" as const, label: "Filter rooms", title: "Show your rooms", icon: <Hash /> },
   ];
   const resetWidth = () => {
     setWidth(DEFAULT_SIDEBAR_WIDTH);

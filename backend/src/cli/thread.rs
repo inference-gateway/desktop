@@ -408,6 +408,36 @@ pub(crate) fn exchange<T>(
     answer
 }
 
+/// A request whose answer opens a stream on the same connection: sends
+/// `request`, waits for the frame of type `answer`, then hands every later frame
+/// to `on_frame` until the returned sender drops. Frames queued on the sender
+/// go out on the connection first, so a closing frame still reaches the daemon.
+pub(crate) fn subscribe(
+    binding: &Binding,
+    request: serde_json::Value,
+    answer: &str,
+    timeout: Duration,
+    on_frame: impl FnMut(&str) + Send + 'static,
+) -> Result<(serde_json::Value, mpsc::Sender<String>), String> {
+    let mut ws = dial(binding)?;
+    ws.send(Message::text(request.to_string()))
+        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + timeout;
+    let first = loop {
+        let frame: serde_json::Value =
+            serde_json::from_str(&read_text(&mut ws, deadline)?).unwrap_or_default();
+        if frame["type"] == "RUN_ERROR" {
+            return Err(frame["message"].as_str().unwrap_or("").to_string());
+        }
+        if frame["type"] == answer {
+            break frame;
+        }
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || pump(ws, rx, on_frame));
+    Ok((first, tx))
+}
+
 pub(crate) fn uuid() -> String {
     let mut b: [u8; 16] = rand::random();
     b[6] = (b[6] & 0x0f) | 0x40;

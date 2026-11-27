@@ -43,6 +43,7 @@ Releases are not signed by Apple or Microsoft, so the first launch needs one ext
 - [Chat](docs/chat.md) - the four agent modes, plans and approvals, and the composer's prefixes, menus and per-message actions.
 - [How it works](docs/how-it-works.md) - the gateway and CLI, working directory and sandbox, updates, supported platforms.
 - [Agents and computers](docs/agents.md) - write your own agents and give them a machine of their own.
+- [Rooms](docs/rooms.md) - talk to several agents in one place, routed by mention or a router model.
 - [A2A agents](docs/agents.md#a2a-agents) - Settings > Agents: catalog agents in containers and remote agents by URL that a chat hands tasks to.
 - [Scheduled jobs and GitHub tasks](docs/scheduling.md) - Settings > GitHub: jobs on a cron schedule on the local or the github backend, the Actions secrets, and issues as tasks.
 - [MCP servers](docs/mcp.md) - Settings > MCPs end to end: hosted and container servers, headers whose values are secrets, where a server goes.

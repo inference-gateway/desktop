@@ -10,6 +10,8 @@ import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
 import { useAgents } from "@/stores/agents";
 import { useSidebar } from "@/stores/sidebar";
+import { useRooms } from "@/stores/rooms";
+import { RoomView } from "./RoomView";
 import { clampSidebarWidth, loadSidebarWidth, saveSidebarWidth } from "@/lib/sidebar-width";
 
 const SettingsView = lazy(() => import("./SettingsView").then((m) => ({ default: m.SettingsView })));
@@ -28,6 +30,7 @@ const DEFAULT_CHAT_DOCK_WIDTH = 400;
 export function Main() {
   const { projectTypes } = useSidebar();
   const { agentEditor } = useAgents();
+  const { openRoom } = useRooms();
   const { currentProject } = useDesktop();
   const { currentView, sidebarOpen, setSidebarOpen, chatOpen } = useNavigation();
   const content = currentProject !== null && projectTypes[currentProject] === "content";
@@ -67,6 +70,11 @@ export function Main() {
           <Suspense>
             <AgentEditor key={agentEditor.agent?.name ?? "new"} />
           </Suspense>
+        </div>
+      ) : openRoom ? (
+        <div id="content" className="flex min-w-0 flex-1 flex-col">
+          <RoomView />
+          <Composer />
         </div>
       ) : content ? (
         <div id="content" className="flex min-w-0 flex-1">

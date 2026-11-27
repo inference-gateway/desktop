@@ -55,6 +55,7 @@ import { NavigationProvider, useNavigation } from "@/stores/navigation";
 import { SelectionProvider, useSelection } from "@/stores/selection";
 import { PromptQueueProvider, usePromptQueue } from "@/stores/prompt-queue";
 import { ComputersProvider, useComputers } from "@/stores/computers";
+import { RoomsProvider, useRooms } from "@/stores/rooms";
 
 const AGENT_MODE_KEY = "agentMode";
 const AWAITING_LABELS = {
@@ -182,6 +183,7 @@ function useDesktopStore() {
   const { selected, setSelected, lastClickedIndex, clearSelection } = useSelection();
   const { queuedPrompts, queuePrompt, dropQueued, clearQueued, takeAllQueued } = usePromptQueue();
   const { drivenId, setDrivenId, setMoving, movingRef } = useComputers();
+  const { closeRoom } = useRooms();
   const [agentMode, setAgentModeState] = useState<AgentMode>(() => parseMode(localStorage.getItem(AGENT_MODE_KEY)));
   const [agentModes, setAgentModes] = useState<Record<string, AgentMode>>({});
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -541,6 +543,7 @@ function useDesktopStore() {
 
   const openConversation = useCallback(
     async (id: string) => {
+      closeRoom();
       leaveConversation(id);
       setActiveId(id);
       activeIdRef.current = id;
@@ -553,16 +556,17 @@ function useDesktopStore() {
         dispatchTo(id, { type: "error", text: `Failed to load conversation: ${err}` });
       }
     },
-    [projects, agentOf, followThread, dispatchTo, leaveConversation],
+    [projects, agentOf, followThread, dispatchTo, leaveConversation, closeRoom],
   );
 
   const newChat = useCallback(() => {
+    closeRoom();
     leaveConversation(null);
     setActiveId(null);
     activeIdRef.current = null;
     clearSelection();
     composerRef.current?.focus();
-  }, [clearSelection, composerRef, leaveConversation]);
+  }, [clearSelection, composerRef, leaveConversation, closeRoom]);
 
   const selectProject = useCallback(
     (name: string | null) => {
@@ -1613,7 +1617,9 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
                       <SelectionProvider>
                         <PromptQueueProvider>
                           <ComputersProvider>
-                            <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                            <RoomsProvider>
+                              <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                            </RoomsProvider>
                           </ComputersProvider>
                         </PromptQueueProvider>
                       </SelectionProvider>

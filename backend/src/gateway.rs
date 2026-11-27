@@ -88,6 +88,9 @@ pub(crate) fn reuse_running_gateway(
 /// The CLI's `gateway.version` that follows the newest gateway release.
 const LATEST_GATEWAY_VERSION: &str = "latest";
 
+/// The CLI's rooms settings in ~/.infer, the router model among them.
+const ROOMS_FILE: &str = "rooms.yaml";
+
 /// The `gateway.version` a reinstall leaves in the CLI config: the release the
 /// user picked, or the latest one. The CLI then keeps the gateway on it.
 fn chosen_gateway_version(tag: Option<&str>) -> &str {
@@ -165,6 +168,20 @@ fn video_env(ttv_enabled: bool) -> Option<(&'static str, &'static str)> {
     ttv_enabled.then_some(("VIDEOS_ENABLED", "true"))
 }
 
+/// Env var that serves the gateway's Decisions API, which the CLI's rooms
+/// router asks whom an unmentioned post is for. The CLI routes on its default
+/// model unless rooms.yaml empties `router.model`. Read at spawn, like `audio_env`.
+fn decisions_env(rooms_yaml: Option<&str>) -> Option<(&'static str, &'static str)> {
+    let rooms: Option<serde_norway::Value> =
+        rooms_yaml.and_then(|text| serde_norway::from_str(text).ok());
+    let model = rooms.as_ref().and_then(|r| r["router"]["model"].as_str());
+    (model != Some("")).then_some(("DECISIONS_ENABLED", "true"))
+}
+
+fn rooms_yaml() -> Option<String> {
+    std::fs::read_to_string(crate::env::infer_dir().join(ROOMS_FILE)).ok()
+}
+
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
     let cfg = crate::cli::config::read_config();
     crate::env::command(bin)
@@ -175,6 +192,7 @@ pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {
             cfg.text_to_speech_auto_download,
         ))
         .envs(video_env(cfg.text_to_video_enabled))
+        .envs(decisions_env(rooms_yaml().as_deref()))
         .env("TELEMETRY_ENABLED", "true")
         .env("TELEMETRY_TRACING_ENABLED", "true")
         .env("IMAGES_ENABLED", "true")
@@ -264,6 +282,18 @@ mod tests {
                 .expect_err("a foreign gateway cannot be restarted");
             assert!(err.contains("http://localhost:8080"), "{err}");
         }
+    }
+
+    #[test]
+    fn decisions_are_served_unless_rooms_yaml_empties_the_router_model() {
+        let on = Some(("DECISIONS_ENABLED", "true"));
+        assert_eq!(decisions_env(None), on);
+        assert_eq!(decisions_env(Some("rooms:\n  - name: release\n")), on);
+        assert_eq!(
+            decisions_env(Some("router:\n  model: ollama_cloud/glm-5.3-flash\n")),
+            on
+        );
+        assert_eq!(decisions_env(Some("router:\n  model: \"\"\n")), None);
     }
 
     #[test]

@@ -24,6 +24,7 @@ mod observability;
 mod permissions;
 mod processes;
 mod projects;
+mod rooms;
 mod scheduler;
 mod screen_records;
 mod skills;
@@ -130,6 +131,7 @@ pub fn run() {
         .manage(timeline::Export::default())
         .manage(projects::GitWatcher(std::sync::Mutex::new(None)))
         .manage(composer::ComposerWatcher(std::sync::Mutex::new(None)))
+        .manage(rooms::RoomFollows::default())
         .manage(AppState {
             processes: Arc::clone(&processes),
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
@@ -304,6 +306,10 @@ pub fn run() {
             composer::list_issues,
             composer::list_history,
             composer::get_composer,
+            rooms::list_rooms,
+            rooms::post_room,
+            rooms::follow_room,
+            rooms::leave_room,
             tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,

@@ -1,0 +1,31 @@
+name: a room post that mentions a member reaches it and the room shows its answer
+narration:
+  - "Show the rooms in the sidebar."
+  - "Open the default public room every agent is in."
+  - "The room opens, empty so far."
+  - "Ask the seeded reviewer by its mention."
+  - "The post shows it was routed to the reviewer."
+  - "The reviewer answers in the room."
+  - "Its post opens the reviewer's own chat in the room."
+  - "The chat holds the same answer."
+steps:
+  - click:
+      button: "Filter rooms"
+  - click:
+      button: "Select room public"
+  - wait_for:
+      text: "No posts in #public yet."
+      timeout: 30
+  - send: "@reviewer check the release notes"
+  - wait_for:
+      text: "to reviewer"
+      timeout: 30
+  - wait_for:
+      text: "The release notes look good."
+      timeout: 90
+  - click:
+      button: "Open reviewer's chat"
+  - wait_for:
+      text: "The release notes look good."
+      timeout: 30
+model_agent: reviewer
