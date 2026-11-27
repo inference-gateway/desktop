@@ -174,6 +174,13 @@ export type Conversation = {
   sent_by?: string | null;
 };
 export type A2aAgent = { name: string; url: string; run: boolean; model: string };
+/** The composer's trigger table the CLI resolves from ~/.infer/composer.yaml: per
+ * context, which sources (files, agents, issues) each trigger opens in menu order,
+ * beside the status bar toggles the same file holds. */
+export type ComposerSettings = {
+  triggers: Record<string, Record<string, string[]>>;
+  status_bar: { enabled: boolean; indicators: Record<string, boolean> };
+};
 /** A Markdown agent (`<name>.md` in one of the agent dirs): frontmatter profile plus its instructions. */
 export type MarkdownAgent = {
   name: string;
@@ -651,6 +658,7 @@ export const api = {
   listTools: () => invoke<string[]>("list_tools"),
   listFiles: (project: string | null) => invoke<string[]>("list_files", { project }),
   listIssues: (project: string | null) => invoke<Issue[]>("list_issues", { project }),
+  getComposer: () => invoke<ComposerSettings>("get_composer"),
   listHistory: (project: string | null) => invoke<string[]>("list_history", { project }),
   listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),

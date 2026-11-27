@@ -365,7 +365,7 @@ impl AppDriver {
             "down" => "keystroke (key code 125)".to_string(),
             "tab" => "keystroke (key code 48)".to_string(),
             "escape" => "keystroke (key code 53)".to_string(),
-            k if k.chars().count() == 1 && k.is_ascii() => format!("keystroke \"{}\"", escape(k)),
+            k if k.chars().count() == 1 => format!("keystroke \"{}\"", escape(k)),
             _ => bail!("unsupported keypress key: {key:?}"),
         };
         once_rendered(RENDER_TIMEOUT, POLL_INTERVAL, || {

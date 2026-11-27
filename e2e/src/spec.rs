@@ -34,6 +34,8 @@ pub struct Test {
     pub avatar: Option<String>,
     #[serde(default)]
     pub hub_model: Option<String>,
+    #[serde(default)]
+    pub composer_yaml: Option<String>,
     pub steps: Vec<Step>,
 }
 

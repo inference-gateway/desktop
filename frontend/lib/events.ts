@@ -3,6 +3,7 @@
 export const BACKEND_EVENTS = {
   agentEvent: "agent-event",
   browserBridge: "browser-bridge",
+  composerChanged: "composer-changed",
   gitChanged: "git-changed",
   projectChanged: "project-changed",
 } as const;

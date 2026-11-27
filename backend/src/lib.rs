@@ -129,6 +129,7 @@ pub fn run() {
         .manage(timeline::ProjectWatcher(std::sync::Mutex::new(None)))
         .manage(timeline::Export::default())
         .manage(projects::GitWatcher(std::sync::Mutex::new(None)))
+        .manage(composer::ComposerWatcher(std::sync::Mutex::new(None)))
         .manage(AppState {
             processes: Arc::clone(&processes),
             scheduler_log: std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new())),
@@ -147,6 +148,16 @@ pub fn run() {
             realize_hidden_windows(app);
             skills::install_bundled_skills();
             let handle = app.handle().clone();
+            match composer::watch_composer_file(handle.clone()) {
+                Ok(watcher) => {
+                    *handle
+                        .state::<composer::ComposerWatcher>()
+                        .0
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(watcher);
+                }
+                Err(e) => eprintln!("watching composer.yaml failed: {e}"),
+            }
             std::thread::spawn(move || {
                 let state = handle.state::<AppState>();
                 if let Err(e) = cli::daemon::ensure_running(&state.processes, &state.scheduler_log)
@@ -292,6 +303,7 @@ pub fn run() {
             composer::list_files,
             composer::list_issues,
             composer::list_history,
+            composer::get_composer,
             tools::list_shortcuts,
             tools::mcp_status,
             tools::a2a_status,

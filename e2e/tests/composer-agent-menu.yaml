@@ -1,0 +1,26 @@
+name: typing @ in the composer offers the seeded agent after the project files
+narration:
+  - "Open a fresh chat."
+  - "Send a first message so the CLI is up."
+  - "The run completes - no scenario matches, the gateway fallback answers."
+  - "Type @ in the composer."
+  - "The menu lists the project's files, then the seeded agent as @reviewer."
+  - "Picking the agent row inserts it like a file row."
+steps:
+  - new_chat
+  - send: "hi"
+  - wait_for:
+      text: "Done."
+      timeout: 30
+  - keypress: "@"
+  - wait_for:
+      button: "reviewer"
+      timeout: 10
+  - assert_order:
+      above: "README.md"
+      below: "reviewer"
+  - click:
+      button: "reviewer"
+  - assert_composer:
+      text: "@reviewer"
+workspace_agent: reviewer

@@ -50,6 +50,7 @@ import { BackendProvider, MODEL_STORAGE_KEY, useBackend } from "@/stores/backend
 import { GitProvider, useGit } from "@/stores/git";
 import { SidebarProvider, useSidebar } from "@/stores/sidebar";
 import { AgentsProvider, useAgents } from "@/stores/agents";
+import { ComposerProvider } from "@/stores/composer";
 import { NavigationProvider, useNavigation } from "@/stores/navigation";
 import { SelectionProvider, useSelection } from "@/stores/selection";
 import { PromptQueueProvider, usePromptQueue } from "@/stores/prompt-queue";
@@ -1607,15 +1608,17 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
             <GitProvider>
               <SidebarProvider>
                 <AgentsProvider>
-                  <NavigationProvider>
-                    <SelectionProvider>
-                      <PromptQueueProvider>
-                        <ComputersProvider>
-                          <DesktopStoreProvider>{children}</DesktopStoreProvider>
-                        </ComputersProvider>
-                      </PromptQueueProvider>
-                    </SelectionProvider>
-                  </NavigationProvider>
+                  <ComposerProvider>
+                    <NavigationProvider>
+                      <SelectionProvider>
+                        <PromptQueueProvider>
+                          <ComputersProvider>
+                            <DesktopStoreProvider>{children}</DesktopStoreProvider>
+                          </ComputersProvider>
+                        </PromptQueueProvider>
+                      </SelectionProvider>
+                    </NavigationProvider>
+                  </ComposerProvider>
                 </AgentsProvider>
               </SidebarProvider>
             </GitProvider>

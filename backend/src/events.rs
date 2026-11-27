@@ -1,5 +1,6 @@
 pub(crate) const AGENT_EVENT: &str = "agent-event";
 pub(crate) const BROWSER_BRIDGE: &str = "browser-bridge";
+pub(crate) const COMPOSER_CHANGED: &str = "composer-changed";
 pub(crate) const GIT_CHANGED: &str = "git-changed";
 pub(crate) const PROJECT_CHANGED: &str = "project-changed";
 
@@ -82,9 +83,15 @@ mod tests {
 
     #[test]
     fn the_frontend_listens_for_exactly_the_events_the_backend_emits() {
-        let emitted: BTreeSet<String> = [AGENT_EVENT, BROWSER_BRIDGE, GIT_CHANGED, PROJECT_CHANGED]
-            .map(str::to_owned)
-            .into();
+        let emitted: BTreeSet<String> = [
+            AGENT_EVENT,
+            BROWSER_BRIDGE,
+            COMPOSER_CHANGED,
+            GIT_CHANGED,
+            PROJECT_CHANGED,
+        ]
+        .map(str::to_owned)
+        .into();
         assert_eq!(frontend_names(), emitted);
     }
 }

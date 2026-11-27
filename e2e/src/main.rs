@@ -285,6 +285,7 @@ fn run_test(
             speech_model: test.speech_model.as_deref(),
             avatar: test.avatar.as_deref(),
             hub_model: test.hub_model.as_deref(),
+            composer_yaml: test.composer_yaml.as_deref(),
         },
     )?;
     clean(&app, &test.cleanup);

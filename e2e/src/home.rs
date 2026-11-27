@@ -20,6 +20,7 @@ pub struct Seeds<'a> {
     pub speech_model: Option<&'a str>,
     pub avatar: Option<&'a str>,
     pub hub_model: Option<&'a str>,
+    pub composer_yaml: Option<&'a str>,
 }
 
 /// Wipe a mock run's HOME and write what the test wants on disk into it
@@ -48,6 +49,9 @@ pub fn prepare(home: &Path, repo_root: &Path, seeds: Seeds, infer: Option<&Path>
     }
     if let Some(id) = seeds.hub_model {
         seed_hub_model(home, id)?;
+    }
+    if let Some(yaml) = seeds.composer_yaml {
+        seed_composer_yaml(home, yaml)?;
     }
     if let Some(name) = seeds.voice_sample {
         let infer = infer.context("voice_sample needs an infer binary to speak it")?;
@@ -220,6 +224,16 @@ fn seed_hub_model(home: &Path, id: &str) -> Result<()> {
         .join(id);
     std::fs::create_dir_all(&folder)?;
     std::fs::write(folder.join("config.json"), "{}\n")?;
+    Ok(())
+}
+
+/// A composer.yaml of a HOME whose composer table is remapped before the
+/// app reads it. The CLI resolves the file, and a context it sets replaces
+/// that context's defaults, dropping any trigger the table leaves out.
+fn seed_composer_yaml(home: &Path, yaml: &str) -> Result<()> {
+    let infer_home = home.join(".infer");
+    std::fs::create_dir_all(&infer_home)?;
+    std::fs::write(infer_home.join("composer.yaml"), yaml)?;
     Ok(())
 }
 

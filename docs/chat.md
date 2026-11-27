@@ -35,11 +35,24 @@ Outside plan mode, in Standard mode, a protected tool call pauses with an **Appr
 
 Enter sends. Shift+Enter adds a newline. A prefix at the start of the prompt changes what sending does, and three of them open menus while you type:
 
-- `@` opens the file menu: the project directory's files, narrowed as you type to the first 50 matching paths. Arrows move, Enter picks, Escape closes, and the picked file lands in the prompt as `@<path>`. The trigger only starts the text or follows whitespace, so an email address or a URL containing `@` or `#` opens nothing.
+- `@` opens the file and agent menu: the project directory's files, then the agents, narrowed as you type across the menu's first 50 rows. Arrows move, Enter picks, Escape closes. A picked file lands in the prompt as `@<path>` and a picked agent as `@<name>`, and an agent row shows the agent's avatar.
 - `#` opens the open-issue menu: the project's open GitHub issues as `#<number> <title>`, narrowed as you type. Picking one inserts `#<number>`.
 - `/` opens the shortcut menu: the CLI's shortcut commands and the skills, narrowed as you type. A skill not on this machine yet is labelled _remote skill_ - picking one asks whether to download it first.
 - `!command` is bash mode: the prompt runs as a shell command in the workspace without a model turn, and the command's output lands in the conversation. Typing `!` inserts the space after it for you.
 - `!!` is tool mode: a menu of the agent's tools appears and Enter runs the picked tool call directly, without asking the model.
+
+### The trigger table
+
+Which menus the typing opens is not hard-coded, it is read from the CLI: `~/.infer/composer.yaml` (see the CLI's configuration reference) maps trigger characters to menus per context, and the desktop takes the CLI's resolved table for a chat as it is, just like the terminal's own composer. A trigger is any one special character, punctuation or symbol, ASCII or not, so a mapping such as `§` to the issues menu works the same as a built-in one. Every trigger of the table opens its sources in order, each section `files`, `agents` or `issues`, and every row inserts its own sigil: `@<path>`, `@<name>` and `#<number>`, whichever trigger opened the menu. The same rule as the TUI applies: the trigger starts the text or follows whitespace and does not recur in the token, so an email address, `C#` or a URL fragment opens nothing. The resolved table is used as is, never merged with the built-ins a newer or older CLI would bring, so a trigger the file leaves out of a context opens nothing there. An example `composer.yaml`:
+
+```yaml
+triggers:
+  chat:
+    "@": [files, agents]
+    "^": [issues]
+```
+
+With this file `@` keeps the files and agents and `^` takes over the issues, while `#` opens nothing in a chat any more, since a context the file sets replaces that context's defaults. The `status_bar` section of the same file holds the status bar's switches: whether the bar shows at all, and which of its indicators it shows, with a key it leaves out keeping the default, which is on.
 
 Arrow keys recall history: ArrowUp brings back your previous prompts, ArrowDown walks forward and returns to your draft. When a prompt is queued (below), ArrowUp returns the queued prompt to the composer instead, so you can edit it.
 
