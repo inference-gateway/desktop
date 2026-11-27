@@ -198,6 +198,24 @@ export type RoomFrame =
 /** The answer to following a room: the room and its log so far. */
 export type RoomSnapshot = { room: Room; posts: RoomPost[] | null };
 
+/** A room as rooms.yaml holds it: `project` is its directory, empty for the
+ * daemon's default, `project_name` the sidebar project there, and `agents` its
+ * seats, `*` for every agent of the user's own. */
+export type RoomEntry = { name: string; project: string; project_name: string | null; agents: string[] };
+
+/** A room as the editor saves it: `project` is a sidebar project's name, a
+ * directory kept as found, or empty. */
+export type RoomEdit = { name: string; project: string; agents: string[] };
+
+/** The rooms router: the decision model (empty routes mentions only), the
+ * bar a member must reach and what happens when nobody does. */
+export type RouterSettings = { model: string; min_confidence: number; fallback: "top" | "none" };
+
+export type RoomsSettings = { router: RouterSettings; rooms: RoomEntry[] };
+
+/** An agent a room can seat, the CLI's built-ins marked. */
+export type RoomAgent = { name: string; built_in: boolean };
+
 /** The answer to a post: the routed post and the notices for its author, such
  * as a pinged agent outside the room. */
 export type RoomPosted = { post: RoomPost; notices: string[] | null };
@@ -703,6 +721,11 @@ export const api = {
   postRoom: (room: string, text: string) => invoke<RoomPosted>("post_room", { room, text }),
   followRoom: (room: string, onEvent: Channel<RoomFrame>) => invoke<RoomSnapshot>("follow_room", { room, onEvent }),
   leaveRoom: (room: string) => invoke<void>("leave_room", { room }),
+  readRoomsSettings: () => invoke<RoomsSettings>("read_rooms_settings"),
+  saveRoom: (room: RoomEdit, previous: string | null) => invoke<void>("save_room", { room, previous }),
+  deleteRoom: (name: string) => invoke<void>("delete_room", { name }),
+  saveRoomRouter: (router: RouterSettings) => invoke<void>("save_room_router", { router }),
+  listRoomAgents: () => invoke<RoomAgent[]>("list_room_agents"),
   listHistory: (project: string | null) => invoke<string[]>("list_history", { project }),
   listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),

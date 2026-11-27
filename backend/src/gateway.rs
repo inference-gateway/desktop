@@ -88,9 +88,6 @@ pub(crate) fn reuse_running_gateway(
 /// The CLI's `gateway.version` that follows the newest gateway release.
 const LATEST_GATEWAY_VERSION: &str = "latest";
 
-/// The CLI's rooms settings in ~/.infer, the router model among them.
-const ROOMS_FILE: &str = "rooms.yaml";
-
 /// The `gateway.version` a reinstall leaves in the CLI config: the release the
 /// user picked, or the latest one. The CLI then keeps the gateway on it.
 fn chosen_gateway_version(tag: Option<&str>) -> &str {
@@ -179,7 +176,7 @@ fn decisions_env(rooms_yaml: Option<&str>) -> Option<(&'static str, &'static str
 }
 
 fn rooms_yaml() -> Option<String> {
-    std::fs::read_to_string(crate::env::infer_dir().join(ROOMS_FILE)).ok()
+    std::fs::read_to_string(crate::room_config::rooms_path()).ok()
 }
 
 pub(crate) fn spawn_gateway(bin: &Path) -> Result<std::process::Child, String> {

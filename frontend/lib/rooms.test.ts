@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { applyRoomFrame, memberChatId, memberLabel, mergePost, openApprovals, roomOfChat, routedTo } from "./rooms";
+import {
+  applyRoomFrame,
+  memberChatId,
+  memberLabel,
+  mergePost,
+  openApprovals,
+  roomOfChat,
+  roomSeats,
+  routedTo,
+  validRoomName,
+} from "./rooms";
 import type { RoomPost } from "./tauri";
 
 const post = (id: string, extra: Partial<RoomPost> = {}): RoomPost => ({ id, author: "user", text: id, ...extra });
@@ -65,4 +75,19 @@ test("a post names the members it was routed to and a member its role", () => {
   expect(routedTo(post("1"))).toEqual([]);
   expect(memberLabel("jeff", "tester")).toBe("jeff (tester)");
   expect(memberLabel("jeff")).toBe("jeff");
+});
+
+test("a room name keeps to letters, digits and underscores after a letter or digit", () => {
+  expect(validRoomName("release_2")).toBe(true);
+  expect(validRoomName("2026")).toBe(true);
+  expect(validRoomName("")).toBe(false);
+  expect(validRoomName("_release")).toBe(false);
+  expect(validRoomName("re-lease")).toBe(false);
+});
+
+test("all agents seats the wildcard and keeps only the built-ins picked beside it", () => {
+  const builtIns = new Set(["main", "explore"]);
+  expect(roomSeats(true, ["reviewer", "main"], builtIns)).toEqual(["*", "main"]);
+  expect(roomSeats(false, ["reviewer", "main"], builtIns)).toEqual(["reviewer", "main"]);
+  expect(roomSeats(false, ["*", "reviewer"], builtIns)).toEqual(["reviewer"]);
 });

@@ -1,0 +1,50 @@
+name: rooms - a room created from the sidebar is edited and deleted in rooms.yaml
+narration:
+  - "Show the rooms in the sidebar."
+  - "Start a new room."
+  - "Name it release - Enter moves on to its project."
+  - "Save it with every agent of your own in it."
+  - "The room joins the sidebar."
+  - "rooms.yaml holds it."
+  - "Edit the room."
+  - "Take the room off All agents."
+  - "Seat the built-in main agent instead."
+  - "Save the change."
+  - "rooms.yaml seats main in it."
+  - "Arm the delete."
+  - "Confirm it."
+  - "The room leaves the sidebar."
+steps:
+  - click:
+      button: "Filter rooms"
+  - click:
+      button: "New room"
+  - type: "release"
+  - click:
+      button: "Save room"
+  - wait_for:
+      button: "Select room release"
+      timeout: 15
+  - wait_for:
+      file: "e2e/artifacts/home/.infer/rooms.yaml"
+      contains: "name: release"
+      timeout: 5
+  - click:
+      button: "Edit room release"
+  - click:
+      button: "All agents"
+  - click:
+      button: "main (built-in)"
+  - click:
+      button: "Save room"
+  - wait_for:
+      file: "e2e/artifacts/home/.infer/rooms.yaml"
+      contains: "- main"
+      timeout: 5
+  - click:
+      button: "Delete room release"
+  - click:
+      button: "Delete room release"
+  - wait_gone:
+      button: "Select room release"
+      timeout: 15

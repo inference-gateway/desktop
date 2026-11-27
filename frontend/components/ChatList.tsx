@@ -235,8 +235,9 @@ function ChatThread({ index, subagents }: { index: number; subagents?: number[] 
 // The Rooms filter: each room of rooms.yaml, its members' own chats nested
 // below it, and a refresh that lists the rooms again.
 function RoomRows() {
-  const { rooms, loadRooms, openRoom, enterRoom } = useRooms();
+  const { rooms, loadRooms, openRoom, enterRoom, openRoomEditor, deleteRoom } = useRooms();
   const { conversations, newChat } = useDesktop();
+  const [armed, setArmed] = useState<string | null>(null);
   const memberChats = useMemo(() => {
     const map: Record<string, number[]> = {};
     conversations.forEach((conv, i) => {
@@ -249,24 +250,57 @@ function RoomRows() {
     <>
       <div id="chat-list" role="list" className="flex flex-1 flex-col gap-1 overflow-y-auto select-none">
         {rooms.map((room) => (
-          <div key={room.name}>
-            <button
-              aria-label={`Select room ${room.name}`}
-              title={room.project ? `${room.name} in ${room.project}` : room.name}
-              onClick={() => {
-                newChat();
-                void enterRoom(room.name);
-              }}
+          <div key={room.name} className="group/room">
+            <div
               className={cn(
-                "flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+                "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
                 openRoom?.room.name === room.name &&
                   "bg-primary/10 text-foreground ring-1 ring-primary/25 ring-inset hover:bg-primary/15",
               )}
             >
-              <Hash size={14} className="shrink-0" />
-              <span className="min-w-0 truncate">{room.name}</span>
-              <span className="text-[0.7rem] font-normal text-muted-foreground/60">{`(${room.members.length})`}</span>
-            </button>
+              <button
+                aria-label={`Select room ${room.name}`}
+                title={room.project ? `${room.name} in ${room.project}` : room.name}
+                onClick={() => {
+                  newChat();
+                  void enterRoom(room.name);
+                }}
+                className="flex min-w-0 flex-1 items-center gap-1.5"
+              >
+                <Hash size={14} className="shrink-0" />
+                <span className="min-w-0 truncate">{room.name}</span>
+                <span className="text-[0.7rem] font-normal text-muted-foreground/60">{`(${room.members.length})`}</span>
+              </button>
+              <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/room:opacity-100 focus-within:opacity-100">
+                <button
+                  aria-label={`Edit room ${room.name}`}
+                  title="Edit room"
+                  onClick={() => void openRoomEditor(room.name)}
+                  className="inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil size={11} />
+                </button>
+                <button
+                  aria-label={`Delete room ${room.name}`}
+                  title={armed === room.name ? "Click again to delete - its log stays" : "Delete room"}
+                  onClick={() => {
+                    if (armed !== room.name) {
+                      setArmed(room.name);
+                      return;
+                    }
+                    setArmed(null);
+                    void deleteRoom(room.name);
+                  }}
+                  onMouseLeave={() => setArmed(null)}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded p-[0.15rem] text-muted-foreground hover:text-foreground",
+                    armed === room.name && "text-destructive hover:text-destructive",
+                  )}
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </div>
             {(memberChats[room.name] ?? []).length > 0 && (
               <div className="ml-3 flex flex-col gap-1 border-l border-border pl-2">
                 {memberChats[room.name].map((i) => (
@@ -282,12 +316,20 @@ function RoomRows() {
           </p>
         )}
       </div>
-      <div className="flex shrink-0 items-center justify-end border-t border-border">
+      <div className="flex shrink-0 items-center border-t border-border">
+        <button
+          onClick={() => void openRoomEditor(null)}
+          className="flex flex-1 items-center gap-1 rounded-md px-[0.6rem] py-2 text-[0.8rem] text-muted-foreground hover:bg-card hover:text-foreground"
+        >
+          <Hash size={14} />
+          <Plus size={11} />
+          New room
+        </button>
         <button
           aria-label="Refresh rooms"
           title="List the rooms again"
           onClick={() => void loadRooms()}
-          className="mr-1.5 my-1 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
+          className="mr-1.5 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
         >
           <RefreshCw size={14} />
         </button>
