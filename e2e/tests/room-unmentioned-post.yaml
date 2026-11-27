@@ -1,0 +1,24 @@
+name: a room post that mentions nobody goes to the member the router picks
+narration:
+  - "Show the rooms in the sidebar."
+  - "Open the default public room."
+  - "The room opens, empty so far."
+  - "Post without mentioning a member."
+  - "The router offers it to the seeded reviewer, the only member."
+  - "The reviewer answers in the room."
+steps:
+  - click:
+      button: "Filter rooms"
+  - click:
+      button: "Select room public"
+  - wait_for:
+      text: "No posts in #public yet."
+      timeout: 30
+  - send: "is anyone around"
+  - wait_for:
+      text: "to reviewer"
+      timeout: 60
+  - wait_for:
+      text: "Done."
+      timeout: 90
+model_agent: reviewer

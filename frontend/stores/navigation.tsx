@@ -10,7 +10,7 @@ import {
 import type { ProjectType } from "@/lib/sidebar-document";
 
 export type View = "chat" | "settings" | "observability" | "computers";
-export type SidebarFilter = ProjectType | "agents";
+export type SidebarFilter = ProjectType | "agents" | "rooms";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 

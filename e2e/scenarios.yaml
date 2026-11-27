@@ -60,6 +60,13 @@ scenarios:
     turns:
       - content: "The switched agent answers."
 
+  # A room member's turn quotes the post it got, its mention written without
+  # the @, so the room view shows the member's answer under the user's post.
+  - name: room-member-answer
+    match: '(?i)check the release notes'
+    turns:
+      - content: "The release notes look good."
+
   - name: write-approved
     match: '(?i)create a file named approved\.txt'
     turns:

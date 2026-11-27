@@ -161,6 +161,46 @@ export type DownloadedModel = { id: string; path: string; files: number; bytes: 
 export type Artifact = { name: string; size: number; modified_at: string };
 /** An open GitHub issue of the project, as the `#` menu offers it. */
 export type Issue = { number: number; title: string; state: string };
+
+/** What a room member is doing: running a turn, waiting on an approval or a
+ * question, or idle. */
+export type RoomActivity = "idle" | "running" | "waiting";
+
+/** A room member: its agent, the session it keeps in the room, the role its
+ * agent file names and what it is doing. */
+export type RoomMember = { agent: string; session_id: string; role?: string; activity?: RoomActivity };
+
+/** A room of rooms.yaml as the daemon resolves it, `mode` only on a snapshot. */
+export type Room = { name: string; project?: string; mode?: string; members: RoomMember[] };
+
+/** One line of a room's log. `author` is `user`, a member's agent or `room`
+ * for the room's notes, `kind` is absent for a message, and `routes` are the
+ * members it reached, best first. `approval` is the call an approval post
+ * waits on and the decision post that closes it. */
+export type RoomPost = {
+  id: string;
+  author: string;
+  text: string;
+  kind?: "join" | "approval" | "decision";
+  mentions?: string[];
+  routes?: { member: string; probability: number }[];
+  approval?: { id: string; tool: string; arguments?: string; decision?: string };
+  hop?: number;
+  time?: string;
+};
+
+/** A frame a room's follow streams after its snapshot. */
+export type RoomFrame =
+  | { type: "room_post"; room: string; post: RoomPost }
+  | { type: "room_activity"; room: string; member: string; activity: RoomActivity; mode?: string }
+  | { type: "room_cleared"; room: string };
+
+/** The answer to following a room: the room and its log so far. */
+export type RoomSnapshot = { room: Room; posts: RoomPost[] | null };
+
+/** The answer to a post: the routed post and the notices for its author, such
+ * as a pinged agent outside the room. */
+export type RoomPosted = { post: RoomPost; notices: string[] | null };
 /** A listed chat. The CLI records how it started: the orchestrator that spawned
  * it as a subagent, the agent it runs as, the label its orchestrator gave it,
  * and the chat whose message to that agent started it. */
@@ -659,6 +699,10 @@ export const api = {
   listFiles: (project: string | null) => invoke<string[]>("list_files", { project }),
   listIssues: (project: string | null) => invoke<Issue[]>("list_issues", { project }),
   getComposer: () => invoke<ComposerSettings>("get_composer"),
+  listRooms: () => invoke<Room[]>("list_rooms"),
+  postRoom: (room: string, text: string) => invoke<RoomPosted>("post_room", { room, text }),
+  followRoom: (room: string, onEvent: Channel<RoomFrame>) => invoke<RoomSnapshot>("follow_room", { room, onEvent }),
+  leaveRoom: (room: string) => invoke<void>("leave_room", { room }),
   listHistory: (project: string | null) => invoke<string[]>("list_history", { project }),
   listShortcuts: () => invoke<Shortcut[]>("list_shortcuts"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),

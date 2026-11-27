@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useState, type PointerEvent as Reac
 import {
   Bot,
   FolderPlus,
+  Hash,
   GitBranch,
   RefreshCw,
   Trash2,
@@ -22,6 +23,8 @@ import { useDesktop } from "@/store";
 import { useNavigation } from "@/stores/navigation";
 import { useSelection } from "@/stores/selection";
 import { useAgents } from "@/stores/agents";
+import { useRooms } from "@/stores/rooms";
+import { roomOfChat } from "@/lib/rooms";
 import { useBackend } from "@/stores/backend";
 import { agentModelServed } from "@/lib/agents";
 import { useSidebar } from "@/stores/sidebar";
@@ -225,6 +228,70 @@ function ChatThread({ index, subagents }: { index: number; subagents?: number[] 
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+// The Rooms filter: each room of rooms.yaml, its members' own chats nested
+// below it, and a refresh that lists the rooms again.
+function RoomRows() {
+  const { rooms, loadRooms, openRoom, enterRoom } = useRooms();
+  const { conversations, newChat } = useDesktop();
+  const memberChats = useMemo(() => {
+    const map: Record<string, number[]> = {};
+    conversations.forEach((conv, i) => {
+      const room = roomOfChat(conv.id);
+      if (room) (map[room] ??= []).push(i);
+    });
+    return map;
+  }, [conversations]);
+  return (
+    <>
+      <div id="chat-list" role="list" className="flex flex-1 flex-col gap-1 overflow-y-auto select-none">
+        {rooms.map((room) => (
+          <div key={room.name}>
+            <button
+              aria-label={`Select room ${room.name}`}
+              title={room.project ? `${room.name} in ${room.project}` : room.name}
+              onClick={() => {
+                newChat();
+                void enterRoom(room.name);
+              }}
+              className={cn(
+                "flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+                openRoom?.room.name === room.name &&
+                  "bg-primary/10 text-foreground ring-1 ring-primary/25 ring-inset hover:bg-primary/15",
+              )}
+            >
+              <Hash size={14} className="shrink-0" />
+              <span className="min-w-0 truncate">{room.name}</span>
+              <span className="text-[0.7rem] font-normal text-muted-foreground/60">{`(${room.members.length})`}</span>
+            </button>
+            {(memberChats[room.name] ?? []).length > 0 && (
+              <div className="ml-3 flex flex-col gap-1 border-l border-border pl-2">
+                {memberChats[room.name].map((i) => (
+                  <ChatItem key={conversations[i]?.id ?? i} index={i} />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {rooms.length === 0 && (
+          <p className="px-[0.6rem] py-4 text-center text-[0.8rem] text-muted-foreground">
+            No rooms - the CLI lists them once it is running.
+          </p>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center justify-end border-t border-border">
+        <button
+          aria-label="Refresh rooms"
+          title="List the rooms again"
+          onClick={() => void loadRooms()}
+          className="mr-1.5 my-1 inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-card hover:text-foreground"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </div>
     </>
   );
 }
@@ -910,6 +977,8 @@ export function ChatList() {
       )}
     </>
   );
+
+  if (filter === "rooms") return <RoomRows />;
 
   return (
     <StartDragContext.Provider value={drag.start}>

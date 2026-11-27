@@ -20,6 +20,7 @@ import { withReply } from "@/lib/reply";
 import { subagentParentId } from "@/lib/transcript";
 import { useDesktop } from "@/store";
 import { useAgents } from "@/stores/agents";
+import { useRooms } from "@/stores/rooms";
 import { useSidebar } from "@/stores/sidebar";
 import { useBackend } from "@/stores/backend";
 import { useStatusActions } from "@/stores/status";
@@ -332,6 +333,13 @@ export function Composer() {
   const { drivenId } = useComputers();
   const { setStatus, setError } = useStatusActions();
   const { composer } = useComposer();
+  const { openRoom, postToRoom } = useRooms();
+  const menuContext = openRoom ? "room" : "chat";
+  const menuAgents = openRoom
+    ? openRoom.room.members.map(
+        (m) => agents.find((a) => a.name === m.agent) ?? { name: m.agent, emoji: "", avatar: "" },
+      )
+    : agents;
   const selCount = initSelection.size;
   const broadcasting = initSelecting && selCount > 0;
   const voice = useVoiceInput({ textareaRef: composerRef, running, setStatus, setError });
@@ -469,7 +477,7 @@ export function Composer() {
       }
       return;
     }
-    const found = mentionAt(el.value, el.selectionStart, triggersFor(composer, "chat"));
+    const found = mentionAt(el.value, el.selectionStart, triggersFor(composer, menuContext));
     setMention(found);
     setActiveMentionIdx(0);
     if (found) {
@@ -545,7 +553,7 @@ export function Composer() {
 
   const filteredTools = showTools ? tools.filter((t) => t.toLowerCase().includes(toolQuery)) : [];
 
-  const mentionRows = menuRows(mention, tableFor(composer, "chat"), { files, issues, agents });
+  const mentionRows = menuRows(mention, tableFor(composer, menuContext), { files, issues, agents: menuAgents });
 
   useEffect(() => {
     setReply(null);
@@ -553,6 +561,13 @@ export function Composer() {
 
   const onSend = () => {
     const composer = composerRef.current;
+    if (openRoom && composer) {
+      void postToRoom(composer.value.trim());
+      composer.value = "";
+      autoGrow(composer);
+      setMention(null);
+      return;
+    }
     if (composer && reply) {
       composer.value = withReply(reply, composer.value.trim());
       setReply(null);
