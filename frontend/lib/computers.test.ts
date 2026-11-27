@@ -6,6 +6,7 @@ import { initialChatState, type ChatState, type TranscriptItem } from "./transcr
 const agent = (name: string, workspace: string): MarkdownAgent => ({
   name,
   description: "d",
+  role: "",
   emoji: "",
   model: "",
   workspace,

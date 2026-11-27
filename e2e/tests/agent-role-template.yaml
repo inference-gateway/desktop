@@ -1,0 +1,33 @@
+name: agents - a new agent starts from its role's template and saves with its role
+narration:
+  - "Switch the sidebar to the Agents filter."
+  - "Start a new agent."
+  - "Name it e2e-tester."
+  - "Give it the tester role."
+  - "Write it from the tester template through infer agents create."
+  - "The agent file names its role."
+  - "The editor goes on with the template's instructions - save it."
+  - "The agent is selected."
+  - "The saved file keeps the template's instructions."
+steps:
+  - click:
+      button: "Filter agents"
+  - click:
+      button: "New agent"
+  - type: "e2e-tester"
+  - type: "tester"
+  - click:
+      button: "Start from role template"
+  - wait_for:
+      file: "e2e/artifacts/home/.infer/agents/e2e-tester.md"
+      contains: "role: tester"
+      timeout: 15
+  - click:
+      button: "Save agent"
+  - wait_for:
+      button: "Leave agent e2e-tester"
+      timeout: 15
+  - wait_for:
+      file: "e2e/artifacts/home/.infer/agents/e2e-tester.md"
+      contains: "You are e2e-tester, the team's tester."
+      timeout: 5

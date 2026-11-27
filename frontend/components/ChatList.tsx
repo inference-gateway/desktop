@@ -395,6 +395,9 @@ function AgentGroup({
           >
             {agent.name}
           </button>
+          {agent.role.trim() && (
+            <span className="max-w-full truncate text-[0.62rem] font-normal text-muted-foreground">{agent.role}</span>
+          )}
           {agent.email.trim() && (
             <span
               title={agent.email}

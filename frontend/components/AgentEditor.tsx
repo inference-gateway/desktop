@@ -13,9 +13,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/** The CLI's cap on a role, a job title that fits in brackets after the name. */
+const ROLE_MAX_LENGTH = 40;
+
 const EMPTY: MarkdownAgent = {
   name: "",
   description: "",
+  role: "",
   emoji: "",
   model: "",
   workspace: "",
@@ -40,8 +44,8 @@ export function AgentEditor() {
   const { setError } = useStatusActions();
   const { models } = useBackend();
   const { projectNames } = useSidebar();
-  const { agentEditor, closeAgentEditor } = useAgents();
-  const { saveAgent } = useDesktop();
+  const { agentEditor, closeAgentEditor, loadAgents } = useAgents();
+  const { saveAgent, openAgentEditor } = useDesktop();
   const existing = agentEditor?.agent ?? null;
   const [draft, setDraft] = useState<MarkdownAgent>(existing ?? EMPTY);
   const [emailKey, setEmailKey] = useState("");
@@ -50,6 +54,7 @@ export function AgentEditor() {
   const [savingInbox, setSavingInbox] = useState(false);
   const [inboxNotice, setInboxNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [templating, setTemplating] = useState(false);
   const [animatedPick, setAnimatedPick] = useState<FluentEmoji | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [mcpServers, setMcpServers] = useState<string[]>([]);
@@ -138,6 +143,19 @@ export function AgentEditor() {
       setError(String(e));
     } finally {
       setSavingInbox(false);
+    }
+  };
+
+  const startFromTemplate = async () => {
+    setTemplating(true);
+    try {
+      const created = await api.createAgentFromRole(draft);
+      await loadAgents();
+      openAgentEditor(created);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setTemplating(false);
     }
   };
 
@@ -243,11 +261,41 @@ export function AgentEditor() {
             value={draft.name}
             placeholder="code-reviewer"
             autoFocus={!existing}
-            onKeyDown={advanceOnEnter("agent-description")}
+            onKeyDown={advanceOnEnter("agent-role")}
             onChange={(e) => set("name", normaliseAgentName(e.target.value))}
           />
           <span className="text-[0.72rem] text-muted-foreground/70">
             {agentFolder(existing)}/{draft.name || "<name>"}.md
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="agent-role" className="text-[0.8rem] text-muted-foreground">
+            Role
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="agent-role"
+              value={draft.role}
+              placeholder="tester"
+              maxLength={ROLE_MAX_LENGTH}
+              onKeyDown={advanceOnEnter("agent-description")}
+              onChange={(e) => set("role", e.target.value)}
+            />
+            {!existing && (
+              <Button
+                variant="outline"
+                disabled={!draft.name || !draft.role.trim() || templating}
+                onClick={startFromTemplate}
+                title="Write the agent from its role's template with infer agents create, then edit it here"
+              >
+                Start from role template
+              </Button>
+            )}
+          </div>
+          <span className="text-[0.72rem] text-muted-foreground/70">
+            Its job title, shown after its name as {draft.name || "<name>"} ({draft.role.trim() || "<role>"}). Tester,
+            reviewer, writer and researcher have a template of their own.
           </span>
         </div>
 

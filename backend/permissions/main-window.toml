@@ -6,6 +6,7 @@ commands.allow = [
     "send_message",
     "list_markdown_agents",
     "save_markdown_agent",
+    "create_agent_from_role",
     "delete_markdown_agent",
     "pick_agent_avatar",
     "remove_agent_avatar",

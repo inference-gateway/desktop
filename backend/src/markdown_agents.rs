@@ -12,6 +12,8 @@ pub(crate) struct MarkdownAgent {
     pub(crate) name: String,
     pub(crate) description: String,
     #[serde(default)]
+    pub(crate) role: String,
+    #[serde(default)]
     pub(crate) emoji: String,
     #[serde(default)]
     pub(crate) model: String,
@@ -40,6 +42,8 @@ struct Frontmatter {
     #[serde(default)]
     description: String,
     #[serde(default)]
+    role: String,
+    #[serde(default)]
     emoji: String,
     #[serde(default)]
     model: String,
@@ -62,10 +66,13 @@ const AVATAR_EXTENSIONS: [&str; 5] = ["gif", "png", "webp", "jpg", "jpeg"];
 /// Fluent's animated PNGs run up to 3.4 MB. Serve them through the asset protocol if the list gets heavy.
 const AVATAR_MAX_BYTES: u64 = 4 * 1024 * 1024;
 const NAME_MAX_LEN: usize = 64;
+/// The CLI's cap on a role, a job title that fits in brackets after the name.
+const ROLE_MAX_LEN: usize = 40;
 /// The frontmatter keys the agent editor owns. Every other key is kept as found.
-const MANAGED_KEYS: [&str; 9] = [
+const MANAGED_KEYS: [&str; 10] = [
     "name",
     "description",
+    "role",
     "emoji",
     "model",
     "workspace",
@@ -104,6 +111,16 @@ pub(crate) fn agent_dirs_for(chat_dir: &Path, home: &Path) -> Vec<PathBuf> {
             ]
         })
         .collect()
+}
+
+/// A role the CLI keeps: none, or a job title of at most ROLE_MAX_LEN characters.
+fn check_role(role: &str) -> Result<(), String> {
+    if role.trim().chars().count() > ROLE_MAX_LEN {
+        return Err(format!(
+            "a role is a job title of at most {ROLE_MAX_LEN} characters"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn agent_dirs() -> Vec<PathBuf> {
@@ -149,6 +166,7 @@ fn parse_agent(path: &Path, text: &str) -> Result<MarkdownAgent, String> {
     Ok(MarkdownAgent {
         name: fm.name,
         description: fm.description,
+        role: fm.role,
         emoji: fm.emoji,
         model: fm.model,
         workspace: fm.workspace,
@@ -268,6 +286,9 @@ fn render(agent: &MarkdownAgent, kept: serde_norway::Mapping) -> Result<String, 
     let mut front = serde_norway::Mapping::new();
     front.insert("name".into(), agent.name.clone().into());
     front.insert("description".into(), agent.description.trim().into());
+    if !agent.role.trim().is_empty() {
+        front.insert("role".into(), agent.role.trim().into());
+    }
     if !agent.emoji.trim().is_empty() {
         front.insert("emoji".into(), agent.emoji.trim().into());
     }
@@ -327,6 +348,7 @@ pub(crate) fn write_in(
     if agent.instructions.trim().is_empty() {
         return Err("an agent needs instructions".into());
     }
+    check_role(&agent.role)?;
     std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     let kept = unmanaged_frontmatter(&dir.join(format!("{replaced}.md")));
     let path = dir.join(format!("{}.md", agent.name));
@@ -430,6 +452,46 @@ pub(crate) fn save_markdown_agent(
     Ok(path.display().to_string())
 }
 
+/// The `infer agents create` arguments that write `agent` from its role's
+/// template, with the keys already filled in passed along. An empty
+/// description, emoji, model or computer leaves the template's or none.
+fn role_template_args(agent: &MarkdownAgent) -> Vec<String> {
+    let mut args: Vec<String> = ["agents", "create", &agent.name, "--role", agent.role.trim()]
+        .map(str::to_owned)
+        .into();
+    for (flag, value) in [
+        ("--description", agent.description.trim()),
+        ("--emoji", agent.emoji.trim()),
+        ("--model", agent.model.trim()),
+        ("--workspace", agent.workspace.trim()),
+    ] {
+        if !value.is_empty() && value != "inherit" {
+            args.extend([flag.to_owned(), value.to_owned()]);
+        }
+    }
+    args
+}
+
+/// Writes a new agent from its role's template through the CLI, which picks
+/// the template by the role, and answers the agent as the CLI wrote it, so the
+/// editor goes on from the template's description and instructions.
+#[tauri::command]
+pub(crate) async fn create_agent_from_role(agent: MarkdownAgent) -> Result<MarkdownAgent, String> {
+    if !valid_agent_name(&agent.name) {
+        return Err(format!("invalid agent name {:?}", agent.name));
+    }
+    if agent.role.trim().is_empty() {
+        return Err("a role template needs a role, such as tester".into());
+    }
+    check_role(&agent.role)?;
+    let args = role_template_args(&agent);
+    crate::cli::infer::run_infer(&args.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+    list_from(&agent_dirs())
+        .into_iter()
+        .find(|listed| listed.name == agent.name)
+        .ok_or_else(|| format!("infer agents create wrote no agent named {}", agent.name))
+}
+
 /// Removes the agent and its AgentMail API key, so a later agent of the same
 /// name starts without the old inbox's key.
 #[tauri::command]
@@ -489,6 +551,7 @@ mod tests {
         MarkdownAgent {
             name: "code-reviewer".into(),
             description: "Reviews diffs: finds bugs".into(),
+            role: String::new(),
             emoji: "🔍".into(),
             model: "inherit".into(),
             workspace: String::new(),
@@ -591,6 +654,22 @@ mod tests {
         assert_eq!(listed[0].emoji, "🔍");
         assert_eq!(listed[0].instructions, sample().instructions);
         assert_eq!(listed[0].avatar, None);
+    }
+
+    #[test]
+    fn a_role_follows_the_description_and_is_omitted_when_blank() {
+        let dir = TempDir::new("role");
+        let path = write_in(&dir, &sample(), &sample().name).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("role:"));
+        let mut agent = sample();
+        agent.role = " code reviewer ".into();
+        write_in(&dir, &agent, &agent.name).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("description: 'Reviews diffs: finds bugs'\nrole: code reviewer\n"),
+            "{text}"
+        );
+        assert_eq!(list_in(&dir)[0].role, "code reviewer");
     }
 
     #[test]
@@ -779,6 +858,29 @@ mod tests {
     }
 
     #[test]
+    fn a_role_template_passes_the_keys_already_filled_in() {
+        let mut agent = sample();
+        agent.role = "tester".into();
+        agent.workspace = "ubuntu-desktop".into();
+        assert_eq!(
+            role_template_args(&agent),
+            [
+                "agents",
+                "create",
+                "code-reviewer",
+                "--role",
+                "tester",
+                "--description",
+                "Reviews diffs: finds bugs",
+                "--emoji",
+                "🔍",
+                "--workspace",
+                "ubuntu-desktop"
+            ]
+        );
+    }
+
+    #[test]
     fn write_rejects_incomplete_agents() {
         let dir = TempDir::new("reject");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -790,6 +892,9 @@ mod tests {
         assert!(write_in(&dir, &agent, &agent.name).is_err());
         let mut agent = sample();
         agent.instructions = String::new();
+        assert!(write_in(&dir, &agent, &agent.name).is_err());
+        let mut agent = sample();
+        agent.role = "r".repeat(ROLE_MAX_LEN + 1);
         assert!(write_in(&dir, &agent, &agent.name).is_err());
         assert!(!dir.exists());
     }
